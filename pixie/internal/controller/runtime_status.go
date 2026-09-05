@@ -56,6 +56,7 @@ type browserRuntimeStatus struct {
 }
 
 type runtimeStatusProvider struct {
+	schedules     *Schedules
 	build         diagnostics.BuildInfo
 	started       time.Time
 	requests      *diagnostics.RequestCounter
@@ -111,6 +112,11 @@ func (s *runtimeStatusProvider) snapshot(ctx context.Context) runtimeStatusRepor
 
 func (s *runtimeStatusProvider) applicationStatus() runtimeServiceStatus {
 	state, detail := "ready", ""
+	if s.schedules != nil {
+		if issue := s.schedules.Health(); issue != "" {
+			state, detail = "degraded", issue
+		}
+	}
 	if ready, reason := s.localReady(); !ready {
 		state, detail = "degraded", reason
 	}
@@ -184,6 +190,11 @@ func (s *runtimeStatusProvider) browserStatus(ctx context.Context) runtimeServic
 	}
 	build := diagnostics.NormalizeBuild(status.Build.Version, status.Build.Revision)
 	state, detail := "ready", ""
+	if s.schedules != nil {
+		if issue := s.schedules.Health(); issue != "" {
+			state, detail = "degraded", issue
+		}
+	}
 	checks := status.Readiness.Checks
 	if !status.Readiness.Ready || !checks.Executable || !checks.Config || !checks.ArtifactStorage || !checks.StateStorage {
 		state, detail = "degraded", "Browser service is not ready."

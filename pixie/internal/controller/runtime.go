@@ -130,6 +130,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	requests := &diagnostics.RequestCounter{}
 	mcpGateway := NewMCPGateway(authConfig)
 	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig)
+	statusProvider.schedules = schedules
 	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Apps: apps, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPGateway: mcpGateway}
 	welcome := func(ctx context.Context) (any, error) {
 		recent, err := projects.List(true)

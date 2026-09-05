@@ -100,11 +100,13 @@ func TestSchedulesClaimDueOccurrenceAndPauseAmbiguousRestart(t *testing.T) {
 	}
 	ran := make(chan struct{}, 1)
 	s, err := controller.NewSchedules(store, nil, func(ctx context.Context, j controller.Schedule, admitted func(string) error) error {
-		var disk map[string]controller.Schedule
+		var disk struct {
+			Jobs map[string]controller.Schedule `json:"jobs"`
+		}
 		if _, err := persist.Read(store, "schedules.json", &disk, nil); err != nil {
 			return err
 		}
-		if !disk[j.ID].NextRun.After(past) || disk[j.ID].Runs[0].Status != "running" {
+		if !disk.Jobs[j.ID].NextRun.After(past) || disk.Jobs[j.ID].Runs[0].Status != "running" {
 			return fmt.Errorf("occurrence not claimed")
 		}
 		if err := admitted("session"); err != nil {
@@ -123,12 +125,14 @@ func TestSchedulesClaimDueOccurrenceAndPauseAmbiguousRestart(t *testing.T) {
 		t.Fatal("due schedule not dispatched")
 	}
 	s.Close(context.Background())
-	var disk map[string]controller.Schedule
+	var disk struct {
+		Jobs map[string]controller.Schedule `json:"jobs"`
+	}
 	_, err = persist.Read(store, "schedules.json", &disk, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	job = disk["job"]
+	job = disk.Jobs["job"]
 	if job.Runs[0].Status != "completed" {
 		t.Fatalf("completion not saved: %+v", job)
 	}
@@ -218,5 +222,44 @@ func TestScheduleExecutionLedgerRejectsStaleBackupRecovery(t *testing.T) {
 	}
 	if _, err := controller.NewSchedules(store, nil, nil); err == nil {
 		t.Fatal("missing primary restored an older execution claim")
+	}
+}
+
+func TestScheduleMutationRetrySurvivesRestart(t *testing.T) {
+	store := persist.Store{Dir: t.TempDir()}
+	s, err := controller.NewSchedules(store, nil, func(context.Context, controller.Schedule, func(string) error) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := map[string]any{"projectId": "p", "root": "/p", "prompt": "Review", "cron": "0 9 * * *", "mutationId": "create-once"}
+	result, err := s.Handle(t.Context(), "schedule.create", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := result.(controller.Schedule)
+	run := map[string]any{"projectId": "p", "scheduleId": job.ID, "mutationId": "run-once"}
+	if _, err = s.Handle(t.Context(), "schedule.runNow", run); err != nil {
+		t.Fatal(err)
+	}
+	s.Close(context.Background())
+	restored, err := controller.NewSchedules(store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close(context.Background())
+	retry, err := restored.Handle(t.Context(), "schedule.create", p)
+	if err != nil || retry.(controller.Schedule).ID != job.ID {
+		t.Fatalf("duplicate create: %v %v", retry, err)
+	}
+	if _, err = restored.Handle(t.Context(), "schedule.runNow", run); err != nil {
+		t.Fatal(err)
+	}
+	jobs, _ := restored.Handle(t.Context(), "schedule.list", map[string]any{"projectId": "p"})
+	if len(jobs.([]controller.Schedule)) != 1 || len(jobs.([]controller.Schedule)[0].Runs) != 1 {
+		t.Fatalf("duplicate schedule or execution: %#v", jobs)
+	}
+	p["prompt"] = "Different"
+	if _, err = restored.Handle(t.Context(), "schedule.create", p); err == nil {
+		t.Fatal("accepted identity with different input")
 	}
 }

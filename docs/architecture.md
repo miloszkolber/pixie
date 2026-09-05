@@ -30,6 +30,8 @@ Pi stores native JSONL transcripts. Pixie stores project/session associations, g
 
 Schedule occurrences are recorded before dispatch. Runs create native sessions in an admitted project and retain status and session IDs. An ambiguous running entry after restart is marked interrupted and paused. Failed writes retain the execution claim. Missed cron occurrences coalesce into one run; schedules do not overlap. Pixie must remain running for dispatch. There is no Automation settings screen; schedules are available through project-scoped API methods and the `schedule_manage` tool.
 
+Schedule mutations and their retry results commit in one atomic store. The latest 512 successful mutation identities survive restart; MCP callers can supply `mutationId` for retries. The runner allows eight concurrent jobs, retries persistence failures with backoff and exposes failures in application health. Cron expressions are cached until the schedule changes.
+
 The browser receives the newest transcript page first. Older pages carry projection identities. Inactive projections have count and memory budgets; active work and durable queues prevent eviction. Reconnect generations, session ownership and deletion markers reject stale work.
 
 Browser panels have persisted ownership and renewable leases. Startup retries cleanup of recorded panels. Interactive MCP Apps use a separate origin, short-lived tickets and same-session tool/resource authorization.

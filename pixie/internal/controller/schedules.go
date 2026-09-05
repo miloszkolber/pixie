@@ -2,11 +2,15 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -39,12 +43,32 @@ type Schedule struct {
 	Runs      []ScheduleRun `json:"runs"`
 }
 
+type scheduleOperation struct {
+	Key         string          `json:"key"`
+	Fingerprint string          `json:"fingerprint"`
+	Result      json.RawMessage `json:"result"`
+}
+type scheduleDisk struct {
+	Version    int                 `json:"version"`
+	Jobs       map[string]Schedule `json:"jobs"`
+	Operations []scheduleOperation `json:"operations"`
+}
+
 // ScheduleRunner reports the durable session ID before submitting its prompt.
 type ScheduleRunner func(context.Context, Schedule, func(string) error) error
 type Schedules struct {
-	mu              sync.Mutex
-	store           persist.Store
-	jobs            map[string]Schedule
+	mu         sync.Mutex
+	store      persist.Store
+	jobs       map[string]Schedule
+	operations []scheduleOperation
+	operation  *scheduleOperation
+	method     string
+	failures   map[string]time.Time
+	lastError  string
+	compiled   map[string]struct {
+		key  string
+		spec cron.Schedule
+	}
 	running         map[string]context.CancelFunc
 	pending         map[string]ScheduleRun
 	run             ScheduleRunner
@@ -93,10 +117,30 @@ func validateSchedules(jobs map[string]Schedule) error {
 	return nil
 }
 func NewSchedules(store persist.Store, validateRoot func(string, string) (string, error), run ScheduleRunner) (*Schedules, error) {
-	s := &Schedules{store: store, jobs: map[string]Schedule{}, running: map[string]context.CancelFunc{}, pending: map[string]ScheduleRun{}, run: run, validateRoot: validateRoot, stop: make(chan struct{})}
+	s := &Schedules{store: store, jobs: map[string]Schedule{}, running: map[string]context.CancelFunc{}, pending: map[string]ScheduleRun{}, run: run, validateRoot: validateRoot, stop: make(chan struct{}), failures: map[string]time.Time{}, compiled: map[string]struct {
+		key  string
+		spec cron.Schedule
+	}{}}
 	raw, _, err := persist.ReadFile(filepath.Join(store.Dir, "schedules.json"))
 	if err == nil {
-		if err := persist.Decode(raw, &s.jobs, validateSchedules); err != nil {
+		var disk scheduleDisk
+		if err := json.Unmarshal(raw, &disk); err != nil {
+			return nil, err
+		}
+		if disk.Version == 1 {
+			if disk.Jobs == nil || len(disk.Operations) > 512 {
+				return nil, fmt.Errorf("invalid schedule ledger")
+			}
+			s.jobs, s.operations = disk.Jobs, disk.Operations
+			for _, op := range s.operations {
+				if op.Key == "" || op.Fingerprint == "" || !json.Valid(op.Result) {
+					return nil, fmt.Errorf("invalid schedule operation")
+				}
+			}
+		} else if err := persist.Decode(raw, &s.jobs, nil); err != nil {
+			return nil, err
+		}
+		if err := validateSchedules(s.jobs); err != nil {
 			return nil, err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -119,7 +163,7 @@ func NewSchedules(store persist.Store, validateRoot func(string, string) (string
 		s.jobs[id] = j
 	}
 	if changed {
-		if err := persist.Write(store, "schedules.json", s.jobs, validateSchedules); err != nil {
+		if err := s.write(nil); err != nil {
 			return nil, err
 		}
 	}
@@ -128,7 +172,7 @@ func NewSchedules(store persist.Store, validateRoot func(string, string) (string
 func (s *Schedules) save(job Schedule) error {
 	previous, exists := s.jobs[job.ID]
 	s.jobs[job.ID] = job
-	if err := persist.Write(s.store, "schedules.json", s.jobs, validateSchedules); err != nil {
+	if err := s.write(job); err != nil {
 		if exists {
 			s.jobs[job.ID] = previous
 		} else {
@@ -138,11 +182,72 @@ func (s *Schedules) save(job Schedule) error {
 	}
 	return nil
 }
+func (s *Schedules) write(result any) error {
+	if s.jobs == nil || len(s.jobs) > 1000 {
+		return fmt.Errorf("too many schedules")
+	}
+	operations := slices.Clone(s.operations)
+	if s.operation != nil {
+		op := *s.operation
+		if s.method != "schedule.create" && s.method != "schedule.update" {
+			result = map[string]any{"ok": true}
+		}
+		raw, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		op.Result = raw
+		operations = append(operations, op)
+		if len(operations) > 512 {
+			operations = operations[len(operations)-512:]
+		}
+	}
+	if err := persist.Write(s.store, "schedules.json", scheduleDisk{1, s.jobs, operations}, nil); err != nil {
+		return err
+	}
+	s.operations = operations
+	return nil
+}
+func (s *Schedules) next(job Schedule, now time.Time) (time.Time, error) {
+	if job.Timezone == "" {
+		job.Timezone = "UTC"
+	}
+	key := job.Timezone + " " + job.Cron
+	cached := s.compiled[job.ID]
+	if cached.key != key {
+		if _, err := scheduleNext(job, now); err != nil {
+			return time.Time{}, err
+		}
+		spec, err := cron.ParseStandard("CRON_TZ=" + job.Timezone + " " + job.Cron)
+		if err != nil {
+			return time.Time{}, err
+		}
+		cached.key, cached.spec = key, spec
+		s.compiled[job.ID] = cached
+	}
+	return cached.spec.Next(now), nil
+}
+func (s *Schedules) failed(id string, now time.Time, err error) {
+	if err == nil {
+		delete(s.failures, id)
+		if len(s.failures) == 0 {
+			s.lastError = ""
+		}
+		return
+	}
+	s.failures[id] = now.Add(30 * time.Second)
+	s.lastError = "A schedule could not be saved or started. Check application storage and schedule configuration."
+	slog.Error("schedule operation failed", "schedule", id, "error", err)
+}
+func (s *Schedules) Health() string { s.mu.Lock(); defer s.mu.Unlock(); return s.lastError }
+
 func cloneSchedule(j Schedule) Schedule {
-	raw, _ := json.Marshal(j)
-	var copy Schedule
-	_ = json.Unmarshal(raw, &copy)
-	return copy
+	j.Runs = slices.Clone(j.Runs)
+	if j.Model != nil {
+		model := *j.Model
+		j.Model = &model
+	}
+	return j
 }
 func (s *Schedules) Start() {
 	s.mu.Lock()
@@ -204,17 +309,25 @@ func (s *Schedules) tick(now time.Time) {
 		return
 	}
 	for id, run := range s.pending {
-		_ = s.finishLocked(id, run)
+		if !now.Before(s.failures[id]) {
+			s.failed(id, now, s.finishLocked(id, run))
+		}
 	}
 	for id, j := range s.jobs {
-		if !j.Paused && !j.NextRun.After(now) && s.running[id] == nil {
-			_ = s.startLocked(id, now)
+		if len(s.running) >= 8 {
+			break
+		}
+		if !j.Paused && !j.NextRun.After(now) && s.running[id] == nil && !now.Before(s.failures[id]) {
+			s.failed(id, now, s.startLocked(id, now))
 		}
 	}
 }
 func (s *Schedules) startLocked(id string, now time.Time) error {
 	if s.closed {
 		return fmt.Errorf("scheduler is closed")
+	}
+	if len(s.running) >= 8 {
+		return fmt.Errorf("schedule concurrency limit reached; retry after a run finishes")
 	}
 	if s.running[id] != nil {
 		return fmt.Errorf("schedule is already running")
@@ -223,7 +336,7 @@ func (s *Schedules) startLocked(id string, now time.Time) error {
 	if j.ID == "" {
 		return fmt.Errorf("unknown schedule")
 	}
-	next, err := scheduleNext(j, now)
+	next, err := s.next(j, now)
 	if err != nil {
 		return err
 	}
@@ -280,8 +393,9 @@ func (s *Schedules) startLocked(id string, now time.Time) error {
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.finishLocked(id, run) != nil {
+		if err := s.finishLocked(id, run); err != nil {
 			s.pending[id] = run
+			s.failed(id, time.Now(), err)
 		}
 	}()
 	return nil
@@ -305,6 +419,37 @@ func (s *Schedules) Handle(ctx context.Context, method string, p map[string]any)
 		}
 		sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
 		return jobs, nil
+	}
+	identity := queueIdentity(ctx)
+	if key := textValue(p["mutationId"]); key != "" {
+		if len(key) > 128 || containsNUL(key) {
+			return nil, fmt.Errorf("invalid mutation identity")
+		}
+		digest := sha256.Sum256([]byte(projectID + "\x00" + key))
+		payload, _ := json.Marshal(p)
+		fingerprint := sha256.Sum256(append([]byte(method+"\x00"), payload...))
+		identity = queueRequestIdentity{hex.EncodeToString(digest[:]), hex.EncodeToString(fingerprint[:])}
+	}
+	if identity.Key != "" {
+		for _, op := range s.operations {
+			if op.Key != identity.Key {
+				continue
+			}
+			if op.Fingerprint != identity.Fingerprint {
+				return nil, fmt.Errorf("schedule mutation identity reused with different input")
+			}
+			if method == "schedule.create" || method == "schedule.update" {
+				var job Schedule
+				err := json.Unmarshal(op.Result, &job)
+				return job, err
+			}
+			var result any
+			err := json.Unmarshal(op.Result, &result)
+			return result, err
+		}
+		s.operation = &scheduleOperation{Key: identity.Key, Fingerprint: identity.Fingerprint}
+		s.method = method
+		defer func() { s.operation = nil; s.method = "" }()
 	}
 	id := textValue(p["scheduleId"])
 	j := cloneSchedule(s.jobs[id])
@@ -357,7 +502,10 @@ func (s *Schedules) Handle(ctx context.Context, method string, p map[string]any)
 		if j.Timezone == "" {
 			j.Timezone = "UTC"
 		}
-		next, err := scheduleNext(j, time.Now())
+		if strings.TrimSpace(j.Prompt) == "" || len(j.Prompt) > 64*1024 || containsNUL(j.Prompt) {
+			return nil, fmt.Errorf("invalid schedule prompt")
+		}
+		next, err := s.next(j, time.Now())
 		if err != nil {
 			return nil, err
 		}
@@ -371,14 +519,22 @@ func (s *Schedules) Handle(ctx context.Context, method string, p map[string]any)
 			return nil, fmt.Errorf("stop the running schedule before deleting it")
 		}
 		delete(s.jobs, id)
-		if err := persist.Write(s.store, "schedules.json", s.jobs, validateSchedules); err != nil {
+		if err := s.write(nil); err != nil {
 			s.jobs[id] = j
 			return nil, err
+		}
+		delete(s.compiled, id)
+		delete(s.failures, id)
+		if len(s.failures) == 0 {
+			s.lastError = ""
 		}
 		return ack(nil)
 	case "schedule.runNow":
 		return ack(s.startLocked(id, time.Now()))
 	case "schedule.stop":
+		if err := s.write(nil); err != nil {
+			return nil, err
+		}
 		if cancel := s.running[id]; cancel != nil {
 			cancel()
 		}
