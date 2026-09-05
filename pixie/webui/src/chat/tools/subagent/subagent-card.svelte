@@ -5,7 +5,13 @@ import { countLines } from "../collapsible";
 import Collapsible from "../collapsible.svelte";
 import { resultText, strArg } from "../tool-helpers";
 import ToolOutput from "../tool-output.svelte";
-import { childModelLabel, childStatus, childStatusLabel, subagentDetails } from "./subagent-card";
+import {
+	childModelLabel,
+	childrenSummary,
+	childStatus,
+	childStatusLabel,
+	subagentDetails,
+} from "./subagent-card";
 
 let props: ToolRenderProps = $props();
 let { args, result, status, subagentActivity, toolName } = $derived(props);
@@ -22,7 +28,9 @@ let task = $derived(
 );
 let currentStatus = $derived(status === "error" ? ("failed" as const) : childStatus(details));
 let output = $derived(resultText(result, status === "error" || currentStatus === "failed"));
-let sessionId = $derived(details.childSessionId || details.runId || child?.runId);
+let sessionId = $derived(
+	details.childSessionId || child?.sessionId || details.runId || child?.runId,
+);
 let model = $derived(childModelLabel(child?.model, child?.thinkingLevel));
 let label = $derived(
 	currentStatus
@@ -60,6 +68,16 @@ let summary = $derived(
 		{#if task}<p class="truncate text-text-muted tr-text-metadata">{task}</p>{/if}
 		<span class="text-text-muted tr-text-metadata">{label}</span>
 		{#if model}<span class="text-text-muted tr-text-metadata">{model}</span>{/if}
+		{#if childrenSummary(details)}
+			<span class="text-text-muted tr-text-metadata">{details.results?.length} children · {childrenSummary(details)}</span>
+			<ul class="flex min-w-0 max-w-full flex-col gap-0.5">
+				{#each details.results ?? [] as call, index (call.callIndex ?? index)}
+					<li class="flex min-w-0 max-w-full items-baseline gap-xs tr-text-metadata">
+						<span class="min-w-0 break-words text-text-default" title={call.task ?? call.agent}>{call.agent ?? `call ${index + 1}`} · {childStatusLabel(call.status, call.currentTool, call.error)}</span>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 		{#if entries.length > 0}
 			<div class="flex min-w-0 max-w-full flex-col gap-xs">
 				<span class="text-text-muted tr-text-metadata">Recent child activity</span>

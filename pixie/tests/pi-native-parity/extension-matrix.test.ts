@@ -1,9 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
+import { PiConnector } from "@signetai/connector-pi";
 import agents from "../../pi-host/src/extensions/agents.ts";
+import piSubagent from "../../pi-host/src/extensions/pi-subagent.ts";
 import plans from "../../pi-host/src/extensions/plans.ts";
 import rpivAsk from "../../pi-host/src/extensions/rpiv-ask.ts";
 import rpivTodo from "../../pi-host/src/extensions/rpiv-todo.ts";
 import rpivWeb from "../../pi-host/src/extensions/rpiv-web.ts";
+import signet from "../../pi-host/src/extensions/signet.ts";
 import web from "../../pi-host/src/extensions/web.ts";
 import { startHost } from "../../pi-host/src/server.ts";
 import { Sessions } from "../../pi-host/src/sessions.ts";
@@ -12,6 +15,20 @@ import { cleanups, echoProvider, findTool, fixture, tempDir, toolNames } from ".
 afterEach(async () => {
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
+
+const savedEnv = new Map<string, string | undefined>();
+function setEnv(name: string, value: string | undefined): void {
+	if (!savedEnv.has(name)) savedEnv.set(name, process.env[name]);
+	if (value === undefined) delete process.env[name];
+	else process.env[name] = value;
+}
+function restoreEnv(): void {
+	for (const [name, value] of savedEnv) {
+		if (value === undefined) delete process.env[name];
+		else process.env[name] = value;
+	}
+	savedEnv.clear();
+}
 
 test("host reports Pi SDK version and advertises each optional profile", async () => {
 	const dir = await tempDir("pixie-pi-parity-host-");
@@ -56,6 +73,33 @@ test("unknown or duplicate extension profiles are rejected", async () => {
 	await expect(
 		startHost({ agentDir: dir, secret, port: 0, extensions: ["web", "web"] }),
 	).rejects.toThrow("Unknown or duplicate");
+	await expect(
+		startHost({ agentDir: dir, secret, port: 0, extensions: ["signet", "signet"] }),
+	).rejects.toThrow("Unknown or duplicate");
+});
+
+test("signet and pi-subagent profiles advertise additive markers", async () => {
+	const dir = await tempDir("pixie-pi-parity-markers-");
+	const secret = "parity-matrix-secret";
+	const host = await startHost({
+		agentDir: dir,
+		secret,
+		port: 0,
+		extensions: ["mcp", "agents", "signet", "pi-subagent"],
+	});
+	try {
+		const base = `http://127.0.0.1:${host.server.port}`;
+		const ready = (await (
+			await fetch(`${base}/readyz`, { headers: { Authorization: `Bearer ${secret}` } })
+		).json()) as { capabilities: Record<string, number> };
+		expect(ready.capabilities).toMatchObject({
+			agents: 1,
+			signet: 1,
+			"pi-subagent": 1,
+		});
+	} finally {
+		await host.close();
+	}
 });
 
 test("each profile adds tools without replacing Pi core tools", async () => {
@@ -66,33 +110,55 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 		rpivTodo,
 		rpivWeb,
 		rpivAsk,
+		signet,
+		piSubagent,
 		echoProvider(),
 	]);
-	const entry = await sessions.create(dir);
-	const names = toolNames(entry);
-	expect(names).toEqual(
-		expect.arrayContaining([
-			"read",
-			"bash",
-			"edit",
-			"write",
-			"update_plan",
-			"todo",
-			"web_fetch",
-			"web_search",
-			"ask_user_question",
-			"delegate",
-			"list_agents",
-		]),
-	);
-	expect(entry.capabilities.snapshot()).toMatchObject({
-		agents: 1,
-		plans: 1,
-		web: 1,
-		"rpiv-todo": 1,
-		"rpiv-web": 1,
-		"rpiv-ask": 1,
-	});
+	// Contain the upstream install and discovery side effects (managed file,
+	// Pi config, starter agent) to the fixture directory.
+	const configHome = await tempDir("pixie-pi-parity-signet-config-");
+	setEnv("PI_CODING_AGENT_DIR", dir);
+	setEnv("XDG_CONFIG_HOME", configHome);
+	const warn = console.warn;
+	console.warn = () => {};
+	try {
+		await new PiConnector().install("");
+		const entry = await sessions.create(dir);
+		const names = toolNames(entry);
+		expect(names).toEqual(
+			expect.arrayContaining([
+				"read",
+				"bash",
+				"edit",
+				"write",
+				"update_plan",
+				"todo",
+				"web_fetch",
+				"web_search",
+				"ask_user_question",
+				"delegate",
+				"list_agents",
+				"subagent",
+				"signet_recall",
+				"signet_source_search",
+				"signet_session_search",
+				"signet_remember",
+			]),
+		);
+		expect(entry.capabilities.snapshot()).toMatchObject({
+			agents: 1,
+			plans: 1,
+			web: 1,
+			"rpiv-todo": 1,
+			"rpiv-web": 1,
+			"rpiv-ask": 1,
+			signet: 1,
+			"pi-subagent": 1,
+		});
+	} finally {
+		console.warn = warn;
+		restoreEnv();
+	}
 });
 
 test("enabling custom web and upstream rpiv-web together keeps the first web_fetch", async () => {

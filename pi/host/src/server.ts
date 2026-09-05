@@ -6,10 +6,12 @@ import mcp from "@pixie/pi-mcp";
 import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
 import agents from "./extensions/agents.ts";
+import piSubagent from "./extensions/pi-subagent.ts";
 import plans from "./extensions/plans.ts";
 import rpivAsk from "./extensions/rpiv-ask.ts";
 import rpivTodo from "./extensions/rpiv-todo.ts";
 import rpivWeb from "./extensions/rpiv-web.ts";
+import signet from "./extensions/signet.ts";
 import web from "./extensions/web.ts";
 import { Providers } from "./providers.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
@@ -74,6 +76,14 @@ async function startUnlockedHost(options: HostOptions) {
 		"rpiv-todo": rpivTodo,
 		"rpiv-web": rpivWeb,
 		"rpiv-ask": rpivAsk,
+		// Optional Pi-native memory and delegation. `signet` is a marker
+		// only: the operator-installed Signet managed file extension loads
+		// through Pi's own `<agentDir>/extensions` discovery, and importing
+		// it here as well would register its tools twice. `pi-subagent`
+		// registers the upstream `subagent` tool unchanged; the custom
+		// `agents` extension stays the writer until parity is verified.
+		signet,
+		"pi-subagent": piSubagent,
 	};
 	const names = options.extensions ?? [];
 	if (new Set(names).size !== names.length || names.some((n) => !profiles[n]))

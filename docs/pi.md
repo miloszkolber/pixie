@@ -9,9 +9,10 @@ The source host service uses unmodified `@earendil-works/pi-coding-agent` and `@
 | Chat, streaming, cancellation, steering, images, compaction, forks | Native Pi SDK, projected by Pixie |
 | Providers, API keys, OAuth, models, defaults, thinking | Native Pi model/auth/settings APIs; secrets stay on the host |
 | Project grouping, file attachments, history search, durable follow-ups | Pixie records and transcript projection |
-| Defined agents and delegation | Optional `agents` extension; each child has a native Pi session |
+| Defined agents and delegation | Optional `agents` extension; each child has a native Pi session; `pi-subagent` is the Pi-native replacement candidate |
 | Plans | Optional `plans` extension |
-| MCP tools, Browser, Signet, interactive Apps | Compatible MCP extension; Pixie supplies service connections |
+| MCP tools, Browser, interactive Apps | Compatible MCP extension; Pixie supplies service connections |
+| Signet | Operator-owned external service with a Pi-native file extension; the MCP connection is deprecated pending parity |
 | Goals, tasks and questions | Pixie session-scoped MCP |
 | Schedules | Pixie storage and runner; ordinary Pi sessions, no Pi scheduling extension |
 

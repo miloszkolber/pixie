@@ -1239,6 +1239,9 @@ func (m *SessionManager) sessionServers(profile AgentProfile, token string) ([]p
 		return nil, err
 	}
 	if config.Signet.Enabled {
+		// Deprecated-pending-parity: keep attaching the daemon as the MCP
+		// `signet` connection until the Pi-native `signet` profile passes
+		// its parity gate (docs/roadmap.md). Do not delete this path early.
 		endpoint := "http://" + net.JoinHostPort(strings.Trim(config.Signet.Address, "[]"), strconv.Itoa(config.Signet.Port)) + "/mcp"
 		servers = append(servers, piwire.McpServer{Http: &piwire.McpServerHttpInline{Type: "http", Name: "signet", Url: endpoint, Headers: []piwire.HttpHeader{}}})
 	}

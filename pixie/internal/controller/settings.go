@@ -17,6 +17,11 @@ type ModelReference struct {
 	ID       string `json:"id"`
 }
 
+// Deprecated-pending-parity: the MCP `signet` connection configured here
+// stays the writer until the Pi-native `signet` profile passes its parity
+// gate (docs/roadmap.md). Afterwards this connection is removed and the
+// Signet daemon remains an operator-owned external service, never a
+// Pixie-managed MCP connection.
 type SignetSettings struct {
 	Enabled bool   `json:"enabled"`
 	Address string `json:"address"`

@@ -29,8 +29,11 @@ import type {
 // `select(title, options, opts?)`, `confirm(title, message, opts?)`,
 // `input(title, placeholder?, opts?)`, `editor(title, prefill?)` and
 // `notify(message, type?)`, so no degradation shims are needed. Terminal-only
-// members (widgets, custom components, editor chrome, themes) stay no-ops,
-// matching the SDK's headless behavior.
+// members (widgets, custom components, editor chrome) stay no-ops, matching
+// the SDK's headless behavior; `theme` returns unstyled text instead of the
+// SDK's ANSI-styled singleton so extensions that format status strings (for
+// example Signet's `ui.theme.fg`) keep working without leaking terminal
+// escapes into RPC transcripts.
 
 export type UiPrimitive = "select" | "confirm" | "input" | "editor" | "notify";
 
@@ -84,6 +87,24 @@ export interface UiBridge {
 	/** Dismiss every pending request, e.g. on session abort or close. */
 	readonly cancelAll: (reason?: string) => void;
 }
+
+// Headless RPC theme: every styling call returns its input unchanged. The
+// cast is structural; the object stays a stateless singleton because no
+// session or terminal state is involved.
+const headlessTheme = {
+	fg: (_color: string, text: string) => text,
+	bg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+	italic: (text: string) => text,
+	underline: (text: string) => text,
+	inverse: (text: string) => text,
+	strikethrough: (text: string) => text,
+	getFgAnsi: (_color: string) => "",
+	getBgAnsi: (_color: string) => "",
+	getColorMode: () => "truecolor" as const,
+	getThinkingBorderColor: (_level: string) => (text: string) => text,
+	getBashModeBorderColor: () => (text: string) => text,
+} as unknown as Theme;
 
 export function createUiBridge(
 	sessionId: string,
@@ -216,8 +237,12 @@ export function createUiBridge(
 		setEditorComponent: () => {},
 		getEditorComponent: () => undefined,
 		get theme(): Theme {
-			// No terminal theme exists in RPC mode; nothing rendered here reads it.
-			return undefined as unknown as Theme;
+			// No terminal styling exists in RPC mode, but extensions format
+			// status strings through the theme (Signet's `ui.theme.fg`), so
+			// return unstyled text rather than undefined. Status output is
+			// discarded by the `setStatus` no-op above, keeping terminal
+			// escapes out of transcripts.
+			return headlessTheme;
 		},
 		getAllThemes: () => [],
 		getTheme: () => undefined,
