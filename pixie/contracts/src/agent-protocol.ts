@@ -111,6 +111,11 @@ export interface UserMessage {
 }
 
 export interface AssistantMessage {
+	presentation?: {
+		kind: "compaction" | "branch_summary" | "custom";
+		summary?: string;
+		tokensBefore?: number;
+	};
 	messageId?: string;
 	role: "assistant";
 	content: (TextContent | ImageContent | ThinkingContent | ToolCall)[];
@@ -191,11 +196,6 @@ export interface SessionStats {
 		Record<"input" | "output" | "cacheRead" | "cacheWrite" | "total" | "cost", boolean>
 	>;
 	contextUsage?: ContextUsage;
-}
-
-export interface SessionModeState {
-	currentModeId: string;
-	availableModes: { id: string; name: string; description?: string }[];
 }
 
 export interface SessionPlanState {
@@ -295,7 +295,6 @@ export type AgentEvent =
 	  }
 	| { type: "agent_start" }
 	| { type: "commands"; commands: SlashCommandInfo[] }
-	| { type: "current-mode"; currentModeId: string }
 	| { type: "plan"; planState: SessionPlanState }
 	| ({ type: "queue_update" } & SessionQueueState)
 	| { type: "message_start"; message: AgentMessage }

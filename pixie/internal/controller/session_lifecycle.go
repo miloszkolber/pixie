@@ -44,12 +44,12 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 		return SessionSummary{}, err
 	}
 	token := identifier.New()
-	servers := make([]piwire.UnstableMcpServer, 0)
+	servers := make([]piwire.McpServer, 0)
 	for _, server := range m.objectiveServers(profile, token) {
-		http := piwire.UnstableMcpServerHttp(*server.Http)
-		servers = append(servers, piwire.UnstableMcpServer{Http: &http})
+		http := piwire.McpServerHttpInline(*server.Http)
+		servers = append(servers, piwire.McpServer{Http: &http})
 	}
-	response, err := m.client.ForkSession(ctx, piwire.UnstableForkSessionRequest{SessionId: piwire.SessionId(sessionID), Cwd: admitted, McpServers: servers})
+	response, err := m.client.ForkSession(ctx, piwire.LoadSessionRequest{SessionId: piwire.SessionId(sessionID), Cwd: admitted, McpServers: servers})
 	if err != nil {
 		return SessionSummary{}, err
 	}
@@ -83,7 +83,6 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 	child.thinkingLevel = thinkingFromOptions(child.configOptions)
 	child.model = modelFromSetup(child.configOptions, response.Meta)
 	child.capabilities = response.Capabilities
-	child.modes = projectSessionModes(response.Modes)
 	// The agent creates the child, but this controller has not replayed its
 	// inherited transcript yet. The first read or prompt must load it from the agent.
 	if err := m.records.Record(ProjectSessionRecord{ProjectID: projectID, SessionID: childID, CWD: admitted, ParentSessionID: sessionID}); err != nil {

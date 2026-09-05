@@ -4,8 +4,8 @@ import {
 	agentNameError,
 	compactionReserveTokensValue,
 	defaultModelSuggestions,
+	defaultProviderChoices,
 	defaultProviderSelectable,
-	defaultSettingsView,
 	parseCompactionReserveTokens,
 	shouldClearAgentEditorAfterMutation,
 	unavailableDefaultProviderOption,
@@ -28,12 +28,8 @@ test("default providers come from configured available status, even without visi
 		available: true,
 		hidden: true,
 	};
-	const defaults = { providerId: provider.id, modelId: "persisted-custom-model" };
-	const view = defaultSettingsView(defaults, [provider], [hiddenModel]);
 
-	expect(view.defaults).toEqual(defaults);
-	expect(view.providers).toEqual([provider]);
-	expect(view.models).toEqual([]);
+	expect(defaultProviderChoices([provider])).toEqual([provider]);
 	expect(defaultModelSuggestions([hiddenModel], provider.id)).toEqual([]);
 });
 

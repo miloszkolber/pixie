@@ -3,7 +3,6 @@ import type {
 	AskUserQuestionResult,
 	ImageContent,
 	SessionGoal,
-	SessionModeState,
 	SessionPlanState,
 	SessionStats,
 	SessionSummary,
@@ -16,7 +15,6 @@ import type { ChatAttachment, ChatSubmission, ChatTurn } from "@/chat/runtime/ty
 import { randomId } from "@/lib";
 import type { AppState } from "@/store/app-store";
 import type { StateCreator } from "@/store/external-store";
-import { omitKey } from "@/store/record";
 import {
 	type HydratedRuntime,
 	prependTranscriptPage as prependHydratedTranscriptPage,
@@ -40,7 +38,6 @@ export interface ChatState {
 		sessionId: string,
 		summary: SessionSummary,
 		hydrated: HydratedRuntime,
-		modes: SessionModeState | null,
 		planState: SessionPlanState | null,
 	) => void;
 	setSessionGoalLoading: (sessionId: string, projectAreaId: string) => void;
@@ -252,7 +249,7 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 		);
 		return applied;
 	},
-	replaceTranscriptSnapshot: (sessionId, summary, hydrated, modes, planState) =>
+	replaceTranscriptSnapshot: (sessionId, summary, hydrated, planState) =>
 		set((s) =>
 			withRuntime(s, sessionId, (rt) => {
 				const optimisticTurns = unmatchedOptimisticTurns(rt, hydrated);
@@ -270,7 +267,6 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 					configOptions: summary.configOptions ?? [],
 					capabilities: summary.capabilities ?? {},
 					configRevision: rt.configRevision + 1,
-					modes,
 					planState,
 					...(summary.queue ? { queue: summary.queue } : {}),
 				};

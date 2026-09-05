@@ -52,8 +52,8 @@ let sessionInventoryCurrent = $derived(
 let mcpAvailable = $derived($appStore.agentProfile?.capabilities?.mcp === 1);
 let sessionMcpAvailable = $derived(
 	activeSessionId
-		? ($appStore.sessions[activeSessionId]?.capabilities?.mcp ??
-				$appStore.agentProfile?.capabilities?.mcp) === 1
+		? ($appStore.sessions[activeSessionId]?.capabilities ?? $appStore.agentProfile?.capabilities)
+				?.mcp === 1
 		: false,
 );
 let warning = $derived(extensionWarningText(catalog?.warningCount ?? 0));
@@ -68,7 +68,9 @@ async function load(): Promise<void> {
 	loadedSessionTarget = null;
 	const [nextCatalog, nextGatewayCatalog, nextExtensions, nextTools] = await Promise.allSettled([
 		mcpAvailable ? getTransport().request("pi.extensionList", {}) : Promise.resolve(null),
-		mcpAvailable ? getTransport().request("mcpGateway.catalog", {}) : Promise.resolve(null),
+		mcpAvailable || sessionMcpAvailable
+			? getTransport().request("mcpGateway.catalog", {})
+			: Promise.resolve(null),
 		projectId && sessionId && sessionMcpAvailable
 			? getTransport().request("session.extensionList", { projectId, sessionId })
 			: Promise.resolve([]),
@@ -194,7 +196,7 @@ function setGatewayEnabled(module: McpGatewayModule, enabled: boolean): void {
 		</p>
 	{/if}
 
-	{#if mcpAvailable}
+	{#if mcpAvailable || sessionMcpAvailable}
 	<section class="flex flex-col gap-sm" aria-labelledby="mcp-modules-heading">
 		<div>
 			<h4 id="mcp-modules-heading" class="tr-text-eyebrow text-text-muted">
@@ -202,6 +204,7 @@ function setGatewayEnabled(module: McpGatewayModule, enabled: boolean): void {
 			</h4>
 			<p class="text-text-muted tr-text-metadata">
 				Published modules stay available in Pixie MCP when disabled here.
+ {#if !mcpAvailable}Global module configuration requires a global MCP extension.{/if}
 			</p>
 		</div>
 		{#if loading && !gatewayCatalog}
@@ -237,7 +240,7 @@ function setGatewayEnabled(module: McpGatewayModule, enabled: boolean): void {
 							size="sm"
 							variant="outline"
 						disabled={
-								busy !== null ||
+								!mcpAvailable || busy !== null ||
 								module.binding === "conflict" ||
 								module.binding === "unavailable" ||
 								(module.state !== "ready" && module.binding !== "enabled")
@@ -253,6 +256,8 @@ function setGatewayEnabled(module: McpGatewayModule, enabled: boolean): void {
 		{/if}
 	</section>
 
+ {/if}
+ {#if mcpAvailable}
 	<section class="flex flex-col gap-sm" aria-labelledby="global-extensions-heading">
 		<div>
 			<h4 id="global-extensions-heading" class="tr-text-eyebrow text-text-muted">

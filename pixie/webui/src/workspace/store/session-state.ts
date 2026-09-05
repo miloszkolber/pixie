@@ -1,6 +1,5 @@
 import type {
 	SessionLifecycleChangedPayload,
-	SessionModeState,
 	SessionPlanState,
 	SessionQueueState,
 	SessionSummary,
@@ -45,7 +44,6 @@ export interface SessionWorkspaceState {
 		sessionId: string,
 		model: WireModel | null,
 		thinkingLevel: ThinkingLevel,
-		modes?: SessionModeState | null,
 		syncedTick?: number,
 		options?: ContentOpenOptions,
 	) => void;
@@ -70,7 +68,6 @@ export interface SessionWorkspaceState {
 	hydrateSession: (
 		summary: SessionSummary,
 		hydrated: HydratedRuntime,
-		modes: SessionModeState | null,
 		planState: SessionPlanState | null,
 		activate?: boolean,
 		syncedTick?: number,
@@ -232,15 +229,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 		}),
 	noteCommandCatalogChanged: () =>
 		set((state) => ({ commandCatalogGeneration: state.commandCatalogGeneration + 1 })),
-	openChatSession: (
-		projectAreaId,
-		sessionId,
-		model,
-		thinkingLevel,
-		modes = null,
-		syncedTick,
-		options = {},
-	) =>
+	openChatSession: (projectAreaId, sessionId, model, thinkingLevel, syncedTick, options = {}) =>
 		set((state) => {
 			if (
 				state.removedProjectAreaIds[projectAreaId] ||
@@ -278,7 +267,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 				sessions: fresh
 					? {
 							...state.sessions,
-							[sessionId]: createSessionRuntime(model, thinkingLevel, modes),
+							[sessionId]: createSessionRuntime(model, thinkingLevel),
 						}
 					: state.sessions,
 				...(fresh
@@ -544,15 +533,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 				},
 			};
 		}),
-	hydrateSession: (
-		summary,
-		hydrated,
-		modes,
-		planState,
-		activate = false,
-		syncedTick,
-		options = {},
-	) =>
+	hydrateSession: (summary, hydrated, planState, activate = false, syncedTick, options = {}) =>
 		set((state) => {
 			if (
 				state.removedProjectAreaIds[summary.projectId] ||
@@ -563,7 +544,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 			if (state.sessions[summary.sessionId]) return {};
 			const projectAreaId = summary.projectId;
 			const runtime: SessionRuntime = {
-				...createSessionRuntime(summary.model, summary.thinkingLevel, modes),
+				...createSessionRuntime(summary.model, summary.thinkingLevel),
 				planState,
 				...(summary.parentSessionId ? { parentSessionId: summary.parentSessionId } : {}),
 				configOptions: summary.configOptions ?? [],

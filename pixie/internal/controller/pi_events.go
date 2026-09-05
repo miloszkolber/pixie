@@ -88,6 +88,19 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 	case "replay_message", "message_start":
 		replay := event["type"] == "replay_message"
 		role := textValue(message["role"])
+		if role == "summary" {
+			return extension("native_summary", message)
+		}
+		if role == "plan" {
+			return emit("plan", map[string]any{"entries": message["entries"]})
+		}
+		if role == "custom" && message["display"] != true {
+			return nil
+		}
+		if role == "custom" {
+			message["summaryKind"] = "custom"
+			return extension("native_summary", message)
+		}
 		if role == "toolResult" {
 			if replay {
 				return toolEnd(textValue(message["toolCallId"]), message, message["partial"] != true, message["isError"] == true)
@@ -162,6 +175,12 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 			}
 			return extension("status_message", map[string]any{"status": map[string]any{"type": status}})
 		}
+	case "compaction_start", "compaction_end", "auto_retry_start", "auto_retry_end", "summarization_retry_scheduled", "summarization_retry_finished", "thinking_level_changed":
+		return extension("native_lifecycle", map[string]any{"event": event})
+	case "configuration_changed":
+		return emit("config_option_update", map[string]any{"configOptions": event["configOptions"]})
+	case "session_info_changed":
+		return emit("session_info_update", map[string]any{"title": event["name"]})
 	case "plan":
 		return emit("plan", map[string]any{"entries": event["entries"]})
 	case "extension_error":

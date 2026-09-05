@@ -504,15 +504,7 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, fmt.Errorf("malformed session configuration request")
 		}
 		return ack(h.Sessions.SetConfigOption(ctx, request.SessionID, request.ConfigID, request.Value))
-	case "session.setMode":
-		var request struct {
-			SessionID string `json:"sessionId"`
-			ModeID    string `json:"modeId"`
-		}
-		if h.Sessions == nil || decodeParams(raw, &request) != nil || request.SessionID == "" || request.ModeID == "" {
-			return nil, fmt.Errorf("malformed session request")
-		}
-		return ack(h.Sessions.SetMode(ctx, request.SessionID, request.ModeID))
+
 	case "session.getStats":
 		var request struct {
 			SessionID string `json:"sessionId"`

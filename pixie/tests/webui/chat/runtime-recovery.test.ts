@@ -90,3 +90,35 @@ test("a reply without message IDs continues its hydrated assistant block", () =>
 		{ type: "text", text: "Partial reply complete." },
 	]);
 });
+
+test("native compaction summary has one live turn and retains its content on replay", () => {
+	const message = {
+		role: "assistant" as const,
+		messageId: "summary-1",
+		content: [{ type: "text" as const, text: "Preserved context" }],
+		presentation: { kind: "compaction" as const, summary: "Preserved context", tokensBefore: 4000 },
+	};
+	let runtime = reduceSessionEvent(createSessionRuntime(null, "off"), {
+		type: "compaction_start",
+		reason: "manual",
+	});
+	runtime = reduceSessionEvent(runtime, { type: "message_start", message });
+	runtime = reduceSessionEvent(runtime, {
+		type: "compaction_end",
+		reason: "manual",
+		result: { tokensBefore: 4000, estimatedTokensAfter: 1000 },
+		aborted: false,
+		willRetry: false,
+	});
+	expect(runtime.turns).toHaveLength(1);
+	expect(runtime.turns[0]).toMatchObject({
+		kind: "compaction",
+		status: "done",
+		summary: "Preserved context",
+		tokensBefore: 4000,
+	});
+	expect(messagesToRuntime([message]).turns[0]).toMatchObject({
+		kind: "compaction",
+		summary: "Preserved context",
+	});
+});

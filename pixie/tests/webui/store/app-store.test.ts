@@ -568,7 +568,6 @@ test("missed deletion reconciliation tombstones late hydration", () => {
 			messageCount: 0,
 		},
 		null,
-		null,
 	);
 	expect(appStoreApi.getState().sessions.deleted).toBeUndefined();
 	expect(appStoreApi.getState().tabsByProjectArea.p1).toEqual([]);
@@ -683,19 +682,9 @@ test("mutation responses remain a fallback when their push event was missed", ()
 	expect(appStoreApi.getState().sessions.fallback?.configRevision).toBe(1);
 });
 
-test("mode, config and plan events update live state while a replay replaces them authoritatively", () => {
-	const modes = {
-		currentModeId: "ask",
-		availableModes: [
-			{ id: "ask", name: "Ask" },
-			{ id: "code", name: "Code" },
-		],
-	};
-	appStoreApi.getState().openChatSession("p1", "mode-plan", null, "medium", modes);
+test("config and plan events update live state while a replay replaces them authoritatively", () => {
+	appStoreApi.getState().openChatSession("p1", "mode-plan", null, "medium");
 	appStoreApi.getState().handleAgentEvent({ type: "run-start" }, "mode-plan");
-	appStoreApi
-		.getState()
-		.handleAgentEvent({ type: "current-mode", currentModeId: "code" }, "mode-plan");
 	appStoreApi.getState().handleAgentEvent(
 		{
 			type: "plan",
@@ -705,7 +694,6 @@ test("mode, config and plan events update live state while a replay replaces the
 		},
 		"mode-plan",
 	);
-	expect(appStoreApi.getState().sessions["mode-plan"]?.modes?.currentModeId).toBe("code");
 	appStoreApi
 		.getState()
 		.handleAgentEvent(
@@ -741,10 +729,8 @@ test("mode, config and plan events update live state while a replay replaces the
 			transcript: null,
 			messageCount: 0,
 		},
-		{ currentModeId: "review", availableModes: [{ id: "review", name: "Review" }] },
 		null,
 	);
-	expect(appStoreApi.getState().sessions["mode-plan"]?.modes?.currentModeId).toBe("review");
 	expect(appStoreApi.getState().sessions["mode-plan"]?.planState).toBeNull();
 	expect(appStoreApi.getState().sessions["mode-plan"]?.configOptions).toEqual([
 		{ id: "current-setting", currentValue: "current" },
@@ -782,7 +768,6 @@ test("session hydration restores controller queues and question replies", () => 
 			transcript: null,
 			messageCount: 0,
 		},
-		null,
 		null,
 	);
 	const result = { answers: [], cancelled: true };

@@ -1,19 +1,13 @@
-import type {
-	PiPreferences,
-	PiProviderDefaults,
-	ProviderStatus,
-	WireModel,
-} from "@pixie/contracts";
+import type { PiPreferences, ProviderStatus, WireModel } from "@pixie/contracts";
 
 export const THINKING_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 export function parseCompactionReserveTokens(
-	percent: number | undefined,
+	tokens: number | undefined,
 ): { valid: true; value?: number } | { valid: false } {
-	if (percent === undefined) return { valid: true };
-	if (!Number.isSafeInteger(percent) || percent < 1024 || percent > 1000000)
-		return { valid: false };
-	return { valid: true, value: percent };
+	if (tokens === undefined) return { valid: true };
+	if (!Number.isSafeInteger(tokens) || tokens < 1024 || tokens > 1000000) return { valid: false };
+	return { valid: true, value: tokens };
 }
 
 export function compactionReserveTokensValue(preferences: PiPreferences): number | undefined {
@@ -79,18 +73,6 @@ export function defaultModelSuggestions(
 	);
 }
 
-export function defaultSettingsView(
-	defaults: PiProviderDefaults,
-	providers: readonly ProviderStatus[],
-	models: readonly WireModel[],
-) {
-	return {
-		defaults,
-		providers: defaultProviderChoices(providers),
-		models: defaultModelSuggestions(models, defaults.providerId),
-	};
-}
-
 export function shouldClearAgentEditorAfterMutation(
 	currentEditingId: string | null,
 	mutation: { sequence: number; editingId: string | null },
@@ -102,11 +84,10 @@ export function shouldClearAgentEditorAfterMutation(
 export function agentNameError(value: string): string | null {
 	if (
 		!value.trim() ||
-		value.includes("/") ||
-		value.includes("\\") ||
+		!/^[\p{L}\p{N}_ -]+$/u.test(value.trim()) ||
 		new TextEncoder().encode(value.trim()).byteLength > 80
 	) {
-		return "Use a non-empty agent name of at most 80 UTF-8 bytes without / or \\.";
+		return "Use a non-empty agent name of at most 80 UTF-8 bytes using letters, numbers, spaces, underscores or hyphens.";
 	}
 	return null;
 }

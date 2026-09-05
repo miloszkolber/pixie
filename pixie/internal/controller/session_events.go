@@ -220,16 +220,7 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 		plan := projectSessionPlan(update["entries"])
 		entry.planState = plan
 		return []map[string]any{{"type": "plan", "planState": cloneSessionPlan(plan)}}
-	case "current_mode_update":
-		modeID := textValue(update["currentModeId"])
-		if !validSessionModeID(modeID) {
-			return nil
-		}
-		if !modeAdvertised(entry.modes, modeID) || entry.modes.CurrentModeID == modeID {
-			return nil
-		}
-		entry.modes.CurrentModeID = modeID
-		return []map[string]any{{"type": "current-mode", "currentModeId": modeID}}
+
 	case "agent_thought_chunk":
 		text := textValue(mapValue(update["content"])["text"])
 		appendMessageBlock(entry, "assistant", map[string]any{"type": "thinking", "thinking": text}, textValue(update["messageId"]))
@@ -612,6 +603,32 @@ type messageUsage struct {
 
 func applyPiOnlyUpdate(entry *sessionEntry, kind string, update map[string]any) []map[string]any {
 	switch kind {
+	case "native_lifecycle":
+		event := mapValue(update["event"])
+		switch textValue(event["type"]) {
+		case "compaction_start", "compaction_end", "auto_retry_start", "auto_retry_end", "summarization_retry_scheduled", "summarization_retry_finished", "thinking_level_changed":
+			return []map[string]any{event}
+		}
+	case "native_summary":
+		id := textValue(update["messageId"])
+		for _, message := range entry.messages {
+			if id != "" && mapValue(message)["messageId"] == id {
+				return nil
+			}
+		}
+		summary := textValue(update["summary"])
+		content := update["content"]
+		if summary != "" {
+			content = []any{map[string]any{"type": "text", "text": summary}}
+		}
+		if value, ok := content.(string); ok {
+			content = []any{map[string]any{"type": "text", "text": value}}
+		}
+		message := map[string]any{"role": "assistant", "messageId": id, "content": content, "presentation": map[string]any{"kind": update["summaryKind"], "summary": summary, "tokensBefore": update["tokensBefore"]}}
+		entry.messages = append(entry.messages, message)
+		entry.stats.TotalMessages = len(entry.messages)
+		return []map[string]any{{"type": "message_start", "message": message}}
+
 	case "message_usage":
 		usage := mapValue(update["usage"])
 		input := integerValue(usage["inputTokens"])

@@ -74,7 +74,6 @@ func (m *SessionManager) messageSnapshot(ctx context.Context, sessionID, project
 		"messages":     resultMessages,
 		"pendingTools": pendingToolPreviewsLocked(entry),
 		"commands":     cloneSlashCommands(entry.commands),
-		"modes":        cloneSessionModes(entry.modes),
 		"planState":    cloneSessionPlan(entry.planState),
 		"page":         page,
 	}

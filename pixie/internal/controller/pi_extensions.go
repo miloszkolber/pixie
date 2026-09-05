@@ -94,7 +94,7 @@ func (a *PiAdmin) Handle(ctx context.Context, method string, raw json.RawMessage
 		return a.extensionCatalog(ctx)
 	case "session.extensionList", "session.extensionAdd", "session.extensionRemove", "session.toolList":
 		return a.sessionAdministration(ctx, method, request)
-	case "pi.agentList", "pi.agentCreate", "pi.agentUpdate", "pi.agentDelete":
+	case "pi.capabilities", "pi.agentList", "pi.agentCreate", "pi.agentUpdate", "pi.agentDelete":
 		return a.handleAgents(ctx, method, request)
 	case "skill.list", "session.getCommands", "session.getAgentMentions":
 		return a.completions(ctx, method, request)

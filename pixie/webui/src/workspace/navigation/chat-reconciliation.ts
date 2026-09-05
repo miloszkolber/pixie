@@ -71,7 +71,7 @@ export function hydrateChatResource(
 		.request("session.getMessages", { projectId: projectAreaId, sessionId })
 		.then((response) => {
 			if (response.kind !== "snapshot") throw new Error("invalid chat snapshot");
-			const { summary, messages, pendingTools, commands, modes, planState, page } = response;
+			const { summary, messages, pendingTools, commands, planState, page } = response;
 			const current = appStoreApi.getState();
 			if (!isConnectedGeneration(current, generation)) return false;
 			if (
@@ -92,9 +92,9 @@ export function hydrateChatResource(
 			});
 			if (current.sessions[sessionId]) {
 				if (!chatTab(current, projectAreaId, sessionId)) return false;
-				current.replaceTranscriptSnapshot(sessionId, summary, hydrated, modes, planState);
+				current.replaceTranscriptSnapshot(sessionId, summary, hydrated, planState);
 			} else {
-				current.hydrateSession(summary, hydrated, modes, planState, false, undefined, {
+				current.hydrateSession(summary, hydrated, planState, false, undefined, {
 					activate: false,
 				});
 			}

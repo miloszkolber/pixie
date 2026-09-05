@@ -31,9 +31,8 @@ test("plan helpers preserve progress, status, and empty-truncated labels", () =>
 	);
 });
 
-test("session mode and plan Svelte controls retain safe accessible markup", async () => {
+test("session plan Svelte controls retain safe accessible markup", async () => {
 	const paths = [
-		"session-mode-control.svelte",
 		"plan-status-icon.svelte",
 		"session-plan-content.svelte",
 		"session-plan-control.svelte",
@@ -49,14 +48,8 @@ test("session mode and plan Svelte controls retain safe accessible markup", asyn
 			compile(source, { filename: new URL(path, sessionRoot).pathname, generate: false }).warnings,
 		).toEqual([]);
 	}
-	const mode = sources[0] as string;
-	expect(mode).toContain('data-testid="session-mode-trigger"');
-	expect(mode).toContain('aria-label="Session mode"');
-	expect(mode).toContain("aria-describedby={currentMode?.description ? descriptionId : undefined}");
-	expect(mode).toContain("title={currentMode?.description");
-	expect(mode).toContain("requestedModeId === modes?.currentModeId");
 
-	const content = sources[2] as string;
+	const content = sources[1] as string;
 	expect(content).toContain('data-testid="session-plan-content"');
 	expect(content).toContain("{progress.completed} of {progress.total} complete");
 	expect(content).toContain("{planStatusLabel(entry.status)}: ");
@@ -65,7 +58,7 @@ test("session mode and plan Svelte controls retain safe accessible markup", asyn
 	expect(content).not.toContain("{@html");
 	expect(content).toContain("{#if hasEntries}\n\t\t<ol");
 
-	const control = sources[3] as string;
+	const control = sources[2] as string;
 	expect(control).toContain('data-testid="session-plan-trigger"');
 	expect(control).toContain("sessionPlanLabel(planState)");
 	expect(control).toContain('"Limited"');

@@ -106,7 +106,6 @@ test("reconnect replay replaces an optimistic text attachment without retaining 
 		},
 		hydrated,
 		null,
-		null,
 	);
 	const turns = appStoreApi.getState().sessions[sessionId]?.turns ?? [];
 	expect(turns).toHaveLength(1);

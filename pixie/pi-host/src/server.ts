@@ -21,6 +21,7 @@ export interface HostOptions {
 }
 interface Peer {
 	sessions: Set<string>;
+	attachments: Map<string, { params: RecordValue; entry: WeakRef<ManagedSession> }>;
 	logins: Set<string>;
 	active: Set<number>;
 	loading: Map<string, { messages: RecordValue[]; bytes: number }>;
@@ -56,7 +57,7 @@ async function startUnlockedHost(options: HostOptions) {
 							sessionId: entry.session.sessionId,
 							content: [{ type: "text", text }],
 						}),
-					close: async () => {},
+					close: () => sessions.release(entry.session.sessionId),
 				};
 			}),
 		plans,
@@ -68,6 +69,8 @@ async function startUnlockedHost(options: HostOptions) {
 	const identity = serviceStore<{ id: string }>(agentDir, "identity", () => ({ id: randomUUID() }));
 	const runtimeId = await identity.update((s) => s.id);
 	const peers = new Set<ServerWebSocket<Peer>>();
+	let stopping = false;
+	const inflight = new Set<Promise<unknown>>();
 	const send = (peer: ServerWebSocket<Peer>, value: unknown) => {
 		const data = JSON.stringify(value);
 		if (Buffer.byteLength(data) > 32 * 1024 * 1024) {
@@ -155,29 +158,46 @@ async function startUnlockedHost(options: HostOptions) {
 				required(p.cwd, "project"),
 				method === "session.fork" ? required(p.sessionId, "session") : undefined,
 			);
-			await attach(entry, p);
+			entry.refs++;
+			try {
+				await attach(entry, p);
+			} finally {
+				entry.refs--;
+			}
+			peer.data.attachments.set(entry.session.sessionId, { params: p, entry: new WeakRef(entry) });
 			peer.data.sessions.add(entry.session.sessionId);
 			return sessions.snapshot(entry);
 		}
 		if (text(p.sessionId)) {
-			const entry = await sessions.get(text(p.sessionId), text(p.cwd) || undefined);
-			if (method === "session.load") {
-				await attach(entry, p);
-				peer.data.sessions.add(entry.session.sessionId);
-				return sessions.snapshot(entry, true);
-			}
-			if (
-				!peer.data.sessions.has(entry.session.sessionId) &&
-				method !== "pi.session.info" &&
-				method !== "session.delete"
-			)
-				throw new Error("Attach the session before using it");
-			if (method === "pi.slash-commands.list")
-				return { availableCommands: sessions.commands(entry) };
-			return sessions.call(method, p);
+			return sessions.use(text(p.sessionId), text(p.cwd) || undefined, async (entry) => {
+				if (method === "session.load") {
+					await attach(entry, p);
+					peer.data.attachments.set(entry.session.sessionId, {
+						params: p,
+						entry: new WeakRef(entry),
+					});
+					peer.data.sessions.add(entry.session.sessionId);
+					return sessions.snapshot(entry, true);
+				}
+				if (
+					!peer.data.sessions.has(entry.session.sessionId) &&
+					method !== "pi.session.info" &&
+					method !== "session.delete"
+				)
+					throw new Error("Attach the session before using it");
+				if (method === "pi.slash-commands.list")
+					return { availableCommands: sessions.commands(entry) };
+				const attachment = peer.data.attachments.get(entry.session.sessionId);
+				if (attachment && attachment.entry.deref() !== entry) {
+					await attach(entry, attachment.params);
+					attachment.entry = new WeakRef(entry);
+				}
+				return sessions.call(method, p);
+			});
 		}
 		if (method === "session.list") return sessions.list(text(p.cursor));
 		if (
+			method === "runtime.capabilities" ||
 			method === "pi.slash-commands.list" ||
 			method.startsWith("pi.sources.") ||
 			method === "pi.agent-mentions.list"
@@ -185,6 +205,7 @@ async function startUnlockedHost(options: HostOptions) {
 			const cwd = text(p.cwd) || text(p.projectDir) || text(object(p.target).projectDir);
 			const entry = cwd ? await sessions.control(cwd) : control;
 			try {
+				if (method === "runtime.capabilities") return capabilitySnapshot(entry);
 				if (method === "pi.slash-commands.list")
 					return { availableCommands: sessions.commands(entry) };
 				return await entry.capabilities.call(method, p, sessions.context(entry));
@@ -218,7 +239,13 @@ async function startUnlockedHost(options: HostOptions) {
 				if (
 					url.pathname === "/pi" &&
 					server.upgrade(request, {
-						data: { sessions: new Set(), logins: new Set(), active: new Set(), loading: new Map() },
+						data: {
+							sessions: new Set(),
+							attachments: new Map(),
+							logins: new Set(),
+							active: new Set(),
+							loading: new Map(),
+						},
 					})
 				)
 					return;
@@ -232,6 +259,10 @@ async function startUnlockedHost(options: HostOptions) {
 					peers.add(peer);
 				},
 				message(peer, raw) {
+					if (stopping) {
+						peer.close(1001, "Service stopping");
+						return;
+					}
 					let request: RecordValue;
 					try {
 						request = object(JSON.parse(String(raw)));
@@ -266,7 +297,7 @@ async function startUnlockedHost(options: HostOptions) {
 						for (const message of buffered)
 							if (Number(object(message.params).sequence) > sequence) send(peer, message);
 					};
-					void dispatch(method, params, peer)
+					const operation = dispatch(method, params, peer)
 						.then(
 							(result) => {
 								const snapshot = object(result);
@@ -312,6 +343,8 @@ async function startUnlockedHost(options: HostOptions) {
 							},
 						)
 						.finally(() => peer.data.active.delete(id));
+					inflight.add(operation);
+					void operation.finally(() => inflight.delete(operation)).catch(() => {});
 				},
 				close(peer) {
 					peers.delete(peer);
@@ -331,11 +364,14 @@ async function startUnlockedHost(options: HostOptions) {
 		control,
 		capabilities: capabilitySnapshot(),
 		close: async () => {
+			stopping = true;
+			const stopped = server.stop(true);
 			for (const peer of peers) peer.close(1001, "Service stopping");
 			providers.close();
 			await sessions.close();
 			await control.close();
-			await server.stop(true);
+			await Promise.allSettled(inflight);
+			await stopped;
 		},
 	};
 }

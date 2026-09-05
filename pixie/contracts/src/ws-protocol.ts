@@ -8,7 +8,6 @@ import type {
 	PendingToolPreview,
 	QueueLane,
 	RefreshedModels,
-	SessionModeState,
 	SessionPlanState,
 	SessionStats,
 	SessionSummary,
@@ -108,7 +107,6 @@ export const WS_METHODS = {
 	sessionUnarchive: "session.unarchive",
 	sessionSetModel: "session.setModel",
 	sessionSetThinkingLevel: "session.setThinkingLevel",
-	sessionSetMode: "session.setMode",
 	sessionSetConfigOption: "session.setConfigOption",
 	sessionGetStats: "session.getStats",
 	sessionGetCommands: "session.getCommands",
@@ -139,6 +137,7 @@ export const WS_METHODS = {
 	piDefaultsRead: "pi.defaultsRead",
 	piDefaultsSave: "pi.defaultsSave",
 	piDefaultsClear: "pi.defaultsClear",
+	piCapabilities: "pi.capabilities",
 	piAgentList: "pi.agentList",
 	piAgentCreate: "pi.agentCreate",
 	piAgentUpdate: "pi.agentUpdate",
@@ -205,7 +204,6 @@ export type SessionMessagesResult =
 			messages: TranscriptMessage[];
 			pendingTools: PendingToolPreview[];
 			commands: SlashCommandInfo[];
-			modes: SessionModeState | null;
 			planState: SessionPlanState | null;
 			page: TranscriptPage;
 	  }
@@ -261,7 +259,6 @@ export interface WsMethodMap {
 			model: WireModel | null;
 			thinkingLevel: ThinkingLevel;
 			commands: SlashCommandInfo[];
-			modes: SessionModeState | null;
 		};
 	};
 	"session.fork": {
@@ -313,7 +310,6 @@ export interface WsMethodMap {
 		params: { sessionId: string; configId: string; value: string };
 		result: Ack;
 	};
-	"session.setMode": { params: { sessionId: string; modeId: string }; result: Ack };
 	"session.getStats": { params: { sessionId: string }; result: SessionStats };
 	"session.getCommands": { params: { sessionId: string }; result: SlashCommandInfo[] };
 	"session.getAgentMentions": {
@@ -432,9 +428,13 @@ export interface WsMethodMap {
 		result: PiProviderDefaults;
 	};
 	"pi.defaultsClear": { params: Record<string, never>; result: PiProviderDefaults };
+	"pi.capabilities": {
+		params: { projectId?: string; root?: string };
+		result: Record<string, number>;
+	};
 	"pi.agentList": {
 		params: { projectId?: string; root?: string };
-		result: PiAgentCatalogEntry[];
+		result: { agents: PiAgentCatalogEntry[]; warnings: string[] };
 	};
 	"pi.agentCreate": {
 		params: {

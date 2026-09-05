@@ -55,7 +55,7 @@ export async function openChatInTab(
 			projectId: projectAreaId,
 		});
 		if (response.kind !== "snapshot") throw new Error("invalid chat snapshot");
-		const { summary, messages, pendingTools, commands, modes, planState, page } = response;
+		const { summary, messages, pendingTools, commands, planState, page } = response;
 		const current = appStoreApi.getState();
 		if (
 			!current.projects.some((project) => project.id === projectId) ||
@@ -81,7 +81,6 @@ export async function openChatInTab(
 				page,
 				isStreaming: summary.isStreaming,
 			}),
-			modes,
 			planState,
 			!background,
 			undefined,

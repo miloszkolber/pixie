@@ -6,20 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/coder/websocket"
 	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 )
 
 const (
-	defaultPiURL         = "ws://127.0.0.1:3284/pi"
-	defaultPiTimeout     = 30 * time.Second
-	maxAgentNameRunes    = 128
-	maxAgentVersionRunes = 64
+	defaultPiURL     = "ws://127.0.0.1:3284/pi"
+	defaultPiTimeout = 30 * time.Second
 	// Matches the Web UI socket ceiling and accommodates a maximally escaped
 	// App resource plus its bounded JSON-RPC envelope.
 	piReadLimit = 32 * 1024 * 1024
@@ -254,31 +250,6 @@ func cloneAgentProfile(profile AgentProfile) AgentProfile {
 	return profile
 }
 
-func boundedAgentText(value string, limit int) string {
-	value = strings.TrimSpace(value)
-	runes := make([]rune, 0, min(len(value), limit))
-	for _, character := range value {
-		if unicode.IsControl(character) || unicode.Is(unicode.Cf, character) {
-			continue
-		}
-		runes = append(runes, character)
-		if len(runes) == limit {
-			break
-		}
-	}
-	return string(runes)
-}
-
-func agentProfileIdentityDigest(name, version string, operations AgentOperations) string {
-	encoded, _ := json.Marshal(struct {
-		Name       string          `json:"name"`
-		Version    string          `json:"version"`
-		Operations AgentOperations `json:"operations"`
-	}{Name: name, Version: version, Operations: operations})
-	digest := sha256.Sum256(encoded)
-	return fmt.Sprintf("%x", digest)
-}
-
 // deletionAgentBinding binds a recoverable delete to both the logical agent
 // and the exact endpoint configuration that authenticated it. Only the digest
 // is persisted; endpoint credentials never leave PiClient.
@@ -331,9 +302,7 @@ func (c *PiClient) ListSessions(ctx context.Context, request piwire.ListSessions
 	if err != nil {
 		return piwire.ListSessionsResponse{}, err
 	}
-	if !hasAgentCapability(connection.profile, "session.list") {
-		return piwire.ListSessionsResponse{}, unsupportedAgentCapability("session.list")
-	}
+
 	bounded, cancel := c.bounded(ctx)
 	defer cancel()
 	return connection.client.ListSessions(bounded, request)
@@ -354,25 +323,23 @@ func (c *PiClient) LoadSession(ctx context.Context, request piwire.LoadSessionRe
 	if err != nil {
 		return piwire.LoadSessionResponse{}, err
 	}
-	if !hasAgentCapability(connection.profile, "session.load") {
-		return piwire.LoadSessionResponse{}, unsupportedAgentCapability("session.load")
-	}
+
 	bounded, cancel := c.bounded(ctx)
 	defer cancel()
 	return connection.client.LoadSession(bounded, request)
 }
 
-func (c *PiClient) ForkSession(ctx context.Context, request piwire.UnstableForkSessionRequest) (piwire.UnstableForkSessionResponse, error) {
+func (c *PiClient) ForkSession(ctx context.Context, request piwire.LoadSessionRequest) (piwire.NewSessionResponse, error) {
 	connection, _, err := c.ready(ctx)
 	if err != nil {
-		return piwire.UnstableForkSessionResponse{}, err
+		return piwire.NewSessionResponse{}, err
 	}
 	if !connection.profile.Operations.ForkSession {
-		return piwire.UnstableForkSessionResponse{}, unsupportedAgentCapability("session.fork")
+		return piwire.NewSessionResponse{}, unsupportedAgentCapability("session.fork")
 	}
 	bounded, cancel := c.bounded(ctx)
 	defer cancel()
-	return connection.client.UnstableForkSession(bounded, request)
+	return connection.client.ForkSession(bounded, request)
 }
 
 func (c *PiClient) DeleteSession(ctx context.Context, sessionID string) error {
@@ -401,15 +368,6 @@ func (c *PiClient) Prompt(ctx context.Context, request piwire.PromptRequest) (pi
 		return piwire.PromptResponse{}, unsupportedAgentCapability("text resource prompts")
 	}
 	return connection.client.Prompt(ctx, request)
-}
-
-func hasAgentCapability(profile AgentProfile, method string) bool {
-	for _, missing := range profile.MissingRequired {
-		if missing == method {
-			return false
-		}
-	}
-	return true
 }
 
 func promptContainsImage(request piwire.PromptRequest) bool {
@@ -452,17 +410,6 @@ func (c *PiClient) SetConfig(ctx context.Context, request piwire.SetSessionConfi
 	bounded, cancel := c.bounded(ctx)
 	defer cancel()
 	return connection.client.SetSessionConfigOption(bounded, request)
-}
-
-func (c *PiClient) SetMode(ctx context.Context, request piwire.SetSessionModeRequest) error {
-	connection, _, err := c.ready(ctx)
-	if err != nil {
-		return err
-	}
-	bounded, cancel := c.bounded(ctx)
-	defer cancel()
-	_, err = connection.client.SetSessionMode(bounded, request)
-	return err
 }
 
 func (c *PiClient) Close() {
@@ -641,14 +588,7 @@ func (r *piRPC) read() {
 			if err := projectPiEvent(ctx, r.events, reply.Params); err != nil {
 				return
 			}
-		} else if reply.Method == "session.update" {
-			var n piwire.SessionNotification
-			if json.Unmarshal(reply.Params, &n) != nil {
-				return
-			}
-			if r.events.SessionUpdate(ctx, n) != nil {
-				return
-			}
+
 		} else if err := r.events.Extension(ctx, reply.Method, reply.Params); err != nil {
 			return
 		}
@@ -716,7 +656,7 @@ func (r *piRPC) LoadSession(ctx context.Context, req piwire.LoadSessionRequest) 
 
 	return
 }
-func (r *piRPC) UnstableForkSession(ctx context.Context, req piwire.UnstableForkSessionRequest) (res piwire.UnstableForkSessionResponse, err error) {
+func (r *piRPC) ForkSession(ctx context.Context, req piwire.LoadSessionRequest) (res piwire.NewSessionResponse, err error) {
 	err = r.call(ctx, "session.fork", req, &res)
 	return
 }
@@ -726,9 +666,5 @@ func (r *piRPC) Prompt(ctx context.Context, req piwire.PromptRequest) (res piwir
 }
 func (r *piRPC) SetSessionConfigOption(ctx context.Context, req piwire.SetSessionConfigOptionRequest) (res piwire.SetSessionConfigOptionResponse, err error) {
 	err = r.call(ctx, "session.configure", req, &res)
-	return
-}
-func (r *piRPC) SetSessionMode(ctx context.Context, req piwire.SetSessionModeRequest) (res map[string]any, err error) {
-	err = r.call(ctx, "session.setMode", req, &res)
 	return
 }

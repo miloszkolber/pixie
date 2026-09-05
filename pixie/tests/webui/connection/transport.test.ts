@@ -224,14 +224,12 @@ describe("WsTransport reconnect delivery", () => {
 				model: null,
 				thinkingLevel: "off",
 				commands: [],
-				modes: null,
 			};
 			const newResult = {
 				sessionId: "new",
 				model: null,
 				thinkingLevel: "off",
 				commands: [],
-				modes: null,
 			};
 			newSocket?.message(JSON.stringify({ id: oldId, ok: true, result: oldResult }));
 			await tick(0);

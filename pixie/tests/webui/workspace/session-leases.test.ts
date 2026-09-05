@@ -168,7 +168,6 @@ test("a reconnect refresh completes every chat batch after its project view unsu
 				messages: [],
 				pendingTools: [],
 				commands: [],
-				modes: null,
 				planState: null,
 				page: { projectionId: sessionId, start: 0, total: 0 },
 			});
@@ -230,7 +229,6 @@ test("late hydration respects chat and project closure while allowing an explici
 		messages: [],
 		pendingTools: [],
 		commands: [],
-		modes: null,
 		planState: null,
 		page: { projectionId: "projection", start: 0, total: 0 },
 	};

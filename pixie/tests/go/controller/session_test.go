@@ -79,7 +79,7 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 				result = initialize
 			case "session.load":
 				for _, loadUpdate := range loadUpdates {
-					method := "session.update"
+					method := "session.event"
 					if loadUpdate["__piOnly"] == true {
 						method = "pi.session.update"
 						loadUpdate = maps.Clone(loadUpdate)
@@ -87,7 +87,7 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 					}
 					if writeRPC(connection, map[string]any{
 						"jsonrpc": "2.0", "method": method,
-						"params": map[string]any{"sessionId": "chat", "update": loadUpdate},
+						"params": fixtureNotification(method, "chat", loadUpdate),
 					}) != nil {
 						return
 					}
@@ -342,7 +342,7 @@ func TestTextResourceEchoDoesNotDuplicateOptimisticMarkers(t *testing.T) {
 		{"sessionUpdate": "user_message_chunk", "content": map[string]any{"type": "resource", "resource": map[string]any{"uri": "pixie://attachment/review.ts", "mimeType": "text/x-typescript", "text": resources[0].Text}}},
 		{"sessionUpdate": "user_message_chunk", "content": map[string]any{"type": "resource", "resource": map[string]any{"uri": "pixie://attachment/notes.md", "mimeType": "text/markdown", "text": resources[1].Text}}},
 	} {
-		if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "method": "session.update", "params": map[string]any{"sessionId": "chat", "update": update}}); err != nil {
+		if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "method": "session.event", "params": fixtureNotification("session.event", "chat", update)}); err != nil {
 			t.Fatal(err)
 		}
 	}

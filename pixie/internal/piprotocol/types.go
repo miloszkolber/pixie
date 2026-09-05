@@ -7,7 +7,6 @@ import "encoding/json"
 type SessionId = string
 type SessionConfigId = string
 type SessionConfigValueId = string
-type SessionModeId = string
 
 type RequestError struct {
 	Code    int    `json:"code"`
@@ -30,9 +29,6 @@ type McpServer struct{ Http *McpServerHttpInline }
 
 func (s McpServer) MarshalJSON() ([]byte, error) { return json.Marshal(s.Http) }
 
-type UnstableMcpServer = McpServer
-type UnstableMcpServerHttp = McpServerHttpInline
-
 type NewSessionRequest struct {
 	Cwd        string         `json:"cwd"`
 	McpServers []McpServer    `json:"mcpServers"`
@@ -45,18 +41,15 @@ type LoadSessionRequest struct {
 	Meta       map[string]any `json:"metadata,omitempty"`
 }
 type NewSessionResponse struct {
-	Capabilities  map[string]int    `json:"capabilities"`
-	SessionId     string            `json:"sessionId"`
-	ConfigOptions []map[string]any  `json:"configOptions"`
-	Modes         *SessionModeState `json:"modes,omitempty"`
-	Meta          map[string]any    `json:"metadata,omitempty"`
-	Messages      []map[string]any  `json:"messages,omitempty"`
-	Commands      []map[string]any  `json:"commands,omitempty"`
-	RunID         string            `json:"runId,omitempty"`
+	Capabilities  map[string]int   `json:"capabilities"`
+	SessionId     string           `json:"sessionId"`
+	ConfigOptions []map[string]any `json:"configOptions"`
+	Meta          map[string]any   `json:"metadata,omitempty"`
+	Messages      []map[string]any `json:"messages,omitempty"`
+	Commands      []map[string]any `json:"commands,omitempty"`
+	RunID         string           `json:"runId,omitempty"`
 }
 type LoadSessionResponse = NewSessionResponse
-type UnstableForkSessionRequest = LoadSessionRequest
-type UnstableForkSessionResponse = NewSessionResponse
 
 type SessionInfo struct {
 	SessionId string         `json:"sessionId"`
@@ -146,19 +139,6 @@ func (r SetSessionConfigOptionRequest) MarshalJSON() ([]byte, error) { return js
 
 type SetSessionConfigOptionResponse struct {
 	ConfigOptions []map[string]any `json:"configOptions"`
-}
-type SetSessionModeRequest struct {
-	SessionId string `json:"sessionId"`
-	ModeId    string `json:"modeId"`
-}
-type SessionMode struct {
-	Id          string  `json:"id"`
-	Name        string  `json:"name"`
-	Description *string `json:"description,omitempty"`
-}
-type SessionModeState struct {
-	CurrentModeId  string        `json:"currentModeId"`
-	AvailableModes []SessionMode `json:"availableModes"`
 }
 type SessionNotification struct {
 	SessionId string         `json:"sessionId"`

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 type piAgentSource struct {
@@ -28,8 +29,11 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 			return nil, err
 		}
 	}
+	if method == "pi.capabilities" {
+		return a.objectCall(ctx, "runtime.capabilities", map[string]any{"projectDir": projectDir})
+	}
 	if method == "pi.agentList" {
-		sources, err := a.agentSources(ctx, projectDir)
+		sources, warnings, err := a.agentSources(ctx, projectDir)
 		if err != nil {
 			return nil, err
 		}
@@ -42,7 +46,7 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 				break
 			}
 		}
-		return entries, nil
+		return map[string]any{"agents": entries, "warnings": warnings}, nil
 	}
 	a.agentMu.Lock()
 	defer a.agentMu.Unlock()
@@ -56,7 +60,7 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 		if err != nil {
 			return nil, err
 		}
-		sources, err := a.agentSources(ctx, projectDir)
+		sources, _, err := a.agentSources(ctx, projectDir)
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +118,7 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 		action = "create"
 	} else if _, changed := request["modelId"]; changed {
 		properties := source.properties
-		delete(properties, "model")
+		properties["model"] = nil
 		if model != "" {
 			properties["model"] = model
 		}
@@ -135,24 +139,26 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 	return entry, nil
 }
 
-func (a *PiAdmin) agentSources(ctx context.Context, projectDir string) ([]piAgentSource, error) {
+func (a *PiAdmin) agentSources(ctx context.Context, projectDir string) ([]piAgentSource, []any, error) {
 	params := map[string]any{"type": "agent", "includeProjectSources": false}
 	if projectDir != "" {
 		params["projectDir"] = projectDir
 	}
 	response, err := a.objectCall(ctx, "pi.sources.list", params)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't load Pi agents")
+		return nil, nil, fmt.Errorf("couldn't load Pi agents")
 	}
+	warnings := append([]any{}, arrayValue(response["warnings"])...)
 	result := make([]piAgentSource, 0)
 	for _, value := range arrayValue(response["sources"]) {
 		source, err := parseAgentSource(value)
 		if err != nil {
-			return nil, err
+			warnings = append(warnings, "Pi returned an invalid agent source")
+			continue
 		}
 		result = append(result, source)
 	}
-	return result, nil
+	return result, warnings, nil
 }
 
 func parseAgentSource(value any) (piAgentSource, error) {
@@ -221,8 +227,12 @@ func agentText(value any, label string, maxBytes int, allowEmpty bool) (string, 
 
 func agentName(value any) (string, error) {
 	name, err := agentText(value, "name", 80, false)
-	if err == nil && strings.ContainsAny(name, "/\\") {
-		err = fmt.Errorf("agent name is invalid")
+	if err == nil {
+		for _, r := range name {
+			if !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != ' ' && r != '_' && r != '-' {
+				return "", fmt.Errorf("agent name must use letters, numbers, spaces, underscores or hyphens")
+			}
+		}
 	}
 	return name, err
 }

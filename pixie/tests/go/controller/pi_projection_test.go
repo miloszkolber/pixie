@@ -7,8 +7,12 @@ import (
 )
 
 func TestPiInitialToolPayload(t *testing.T) {
+	tool := map[string]any{"type": "toolCall", "id": "review-tool", "name": "read", "arguments": map[string]any{"path": "a"}}
+	assistant := map[string]any{"role": "assistant", "content": []any{tool}}
+	resultMessage := map[string]any{"role": "toolResult", "toolCallId": "review-tool", "content": []any{map[string]any{"type": "text", "text": "review-initial-output"}}}
 	m, _, p, _ := newSessionManager(t, []map[string]any{
-		{"sessionUpdate": "tool_call", "toolCallId": "review-tool", "title": "Read file", "kind": "read", "status": "completed", "rawInput": map[string]any{"path": "a"}, "content": []any{map[string]any{"type": "content", "content": map[string]any{"type": "text", "text": "review-initial-output"}}}},
+		{"__native": map[string]any{"type": "replay_message", "message": assistant}},
+		{"__native": map[string]any{"type": "replay_message", "message": resultMessage}},
 	}, nil)
 	result, err := m.Messages(t.Context(), "chat", p.ID, p.Roots[0], "review")
 	if err != nil {
@@ -20,10 +24,9 @@ func TestPiInitialToolPayload(t *testing.T) {
 	}
 }
 
-func TestPiToolInputPatch(t *testing.T) {
+func TestPiNativeToolInput(t *testing.T) {
 	m, _, p, _ := newSessionManager(t, []map[string]any{
-		{"sessionUpdate": "tool_call", "toolCallId": "review-tool", "title": "Preparing", "status": "pending"},
-		{"sessionUpdate": "tool_call_update", "toolCallId": "review-tool", "title": "Read actual file", "rawInput": map[string]any{"path": "review-late-input"}, "status": "in_progress"},
+		{"__native": map[string]any{"type": "tool_execution_start", "toolCallId": "review-tool", "toolName": "read", "args": map[string]any{"path": "review-late-input"}}},
 	}, nil)
 	result, err := m.Messages(t.Context(), "chat", p.ID, p.Roots[0], "review")
 	if err != nil {
@@ -31,7 +34,7 @@ func TestPiToolInputPatch(t *testing.T) {
 	}
 	raw, _ := json.Marshal(result)
 	if !strings.Contains(string(raw), "review-late-input") {
-		t.Fatalf("updated tool input is lost: %s", raw)
+		t.Fatalf("native tool input is lost: %s", raw)
 	}
 }
 

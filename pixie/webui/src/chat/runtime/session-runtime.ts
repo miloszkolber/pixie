@@ -4,7 +4,6 @@ import type {
 	AssistantMessage,
 	SessionConfigOption,
 	SessionGoal,
-	SessionModeState,
 	SessionPlanState,
 	SessionQueueState,
 	SessionStats,
@@ -35,7 +34,6 @@ export interface SessionRuntime {
 	queue: SessionQueueState;
 	model: WireModel | null;
 	thinkingLevel: ThinkingLevel;
-	modes: SessionModeState | null;
 	planState: SessionPlanState | null;
 	stats: SessionStats | null;
 	commands: SlashCommandInfo[];
@@ -63,7 +61,6 @@ const EMPTY_QUEUE: SessionQueueState = { steering: [], followUp: [] };
 export function createSessionRuntime(
 	model: WireModel | null,
 	thinkingLevel: ThinkingLevel,
-	modes: SessionModeState | null = null,
 ): SessionRuntime {
 	return {
 		configOptions: [],
@@ -78,7 +75,6 @@ export function createSessionRuntime(
 		queue: EMPTY_QUEUE,
 		model,
 		thinkingLevel,
-		modes,
 		planState: null,
 		stats: null,
 		commands: [],
@@ -150,9 +146,15 @@ function settleCompactionTurn(
 	event: Extract<AgentEvent, { type: "compaction_end" }>,
 ): ChatTurn[] {
 	const outcome = compactionOutcome(event);
-	const index = turns.findLastIndex((t) => t.kind === "compaction" && t.status === "running");
+	const index = turns.findLastIndex(
+		(t) =>
+			t.kind === "compaction" &&
+			(t.status === "running" ||
+				(t.summary !== undefined && t.tokensBefore === event.result?.tokensBefore)),
+	);
+
 	if (index < 0) return [...turns, { kind: "compaction", id: randomId("turn"), ...outcome }];
-	return turns.map((t, i) => (i === index ? { kind: "compaction", id: t.id, ...outcome } : t));
+	return turns.map((t, i) => (i === index ? { ...t, ...outcome } : t));
 }
 
 type RetrySource = Extract<ChatTurn, { kind: "retry" }>["source"];
@@ -449,8 +451,7 @@ export function reduceSessionEvent(rt: SessionRuntime, event: AgentEvent): Sessi
 			return { ...rt, isStreaming: true, attemptAssistantId: null };
 		case "commands":
 			return { ...rt, commands: event.commands, commandRevision: rt.commandRevision + 1 };
-		case "current-mode":
-			return rt.modes ? { ...rt, modes: { ...rt.modes, currentModeId: event.currentModeId } } : rt;
+
 		case "plan":
 			return { ...rt, planState: event.planState };
 		case "queue_update":
@@ -464,6 +465,40 @@ export function reduceSessionEvent(rt: SessionRuntime, event: AgentEvent): Sessi
 				},
 			};
 		case "message_start": {
+			if (event.message.role === "assistant" && event.message.presentation) {
+				const p = event.message.presentation;
+				const id = event.message.messageId || randomId("turn");
+				if (rt.turns.some((t) => t.id === id)) return rt;
+				const turn: ChatTurn =
+					p.kind === "compaction"
+						? {
+								kind: "compaction",
+								id,
+								status: "done",
+								summary: p.summary ?? "",
+								tokensBefore: p.tokensBefore ?? 0,
+							}
+						: {
+								kind: "system",
+								id,
+								text:
+									p.summary ||
+									event.message.content
+										.filter((b) => b.type === "text")
+										.map((b) => b.text)
+										.join("\n"),
+							};
+				return {
+					...rt,
+					turns: [
+						...rt.turns.filter(
+							(t) =>
+								!(p.kind === "compaction" && t.kind === "compaction" && t.status === "running"),
+						),
+						turn,
+					],
+				};
+			}
 			if (event.message.role === "assistant")
 				return {
 					...rt,

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join as joinPath } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import {
@@ -20,6 +21,11 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 		);
 		mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 			tools: [
+				{
+					name: "alpha__beta",
+					description: "Separator tool",
+					inputSchema: { type: "object" },
+				},
 				{
 					name: "show",
 					description: "Show fixture",
@@ -73,6 +79,13 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 			ctx,
 		);
 		expect(entry.session.getActiveToolNames()).toContain("fixture__show");
+		expect(
+			await entry.capabilities.call(
+				"pi.tools.call",
+				{ extensionName: "fixture", toolName: "alpha__beta" },
+				ctx,
+			),
+		).toMatchObject({ isError: false });
 		expect(entry.session.getActiveToolNames()).toContain("bash");
 		const tool = entry.session.agent.state.tools.find((t) => t.name === "fixture__show")!;
 		const result = await tool.execute("test-call", {}, new AbortController().signal);
@@ -97,6 +110,22 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 		expect(await entry.capabilities.call("pi.session.extensions.list", {}, ctx)).toMatchObject({
 			extensions: [{ extensionKey: "fixture", extension: { type: "mcp" } }],
 		});
+		await expect(
+			entry.capabilities.call(
+				"pi.session.extensions.add",
+				{
+					extension: {
+						name: "fixture",
+						url: `http://127.0.0.1:${rotated.http.port}/mcp`,
+						headers: { "X-Fixture": "wrong" },
+					},
+				},
+				ctx,
+			),
+		).rejects.toThrow();
+		expect(
+			await tool.execute("after-failed-replacement", {}, new AbortController().signal),
+		).toMatchObject({ content: [{ type: "text", text: "Tool completed" }] });
 		await entry.capabilities.call(
 			"mcp.attach",
 			{
@@ -126,6 +155,19 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 			ctx,
 		);
 		await entry.capabilities.call("pi.session.extensions.remove", { extensionKey: "fixture" }, ctx);
+		await entry.capabilities.call(
+			"mcp.attach",
+			{
+				servers: [
+					{
+						name: "fixture",
+						url: `http://127.0.0.1:${rotated.http.port}/mcp`,
+						headers: { "X-Fixture": "rotated" },
+					},
+				],
+			},
+			ctx,
+		);
 		expect(entry.session.getActiveToolNames()).not.toContain("fixture__show");
 		expect(entry.session.getActiveToolNames()).toContain("bash");
 		await sessions.close();
@@ -205,6 +247,110 @@ test("the MCP extension loads standalone in vanilla Pi and honors stdio cwd, env
 	} finally {
 		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 		session.dispose();
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("malformed MCP entries remain removable and do not hide valid inventory", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/pi-mcp-invalid-`);
+	await writeFile(
+		joinPath(dir, "mcp.json"),
+		JSON.stringify({
+			broken: { url: "invalid" },
+			disabled: { url: "http://localhost:9/mcp", enabled: false },
+		}),
+	);
+	const sessions = new Sessions(dir, [(pi) => mcpExtension(pi, dir)], () => {});
+	try {
+		const entry = await sessions.create(dir);
+		const ctx = sessions.context(entry);
+		const inventory = (await entry.capabilities.call("pi.config.extensions.list", {}, ctx)) as {
+			extensions: { configKey: string; invalid?: boolean }[];
+		};
+		expect(inventory.extensions).toHaveLength(2);
+		expect(inventory.extensions.find((e) => e.configKey === "broken")?.invalid).toBe(true);
+		await entry.capabilities.call("pi.config.extensions.remove", { configKey: "broken" }, ctx);
+		expect(
+			(
+				(await entry.capabilities.call("pi.config.extensions.list", {}, ctx)) as {
+					extensions: unknown[];
+				}
+			).extensions,
+		).toHaveLength(1);
+		expect(entry.session.getActiveToolNames()).toContain("bash");
+	} finally {
+		await sessions.close();
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("standalone MCP supports authenticated SSE and cancels a blocked tool", async () => {
+	const { createServer } = await import("node:http");
+	const { SSEServerTransport } = await import("@modelcontextprotocol/sdk/server/sse.js");
+	const dir = await mkdtemp(tmpdir() + "/pixie-sse-");
+	const server = new Server({ name: "sse-fixture", version: "1" }, { capabilities: { tools: {} } });
+	server.setRequestHandler(ListToolsRequestSchema, async () => ({
+		tools: [{ name: "wait__here", inputSchema: { type: "object" } }],
+	}));
+	let cancelled = false;
+	server.setRequestHandler(CallToolRequestSchema, async (_request, extra) => {
+		await new Promise<void>((resolve) =>
+			extra.signal.addEventListener(
+				"abort",
+				() => {
+					cancelled = true;
+					resolve();
+				},
+				{ once: true },
+			),
+		);
+		return { content: [{ type: "text", text: "Cancelled" }] };
+	});
+	let transport: InstanceType<typeof SSEServerTransport> | undefined;
+	const http = createServer(async (request, response) => {
+		if (request.headers.authorization !== "Bearer fixture") {
+			response.writeHead(401).end();
+			return;
+		}
+		if (request.method === "GET") {
+			transport = new SSEServerTransport("/messages", response);
+			await server.connect(transport);
+		} else if (transport) await transport.handlePostMessage(request, response);
+		else response.writeHead(404).end();
+	});
+	await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+	const address = http.address();
+	if (!address || typeof address === "string") throw new Error("No listener");
+	await writeFile(
+		joinPath(dir, "mcp.json"),
+		JSON.stringify({
+			sse: {
+				type: "sse",
+				url: `http://127.0.0.1:${address.port}/sse`,
+				headers: { Authorization: "Bearer fixture" },
+			},
+		}),
+	);
+	const sessions = new Sessions(dir, [(pi) => mcpExtension(pi, dir)], () => {});
+	try {
+		const entry = await sessions.create(dir);
+		expect(entry.session.getActiveToolNames()).toContain("sse__wait__here");
+		const abort = new AbortController();
+		const call = entry.capabilities.call(
+			"pi.tools.call",
+			{ extensionName: "sse", toolName: "wait__here" },
+			{ ...sessions.context(entry), signal: abort.signal },
+		);
+		setTimeout(() => abort.abort(), 50);
+		await expect(call).rejects.toThrow();
+		for (let i = 0; i < 20 && !cancelled; i++) await Bun.sleep(10);
+		expect(cancelled).toBe(true);
+	} finally {
+		await sessions.close();
+		await server.close();
+		await new Promise<void>((resolve, reject) =>
+			http.close((error) => (error ? reject(error) : resolve())),
+		);
 		await rm(dir, { recursive: true, force: true });
 	}
 });

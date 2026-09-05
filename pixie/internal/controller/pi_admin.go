@@ -532,7 +532,7 @@ func normalizePreferences(values []struct {
 			}
 			value, ok := entry.Value.(float64)
 			if !ok || value < 1024 || value > 1000000 || value != math.Trunc(value) {
-				return PiPreferences{}, fmt.Errorf("Pi auto compact threshold is invalid")
+				return PiPreferences{}, fmt.Errorf("Pi compaction reserve must be an integer from 1024 to 1000000 tokens")
 			}
 			result.CompactionReserveTokens = &value
 		case "piThinkingEffort":

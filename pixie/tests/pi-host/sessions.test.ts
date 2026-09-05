@@ -1,13 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AssistantMessage, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import agents from "../../pi-host/src/extensions/agents.ts";
 import plans from "../../pi-host/src/extensions/plans.ts";
 import { Sessions } from "../../pi-host/src/sessions.ts";
 import { JsonStore } from "../../pi-host/src/storage.ts";
+import { makeProvider } from "./provider-fixture.ts";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -20,72 +20,6 @@ async function fixture(factories: ExtensionFactory[] = []) {
 	const sessions = new Sessions(dir, factories, (_id, event) => events.push(event));
 	cleanups.push(() => sessions.close());
 	return { dir, sessions, events };
-}
-function makeProvider(pause?: Promise<void>, finalOnly = false): ExtensionFactory {
-	return (pi) => {
-		pi.registerProvider("fixture", {
-			baseUrl: "http://localhost/unused",
-			apiKey: "fixture-only-key",
-			api: "fixture-api",
-			models: [
-				{
-					id: "echo",
-					name: "Echo",
-					reasoning: false,
-					input: ["text", "image"],
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-					contextWindow: 64000,
-					maxTokens: 1024,
-				},
-			],
-			streamSimple: (_model, context) => {
-				const stream = createAssistantMessageEventStream();
-				const message: AssistantMessage = {
-					role: "assistant",
-					api: "fixture-api",
-					provider: "fixture",
-					model: "echo",
-					content: [{ type: "text", text: "Hello from Pi" }],
-					stopReason: "stop",
-					timestamp: Date.now(),
-					usage: {
-						input: 5,
-						output: 4,
-						cacheRead: 0,
-						cacheWrite: 0,
-						totalTokens: 9,
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-					},
-				};
-				queueMicrotask(async () => {
-					if (!finalOnly) {
-						stream.push({ type: "start", partial: { ...message, content: [] } });
-						stream.push({
-							type: "text_start",
-							contentIndex: 0,
-							partial: { ...message, content: [{ type: "text", text: "" }] },
-						});
-						stream.push({
-							type: "text_delta",
-							contentIndex: 0,
-							delta: "Hello from Pi",
-							partial: message,
-						});
-						stream.push({
-							type: "text_end",
-							contentIndex: 0,
-							content: "Hello from Pi",
-							partial: message,
-						});
-					}
-					await pause;
-					stream.push({ type: "done", reason: "stop", message });
-					stream.end(message);
-				});
-				return stream;
-			},
-		});
-	};
 }
 const provider = makeProvider();
 
@@ -285,7 +219,9 @@ test("reattachment during a native stream retains the complete partial message",
 		await run;
 	}
 	expect(
-		(sessions.snapshot(entry, true).messages as any[]).filter((m) => m.role === "assistant"),
+		(sessions.snapshot(entry, true).messages as Record<string, unknown>[]).filter(
+			(m) => m.role === "assistant",
+		),
 	).toHaveLength(1);
 });
 
@@ -333,4 +269,152 @@ test("native commands do not inherit an earlier turn's failure status", async ()
 			content: [{ type: "text", text: "/noop" }],
 		}),
 	).toMatchObject({ stopReason: "end_turn" });
+});
+
+test("agent edits preserve metadata and reject oversized replacement beside malformed sources", async () => {
+	const { dir, sessions } = await fixture([(pi) => agents(pi, dir)]);
+	const entry = await sessions.create(dir);
+	const call = (method: string, params: Record<string, unknown>) =>
+		entry.capabilities.call(method, params, sessions.context(entry)) as Promise<{
+			source: { path: string; properties: Record<string, unknown> };
+			sources: unknown[];
+			warnings: string[];
+		}>;
+	const { source } = await call("pi.sources.create", {
+		name: "Reviewer",
+		content: "Review",
+		properties: { model: "fixture/echo", custom: "keep" },
+	});
+	await writeFile(join(dir, "agents", "broken.md"), "---\nbad: [\n---\n");
+	const updated = await call("pi.sources.update", {
+		path: source.path,
+		name: "Renamed",
+		description: "Changed",
+		content: "Review carefully",
+	});
+	expect(updated.source.properties).toMatchObject({
+		model: "fixture/echo",
+		custom: "keep",
+		name: "Renamed",
+	});
+	const before = await readFile(source.path, "utf8");
+	await expect(
+		call("pi.sources.update", { path: source.path, name: "Renamed", content: "é".repeat(40000) }),
+	).rejects.toThrow("65536 bytes");
+	expect(await readFile(source.path, "utf8")).toBe(before);
+	const cleared = await call("pi.sources.update", {
+		path: source.path,
+		name: "Renamed",
+		content: "Review",
+		properties: { model: null },
+	});
+	expect(cleared.source.properties.model).toBeUndefined();
+	expect(cleared.source.properties.custom).toBe("keep");
+	const catalog = await call("pi.sources.list", {});
+	expect(catalog.sources).toHaveLength(1);
+	expect(catalog.warnings).toHaveLength(1);
+});
+
+test("native summaries, visible custom messages and plans survive replay without hidden entries", async () => {
+	const { dir, sessions } = await fixture();
+	const entry = await sessions.create(dir);
+	const manager = entry.session.sessionManager;
+	const kept = manager.appendMessage({ role: "user", content: "Review", timestamp: 1 });
+	manager.appendCompaction("Summary retained", kept, 4000);
+	manager.appendCustomMessageEntry("hidden", "Do not display", false);
+	manager.appendCustomMessageEntry("visible", "Extension notice", true);
+	manager.appendCustomEntry("pixie-plan", {
+		entries: [{ content: "Review", status: "pending", priority: "medium" }],
+	});
+	const messages = sessions.snapshot(entry, true).messages as Record<string, unknown>[];
+	expect(messages.find((m) => m.role === "summary")).toMatchObject({
+		summaryKind: "compaction",
+		summary: "Summary retained",
+		tokensBefore: 4000,
+	});
+	expect(messages.find((m) => m.role === "custom")?.content).toBe("Extension notice");
+	expect(JSON.stringify(messages)).not.toContain("Do not display");
+	expect(messages.find((m) => m.role === "plan")?.entries).toHaveLength(1);
+});
+
+test("idle residence is bounded while in-flight work is pinned and released history reopens", async () => {
+	const { dir, sessions } = await fixture();
+	const first = await sessions.create(dir);
+	const id = first.session.sessionId;
+	first.session.sessionManager.appendMessage({ role: "user", content: "Preserve", timestamp: 1 });
+	await sessions.use(id, undefined, async () => {
+		await sessions.sweep(Date.now() + 600000);
+		expect(sessions.entries.has(id)).toBe(true);
+	});
+	await sessions.sweep(Date.now() + 600000);
+	expect(sessions.entries.size).toBe(0);
+	const reopened = await sessions.get(id);
+	expect(reopened).not.toBe(first);
+	expect(JSON.stringify(sessions.snapshot(reopened, true))).toContain("Preserve");
+	await sessions.close();
+	await expect(sessions.get(id)).rejects.toThrow("stopping");
+});
+
+test("catalog pagination stays stable while sessions change without loading SDK runtimes", async () => {
+	const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+	const { dir, sessions } = await fixture();
+	await mkdir(join(dir, "sessions", "fixture"), { recursive: true });
+	for (let i = 0; i < 105; i++) {
+		const manager = SessionManager.create(dir, join(dir, "sessions", "fixture"));
+		manager.appendMessage({ role: "user", content: `Message ${i}`, timestamp: i });
+		await writeFile(
+			manager.getSessionFile()!,
+			[manager.getHeader(), ...manager.getEntries()]
+				.map((value) => JSON.stringify(value))
+				.join("\n") + "\n",
+		);
+	}
+	const first = await sessions.list("");
+	expect(first.sessions).toHaveLength(100);
+	expect(sessions.entries.size).toBe(0);
+	await sessions.create(dir);
+	const tail = await sessions.list(String(first.nextCursor));
+	expect(tail.sessions).toHaveLength(5);
+	const fresh = await sessions.list("");
+	expect((await sessions.list(String(fresh.nextCursor))).sessions).toHaveLength(6);
+});
+
+test("many idle sessions settle within the residence budget", async () => {
+	const { dir, sessions } = await fixture();
+	for (let i = 0; i < 40; i++) await sessions.create(dir);
+	await sessions.sweep();
+	expect(sessions.entries.size).toBe(32);
+	await sessions.close();
+	expect(sessions.entries.size).toBe(0);
+});
+
+test("long native streams send bounded deltas rather than repeated growing partial messages", async () => {
+	const output = "x".repeat(65536);
+	const { dir, sessions, events } = await fixture([makeProvider(undefined, false, output, 1024)]);
+	const entry = await sessions.create(dir);
+	await entry.session.setModel(entry.modelRuntime.getModel("fixture", "echo")!);
+	await sessions.call("session.prompt", {
+		sessionId: entry.session.sessionId,
+		content: [{ type: "text", text: "Measure" }],
+	});
+	const frames = events.filter(
+		(
+			event,
+		): event is { type: string; message: unknown; assistantMessageEvent: { delta: string } } =>
+			typeof event === "object" &&
+			event !== null &&
+			"type" in event &&
+			event.type === "message_update",
+	);
+	expect(frames.map((frame) => frame.assistantMessageEvent.delta).join("")).toBe(output);
+	const bytes = frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(frame)), 0);
+	expect(bytes).toBeLessThan(output.length * 2);
+	console.info(
+		JSON.stringify({
+			probe: "native-stream",
+			textBytes: output.length,
+			frames: frames.length,
+			wireBytes: bytes,
+		}),
+	);
 });

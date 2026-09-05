@@ -51,7 +51,6 @@ import SessionGoalControl from "./session/session-goal-control.svelte";
 import { unsupportedLifecycleReason } from "./session/session-lifecycle";
 import SessionLineageControl from "./session/session-lineage-control.svelte";
 import SessionConfigControls from "./session/session-config-controls.svelte";
-import SessionModeControl from "./session/session-mode-control.svelte";
 import SessionModelControls from "./session/session-model-controls.svelte";
 import SessionPlanControl from "./session/session-plan-control.svelte";
 import { streamStatus } from "./session/stream-status";
@@ -392,13 +391,7 @@ function loadEarlierMessages(): Promise<TranscriptLoadOutcome> {
 				});
 				appStoreApi
 					.getState()
-					.replaceTranscriptSnapshot(
-						sessionId,
-						snapshot.summary,
-						hydrated,
-						snapshot.modes,
-						snapshot.planState,
-					);
+					.replaceTranscriptSnapshot(sessionId, snapshot.summary, hydrated, snapshot.planState);
 				appStoreApi.getState().setCommands(sessionId, snapshot.commands);
 				if (isCurrent()) transcriptLoadState = "idle";
 				resetToBottom = true;
@@ -744,9 +737,7 @@ function openChanges(path: string): void {
   {#if !piAgent && runtime.configOptions.length}
    <SessionConfigControls {sessionId} options={runtime.configOptions} />
   {/if}
-  {#if piAgent || !runtime.configOptions.some(option => option.category === "mode")}
-   <SessionModeControl {sessionId} modes={runtime.modes} />
-  {/if}
+
 	</div>
 {/snippet}
 

@@ -33,6 +33,7 @@ let models = $state<WireModel[]>([]);
 let providers = $state<ProviderStatus[]>([]);
 let catalogProjectId = $state("");
 let agents = $state<PiAgentCatalogEntry[]>([]);
+let agentWarnings = $state<string[]>([]);
 let draft = $state<AgentDraft>(emptyAgent());
 let editing = $state<PiAgentCatalogEntry | null>(null);
 let loading = $state(true);
@@ -46,7 +47,8 @@ let sequence = 0;
 let agentMutationSequence = 0;
 let mounted = false;
 let observedCatalogKey = $state<string | null>(null);
-let agentsAvailable = $derived($appStore.agentProfile?.capabilities?.agents === 1);
+let agentsAvailable = $state(false);
+let thinkingReset = $state(false);
 let projects = $derived($appStore.projects);
 let catalogRoot = $derived(
 	projects.find((project) => project.id === catalogProjectId)?.roots[0] ?? "",
@@ -68,6 +70,7 @@ function notifyError(error: unknown, title: string): void {
 
 function applyPreferences(next: PiPreferences): void {
 	preferences = next;
+	thinkingReset = false;
 	reserveTokens = compactionReserveTokensValue(next);
 }
 
@@ -79,13 +82,24 @@ async function load(
 	const current = ++sequence;
 	loading = true;
 	loadError = null;
-	const catalogRequest =
-		!agentsAvailable || (projectId && !root)
-			? Promise.resolve([] as PiAgentCatalogEntry[])
-			: getTransport().request("pi.agentList", projectId ? { projectId, root } : {});
+	const catalogRequest = (async () => {
+		if (projectId && !root)
+			return { available: false, agents: [] as PiAgentCatalogEntry[], warnings: [] as string[] };
+		const params = projectId ? { projectId, root } : {};
+		const capabilities = await getTransport().request("pi.capabilities", params);
+		const catalog =
+			capabilities.agents === 1
+				? await getTransport().request("pi.agentList", params)
+				: { agents: [], warnings: [] };
+		return { available: capabilities.agents === 1, ...catalog };
+	})();
 	const results = await Promise.allSettled([
-		catalogOnly ? Promise.resolve(null) : getTransport().request("pi.preferencesRead", {}),
-		catalogOnly ? Promise.resolve(null) : getTransport().request("pi.defaultsRead", {}),
+		catalogOnly || preferencesReady
+			? Promise.resolve(null)
+			: getTransport().request("pi.preferencesRead", {}),
+		catalogOnly || defaultsReady
+			? Promise.resolve(null)
+			: getTransport().request("pi.defaultsRead", {}),
 		catalogOnly ? Promise.resolve(null) : getTransport().request("model.list", {}),
 		catalogOnly ? Promise.resolve(null) : getTransport().request("provider.status", {}),
 		catalogRequest,
@@ -103,7 +117,11 @@ async function load(
 	if (nextModels.status === "fulfilled" && nextModels.value) models = nextModels.value;
 	if (nextProviders.status === "fulfilled" && nextProviders.value)
 		providers = nextProviders.value.providers;
-	if (nextAgents.status === "fulfilled") agents = nextAgents.value;
+	if (nextAgents.status === "fulfilled") {
+		agents = nextAgents.value.agents;
+		agentsAvailable = nextAgents.value.available;
+		agentWarnings = nextAgents.value.warnings;
+	}
 	if (results.some((result) => result.status === "rejected"))
 		loadError =
 			"Some Pi settings could not be loaded. Successfully loaded data and drafts are retained.";
@@ -135,13 +153,15 @@ async function savePreferences(): Promise<void> {
 	if (!threshold.valid) {
 		appStoreApi.getState().pushToast({
 			variant: "error",
-			message: "Use a percentage greater than 0 and no more than 100.",
-			title: "Invalid threshold",
+			message: "Enter a whole number from 1,024 to 1,000,000 tokens.",
+			title: "Invalid reserve tokens",
 		});
 		return;
 	}
 	busy = true;
 	try {
+		if (thinkingReset)
+			await getTransport().request("pi.preferencesReset", { keys: ["piThinkingEffort"] });
 		const saved = await getTransport().request("pi.preferencesSave", {
 			...(threshold.value !== undefined ? { compactionReserveTokens: threshold.value } : {}),
 			...(preferences.piThinkingEffort !== undefined
@@ -157,10 +177,13 @@ async function savePreferences(): Promise<void> {
 }
 
 async function resetPreference(key: "compactionReserveTokens" | "piThinkingEffort"): Promise<void> {
+	if (busy || !preferencesReady) return;
+	actionError = null;
 	busy = true;
 	try {
 		const reset = await getTransport().request("pi.preferencesReset", { keys: [key] });
-		preferences = reset;
+		preferences = { ...preferences, [key]: reset[key] };
+		if (key === "piThinkingEffort") thinkingReset = false;
 		if (key === "compactionReserveTokens") {
 			reserveTokens = compactionReserveTokensValue(reset);
 		}
@@ -311,7 +334,7 @@ function changeDraftProject(projectId: string): void {
 </script>
 
 <div data-testid="settings-pi" class="flex flex-col gap-xl">
- {#if loadError}<p role="alert" class="text-feedback-warning tr-text-ui">{loadError} Close and reopen settings to retry the initial load.</p>{/if}
+ {#if loadError}<p role="alert" class="text-feedback-warning tr-text-ui">{loadError} </p><Button disabled={loading || busy} onclick={() => void load()}>Retry loading</Button>{/if}
  {#if actionError}<p role="alert" class="text-feedback-error tr-text-ui">{actionError}</p>{/if}
 	<section class="flex flex-col gap-sm">
 		<div>
@@ -332,7 +355,7 @@ function changeDraftProject(projectId: string): void {
 				max="1000000"
 				step="1"
 				bind:value={reserveTokens}
-				disabled={busy}
+				disabled={busy || !preferencesReady}
 				class="rounded border border-border-default bg-control-bg px-sm py-xs"
 			/>
 		</label>
@@ -341,12 +364,13 @@ function changeDraftProject(projectId: string): void {
 			<select
 				data-testid="pi-thinking-effort"
 				value={preferences.piThinkingEffort ?? ""}
-				disabled={busy}
+				disabled={busy || !preferencesReady}
 				onchange={(event) => {
 					const effort = event.currentTarget.value as
 						| PiPreferences["piThinkingEffort"]
 						| "";
-					if (effort) preferences = { ...preferences, piThinkingEffort: effort };
+					thinkingReset = !effort;
+                    if (effort) preferences = { ...preferences, piThinkingEffort: effort };
 					else {
 						const { piThinkingEffort: _unset, ...unset } = preferences;
 						preferences = unset;
@@ -368,7 +392,7 @@ function changeDraftProject(projectId: string): void {
 			<Button
 				size="sm"
 				variant="outline"
-				disabled={busy}
+				disabled={busy || !preferencesReady}
 				onclick={() => void resetPreference("compactionReserveTokens")}
 			>
 				<Icon name="rotate-ccw" size={14} />
@@ -377,7 +401,7 @@ function changeDraftProject(projectId: string): void {
 			<Button
 				size="sm"
 				variant="outline"
-				disabled={busy}
+				disabled={busy || !preferencesReady}
 				onclick={() => void resetPreference("piThinkingEffort")}
 			>
 				Reset thinking
@@ -398,7 +422,7 @@ function changeDraftProject(projectId: string): void {
 			<select
 				data-testid="default-provider"
 				value={defaults.providerId ?? ""}
-				disabled={busy}
+				disabled={busy || !defaultsReady}
 				onchange={(event) => {
 					defaults = { providerId: event.currentTarget.value || null, modelId: null };
 				}}
@@ -442,13 +466,12 @@ function changeDraftProject(projectId: string): void {
 			>
 				Save defaults
 			</Button>
-			<Button size="sm" variant="outline" disabled={busy} onclick={() => void clearDefaults()}>
+			<Button size="sm" variant="outline" disabled={busy || !defaultsReady} onclick={() => void clearDefaults()}>
 				Clear defaults
 			</Button>
 		</div>
 	</section>
 
-	{#if agentsAvailable}
 	<section class="flex flex-col gap-sm border-border-default border-t pt-lg">
 		<div class="flex flex-wrap items-end justify-between gap-sm">
 			<div>
@@ -473,8 +496,10 @@ function changeDraftProject(projectId: string): void {
 				</select>
 			</label>
 		</div>
+		{#if agentWarnings.length}<p role="status" class="tr-text-ui text-feedback-warning">{agentWarnings.join(". ")}</p>{/if}
 		{#if loading}
 			<p class="text-text-muted">Loading Pi settings…</p>
+        {:else if !agentsAvailable}<p class="text-text-muted">No compatible agents extension in this scope.</p>
 		{:else}
 			<div class="flex flex-col gap-xs">
 				{#if agents.length === 0}
@@ -497,6 +522,8 @@ function changeDraftProject(projectId: string): void {
 								{#if agent.modelId}
 									<div class="text-text-muted tr-text-metadata">Model ID: {agent.modelId}</div>
 								{/if}
+
+
 							</div>
 							{#if agent.writable}
 								<div class="flex gap-xs">
@@ -649,5 +676,4 @@ function changeDraftProject(projectId: string): void {
 			}}
 		/>
 	</section>
-	{/if}
 </div>

@@ -328,6 +328,8 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 		case "pi.session.info":
 			result = map[string]any{"sessionId": sessionID, "title": "Fixture chat"}
 
+		case "runtime.capabilities":
+			result = map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}
 		case "runtime.hello":
 			result = map[string]any{"protocolVersion": 1, "runtimeId": "ui-fixture", "version": "0.85.1", "capabilities": map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}}
 		case "session.list":
@@ -356,7 +358,7 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 					{"sessionUpdate": "user_message_chunk", "content": map[string]any{"type": "text", "text": fmt.Sprintf("History prompt %05d", round)}},
 					{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": fmt.Sprintf("History answer %05d\n\nA **formatted** reply with a [reference](https://example.com), inline `code` and several paragraphs.\n\n- Inspect the workspace\n- Preserve the conversation\n- Verify the result\n\n```typescript\nconst round = %d;\n```", round, round)}},
 				} {
-					if writer.write(map[string]any{"jsonrpc": "2.0", "method": "session.update", "params": map[string]any{"sessionId": id, "update": update}}) != nil {
+					if writer.write(map[string]any{"jsonrpc": "2.0", "method": "session.event", "params": map[string]any{"sessionId": id, "event": nativeFixtureEvent(update)}}) != nil {
 						return
 					}
 				}
@@ -370,7 +372,7 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 				{"sessionUpdate": "user_message_chunk", "content": map[string]any{"type": "text", "text": "Show the fixture"}},
 				{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "Loaded answer"}},
 			} {
-				if writer.write(map[string]any{"jsonrpc": "2.0", "method": "session.update", "params": map[string]any{"sessionId": id, "update": update}}) != nil {
+				if writer.write(map[string]any{"jsonrpc": "2.0", "method": "session.event", "params": map[string]any{"sessionId": id, "event": nativeFixtureEvent(update)}}) != nil {
 					return
 				}
 			}
@@ -380,7 +382,7 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 			if id == "" {
 				id = sessionID
 			}
-			if writer.write(map[string]any{"jsonrpc": "2.0", "method": "session.update", "params": map[string]any{"sessionId": id, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "Partial reply "}}}}) != nil {
+			if writer.write(map[string]any{"jsonrpc": "2.0", "method": "session.event", "params": map[string]any{"sessionId": id, "event": nativeFixtureEvent(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"text": "Partial reply "}})}}) != nil {
 				return
 			}
 			responseID := append(json.RawMessage(nil), rpc.ID...)
@@ -390,7 +392,7 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 				case <-request.Context().Done():
 					return
 				}
-				if writer.write(map[string]any{"jsonrpc": "2.0", "method": "session.update", "params": map[string]any{"sessionId": id, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "complete."}}}}) != nil {
+				if writer.write(map[string]any{"jsonrpc": "2.0", "method": "session.event", "params": map[string]any{"sessionId": id, "event": nativeFixtureEvent(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"text": "complete."}})}}) != nil {
 					return
 				}
 				_ = writer.write(map[string]any{"jsonrpc": "2.0", "id": responseID, "result": map[string]any{"stopReason": "end_turn"}})
@@ -403,35 +405,7 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 				a.modeMu.Unlock()
 			}
 			result = map[string]any{"configOptions": a.configOptions()}
-		case "session.setMode":
-			id, _ := rpc.Params["sessionId"].(string)
-			modeID, _ := rpc.Params["modeId"].(string)
-			if id == "" {
-				id = sessionID
-			}
-			if !a.setMode(modeID) {
-				if len(rpc.ID) > 0 {
-					_ = writer.write(map[string]any{
-						"jsonrpc": "2.0",
-						"id":      rpc.ID,
-						"error":   map[string]any{"code": -32602, "message": "unknown fixture mode"},
-					})
-				}
-				continue
-			}
-			if writer.write(map[string]any{
-				"jsonrpc": "2.0",
-				"method":  "session.update",
-				"params": map[string]any{
-					"sessionId": id,
-					"update": map[string]any{
-						"sessionUpdate": "current_mode_update",
-						"currentModeId": modeID,
-					},
-				},
-			}); err != nil {
-				return
-			}
+
 		case "session.cancel":
 			a.releaseOnce.Do(func() { close(a.release) })
 		}
@@ -451,16 +425,6 @@ func (a *fixtureAgent) sessionModes() map[string]any {
 			map[string]any{"id": "code", "name": "Code", "description": "Work directly in the project"},
 		},
 	}
-}
-
-func (a *fixtureAgent) setMode(modeID string) bool {
-	if modeID != "ask" && modeID != "code" {
-		return false
-	}
-	a.modeMu.Lock()
-	a.mode = modeID
-	a.modeMu.Unlock()
-	return true
 }
 
 func (w *rpcWriter) write(value any) error {
@@ -507,5 +471,16 @@ func (a *fixtureAgent) configOptions() []any {
 		map[string]any{"id": "provider", "name": "Provider", "category": "provider", "type": "select", "currentValue": "anthropic", "options": []any{map[string]any{"value": "anthropic", "name": "Anthropic"}}},
 		map[string]any{"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": "claude-sonnet-4-5", "options": []any{map[string]any{"value": "claude-sonnet-4-5", "name": "Claude Sonnet"}}},
 		map[string]any{"id": "thinking", "name": "Thinking", "category": "thinking", "type": "select", "currentValue": a.quality, "options": []any{map[string]any{"value": "medium", "name": "Medium"}, map[string]any{"value": "low", "name": "Low"}}},
+	}
+}
+
+func nativeFixtureEvent(update map[string]any) map[string]any {
+	switch update["sessionUpdate"] {
+	case "plan":
+		return map[string]any{"type": "plan", "entries": update["entries"]}
+	case "user_message_chunk":
+		return map[string]any{"type": "message_start", "message": map[string]any{"role": "user", "content": []any{update["content"]}}}
+	default:
+		return map[string]any{"type": "message_update", "message": map[string]any{"role": "assistant"}, "assistantMessageEvent": map[string]any{"type": "text_delta", "delta": update["content"].(map[string]any)["text"]}}
 	}
 }

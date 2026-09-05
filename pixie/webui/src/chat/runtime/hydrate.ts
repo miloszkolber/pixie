@@ -47,7 +47,31 @@ export function messagesToRuntime(
 		const message = messages[offset];
 		if (!message) continue;
 		const messageIndex = (page?.start ?? 0) + offset;
-		if (message.role === "user") {
+		if (message.role === "assistant" && message.presentation) {
+			const id = replayTurnId(page, messageIndex);
+			const p = message.presentation;
+			turns.push(
+				p.kind === "compaction"
+					? {
+							kind: "compaction",
+							id,
+							status: "done",
+							summary: p.summary ?? "",
+							tokensBefore: p.tokensBefore ?? 0,
+						}
+					: {
+							kind: "system",
+							id,
+							text:
+								p.summary ||
+								message.content
+									.filter((b) => b.type === "text")
+									.map((b) => b.text)
+									.join("\n"),
+						},
+			);
+			turnIdByMessageIndex[messageIndex] = id;
+		} else if (message.role === "user") {
 			const id = replayTurnId(page, messageIndex);
 			turns.push({ kind: "user", id, message });
 			turnIdByMessageIndex[messageIndex] = id;
