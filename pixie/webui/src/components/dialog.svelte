@@ -70,7 +70,7 @@ $effect(() => {
 	}}
 >
 	<div class="dialog-content">
-		<header class="dialog-header flex items-start justify-between gap-sm">
+		<div class="dialog-header flex items-start justify-between gap-sm">
 			<div class="min-w-0 flex-1">
 				<h2 id={titleId} class="dialog-title">{title}</h2>
 				{#if description}<p id={descriptionId} class="dialog-description">{description}</p>{/if}
@@ -80,7 +80,7 @@ $effect(() => {
 					<Icon name="x" size={16} />
 				</Button>
 			{/if}
-		</header>
+		</div>
 		<div class="dialog-body">{@render children?.()}</div>
 		{#if actions}<footer class="dialog-footer">{@render actions()}</footer>{/if}
 	</div>

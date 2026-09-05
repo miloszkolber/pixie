@@ -112,8 +112,8 @@ function startChat(): void {
 			projectId: projectAreaId,
 			...(projectArea?.root ? { cwd: projectArea.root } : {}),
 		})
-		.then(({ sessionId, model, thinkingLevel, commands, modes }) => {
-			appStoreApi.getState().openChatSession(projectAreaId, sessionId, model, thinkingLevel, modes);
+		.then(({ sessionId, model, thinkingLevel, commands }) => {
+			appStoreApi.getState().openChatSession(projectAreaId, sessionId, model, thinkingLevel);
 			appStoreApi.getState().setCommands(sessionId, commands);
 		})
 		.catch((cause) => {
@@ -208,11 +208,11 @@ function activityLabel(item: Activity): string {
 			<button type="button" class="tab-trigger min-h-11 flex-1 capitalize" aria-pressed={mobilePane === pane} onclick={() => (mobilePane = pane as typeof mobilePane)}>{pane}</button>
 		{/each}
 	</nav>
-	<aside data-testid="left-nav" tabindex="-1" class={`${mobilePane === "projects" ? "block" : "hidden"} app-sidebar min-h-0 flex-1 overflow-auto p-md outline-none lg:block lg:w-[clamp(12rem,20vw,16rem)] lg:flex-none lg:border-r`}>
+	<aside aria-label="Projects" data-testid="left-nav" tabindex="-1" class={`${mobilePane === "projects" ? "block" : "hidden"} app-sidebar min-h-0 flex-1 overflow-auto p-md outline-none lg:block lg:w-[clamp(12rem,20vw,16rem)] lg:flex-none lg:border-r`}>
 		<ProjectTree />
 	</aside>
 	<div class={`${mobilePane !== "projects" ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col lg:flex`}>
-		<div class={`${mobilePane === "content" ? "flex" : "hidden"} toolbar min-h-10 shrink-0 items-center gap-xs border-b px-xs lg:flex`}>
+		<div role="region" aria-label="Open content" class={`${mobilePane === "content" ? "flex" : "hidden"} toolbar min-h-10 shrink-0 items-center gap-xs border-b px-xs lg:flex`}>
 			<div class="tab-list flex min-w-0 flex-1 items-center gap-0 overflow-x-auto" role="toolbar" aria-label="Open tabs">
 				{#each contentTabs as tab (tab.id)}
 					<div data-testid="content-tab" data-kind={tab.kind} data-active={activeTab?.id === tab.id ? "true" : "false"} data-preview={previewTabId === tab.id ? "true" : "false"} class="flex shrink-0 items-center border-r">
@@ -256,7 +256,7 @@ function activityLabel(item: Activity): string {
 					{#key activeTab.id}<ErrorBoundary label="preview"><DiffPane tab={activeTab} /></ErrorBoundary>{/key}
 				{/if}
 			</main>
-			<aside class={`${mobilePane === "activity" ? "flex" : "hidden"} app-sidebar min-h-0 flex-1 flex-col lg:flex lg:w-[clamp(14rem,26vw,22rem)] lg:flex-none lg:border-l`}>
+			<aside aria-label="Project activity" class={`${mobilePane === "activity" ? "flex" : "hidden"} app-sidebar min-h-0 flex-1 flex-col lg:flex lg:w-[clamp(14rem,26vw,22rem)] lg:flex-none lg:border-l`}>
 				<div id="activity-tabs" data-testid="activity-tabs" tabindex="-1" role="tablist" aria-label="Project activities" class="tab-list flex shrink-0 border-b">
 					{#each ["files", "changes"] as item}
 						<button

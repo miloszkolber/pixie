@@ -210,7 +210,7 @@ function signOut(): void {
 		<main data-testid="provider-status-loading" class="app-empty h-full" role="status">Checking agent status…</main>
 	{:else}
 		<div data-testid="welcome-shell" class="flex h-full min-h-0 min-w-0 flex-col lg:flex-row">
-			<aside data-testid="left-nav" tabindex="-1" class="app-sidebar max-h-[45%] w-full shrink-0 overflow-auto border-b p-md outline-none lg:max-h-none lg:w-[clamp(12rem,20vw,16rem)] lg:border-r lg:border-b-0"><ProjectTree /></aside>
+			<aside aria-label="Projects" data-testid="left-nav" tabindex="-1" class="app-sidebar max-h-[45%] w-full shrink-0 overflow-auto border-b p-md outline-none lg:max-h-none lg:w-[clamp(12rem,20vw,16rem)] lg:border-r lg:border-b-0"><ProjectTree /></aside>
 			<main class="app-content min-h-0 min-w-0 flex-1"><WelcomePanel /></main>
 		</div>
 	{/if}

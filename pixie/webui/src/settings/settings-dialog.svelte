@@ -2,7 +2,7 @@
 import type { Component } from "svelte";
 import Button from "@/components/button.svelte";
 import Dialog from "@/components/dialog.svelte";
-import { appStore, appStoreApi } from "@/store";
+import { appStore, appStoreApi, selectActiveProjectArea, selectActiveContentTab } from "@/store";
 import { restoreSettingsFocus } from "./open-settings";
 import AgentSettings from "./sections/agent-settings.svelte";
 import { resolveSettingsSection, settingsTabs } from "./settings-dialog";
@@ -17,27 +17,57 @@ const loaders: Partial<Record<SettingsSection, () => Promise<{ default: Componen
 	system: () => import("./sections/system-settings.svelte"),
 };
 let visited = $state<SettingsSection[]>([]);
-let loads = $state<Partial<Record<SettingsSection, Promise<{ default: Component }>>>>({});
+let modules = $state.raw<Partial<Record<SettingsSection, Component>>>({});
+let pending = $state<Partial<Record<SettingsSection, boolean>>>({});
+let loadErrors = $state<Partial<Record<SettingsSection, boolean>>>({});
+let generation = 0;
+async function loadSection(section: SettingsSection): Promise<void> {
+	const loader = loaders[section];
+	if (!loader || modules[section] || pending[section]) return;
+	const current = generation;
+	pending = { ...pending, [section]: true };
+	loadErrors = { ...loadErrors, [section]: false };
+	try {
+		const module = await loader();
+		if (current === generation) modules = { ...modules, [section]: module.default };
+	} catch {
+		if (current === generation) loadErrors = { ...loadErrors, [section]: true };
+	} finally {
+		if (current === generation) pending = { ...pending, [section]: false };
+	}
+}
 $effect(() => {
 	if (!$appStore.settingsOpen) {
-		visited = [];
-		loads = {};
+		if (visited.length) {
+			generation++;
+			visited = [];
+			modules = {};
+			pending = {};
+			loadErrors = {};
+		}
 		return;
 	}
 	if (!visited.includes(activeSection)) visited = [...visited, activeSection];
-	const loader = loaders[activeSection];
-	if (loader && !loads[activeSection]) loads = { ...loads, [activeSection]: loader() };
+	if (!loadErrors[activeSection]) void loadSection(activeSection);
 });
 
+let activeArea = $derived(selectActiveProjectArea($appStore));
+let activeTab = $derived(activeArea ? selectActiveContentTab($appStore, activeArea.id) : null);
+let sessionCapabilities = $derived(
+	activeTab?.kind === "chat" ? $appStore.sessions[activeTab.sessionId]?.capabilities : undefined,
+);
+let settingsProfile = $derived(
+	$appStore.agentProfile && sessionCapabilities
+		? { ...$appStore.agentProfile, capabilities: sessionCapabilities }
+		: $appStore.agentProfile,
+);
 let profilePending = $derived($appStore.agentProfile === null);
 let genericAgent = $derived(
 	!profilePending &&
 		(!$appStore.agentProfile?.pi || $appStore.agentProfile.operations.administration === false),
 );
-let activeSection = $derived(
-	resolveSettingsSection($appStore.settingsSection, $appStore.agentProfile),
-);
-let tabs = $derived(settingsTabs(genericAgent, profilePending, $appStore.agentProfile));
+let activeSection = $derived(resolveSettingsSection($appStore.settingsSection, settingsProfile));
+let tabs = $derived(settingsTabs(genericAgent, profilePending, settingsProfile));
 
 function selectSection(section: SettingsSection): void {
 	appStoreApi.getState().setSettingsSection(section);
@@ -106,12 +136,13 @@ function handleTabKeydown(event: KeyboardEvent): void {
      {#if section === SettingsSection.Agent && $appStore.agentProfile}
       <AgentSettings profile={$appStore.agentProfile} />
      {:else}
-      {#await loads[section]}<p class="tr-text-ui text-text-muted">Loading settings…</p>
-      {:then module}{#if module}{@const Section = module.default}<Section />{/if}
-      {:catch}<p role="alert" class="tr-text-ui text-feedback-error">Couldn't load this settings section. Your open form drafts are retained. If retry still fails after a deployment, copy unsaved work before reloading.</p>
-       <Button variant="outline" onclick={() => { const loader = loaders[section]; if (loader) loads = { ...loads, [section]: loader() }; }}>Retry loading</Button>
+      {#if modules[section]}
+       {@const Section = modules[section]!}<Section />
+      {:else if loadErrors[section]}
+       <p role="alert" class="tr-text-ui text-feedback-error">Couldn't load this settings section. Your open form drafts are retained. If retry still fails after a deployment, copy unsaved work before reloading.</p>
+       <Button variant="outline" onclick={() => void loadSection(section)}>Retry loading</Button>
        <Button variant="ghost" onclick={() => { if (window.confirm("Reload the application? Unsaved settings, drafts and retained local messages will be lost. Copy anything you need first.")) window.location.reload(); }}>Reload application</Button>
-      {/await}
+      {:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
      {/if}
     </div>
    {/if}
@@ -123,14 +154,16 @@ function handleTabKeydown(event: KeyboardEvent): void {
 	:global(dialog.settings-dialog) {
 		width: calc(100vw - 1rem);
 		max-width: 64rem;
-		max-height: calc(100vh - 1rem);
+		height: calc(100dvh - 1rem);
+ max-height: calc(100dvh - 1rem);
 		overflow: hidden;
 	}
 
 	:global(dialog.settings-dialog > .dialog-content) {
 		display: flex;
 		min-width: 0;
-		max-height: calc(100vh - 1rem);
+		height: 100%;
+ max-height: 100%;
 		flex-direction: column;
 		padding: 0;
 	}
@@ -153,7 +186,8 @@ function handleTabKeydown(event: KeyboardEvent): void {
 	@media (min-width: 640px) {
 		:global(dialog.settings-dialog),
 		:global(dialog.settings-dialog > .dialog-content) {
-			max-height: 88vh;
+			height: 88dvh;
+ max-height: 88dvh;
 		}
 	}
 </style>

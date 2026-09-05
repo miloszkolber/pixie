@@ -2,7 +2,7 @@
 import { tick } from "svelte";
 import { observeMarkdown } from "./markdown-visibility";
 
-type MarkdownDocumentModule = typeof import("./markdown-document");
+type MarkdownDocumentModule = typeof import("@/lib/markdown");
 type ParsedMarkdown = { source: string; html: string };
 
 interface Props {
@@ -21,7 +21,7 @@ const highlightedBlocks = new Map<HTMLElement, HTMLElement>();
 let markdownDocumentPromise: Promise<MarkdownDocumentModule> | null = null;
 
 function loadMarkdownDocument(): Promise<MarkdownDocumentModule> {
-	markdownDocumentPromise ??= import("./markdown-document");
+	markdownDocumentPromise ??= import("@/lib/markdown");
 	return markdownDocumentPromise;
 }
 
@@ -93,8 +93,8 @@ $effect(() => {
 	const source = text;
 	const current = ++parseGeneration;
 	void loadMarkdownDocument()
-		.then(({ renderChatMarkdown }) => {
-			const rendered = renderChatMarkdown(source);
+		.then(({ renderMarkdown }) => {
+			const rendered = renderMarkdown(source);
 			if (current === parseGeneration) parsed = { source, html: rendered };
 		})
 		.catch(() => {

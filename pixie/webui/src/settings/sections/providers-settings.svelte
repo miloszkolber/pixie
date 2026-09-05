@@ -192,6 +192,7 @@ async function closeLogin(): Promise<void> {
 		<Icon name="search" size={16} class="shrink-0 text-text-muted" />
 		<input
 			data-testid="providers-filter"
+            aria-label="Filter providers"
 			bind:value={query}
 			placeholder="Filter providers…"
 			class="min-w-0 flex-1 bg-transparent text-text-default outline-none tr-text-ui placeholder:text-text-muted"

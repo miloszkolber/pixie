@@ -9,7 +9,7 @@ import { getTransport } from "../../connection";
 import { highlightCode } from "../../lib/highlighter";
 import { stripFrontmatter } from "../../lib/utils";
 import { openFileInTab } from "../tabs/open-tabs";
-import { type AlertVariant, parseAlertMarker, renderMarkdown, slugify } from "./markdown-document";
+import { type AlertVariant, parseAlertMarker, renderMarkdown, slugify } from "@/lib/markdown";
 import { classifyHref, projectFileUrl, resolveRelativePath, splitHash } from "./markdown-links";
 
 interface Props {

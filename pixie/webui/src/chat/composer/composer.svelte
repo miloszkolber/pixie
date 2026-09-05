@@ -714,9 +714,7 @@ export type {
 			bind:this={textarea}
 			id={inputId}
 			data-testid="chat-input"
-			role="combobox"
 			aria-autocomplete="list"
-			aria-expanded={completionOpen}
 			aria-controls={completionOpen ? completionListboxId : undefined}
 			aria-activedescendant={activeCompletionId}
 			{value}
@@ -729,7 +727,7 @@ export type {
 			ondrop={handleDrop}
 			rows={4}
 			{placeholder}
-			class="composer-input min-h-[108px]"
+			class="composer-input"
 		></textarea>
 
 		<div class="composer-actions">
@@ -838,6 +836,15 @@ export type {
 </div>
 
 <style>
+    .composer-input { min-block-size: 108px; }
+    @media (max-height: 600px) {
+        .composer-shell { padding-block: 4px; gap: 4px; }
+        .composer-input { min-block-size: 36px; max-block-size: 72px; }
+        .composer-actions { margin-block-start: 0; gap: 8px; }
+    }
+    @media (pointer: coarse) {
+        .composer-actions :global(button) { min-width: 44px; min-height: 44px; }
+    }
 	.composer-shell {
 		border-inline: 0;
 		border-block-end: 0;

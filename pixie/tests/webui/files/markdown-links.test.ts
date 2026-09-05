@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { parseAlertMarker, renderMarkdown, slugify } from "@/files/markdown/markdown-document";
 import { classifyHref, projectFileUrl, resolveRelativePath } from "@/files/markdown/markdown-links";
+import { parseAlertMarker, renderMarkdown, slugify } from "@/lib/markdown";
 
 test("resolves Markdown files inside the originating project root", () => {
 	expect(resolveRelativePath("docs/guide.md", "../images/diagram one.png")).toBe(

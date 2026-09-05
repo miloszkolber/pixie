@@ -185,7 +185,7 @@ export interface ChatTranscriptHandle {
 	data-conversation-key={conversationKey}
 	data-default-pinned="true"
 >
-	<h2 id={headingId} class="message-scroller-label">Conversation</h2>
+	<h1 id={headingId} class="message-scroller-label">Conversation</h1>
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (This labelled, keyboard-scrollable reading viewport intentionally owns pointer and keyboard interaction state.) -->
 	<div
 		bind:this={viewport}

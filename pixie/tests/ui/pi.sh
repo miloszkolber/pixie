@@ -47,7 +47,7 @@ for theme in light dark; do
   browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
   for tab in Providers Models Pi Tools Signet System; do
    browser find role tab click --name "$tab" >/dev/null
-   browser wait --fn 'document.querySelector("[role=tabpanel]") !== null && !document.querySelector("[role=tabpanel]")?.textContent?.includes("Loading section")' >/dev/null
+   browser wait --fn 'document.querySelector("[role=tabpanel]:not([hidden])") !== null && !document.querySelector("[role=tabpanel]:not([hidden])")?.textContent?.includes("Loading settings")' >/dev/null
    browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
    assert_eval "[...document.querySelectorAll('[data-testid=settings-dialog], [role=tabpanel]')].every(e => e.scrollWidth <= e.clientWidth + 1) && document.querySelector('[data-testid=settings-dialog]').getBoundingClientRect().right <= innerWidth + 1" "$theme $width $tab overflow"
    browser screenshot "/artifacts/pi-${theme}-${width}-${tab}.png" >/dev/null
@@ -60,13 +60,24 @@ browser find role tab click --name Models >/dev/null
 browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
 assert_eval "document.querySelector('[data-testid=settings-dialog]').getBoundingClientRect().bottom <= innerHeight + 1 && document.querySelector('[data-testid=settings-dialog]').getBoundingClientRect().top >= 0" 'short settings dialog remains reachable'
 browser screenshot /artifacts/pi-short-settings.png >/dev/null
+browser press Escape >/dev/null
+browser wait --fn 'document.querySelector("[data-testid=settings-dialog]")?.open === false' >/dev/null
+for dimensions in '320 400' '390 480' '1024 500'; do
+ browser set viewport $dimensions >/dev/null
+ browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
+ assert_eval "document.querySelector('[data-testid=chat-input]').getBoundingClientRect().bottom <= innerHeight && document.querySelector('[data-testid=chat-send]').getBoundingClientRect().bottom <= innerHeight && document.querySelector('[data-testid=chat-scroll]').getBoundingClientRect().height >= 64" 'short viewport keeps conversation and composer reachable'
+ browser screenshot "/artifacts/pi-short-${dimensions% *}.png" >/dev/null
+done
+browser find testid open-settings click >/dev/null
 browser set viewport 390 844 >/dev/null
 browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
-browser find role tab click --name Pi >/dev/null
+browser click '[role=tab][aria-controls=settings-panel-pi]' >/dev/null
 browser wait --fn 'document.querySelector("[data-testid=auto-compact-threshold]")?.disabled === false' >/dev/null
 browser fill '[data-testid=auto-compact-threshold]' '42' >/dev/null
 browser find role tab click --name Models >/dev/null
+browser wait --fn 'document.querySelector("#settings-panel-models")?.hidden === false' >/dev/null
 browser find role tab click --name Pi >/dev/null
+browser wait --fn 'document.querySelector("#settings-panel-pi")?.hidden === false' >/dev/null
 assert_eval "document.querySelector('[data-testid=auto-compact-threshold]')?.value === '42'" 'settings draft survives tab switch'
 browser find role tab click --name Providers >/dev/null
 browser eval "$(cat /app/ui-faults.js)" >/dev/null

@@ -27,3 +27,7 @@ export function parseAlertMarker(text: string): { variant: AlertVariant; rest: s
 		rest: text.slice(marker.length).replace(/^[^\S\n]*\n?/, ""),
 	};
 }
+
+export function codeLanguage(className: string): string {
+	return /(?:^|\s)language-([^\s]+)/.exec(className)?.[1] ?? "";
+}

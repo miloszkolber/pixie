@@ -228,7 +228,7 @@ test("the Svelte composer retains completion, attachment, send, and focus contra
 				composerSource.includes(`testid="${testId}"`),
 		).toBeTrue();
 	}
-	expect(composerSource).toContain('role="combobox"');
+	expect(composerSource).not.toContain('role="combobox"');
 	expect(composerSource).toContain('role="listbox"');
 	expect(composerSource).toContain('role="option"');
 	expect(composerSource).toContain('class="composer composer-shell"');

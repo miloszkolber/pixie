@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { renderChatMarkdown } from "@/chat/render/markdown-document";
+import { renderMarkdown } from "@/lib/markdown";
 import { renderSvelte } from "./svelte-render";
 
 test("chat Markdown retains GFM output while escaping embedded HTML", () => {
-	const html = renderChatMarkdown(
+	const html = renderMarkdown(
 		"~~removed~~\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n<script>alert('unsafe')</script>",
 	);
 	expect(html).toContain("<del>removed</del>");
@@ -18,7 +18,7 @@ test("chat Markdown defers parsing and highlighting behind a safe initial fallba
 	).text();
 	expect(source).not.toMatch(/import\s+[^;]+from\s+["']\.\/markdown-document["']/);
 	expect(source).not.toMatch(/import\s+[^;]+from\s+["']\.\.\/\.\.\/lib\/highlighter["']/);
-	expect(source).toContain('import("./markdown-document")');
+	expect(source).toContain('import("@/lib/markdown")');
 	expect(source).toContain('import("../../lib/highlighter")');
 
 	const markup = await renderSvelte("src/chat/render/markdown.svelte", {
