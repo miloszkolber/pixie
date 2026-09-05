@@ -60,6 +60,43 @@ func validateNetworkConfig(config Config) (Config, error) {
 	return config, nil
 }
 
+// normalizeCDPEndpoint validates the operator PIXIE_BROWSER_CDP override.
+// Empty keeps the default Chromium launch. Otherwise only a bare port
+// ("9222", matching AGENT_BROWSER_CDP=9222 for "obscura serve --port 9222")
+// or an explicit "host:port" is accepted; the value passes through unchanged
+// to AGENT_BROWSER_CDP.
+func normalizeCDPEndpoint(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	host, port := value, ""
+	if index := strings.LastIndex(value, ":"); index >= 0 {
+		host, port = value[:index], value[index+1:]
+	} else {
+		port = value
+	}
+	if port == "" {
+		return "", fmt.Errorf("PIXIE_BROWSER_CDP must be a port or host:port")
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 1 || number > 65535 {
+		return "", fmt.Errorf("PIXIE_BROWSER_CDP must be a port or host:port")
+	}
+	if host != "" {
+		if len(host) > 253 || strings.TrimSpace(host) != host {
+			return "", fmt.Errorf("PIXIE_BROWSER_CDP must be a port or host:port")
+		}
+		for _, character := range host {
+			if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') &&
+				(character < '0' || character > '9') && character != '.' && character != '-' {
+				return "", fmt.Errorf("PIXIE_BROWSER_CDP must be a port or host:port")
+			}
+		}
+	}
+	return value, nil
+}
+
 func normalizedBrowserOrigin(value string) (string, bool) {
 	if value == "" || len(value) > 2048 || strings.TrimSpace(value) != value {
 		return "", false

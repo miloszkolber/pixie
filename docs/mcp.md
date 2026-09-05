@@ -16,6 +16,8 @@ Requests use `Authorization: Bearer <PIXIE_MCP_TOKEN>`. The catalog contains mod
 
 Browser provides `browser_command`, `browser_guidance` and `pixie://browser/guide`. It limits sessions to 16, artifacts to 64 MiB per session and 256 MiB total, and commands to 120 seconds. Controller-owned panels have five-minute leases, renewed every minute; abandoned panels are cleaned up. Ordinary MCP client sessions remain the caller's responsibility.
 
+Keep browser session IDs short: at most 28 characters with the default storage roots. Chromium's singleton socket inherits the state path length, and longer IDs exceed its limit at launch.
+
 A ready service has not necessarily launched Chromium. Verify browsing by opening a disposable panel, navigating, taking a screenshot and closing it. For failures check the configured host/port, token, state ownership, container logs and authenticated readiness. Keep tokens out of command-line arguments and never forward them through redirects.
 
 Modules share the Browser service's credentials and storage boundary. Additions require a compiled factory in `internal/mcphost/host.go` and tests for publication, routing, readiness, authorization and shutdown.
@@ -31,3 +33,9 @@ The controller additionally publishes Browser itself on its own listener, alongs
 | `/api/mcp/status` | Authenticated build and catalog status |
 
 Enablement lives in the Pixie persist store (`mcp-modules.json`) and the Tools UI in-process section (Enabled, Status, Endpoint), or `mcpRegistry.catalog` / `mcpRegistry.moduleSetEnabled`. `PIXIE_MCP_MODULES` and `PIXIE_MCP_DISABLED_MODULES` remain only the fallback default and are deprecated pending parity: persisted enablement wins once the operator toggles a module. Browser is the only module; Signet, Web, Todo, Questions, and Subagents are never published through Pixie MCP. Browser storage stays isolated under the controller data directory, and switching publisher engines does not alter the model-facing API (`pixie-browser`, same tools and resource surface). The `mcpAdapter.status` projection surfaces the Pi-side adapter state (connected, cached, failed, needs-auth, not-connected, disabled) and stays fail-open when the adapter profile is not enabled.
+
+## Browser engine
+
+The Browser engine preference lives in Pixie app state (`browser.json`, default `chromium`). The in-process publisher honors it; the separate host follows only its environment. Setting `obscura` requires `PIXIE_BROWSER_CDP` (a port such as `9222` or `host:port`, matching `obscura serve --port 9222`); without it the module degrades instead of silently using Chromium. While `chromium` is selected, a `PIXIE_BROWSER_CDP` override is ignored. Switching engines does not alter the model-facing API. There is no Tools UI toggle yet; see the [roadmap](roadmap.md).
+
+Chromium is the only evaluated engine. Verification runs agent-browser `0.34.0` against headless Chromium through the same executor the MCP tools share (`tests/go/browser/chromium_parity_test.go` with `PIXIE_BROWSER_LIVE=1`): connect, navigate, snapshot with refs, click, fill, type, press, scroll, wait, form login, large DOM, infinite scroll, iframe, JS-heavy pages, screenshots with artifacts, close with storage removal, and policy rejection of `eval`/`pdf`/`download`. Typical latencies are ~600 ms for a cold open (new Chromium), 10–30 ms for snapshot and actions, ~60 ms for screenshots, and ~110 ms for close. Reopening within seconds of close can fail while the previous daemon winds down; retry once. The `0.36.0` release exists but its per-architecture hashes are unverified, so the image stays pinned to `0.34.0`.

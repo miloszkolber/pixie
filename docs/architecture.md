@@ -24,6 +24,18 @@ Pi sources live separately in top-level `pi/`: `host/` contains the SDK service 
 
 Bun builds the frontend with verified Mewa UI assets. The Go application image includes static UI assets and Git. The MCP image includes the Browser runtime. Both run non-root with read-only root filesystems.
 
+## Configuration ownership
+
+Each setting has one owner. Pixie never reads or writes another owner's state.
+
+| Owner | Settings | Examples |
+| --- | --- | --- |
+| Pi (host service) | Providers, models, thinking, credentials, extensions, subagents, agents | `~/.pi/agent`, Pi settings APIs |
+| Pixie (application state) | Projects, sessions, MCP enablement, Browser engine, schedules, goals, settings | Controller data directory (`config.json`, `mcp-modules.json`, `browser.json`) |
+| External (operator-owned) | Memory daemon, search backend and credentials | `SIGNET_DAEMON_URL`, `~/.config/rpiv-web-tools/config.json`, provider `*_API_KEY` |
+
+See [Pi integration](pi.md) for Pi-owned settings, [Pixie MCP service](mcp.md) for Pixie-owned MCP and Browser state, and [deployment](deployment.md) for external services.
+
 ## State and lifecycle
 
 Pi stores native JSONL transcripts. Pixie stores project/session associations, goals, settings, durable queues, schedules and browser-panel ownership. Application JSON uses atomic replacement; execution and ownership ledgers reject stale-backup recovery. The host and MCP extension use locked atomic host-side JSON writes.

@@ -38,6 +38,18 @@ const (
 	transports = "streamable_http"
 )
 
+// Browser engine preference persisted in Pixie app state. Chromium is the
+// default and only evaluated backend; obscura selects a CDP backend (an
+// "obscura serve" endpoint via PIXIE_BROWSER_CDP) once it passes the
+// compatibility suite in docs/roadmap.md. The engine switch never alters the
+// model-facing API: extension name, tools, and resources stay identical.
+const (
+	engineStoreFile = "browser.json"
+	engineChromium  = "chromium"
+	engineObscura   = "obscura"
+	defaultEngine   = engineChromium
+)
+
 // Deprecated-pending-parity: PIXIE_MCP_MODULES and PIXIE_MCP_DISABLED_MODULES
 // remain the fallback default for in-process publication until the Tools UI
 // toggle reaches parity. Persisted enablement in mcp-modules.json wins once
@@ -88,6 +100,9 @@ func (r *Registry) Health(id string) (ready bool, detail string) {
 	if id != browserID || !r.enabled[browserID] {
 		return false, "The Browser module is disabled in Pixie MCP servers."
 	}
+	if r.engine == engineObscura && r.browser == nil {
+		return false, "The Browser module is not ready: the obscura engine needs PIXIE_BROWSER_CDP."
+	}
 	if r.browser == nil || !r.browser.Ready() {
 		return false, "The Browser module is not ready."
 	}
@@ -126,6 +141,13 @@ type persistedModule struct {
 	Enabled bool `json:"enabled"`
 }
 
+// engineState is the persisted Browser engine preference. Unknown values
+// read back as the default so a stale or hand-edited file degrades to the
+// evaluated Chromium backend instead of failing the publisher.
+type engineState struct {
+	Engine string `json:"engine"`
+}
+
 // Registry is the in-process Pixie MCP publisher. It wraps one Browser module
 // behind enable/disable state owned by the Pixie persist store, served on the
 // controller listener alongside (not instead of) the separate pixie-mcp host.
@@ -139,6 +161,7 @@ type Registry struct {
 	mu      sync.RWMutex
 	browser *browser.Service
 	enabled map[string]bool
+	engine  string
 }
 
 // NewRegistry loads persisted module enablement, falling back to the
@@ -168,6 +191,9 @@ func NewRegistry(config Config, build diagnostics.BuildInfo, logger *slog.Logger
 		enabled: map[string]bool{browserID: true},
 	}
 	if err := registry.loadEnabled(); err != nil {
+		return nil, err
+	}
+	if err := registry.loadEngine(); err != nil {
 		return nil, err
 	}
 	registry.startLocked()
@@ -218,6 +244,61 @@ func validateState(value persistedState) error {
 			return fmt.Errorf("unknown in-process MCP module %q", id)
 		}
 	}
+	return nil
+}
+
+// normalizeEngine maps any persisted engine value to a known backend,
+// defaulting to the evaluated Chromium backend.
+func normalizeEngine(value string) string {
+	if value == engineObscura {
+		return engineObscura
+	}
+	return engineChromium
+}
+
+func validateEngineState(value engineState) error {
+	if value.Engine != engineChromium && value.Engine != engineObscura {
+		return fmt.Errorf("unknown browser engine %q", value.Engine)
+	}
+	return nil
+}
+
+func (r *Registry) loadEngine() error {
+	var saved engineState
+	found, err := persist.Read(r.store, engineStoreFile, &saved, validateEngineState)
+	if err != nil {
+		return fmt.Errorf("read browser engine state: %w", err)
+	}
+	if !found {
+		r.engine = defaultEngine
+		return nil
+	}
+	r.engine = normalizeEngine(saved.Engine)
+	return nil
+}
+
+// Engine reports the persisted Browser engine preference. It defaults to
+// chromium; obscura stays unevaluated until the compatibility suite passes.
+func (r *Registry) Engine() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.engine
+}
+
+// SetEngine persists the Browser engine preference in Pixie app state and
+// restarts the module on the selected backend. Unknown engines fail closed.
+// Switching engines does not alter the model-facing API.
+func (r *Registry) SetEngine(engine string) error {
+	if engine != engineChromium && engine != engineObscura {
+		return fmt.Errorf("unknown browser engine %q", engine)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.engine = engine
+	if err := persist.Write(r.store, engineStoreFile, engineState{Engine: engine}, validateEngineState); err != nil {
+		return fmt.Errorf("persist browser engine state: %w", err)
+	}
+	r.startLocked()
 	return nil
 }
 
@@ -272,6 +353,9 @@ func (r *Registry) catalogLocked() Catalog {
 		state, detail = "unavailable", "The Browser module is disabled in Pixie MCP servers."
 	} else if r.browser == nil || !r.browser.Ready() {
 		state, detail = "unavailable", "The Browser module is not ready."
+		if r.engine == engineObscura {
+			detail = "The Browser module is not ready: the obscura engine needs PIXIE_BROWSER_CDP."
+		}
 	}
 	module := Module{
 		ID: browserID, ExtensionName: "pixie-browser", DisplayName: "Pixie Browser",
@@ -339,7 +423,18 @@ func (r *Registry) startLocked() {
 		}
 		return
 	}
-	service, err := browser.NewService(r.browserConfig(), r.build, r.logger)
+	config := r.browserConfig()
+	if r.engine == engineObscura && config.CDPEndpoint == "" {
+		// Never silently fall back to Chromium while obscura is selected:
+		// degrade the module until the operator configures the CDP endpoint.
+		r.logger.Error("obscura browser engine needs PIXIE_BROWSER_CDP")
+		if r.browser != nil {
+			r.browser.Shutdown()
+			r.browser = nil
+		}
+		return
+	}
+	service, err := browser.NewService(config, r.build, r.logger)
 	if err != nil {
 		r.logger.Error("in-process Browser module unavailable", "error", err)
 		if r.browser != nil {
@@ -392,6 +487,12 @@ func (r *Registry) browserConfig() browser.Config {
 	config.Authentication = r.config.Token != ""
 	config.Token = r.config.Token
 	config.PublicOrigin = r.config.PublicOrigin
+	// The persisted engine preference wins over the operator CDP override: a
+	// chromium engine never connects to a CDP backend, and obscura never
+	// launches Chromium silently (startLocked degrades it without an endpoint).
+	if r.engine != engineObscura {
+		config.CDPEndpoint = ""
+	}
 	// Storage isolation: the dual-run separate host keeps its own Browser
 	// roots; this publisher stores Browser state under the controller data
 	// directory instead.
@@ -445,6 +546,7 @@ func (r *Registry) ServeHTTP(response http.ResponseWriter, request *http.Request
 		catalog := r.Catalog()
 		writeJSON(response, http.StatusOK, map[string]any{
 			"build": r.build, "startedAt": r.started.UTC().Format(time.RFC3339), "catalog": catalog,
+			"browserEngine": r.Engine(),
 		})
 	case request.URL.Path == BrowserRoute || strings.HasPrefix(request.URL.Path, BrowserRoute+"/"):
 		r.mu.RLock()

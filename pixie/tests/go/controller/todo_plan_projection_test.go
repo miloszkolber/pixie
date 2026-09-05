@@ -131,12 +131,12 @@ func TestUpstreamTodoResultsProjectOntoPlan(t *testing.T) {
 
 func TestUpstreamTodoReplayProjectsOntoPlan(t *testing.T) {
 	toolMessage := map[string]any{
-		"role":        "toolResult",
-		"toolCallId":  "todo-replay",
-		"toolName":    "todo",
-		"content":     []any{map[string]any{"type": "text", "text": "Updated #1"}},
-		"details":     map[string]any{"action": "update", "params": map[string]any{}, "tasks": []any{map[string]any{"id": 1.0, "subject": "Reloaded task", "status": "completed", "metadata": map[string]any{"priority": "low"}}}, "nextId": 2.0},
-		"messageId":   "tool-todo-1",
+		"role":       "toolResult",
+		"toolCallId": "todo-replay",
+		"toolName":   "todo",
+		"content":    []any{map[string]any{"type": "text", "text": "Updated #1"}},
+		"details":    map[string]any{"action": "update", "params": map[string]any{}, "tasks": []any{map[string]any{"id": 1.0, "subject": "Reloaded task", "status": "completed", "metadata": map[string]any{"priority": "low"}}}, "nextId": 2.0},
+		"messageId":  "tool-todo-1",
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ws, err := websocket.Accept(w, r, nil)
