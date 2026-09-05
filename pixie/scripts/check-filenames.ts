@@ -7,8 +7,7 @@ const repositoryRoot = resolve(projectRoot, "..");
 const roots = [
 	resolve(projectRoot, "cmd"),
 	resolve(projectRoot, "internal"),
-	resolve(projectRoot, "pi-host"),
-	resolve(projectRoot, "pi-mcp"),
+	resolve(repositoryRoot, "pi"),
 	resolve(projectRoot, "contracts"),
 	resolve(projectRoot, "scripts"),
 	resolve(projectRoot, "webui", "scripts"),

@@ -10,6 +10,8 @@ Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). Pi
 
 Optional controls appear when a compatible extension is available. The baseline uses the unmodified Pi SDK and its normal tools and settings.
 
+Pi source and configuration examples live in [`pi/`](pi/README.md); the application lives in `pixie/`.
+
 Follow [deployment](docs/deployment.md) to configure the host service, secrets, state and project mounts, then run:
 
 ```sh

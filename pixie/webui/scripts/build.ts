@@ -21,13 +21,8 @@ async function compileCss(
 ): Promise<void> {
 	await mkdir(intermediateRoot, { recursive: true });
 	const tailwindCli = join(
-		webRoot,
-		"..",
-		"node_modules",
-		"@tailwindcss",
-		"cli",
-		"dist",
-		"index.mjs",
+		dirname(Bun.resolveSync("@tailwindcss/cli/package.json", webRoot)),
+		"dist/index.mjs",
 	);
 	const compiler = Bun.spawn(
 		[

@@ -10,7 +10,7 @@ interface Manifest {
 	optionalDependencies?: Record<string, string>;
 }
 
-const root = join(import.meta.dir, "..");
+const root = join(import.meta.dir, "../..");
 const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Manifest;
 
 const workspaces = rootManifest.workspaces;

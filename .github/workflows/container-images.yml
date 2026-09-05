@@ -16,6 +16,11 @@ on:
       - "NOTICE.md"
       - ".pixie.example"
       - "pixie/**"
+      - "pi/**"
+      - "package.json"
+      - "bun.lock"
+      - "bunfig.toml"
+      - "biome.json"
   push:
     branches: [main]
     tags: ["v*"]
@@ -29,6 +34,11 @@ on:
       - "NOTICE.md"
       - ".pixie.example"
       - "pixie/**"
+      - "pi/**"
+      - "package.json"
+      - "bun.lock"
+      - "bunfig.toml"
+      - "biome.json"
 
 concurrency:
   group: container-images-${{ github.workflow }}-${{ github.ref }}

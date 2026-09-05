@@ -1,6 +1,6 @@
 # Pixie MCP service
 
-`pixie-mcp` hosts the Browser module for trusted MCP clients. It is separate from the universal [Pi MCP client extension](../pixie/pi-mcp/README.md).
+`pixie-mcp` hosts the Browser module for trusted MCP clients. It is separate from the universal [Pi MCP client extension](../pi/mcp/README.md).
 
 | Endpoint | Purpose |
 | --- | --- |

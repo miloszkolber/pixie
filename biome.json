@@ -13,9 +13,9 @@
 			"!**/.claude",
 			"!**/node_modules",
 			"!**/dist",
-			"!webui/.build",
-			"!webui/vendor",
-			"!webui/src/styles/generated"
+			"!pixie/webui/.build",
+			"!pixie/webui/vendor",
+			"!pixie/webui/src/styles/generated"
 		]
 	},
 	"formatter": {

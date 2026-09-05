@@ -3,8 +3,9 @@
 !NOTICE.md
 !pixie/
 !pixie/package.json
-!pixie/bun.lock
-!pixie/bunfig.toml
+!package.json
+!bun.lock
+!bunfig.toml
 !pixie/tsconfig.base.json
 !pixie/go.mod
 !pixie/go.sum
@@ -17,8 +18,9 @@
 !pixie/tests/deployment/git-runtime.test.sh
 !pixie/tests/ui/
 !pixie/tests/ui/**
-!pixie/pi-host/
-!pixie/pi-host/package.json
+!pi/
+!pi/host/
+!pi/host/package.json
 !pixie/contracts/
 !pixie/contracts/**
 !pixie/webui/
@@ -33,5 +35,5 @@
 **/*.log
 **/.env*
 
-!pixie/pi-mcp/
-!pixie/pi-mcp/package.json
+!pi/mcp/
+!pi/mcp/package.json

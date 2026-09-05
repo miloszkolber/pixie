@@ -5,7 +5,7 @@ An ordinary Pi extension for stdio, Streamable HTTP and SSE MCP servers. It requ
 After installing this workspace's dependencies, load the extension in vanilla Pi:
 
 ```sh
-pi -e /absolute/path/to/pixie/pixie/pi-mcp/src/index.ts
+pi -e /absolute/path/to/pixie/pi/mcp/src/index.ts
 ```
 
 Create `<Pi agent directory>/mcp.json`, normally `~/.pi/agent/mcp.json`. Connection names use letters, digits, hyphens and single underscores. The file maps names to settings:

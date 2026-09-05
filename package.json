@@ -1,0 +1,45 @@
+{
+	"name": "pixie-workspace",
+	"private": true,
+	"packageManager": "bun@1.4.0",
+	"workspaces": {
+		"packages": [
+			"pixie",
+			"pixie/contracts",
+			"pixie/webui",
+			"pi/host",
+			"pi/mcp"
+		],
+		"catalog": {
+			"@tailwindcss/cli": "4.3.3",
+			"@types/bun": "1.4.0",
+			"micromark": "4.0.2",
+			"micromark-extension-gfm": "3.0.0",
+			"svelte": "5.57.0",
+			"svelte-check": "4.7.6",
+			"tailwindcss": "4.3.3",
+			"typescript": "6.0.3"
+		}
+	},
+	"type": "module",
+	"devDependencies": {
+		"@biomejs/biome": "2.5.0",
+		"typescript": "catalog:"
+	},
+	"trustedDependencies": [
+		"@biomejs/biome"
+	],
+	"scripts": {
+		"build": "bun run --cwd pixie build",
+		"build:go": "bun run --cwd pixie build:go",
+		"dev:web": "bun run --cwd pixie dev:web",
+		"build:web": "bun run --cwd pixie build:web",
+		"mewa:check": "bun run --cwd pixie mewa:check",
+		"typecheck": "bun run --cwd pixie typecheck",
+		"test": "bun run --cwd pixie test",
+		"check:filenames": "bun run --cwd pixie check:filenames",
+		"lint": "bun run --cwd pixie lint",
+		"format": "bun run --cwd pixie format",
+		"check:deps": "bun run --cwd pixie check:deps"
+	}
+}

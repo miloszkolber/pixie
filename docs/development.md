@@ -1,6 +1,8 @@
 # Development
 
-Use the pinned Bun and Go versions in `pixie/package.json` and `pixie/go.mod`. Go filesystem checks require Linux; use disposable containers on macOS.
+Use the pinned Bun and Go versions in `package.json` and `pixie/go.mod`. Go filesystem checks require Linux; use disposable containers on macOS.
+
+The repository root holds the Bun workspace, lockfile and shared tooling. Pi source lives in `pi/`; application source and tests live in `pixie/`.
 
 From `pixie/`:
 

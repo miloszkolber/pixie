@@ -17,10 +17,10 @@ Paths below are relative to `pixie/`.
 | `cmd/pixie`, `internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection and lifecycle |
 | `cmd/pixie-mcp`, `internal/mcphost`, `internal/browser` | MCP catalog, Browser routes and runtime |
 | `internal/workspace`, `internal/persist` | Bounded project access and durable state |
-| `pi-host` | Authenticated native SDK service and optional factories |
-| `pi-mcp` | Independently usable Pi MCP extension |
 | `webui`, `contracts` | Svelte 5 interface and shared wire contracts |
 | `tests` | Unit, integration, deployment and browser checks |
+
+Pi sources live separately in top-level `pi/`: `host/` contains the SDK service and optional agents, plans and web extensions; `mcp/` contains the independent MCP extension. The repository root holds the shared Bun workspace and lockfile.
 
 Bun builds the frontend with verified Mewa UI assets. The Go application image includes static UI assets and Git. The MCP image includes the Browser runtime. Both run non-root with read-only root filesystems.
 

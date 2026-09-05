@@ -79,3 +79,7 @@ Preserve the focused current baseline. Keep features, dependencies, tests, proto
 ## Current stack
 
 The controller and embedded Browser module share one Go module, with separate application and MCP-host executables and images. The frontend uses TypeScript and Svelte 5, a small framework-neutral external store, Mewa UI foundations pinned from GitHub Releases, and Bun for compilation, development, and tests. The controller uses a small native Pi event adapter and the pinned Coder WebSocket library. The host service uses the pinned Pi SDK and Bun. Treat these as current implementation choices, not permanent product scope.
+
+## Pi source ownership
+
+Keep Pi host code, extensions and configuration examples under top-level `pi/`. Application code stays under `pixie/`; shared Bun tooling and its lockfile live at the repository root. Runtime Pi state uses the selected agent directory.

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { startHost } from "../../pi-host/src/server.ts";
+import { startHost } from "../../../pi/host/src/server.ts";
 
 const [dir, project, profile] = process.argv.slice(2);
 if (!dir || !project) throw new Error("Fixture directories required");
@@ -13,7 +13,7 @@ if (profile === "project") {
 	await mkdir(join(project, ".pi", "extensions"), { recursive: true });
 	await writeFile(
 		join(project, ".pi", "extensions", "agents.ts"),
-		`import agents from ${JSON.stringify(new URL("../../pi-host/src/extensions/agents.ts", import.meta.url).pathname)}; export default pi => agents(pi, ${JSON.stringify(dir)});`,
+		`import agents from ${JSON.stringify(new URL("../../../pi/host/src/extensions/agents.ts", import.meta.url).pathname)}; export default pi => agents(pi, ${JSON.stringify(dir)});`,
 	);
 }
 const host = await startHost({

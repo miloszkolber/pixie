@@ -9,15 +9,7 @@
         "typescript": "catalog:",
       },
     },
-    "contracts": {
-      "name": "@pixie/contracts",
-      "version": "0.0.0",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "pi-host": {
+    "pi/host": {
       "name": "@pixie/pi-host",
       "version": "0.1.0",
       "dependencies": {
@@ -34,7 +26,7 @@
         "typescript": "catalog:",
       },
     },
-    "pi-mcp": {
+    "pi/mcp": {
       "name": "@pixie/pi-mcp",
       "version": "0.1.0",
       "dependencies": {
@@ -52,7 +44,18 @@
         "@earendil-works/pi-coding-agent": "0.85.1",
       },
     },
-    "webui": {
+    "pixie": {
+      "name": "pixie",
+    },
+    "pixie/contracts": {
+      "name": "@pixie/contracts",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "pixie/webui": {
       "name": "@pixie/web",
       "version": "0.0.0",
       "dependencies": {
@@ -291,13 +294,13 @@
 
     "@parcel/watcher-win32-x64": ["@parcel/watcher-win32-x64@2.5.1", "", { "os": "win32", "cpu": "x64" }, "sha512-9lHBdJITeNR++EvSQVUcaZoWupyHfXe1jZvGZ06O/5MflPcuPLtEphScIBL+AiCWBO46tDSHzWyD0uDmmZqsgA=="],
 
-    "@pixie/contracts": ["@pixie/contracts@workspace:contracts"],
+    "@pixie/contracts": ["@pixie/contracts@workspace:pixie/contracts"],
 
-    "@pixie/pi-host": ["@pixie/pi-host@workspace:pi-host"],
+    "@pixie/pi-host": ["@pixie/pi-host@workspace:pi/host"],
 
-    "@pixie/pi-mcp": ["@pixie/pi-mcp@workspace:pi-mcp"],
+    "@pixie/pi-mcp": ["@pixie/pi-mcp@workspace:pi/mcp"],
 
-    "@pixie/web": ["@pixie/web@workspace:webui"],
+    "@pixie/web": ["@pixie/web@workspace:pixie/webui"],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ=="],
 
@@ -778,6 +781,8 @@
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
 
     "picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
+
+    "pixie": ["pixie@workspace:pixie"],
 
     "pkce-challenge": ["pkce-challenge@5.0.1", "", {}, "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="],
 

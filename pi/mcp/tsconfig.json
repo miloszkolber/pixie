@@ -10,5 +10,5 @@
 		"types": ["bun"],
 		"lib": ["ESNext"]
 	},
-	"include": ["src/**/*.ts", "../tests/pi-host/**/*.ts"]
+	"include": ["src/**/*.ts", "../../pixie/tests/pi-host/**/*.ts"]
 }

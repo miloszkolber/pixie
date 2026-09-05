@@ -9,8 +9,8 @@ import {
 	ListToolsRequestSchema,
 	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { Sessions } from "../../pi-host/src/sessions.ts";
-import mcpExtension from "../../pi-mcp/src/index.ts";
+import { Sessions } from "../../../pi/host/src/sessions.ts";
+import mcpExtension from "../../../pi/mcp/src/index.ts";
 
 test("MCP tools, App resources and connection removal remain scoped to the extension", async () => {
 	const dir = await mkdtemp(tmpdir() + "/pixie-pi-mcp-");

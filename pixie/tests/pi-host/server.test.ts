@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { startHost } from "../../pi-host/src/server.ts";
+import { startHost } from "../../../pi/host/src/server.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {

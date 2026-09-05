@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import agents from "../../pi-host/src/extensions/agents.ts";
-import plans from "../../pi-host/src/extensions/plans.ts";
-import { Sessions } from "../../pi-host/src/sessions.ts";
-import { JsonStore } from "../../pi-host/src/storage.ts";
+import agents from "../../../pi/host/src/extensions/agents.ts";
+import plans from "../../../pi/host/src/extensions/plans.ts";
+import { Sessions } from "../../../pi/host/src/sessions.ts";
+import { JsonStore } from "../../../pi/host/src/storage.ts";
 import { makeProvider } from "./provider-fixture.ts";
 
 const cleanups: (() => Promise<unknown>)[] = [];

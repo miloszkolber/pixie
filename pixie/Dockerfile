@@ -11,12 +11,13 @@ ARG SOURCE_URL=https://github.com/miloszkolber/pixie
 ARG CREATED=1970-01-01T00:00:00Z
 
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS web-build
-WORKDIR /work
-COPY pixie/package.json pixie/bun.lock pixie/bunfig.toml ./
+WORKDIR /work/pixie
+COPY package.json bun.lock bunfig.toml /work/
+COPY pixie/package.json ./
 COPY pixie/webui/package.json webui/package.json
 COPY pixie/contracts/package.json contracts/package.json
-COPY pixie/pi-host/package.json pi-host/package.json
-COPY pixie/pi-mcp/package.json pi-mcp/package.json
+COPY pi/host/package.json /work/pi/host/package.json
+COPY pi/mcp/package.json /work/pi/mcp/package.json
 RUN --mount=type=cache,id=bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
     bun install --frozen-lockfile
 COPY pixie/webui/ webui/
@@ -24,8 +25,8 @@ COPY pixie/contracts/ contracts/
 COPY pixie/tsconfig.base.json ./
 RUN bun run build:web \
     && mkdir -p /out/licenses/frontend \
-    && find node_modules -type f \( -iname 'license*' -o -iname 'notice*' \) \
-        -exec cp --parents '{}' /out/licenses/frontend/ \; \
+    && (cd /work && find node_modules -type f \( -iname 'license*' -o -iname 'notice*' \) \
+        -exec cp --parents '{}' /out/licenses/frontend/ \;) \
     && mkdir -p /out/licenses/frontend/vendor/mewa-ui \
         /out/licenses/frontend/vendor/mewa-svelte \
         /out/licenses/frontend/vendor/mewa-icons \
@@ -202,7 +203,7 @@ RUN --mount=type=cache,id=ui-acceptance-apt,target=/var/cache/apt,sharing=locked
     && mkdir -p /app/web /artifacts \
     && chown -R 1000:1000 /artifacts
 COPY --from=ui-test-build /out/pixie-ui-fixture /app/pixie-ui-fixture
-COPY --from=web-build /work/webui/dist /app/web
+COPY --from=web-build /work/pixie/webui/dist /app/web
 COPY pixie/tests/ui/run.sh /app/run-ui-acceptance
 COPY pixie/tests/ui/pi.sh /app/run-pi-acceptance
 COPY pixie/tests/ui/faults.js /app/ui-faults.js
@@ -236,7 +237,7 @@ COPY --from=git-runtime-trim /rootfs/ /
 COPY LICENSE NOTICE.md /app/legal/
 COPY --from=go-build /out/pixie /app/pixie
 COPY --from=go-build /out/licenses/pixie /app/licenses
-COPY --from=web-build /work/webui/dist /app/web
+COPY --from=web-build /work/pixie/webui/dist /app/web
 COPY --from=web-build /out/licenses /app/licenses
 USER 1000:1000
 EXPOSE 7312
