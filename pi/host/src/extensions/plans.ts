@@ -4,6 +4,11 @@ import { registerCapability } from "../capabilities.ts";
 
 // Planning is a tool and presentation capability. It does not disable tools,
 // intercept commands, modify Pi's prompts, or change execution behavior.
+//
+// Deprecated pending parity: `rpiv-todo` (upstream `todo` tool) is the
+// candidate replacement. This extension remains the plan writer until the
+// parity deletion gate in docs/roadmap.md is met; do not remove
+// update_plan, pixie-plan, pixie:plan, or plans.read before then.
 export default function plansExtension(pi: ExtensionAPI): void {
 	let entries: unknown[] = [];
 	registerCapability(pi, {

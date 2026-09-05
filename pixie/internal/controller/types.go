@@ -47,6 +47,10 @@ type SessionPlanEntry struct {
 	Content  string `json:"content"`
 	Priority string `json:"priority"`
 	Status   string `json:"status"`
+	// ID and BlockedBy carry the upstream `todo` tool's task identity and
+	// dependencies. They are absent for legacy update_plan entries.
+	ID        *int  `json:"id,omitempty"`
+	BlockedBy []int `json:"blockedBy,omitempty"`
 }
 
 type SessionPlanState struct {

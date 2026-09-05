@@ -7,6 +7,8 @@ import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
 import agents from "./extensions/agents.ts";
 import plans from "./extensions/plans.ts";
+import rpivTodo from "./extensions/rpiv-todo.ts";
+import rpivWeb from "./extensions/rpiv-web.ts";
 import web from "./extensions/web.ts";
 import { Providers } from "./providers.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
@@ -62,6 +64,11 @@ async function startUnlockedHost(options: HostOptions) {
 			}),
 		plans,
 		web,
+		// Optional Pi-native replacements, enabled with e.g.
+		// `--extensions mcp,agents,rpiv-todo,rpiv-web`. The custom `plans`
+		// and `web` factories stay available until parity is verified.
+		"rpiv-todo": rpivTodo,
+		"rpiv-web": rpivWeb,
 	};
 	const names = options.extensions ?? [];
 	if (new Set(names).size !== names.length || names.some((n) => !profiles[n]))

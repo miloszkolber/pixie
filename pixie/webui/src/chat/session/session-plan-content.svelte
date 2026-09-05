@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { SessionPlanState } from "@pixie/contracts";
 import PlanStatusIcon from "./plan-status-icon.svelte";
-import { planIconStatus, planProgress, planStatusLabel } from "./session-plan";
+import { planBlockedByLabel, planIconStatus, planProgress, planStatusLabel } from "./session-plan";
 
 interface Props {
 	planState: SessionPlanState;
@@ -27,6 +27,9 @@ let hasEntries = $derived(planState.entries.length > 0);
 					</span>
 					<span class={`min-w-0 flex-1 break-words tr-text-ui ${entry.status === "completed" ? "text-text-muted line-through" : "text-text-default"}`}>
 						<span class="sr-only">{planStatusLabel(entry.status)}: </span>{entry.content}
+						{#if planBlockedByLabel(entry)}
+							<span class="block tr-text-metadata text-text-muted">{planBlockedByLabel(entry)}</span>
+						{/if}
 					</span>
 					<span class="shrink-0 capitalize tr-text-metadata text-text-muted">{entry.priority}</span>
 				</li>

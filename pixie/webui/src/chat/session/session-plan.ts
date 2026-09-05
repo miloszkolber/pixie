@@ -27,3 +27,8 @@ export function sessionPlanLabel(planState: SessionPlanState): string {
 	const progress = planProgress(planState);
 	return `Session plan, ${progress.completed} of ${progress.total} complete${planState.truncated ? ", shortened to fit display limits" : ""}`;
 }
+
+export function planBlockedByLabel(entry: SessionPlanState["entries"][number]): string | null {
+	if (!entry.blockedBy?.length) return null;
+	return `Blocked by ${entry.blockedBy.map((id) => `#${id}`).join(", ")}`;
+}

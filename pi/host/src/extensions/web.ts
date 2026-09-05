@@ -2,6 +2,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { registerCapability } from "../capabilities.ts";
 
+// Deprecated pending parity: `rpiv-web` (upstream web_search/web_fetch) is
+// the candidate replacement. This bounded custom web_fetch remains the
+// default until the parity deletion gate in docs/roadmap.md is met.
 export default function webExtension(pi: ExtensionAPI): void {
 	registerCapability(pi, { id: "web", version: 1, operations: {} });
 	pi.registerTool({

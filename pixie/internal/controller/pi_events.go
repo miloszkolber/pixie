@@ -72,6 +72,12 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		if plan := mapValue(details["plan"]); plan["entries"] != nil {
 			return emit("plan", plan)
 		}
+		// Dual-read migration: the legacy update_plan envelope above remains
+		// the writer, while upstream `todo` results (details.tasks/nextId)
+		// project onto the same plan display.
+		if entries := projectTodoPlanEntries(details); entries != nil {
+			return emit("plan", map[string]any{"entries": entries})
+		}
 		return nil
 	}
 	usage := func() error {

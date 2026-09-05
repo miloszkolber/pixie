@@ -203,6 +203,10 @@ export interface SessionPlanState {
 		content: string;
 		priority: "high" | "medium" | "low";
 		status: "pending" | "in_progress" | "completed";
+		/** Upstream `todo` task identity; absent for legacy update_plan entries. */
+		id?: number;
+		/** Upstream `todo` dependency task IDs; absent when empty or legacy. */
+		blockedBy?: number[];
 	}[];
 	truncated?: boolean;
 }
