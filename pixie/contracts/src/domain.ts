@@ -109,6 +109,56 @@ export interface McpGatewayCatalog {
 	modules: McpGatewayModule[];
 }
 
+/** Browser-safe projection of one module published by the in-process Pixie MCP publisher. */
+export interface McpRegistryModule {
+	id: string;
+	extensionName: string;
+	displayName: string;
+	description: string;
+	path: string;
+	transport: "streamable_http";
+	enabled: boolean;
+	state: McpModuleState;
+	detail?: string;
+	endpoint?: string;
+}
+
+export interface McpRegistryCatalog {
+	schemaVersion: 1;
+	engine: "in-process";
+	gateway: McpGatewaySummary;
+	modules: McpRegistryModule[];
+}
+
+export type McpAdapterServerStatus =
+	| "connected"
+	| "cached"
+	| "failed"
+	| "needs-auth"
+	| "not-connected"
+	| "disabled";
+
+/** Browser-safe projection of the pi-mcp-adapter bridge status. */
+export interface McpAdapterStatus {
+	available: boolean;
+	engine?: string;
+	version?: string;
+	bunCompat?: string;
+	proxyTool?: string;
+	runtimeName?: string;
+	snapshot?: {
+		version: number;
+		totalTools: number;
+		connectedCount: number;
+		disabledCount: number;
+		servers: {
+			name: string;
+			status: McpAdapterServerStatus;
+			toolCount: number;
+		}[];
+	} | null;
+}
+
 /** A controller-owned, bounded browser panel. The browser service token is never exposed here. */
 export interface BrowserPanel {
 	id: string;

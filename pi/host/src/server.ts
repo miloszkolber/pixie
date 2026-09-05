@@ -6,6 +6,7 @@ import mcp from "@pixie/pi-mcp";
 import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
 import agents from "./extensions/agents.ts";
+import piMcpAdapter from "./extensions/pi-mcp-adapter.ts";
 import piSubagent from "./extensions/pi-subagent.ts";
 import plans from "./extensions/plans.ts";
 import rpivAsk from "./extensions/rpiv-ask.ts";
@@ -84,6 +85,12 @@ async function startUnlockedHost(options: HostOptions) {
 		// `agents` extension stays the writer until parity is verified.
 		signet,
 		"pi-subagent": piSubagent,
+		// Optional Pi-native MCP client. The upstream `pi-mcp-adapter`
+		// factory is used unchanged (single `mcp` proxy tool); this profile
+		// only adds an additive marker plus `adapter.status` /
+		// `adapter.registerBrowser` projection operations. The custom `mcp`
+		// extension stays the writer until parity is verified.
+		"pi-mcp-adapter": piMcpAdapter,
 	};
 	const names = options.extensions ?? [];
 	if (new Set(names).size !== names.length || names.some((n) => !profiles[n]))

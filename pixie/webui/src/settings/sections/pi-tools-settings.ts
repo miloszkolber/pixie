@@ -1,4 +1,4 @@
-import type { PiExtensionSummary, PiToolSummary } from "@pixie/contracts";
+import type { McpRegistryModule, PiExtensionSummary, PiToolSummary } from "@pixie/contracts";
 
 export function uniqueExtensions(extensions: PiExtensionSummary[]): PiExtensionSummary[] {
 	const seen = new Set<string>();
@@ -20,6 +20,12 @@ export function filterTools(tools: readonly PiToolSummary[], query: string): PiT
 export function extensionWarningText(warningCount: number): string | null {
 	if (warningCount === 0) return null;
 	return `${warningCount} Pi configuration ${warningCount === 1 ? "warning" : "warnings"} reported.`;
+}
+
+export function registryModuleStatusLabel(module: McpRegistryModule): string {
+	if (!module.enabled) return "Disabled";
+	if (module.state === "ready") return "Enabled";
+	return "Unavailable";
 }
 
 export function isSessionInventoryCurrent(

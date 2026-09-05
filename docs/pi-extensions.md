@@ -13,6 +13,7 @@ The host starts with normal Pi resources and no bundled factories enabled. Add `
 | `rpiv-ask` | Upstream `ask_user_question` tool; Pi-native question replacement candidate |
 | `signet` | Marker for the operator-installed Signet memory file extension; Pi-native memory candidate |
 | `pi-subagent` | Upstream `subagent` tool; Pi-native delegation candidate |
+| `pi-mcp-adapter` | Upstream `mcp` proxy tool; Pi-native MCP client candidate |
 
 Use either `plans` with `web`, or `rpiv-todo` with `rpiv-web`. Both web profiles register `web_fetch`, and the first listed factory wins; the pair is mutually exclusive. The custom `plans` and `web` extensions remain the defaults pending the [parity gate](roadmap.md).
 
@@ -40,6 +41,10 @@ Pixie capabilities register through `pixie:capability:v1`; their operations are 
 The `rpiv-web` search backend is operator-owned external configuration. Provider selection, API keys, and the SearXNG endpoint live in `~/.config/rpiv-web-tools/config.json` and provider environment variables (`WEB_SEARCH_PROVIDER`, `SEARXNG_URL`, per-provider `*_API_KEY`); the default is self-hosted SearXNG at `http://localhost:8080`. Pixie never reads or writes this config. The upstream `web_fetch` SSRF guard refuses loopback and private targets, so it cannot reach Docker-local loopback services; this protection is retained, not weakened.
 
 Global MCP changes apply on subsequent session initialization. Session membership is stored separately. Removing a connection removes only its tools. Unavailable connections are reported without replacing Pi's core tools.
+
+## Pi-native MCP client
+
+The `pi-mcp-adapter` profile registers the upstream `pi-mcp-adapter` factory unchanged: one `mcp` proxy tool with lazy/eager/keep-alive lifecycle, a metadata cache, stdio and Streamable HTTP transports with SSE fallback, header secrets, OAuth/bearer auth, resources, reconnect, and runtime registration over the Pi event bus. Pixie only adds an additive marker plus `adapter.status` and `adapter.registerBrowser` projection operations; it adds no tools, prompts, or interception. Pixie Browser registers through the adapter runtime API proxy-only (`pixie-browser`, first-wins, fail-closed on duplicates). The custom `mcp` extension stays the writer until the [parity gate](roadmap.md) passes; enabling `pi-mcp-adapter` before then surfaces both the per-tool `<conn>__<tool>` surface and the single `mcp` proxy tool, so use it only for parity evaluation. Upstream declares `engines: {node: ">=20"}` with unknown Bun compatibility; the parity suite records the Bun startup outcome.
 
 ## Signet memory
 

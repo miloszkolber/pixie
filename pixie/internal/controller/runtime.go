@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/miloszkolber/pixie/internal/diagnostics"
+	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/persist"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
@@ -50,6 +51,7 @@ type Runtime struct {
 	status    *runtimeStatusProvider
 	browser   *BrowserPanels
 	mcp       *MCPGateway
+	registry  *mcpserver.Registry
 	errors    chan error
 }
 
@@ -129,9 +131,29 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	apps := NewAppViews(sessions, authConfig, config.Port)
 	requests := &diagnostics.RequestCounter{}
 	mcpGateway := NewMCPGateway(authConfig)
+	// In-process Pixie MCP publisher (Stage F dual-run): the separate
+	// pixie-mcp host keeps running unchanged. A Browser module that cannot
+	// start here degrades the in-process catalog instead of failing startup.
+	mcpRegistry, err := mcpserver.NewRegistry(mcpserver.Config{
+		Host:         config.Host,
+		Port:         config.Port,
+		Token:        authConfig.MCPToken,
+		PublicOrigin: authConfig.PublicOrigin,
+		DataDir:      store.Dir,
+		Getenv: func(key string) (string, bool) {
+			if config.Getenv == nil {
+				return "", false
+			}
+			value := config.Getenv(key)
+			return value, value != ""
+		},
+	}, build, nil)
+	if err != nil {
+		return nil, err
+	}
 	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig)
 	statusProvider.schedules = schedules
-	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Apps: apps, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPGateway: mcpGateway}
+	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Apps: apps, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPGateway: mcpGateway, MCPRegistry: mcpRegistry}
 	welcome := func(ctx context.Context) (any, error) {
 		recent, err := projects.List(true)
 		if err != nil {
@@ -189,9 +211,11 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	}
 	httpHandler, err := NewHTTPHandler(socket, ObjectiveHandler{Sessions: sessions, Schedules: schedules}, projects, files, authConfig, config.StaticDir, ready)
 	if err != nil {
+		mcpRegistry.Shutdown()
 		return nil, err
 	}
-	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, apps: apps, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, mcp: mcpGateway}, nil
+	httpHandler.MCPRegistry = mcpRegistry
+	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, apps: apps, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, mcp: mcpGateway, registry: mcpRegistry}, nil
 }
 
 func (r *Runtime) Start() (string, error) {
@@ -222,6 +246,9 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.schedules.Close(ctx)
 	r.status.close()
 	r.mcp.Close()
+	if r.registry != nil {
+		r.registry.Shutdown()
+	}
 	r.browser.CloseAll(ctx)
 	r.logins.Close()
 	r.watches.Close()

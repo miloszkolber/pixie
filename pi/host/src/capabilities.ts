@@ -44,6 +44,7 @@ const requiredOperations: Record<string, string[]> = {
 		"pi.tools.call",
 	],
 	plans: ["plans.read"],
+	"pi-mcp-adapter": ["adapter.status", "adapter.registerBrowser"],
 };
 export class Capabilities {
 	private conflicts = new Set<string>();

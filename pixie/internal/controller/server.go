@@ -40,6 +40,7 @@ type HTTPHandler struct {
 	auth          *Auth
 	StaticDir     string
 	Ready         http.HandlerFunc
+	MCPRegistry   http.Handler
 	browserClient *http.Client
 }
 
@@ -62,6 +63,8 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 	switch {
 	case request.URL.Path == "/mcp/objective":
 		h.Objective.ServeHTTP(response, request)
+	case h.MCPRegistry != nil && (request.URL.Path == "/mcp/browser" || strings.HasPrefix(request.URL.Path, "/mcp/browser/") || request.URL.Path == "/api/mcp/modules" || request.URL.Path == "/api/mcp/status"):
+		h.MCPRegistry.ServeHTTP(response, request)
 	case strings.HasPrefix(request.URL.Path, "/auth/"):
 		h.serveAuth(response, request)
 	case request.URL.Path == "/ws":

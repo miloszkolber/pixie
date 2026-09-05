@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/miloszkolber/pixie/internal/diagnostics"
+	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
 
@@ -29,6 +30,7 @@ type CoreHandler struct {
 	RuntimeStatus func(context.Context) runtimeStatusReport
 	BrowserPanels *BrowserPanels
 	MCPGateway    *MCPGateway
+	MCPRegistry   *mcpserver.Registry
 }
 
 func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMessage, clientKey string) (result any, err error) {
@@ -91,6 +93,25 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, fmt.Errorf("malformed MCP module request")
 		}
 		return h.MCPGateway.SetPiEnabled(ctx, h.Admin, request.ModuleID, *request.Enabled, request.Revision)
+	case "mcpRegistry.catalog":
+		if h.MCPRegistry == nil {
+			return map[string]any{"schemaVersion": 1, "engine": "in-process", "gateway": map[string]any{"state": "not-configured", "detail": "In-process MCP publisher is not configured."}, "modules": []any{}}, nil
+		}
+		return h.MCPRegistry.Catalog(), nil
+	case "mcpRegistry.moduleSetEnabled":
+		var request struct {
+			ModuleID string `json:"moduleId"`
+			Enabled  *bool  `json:"enabled"`
+		}
+		if h.MCPRegistry == nil || decodeParams(raw, &request) != nil || request.ModuleID == "" || request.Enabled == nil {
+			return nil, fmt.Errorf("malformed MCP module request")
+		}
+		if err := h.MCPRegistry.SetEnabled(request.ModuleID, *request.Enabled); err != nil {
+			return nil, err
+		}
+		return h.MCPRegistry.Catalog(), nil
+	case "mcpAdapter.status":
+		return h.Admin.AdapterStatus(ctx), nil
 	case "history.search":
 		var request map[string]any
 		if h.Sessions == nil || decodeParams(raw, &request) != nil {

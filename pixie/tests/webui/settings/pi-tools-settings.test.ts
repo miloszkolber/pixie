@@ -1,9 +1,10 @@
 import { beforeEach, expect, test } from "bun:test";
-import type { AgentProfile, PiToolSummary } from "@pixie/contracts";
+import type { AgentProfile, McpRegistryModule, PiToolSummary } from "@pixie/contracts";
 import { agentOperationRows } from "@/settings/sections/agent-settings";
 import {
 	extensionWarningText,
 	isSessionInventoryCurrent,
+	registryModuleStatusLabel,
 } from "@/settings/sections/pi-tools-settings";
 import { resolveSettingsSection, settingsTabs } from "@/settings/settings-dialog";
 import { SettingsSection } from "@/settings/state";
@@ -77,6 +78,23 @@ test("settings tabs wrap without a native horizontal scroll container", async ()
 	expect(source).toContain("flex-wrap");
 	expect(source).not.toContain("overflow-x-auto");
 	expect(source).toContain('role="tabpanel"');
+});
+
+test("in-process publisher rows project enablement before readiness", () => {
+	const base: McpRegistryModule = {
+		id: "browser",
+		extensionName: "pixie-browser",
+		displayName: "Pixie Browser",
+		description: "Bounded browser automation and browser guidance.",
+		path: "/mcp/browser",
+		transport: "streamable_http",
+		enabled: true,
+		state: "ready",
+		endpoint: "http://127.0.0.1:7312/mcp/browser",
+	};
+	expect(registryModuleStatusLabel(base)).toBe("Enabled");
+	expect(registryModuleStatusLabel({ ...base, state: "unavailable" })).toBe("Unavailable");
+	expect(registryModuleStatusLabel({ ...base, enabled: false })).toBe("Disabled");
 });
 
 test("session controls are current only after the active target finishes loading", () => {

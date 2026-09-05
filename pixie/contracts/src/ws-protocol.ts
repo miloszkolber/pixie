@@ -37,7 +37,9 @@ import type {
 	HistorySearchResult,
 	LoginFrame,
 	LoginReply,
+	McpAdapterStatus,
 	McpGatewayCatalog,
+	McpRegistryCatalog,
 	PiAgentCatalogEntry,
 	PiExtensionCatalog,
 	PiPreferences,
@@ -540,6 +542,18 @@ export interface WsMethodMap {
 	"mcpGateway.moduleSetPiEnabled": {
 		params: { moduleId: string; enabled: boolean; revision?: string };
 		result: McpGatewayCatalog;
+	};
+	"mcpRegistry.catalog": {
+		params: Record<string, never>;
+		result: McpRegistryCatalog;
+	};
+	"mcpRegistry.moduleSetEnabled": {
+		params: { moduleId: string; enabled: boolean };
+		result: McpRegistryCatalog;
+	};
+	"mcpAdapter.status": {
+		params: Record<string, never>;
+		result: McpAdapterStatus;
 	};
 	"browser.panelOpen": { params: { projectId: string }; result: BrowserPanel };
 	"browser.panelCommand": {
