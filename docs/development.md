@@ -15,7 +15,7 @@ go vet ./...
 bun run build
 ```
 
-Native SDK tests use temporary Pi state, local fixture providers, authenticated WebSockets and real local MCP transports. They cover vanilla fallback, credentials, sessions, streaming/replay, agents and MCP. Go tests cover application persistence, queues, schedules, project ownership and Browser boundaries. No real provider credentials are required.
+Native SDK tests use temporary Pi state, local fixture providers, authenticated WebSockets and real local MCP transports. They cover vanilla fallback, credentials, sessions, streaming/replay, agents and MCP. The Go controller suite also launches the real Bun/Pi host and verifies vanilla and optional-extension sessions through the application WebSocket. This requires Bun; CI runs it on amd64 and arm64. Go tests cover application persistence, queues, schedules, project ownership and Browser boundaries. No real provider credentials are required.
 
 From the repository root:
 
@@ -27,6 +27,6 @@ docker build -f pixie/Dockerfile --target pixie -t pixie .
 docker build -f pixie/Dockerfile --target mcp -t pixie-mcp .
 ```
 
-Mount `/artifacts` to retain browser evidence. Acceptance covers file/Git views, attachments, streaming/reconnect, provider setup, keyboard focus and both themes at narrow and wide sizes. Apple Container validates Linux processes and images; it does not establish Docker Compose host-network behavior.
+Mount `/artifacts` to retain browser evidence. The container-image workflow runs one shared validation graph before publishing either image. Acceptance covers short viewport composer access, file/Git views, attachments, streaming/reconnect, provider setup, keyboard focus and both themes at narrow and wide sizes. Apple Container validates Linux processes and images; it does not establish Docker Compose host-network behavior.
 
 `bun run dev:web` uses the same frontend entry and Linux Go fixture. Builds verify vendored Mewa assets and enforce the initial JavaScript budget. Keep tests under `tests/`; use regression cases for observable behavior and realistic failure modes.

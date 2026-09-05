@@ -7,7 +7,9 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - ".github/workflows/container-images.yml"
+      - ".github/workflows/**"
+      - "README.md"
+      - "docs/**"
       - "docker-compose.yaml"
       - ".dockerignore"
       - "LICENSE"
@@ -18,7 +20,9 @@ on:
     branches: [main]
     tags: ["v*"]
     paths:
-      - ".github/workflows/container-images.yml"
+      - ".github/workflows/**"
+      - "README.md"
+      - "docs/**"
       - "docker-compose.yaml"
       - ".dockerignore"
       - "LICENSE"

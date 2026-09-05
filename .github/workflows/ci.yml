@@ -2,31 +2,6 @@ name: CI
 
 # Source, service-isolation and official Pi compatibility gates.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/**"
-      - "LICENSE"
-      - "NOTICE.md"
-      - "README.md"
-      - "docker-compose.yaml"
-      - ".dockerignore"
-      - ".pixie.example"
-      - "docs/**"
-      - "pixie/**"
-  push:
-    branches: [main]
-    tags: ["v*"]
-    paths:
-      - ".github/workflows/**"
-      - "LICENSE"
-      - "NOTICE.md"
-      - "README.md"
-      - "docker-compose.yaml"
-      - ".dockerignore"
-      - ".pixie.example"
-      - "docs/**"
-      - "pixie/**"
   workflow_call:
     inputs:
       revision:
@@ -34,8 +9,7 @@ on:
         required: false
         type: string
 
-# Supersede only runs of the same workflow and ref. The reusable invocation from
-# the container-image workflow must not cancel the standalone CI run.
+# Source validation is invoked once by the container-image workflow.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -161,4 +135,7 @@ jobs:
       - run: bun install --frozen-lockfile
         working-directory: pixie
       - run: bun test tests/pi-host
+        working-directory: pixie
+      - name: Verify application against native Pi host
+        run: go test -count=1 ./tests/go/controller -run TestApplicationThroughNativePiHost
         working-directory: pixie
