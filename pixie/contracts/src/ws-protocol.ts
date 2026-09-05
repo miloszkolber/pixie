@@ -14,6 +14,7 @@ import type {
 	SlashCommandInfo,
 	ThinkingLevel,
 	TranscriptMessage,
+	UiDialogResult,
 	WireModel,
 } from "./agent-protocol";
 import type {
@@ -52,7 +53,7 @@ import type {
 	TextResourceAttachment,
 } from "./domain";
 
-export const PROTOCOL_VERSION = 85;
+export const PROTOCOL_VERSION = 86;
 
 /**
  * Maximum UTF-8 byte length for one serialized browser WebSocket request.
@@ -115,6 +116,8 @@ export const WS_METHODS = {
 	sessionGoalSet: "session.goalSet",
 	sessionGoalClear: "session.goalClear",
 	sessionQuestionReply: "session.questionReply",
+	sessionUiReply: "session.uiReply",
+	sessionUiCancel: "session.uiCancel",
 	sessionList: "session.list",
 	sessionGetMessages: "session.getMessages",
 	sessionSetLeases: "session.setLeases",
@@ -330,6 +333,14 @@ export interface WsMethodMap {
 	};
 	"session.questionReply": {
 		params: { sessionId: string; toolCallId: string; result: AskUserQuestionResult };
+		result: Ack;
+	};
+	"session.uiReply": {
+		params: { sessionId: string; requestId: string; result: UiDialogResult };
+		result: Ack;
+	};
+	"session.uiCancel": {
+		params: { sessionId: string; requestId: string };
 		result: Ack;
 	};
 	"session.list": {

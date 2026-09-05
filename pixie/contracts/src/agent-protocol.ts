@@ -328,7 +328,10 @@ export type AgentEvent =
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
 	| { type: "summarization_retry_scheduled"; attempt: number; maxAttempts: number; delayMs: number }
 	| { type: "summarization_retry_finished" }
-	| { type: "thinking_level_changed"; level: ThinkingLevel };
+	| { type: "thinking_level_changed"; level: ThinkingLevel }
+	| { type: "ui_request"; request: UiDialogRequest }
+	| { type: "ui_notify"; message: string; level?: "info" | "warning" | "error" }
+	| { type: "ui_cancel"; requestId: string };
 export interface SessionEventPayload {
 	sessionId: string;
 	event: AgentEvent;
@@ -389,6 +392,22 @@ export interface AskUserQuestionAnswer {
 	selected?: string[];
 	notes?: string;
 	preview?: string;
+}
+/** Generic Pi extension dialog primitives bridged from the host to the Web UI. */
+export type UiDialogPrimitive = "select" | "confirm" | "input" | "editor";
+export interface UiDialogRequest {
+	requestId: string;
+	sessionId: string;
+	primitive: UiDialogPrimitive;
+	title: string;
+	message?: string;
+	options?: string[];
+	placeholder?: string;
+	prefill?: string;
+}
+export interface UiDialogResult {
+	value?: string | boolean;
+	cancelled: boolean;
 }
 export function isTranscriptMessageRole(role: string): role is TranscriptMessage["role"] {
 	return role === "user" || role === "assistant" || role === "toolResult";

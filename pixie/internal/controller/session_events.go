@@ -50,6 +50,11 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 	}
 	update := mapValue(notification["update"])
 	kind := textValue(update["sessionUpdate"])
+	// Generic extension dialogs are manager-level (session-bound, single-use)
+	// and never touch the transcript projection.
+	if kind == "ui_request" || kind == "ui_notify" || kind == "ui_cancel" {
+		return m.applyUiUpdate(sessionID, kind, update)
+	}
 	origin := agentPiUpdate
 	if piOnly {
 		origin = piExtensionUpdate

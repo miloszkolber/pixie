@@ -119,6 +119,7 @@ type SessionManager struct {
 	lifecycle    map[string]bool
 
 	questions       map[questionKey]*pendingQuestion
+	dialogs         map[dialogKey]*pendingDialog
 	creating        int
 	pendingCommands map[string]pendingCommandCatalog
 	publish         SessionPublisher
@@ -137,7 +138,7 @@ func NewSessionManager(projects *workspace.Projects, policy *workspace.PathPolic
 	if records != nil {
 		deletions = NewSessionDeletions(records.store)
 	}
-	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), questions: make(map[questionKey]*pendingQuestion), publish: publish, now: time.Now}
+	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), questions: make(map[questionKey]*pendingQuestion), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now}
 	manager.history = newHistoryIndex(manager)
 	return manager
 }
@@ -389,6 +390,7 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		return nil
 	}
 	m.cancelQuestions(sessionID)
+	m.cancelDialogs(sessionID)
 	entry.state.Lock()
 	replay := newSessionEntry(sessionID, entry.projectID, entry.cwd, entry.parentSessionID, entry.objectiveToken)
 	replay.title = entry.title

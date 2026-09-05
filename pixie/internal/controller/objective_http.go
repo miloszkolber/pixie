@@ -89,6 +89,11 @@ func (h ObjectiveHandler) ServeHTTP(response http.ResponseWriter, request *http.
 			writeToolResult(response, rpc.ID, result)
 			return
 		}
+		// Deprecated pending parity: upstream `ask_user_question`
+		// (@juicesharp/rpiv-ask-user-question, `rpiv-ask` host profile) is the
+		// candidate replacement. This application-level question tool remains
+		// the writer until the parity deletion gate in docs/roadmap.md is met;
+		// do not expose both to the model once parity passes.
 		if name == "ask_user_question" {
 			result, err := h.Sessions.AskQuestion(request.Context(), sessionID, arguments)
 			if err != nil {

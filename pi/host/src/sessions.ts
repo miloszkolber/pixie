@@ -12,8 +12,13 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import {
+	ASK_USER_BLOCKED_EVENT,
+	ASK_USER_PROMPT_EVENT,
+} from "@juicesharp/rpiv-ask-user-question/events";
 import { MCP_SERVICE_EVENT, type MCPService } from "@pixie/pi-mcp";
 import { CAPABILITY_EVENT, Capabilities, type CapabilityContext } from "./capabilities.ts";
+import { createUiBridge, type UiBridge } from "./extensions/ui-bridge.ts";
 import {
 	atomicWrite,
 	HostError,
@@ -68,6 +73,7 @@ export class Sessions {
 	private timer: ReturnType<typeof setInterval>;
 	private evicting = new Map<string, Promise<void>>();
 	private opening = new Map<string, Promise<ManagedSession>>();
+	private bridges = new Map<string, UiBridge>();
 	readonly catalog;
 	private sequences = new Map<string, number>();
 	private listing?: { expires: number; rows: Promise<RecordValue[]> };
@@ -251,7 +257,25 @@ export class Sessions {
 			built = session;
 			for (const error of extensionsResult.errors)
 				this.publish(session.sessionId, { type: "extension_error", error: error.error });
+			// Forward the public upstream questionnaire events. Their stability
+			// policy guarantees immutable channel names and JSON-safe payloads for
+			// cross-process listeners; the Pixie projection transports them, and
+			// richer browser questionnaires can subscribe later without host
+			// changes. Inert when the profile is not enabled.
+			for (const type of [ASK_USER_PROMPT_EVENT, ASK_USER_BLOCKED_EVENT] as const) {
+				bus.on(type, (payload) =>
+					this.publish(session.sessionId, { type, ...(payload as Record<string, unknown>) }),
+				);
+			}
 			let closing: Promise<void> | undefined;
+			const sessionId = session.sessionId;
+			// Generic extension UI bridge: forwards ctx.ui.* dialog calls to the
+			// Web UI and settles them when the controller answers. Scoped to this
+			// Pi session; pending dialogs die with the session.
+			const bridge = createUiBridge(sessionId, (event) =>
+				this.publish(sessionId, event as RecordValue),
+			);
+			this.bridges.set(sessionId, bridge);
 			const entry: ManagedSession = {
 				session,
 				capabilities,
@@ -261,9 +285,11 @@ export class Sessions {
 				lastUsed: Date.now(),
 				inputs: [],
 				partialTools: new Map(),
-				close: () =>
-					(closing ??= (async () => {
-						await session.abort();
+			close: () =>
+				(closing ??= (async () => {
+					bridge.cancelAll("session closed");
+					this.bridges.delete(sessionId);
+					await session.abort();
 						try {
 							await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 						} finally {
@@ -278,11 +304,12 @@ export class Sessions {
 			};
 			const forget = forgetMcp;
 			entry.forgetMcp = forget ? () => forget(this.context(entry)) : undefined;
-			await session.bindExtensions({
-				mode: "rpc",
-				onError: (e) =>
-					this.publish(session.sessionId, { type: "extension_error", error: e.error }),
-			});
+		await session.bindExtensions({
+			mode: "rpc",
+			uiContext: bridge.ui,
+			onError: (e) =>
+				this.publish(session.sessionId, { type: "extension_error", error: e.error }),
+		});
 			const streamed = new Map<number, number>();
 			session.subscribe((event) => {
 				if (event.type === "message_start" && event.message.role === "assistant") streamed.clear();
@@ -429,6 +456,31 @@ export class Sessions {
 			signal,
 			notify: (event) => this.publish(entry.session.sessionId, event),
 		};
+	}
+	// Settle a bridged UI dialog from the controller's answer. Session-bound
+	// and single-use: foreign or replayed responses are rejected.
+	async resolveUiResponse(p: RecordValue): Promise<unknown> {
+		const sessionId = required(p.sessionId, "session");
+		const bridge = this.bridges.get(sessionId);
+		if (!bridge) throw new Error("Unknown Pi session");
+		const requestId = required(p.requestId, "request");
+		const result = bridge.resolve({
+			sessionId,
+			requestId,
+			...(p.value !== undefined ? { value: p.value as string | boolean } : {}),
+			...(p.cancelled !== undefined ? { cancelled: Boolean(p.cancelled) } : {}),
+			...(p.error !== undefined ? { error: text(p.error) } : {}),
+		});
+		if (!result.ok) throw new Error(result.error ?? "Dialog is no longer awaiting input");
+		return { ok: true };
+	}
+	async cancelUiRequest(p: RecordValue): Promise<unknown> {
+		const sessionId = required(p.sessionId, "session");
+		// Idempotent: a missing bridge or request means nothing is awaiting input.
+		this.bridges
+			.get(sessionId)
+			?.cancel(required(p.requestId, "request"), text(p.reason) || "cancelled");
+		return { ok: true };
 	}
 	commands(entry: ManagedSession): RecordValue[] {
 		const s = entry.session;
@@ -730,9 +782,10 @@ export class Sessions {
 					await s.steer(content.text, content.images);
 					return { accepted: true };
 				}
-				case "session.cancel":
-					await s.abort();
-					return { ok: true };
+			case "session.cancel":
+				await s.abort();
+				this.bridges.get(id)?.cancelAll("cancelled");
+				return { ok: true };
 				case "session.configure": {
 					const key = text(p.configId),
 						value = required(p.value, "configuration value");
@@ -793,9 +846,13 @@ export class Sessions {
 						delete c[id];
 					});
 					return { ok: true };
-				case "pi.slash-commands.list":
-					return { commands: this.commands(entry) };
-				case "pi.tools.list":
+			case "pi.slash-commands.list":
+				return { commands: this.commands(entry) };
+			case "session.uiResponse":
+				return this.resolveUiResponse(p);
+			case "session.uiCancel":
+				return this.cancelUiRequest(p);
+			case "pi.tools.list":
 					return {
 						tools: s
 							.getAllTools()
@@ -818,6 +875,8 @@ export class Sessions {
 	async close(): Promise<void> {
 		this.closed = true;
 		clearInterval(this.timer);
+		for (const bridge of this.bridges.values()) bridge.cancelAll("service stopping");
+		this.bridges.clear();
 		await Promise.allSettled([
 			...this.creating,
 			...this.building,

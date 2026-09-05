@@ -28,6 +28,8 @@ import {
 } from "./composer/agent-mention-state";
 import Composer from "./composer/composer.svelte";
 import type { ComposerHandle, MentionCandidate, SubmitBehavior } from "./composer/composer-state";
+import { uiDialogForSession } from "./dialogs/ui-dialog-state";
+import UiDialogModal from "./dialogs/ui-dialog-modal.svelte";
 import { loadTranscriptUntil, type TranscriptLoadOutcome } from "./history/history-loading";
 import HistoryOverlay from "./history/history-overlay.svelte";
 import {
@@ -160,6 +162,7 @@ let queueEditStale = $derived(
 	queueEdit !== null && !queueEdit.saving && queueEdit.revision !== runtime.queue.revision,
 );
 let askStates = $derived(deriveAskStates(runtime.turns, runtime.askAnswers));
+let uiDialog = $derived(uiDialogForSession($appStore.uiDialogs, sessionId));
 function currentHistoryContext() {
 	return {
 		sessionId,
@@ -854,4 +857,7 @@ function openChanges(path: string): void {
 		/>
 		<ChatHeader stats={runtime.stats} left={HeaderLeft} />
 	</div>
+	{#if uiDialog}
+		<UiDialogModal request={uiDialog} />
+	{/if}
 </div>

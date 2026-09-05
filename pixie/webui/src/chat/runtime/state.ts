@@ -9,6 +9,7 @@ import type {
 	SlashCommandInfo,
 	TextResourceAttachmentMarker,
 	ThinkingLevel,
+	UiDialogRequest,
 	WireModel,
 } from "@pixie/contracts";
 import type { ChatAttachment, ChatSubmission, ChatTurn } from "@/chat/runtime/types";
@@ -23,6 +24,8 @@ import { clearTurnStreaming, reduceSessionEvent, type SessionRuntime } from "./s
 
 export interface ChatState {
 	sessions: Record<string, SessionRuntime>;
+	uiDialogs: Record<string, UiDialogRequest>;
+	dismissUiDialog: (requestId: string) => void;
 	appendUserMessage: (sessionId: string, text: string, attachments?: ChatAttachment[]) => void;
 	setSubmission: (sessionId: string, submission: ChatSubmission | null) => void;
 	appendErrorTurn: (sessionId: string, text: string) => void;
@@ -128,6 +131,11 @@ function unmatchedOptimisticTurns(
 
 export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, get) => ({
 	sessions: {},
+	uiDialogs: {},
+	dismissUiDialog: (requestId) =>
+		set((state) =>
+			state.uiDialogs[requestId] ? { uiDialogs: omitKey(state.uiDialogs, requestId) } : {},
+		),
 	appendUserMessage: (sessionId, text, attachments) =>
 		set((s) =>
 			withRuntime(s, sessionId, (rt) => ({
@@ -188,6 +196,26 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 			})),
 		),
 	handleAgentEvent: (event, sessionId) => {
+		// Generic extension dialogs never touch the transcript projection.
+		if (event.type === "ui_request") {
+			const request = event.request;
+			if (request?.requestId && request.sessionId === sessionId) {
+				set((state) => ({ uiDialogs: { ...state.uiDialogs, [request.requestId]: request } }));
+			}
+			return;
+		}
+		if (event.type === "ui_cancel") {
+			const requestId = event.requestId;
+			set((state) =>
+				state.uiDialogs[requestId] ? { uiDialogs: omitKey(state.uiDialogs, requestId) } : {},
+			);
+			return;
+		}
+		if (event.type === "ui_notify") {
+			if (event.level === "error") get().pushToast({ variant: "error", message: event.message });
+			else get().pushToast({ variant: "info", message: event.message });
+			return;
+		}
 		if (event.type === "session-info" && event.title) {
 			const state = get();
 			for (const projectId of new Set([

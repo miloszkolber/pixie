@@ -153,3 +153,50 @@ const (
 	PlanEntryStatusInProgress = "in_progress"
 	PlanEntryStatusPending    = "pending"
 )
+
+// Generic Pi extension UI bridge. The Pi host publishes dialog requests as
+// session events; the controller relays them to the Web UI and answers
+// through the controller-to-host methods below.
+const (
+	UiPrimitiveSelect  = "select"
+	UiPrimitiveConfirm = "confirm"
+	UiPrimitiveInput   = "input"
+	UiPrimitiveEditor  = "editor"
+	UiPrimitiveNotify  = "notify"
+)
+
+const (
+	// Host-to-controller session.event types.
+	UiRequestEvent = "pixie:ui:request"
+	UiNotifyEvent  = "pixie:ui:notify"
+	UiCancelEvent  = "pixie:ui:cancel"
+	// Controller-to-host JSON-RPC methods.
+	UiResponseMethod = "session.uiResponse"
+	UiCancelMethod   = "session.uiCancel"
+)
+
+// UiRequest is one blocking dialog call from a Pi extension.
+type UiRequest struct {
+	RequestID   string   `json:"requestId"`
+	SessionID   string   `json:"sessionId"`
+	Primitive   string   `json:"primitive"`
+	Title       string   `json:"title,omitempty"`
+	Message     string   `json:"message,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	Placeholder string   `json:"placeholder,omitempty"`
+	Prefill     string   `json:"prefill,omitempty"`
+	TimeoutMs   int64    `json:"timeout,omitempty"`
+}
+
+// UiResult is the user's answer to one dialog. A cancelled dialog carries no value.
+type UiResult struct {
+	Value     any  `json:"value,omitempty"`
+	Cancelled bool `json:"cancelled"`
+}
+
+// UiResponse answers one pending dialog.
+type UiResponse struct {
+	SessionID string   `json:"sessionId"`
+	RequestID string   `json:"requestId"`
+	Result    UiResult `json:"result"`
+}

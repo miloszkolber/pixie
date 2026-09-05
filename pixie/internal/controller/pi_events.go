@@ -191,6 +191,43 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		return emit("plan", map[string]any{"entries": event["entries"]})
 	case "extension_error":
 		return extension("status_message", map[string]any{"status": map[string]any{"type": "notice", "message": event["error"]}})
+	case piwire.UiRequestEvent, piwire.UiNotifyEvent, piwire.UiCancelEvent:
+		return projectUiEvent(event, emit, extension)
+	}
+	return nil
+}
+
+// projectUiEvent translates generic extension UI bridge events into
+// controller session updates. Dialog state itself is registered in
+// applyUpdate (session-bound, single-use); the projection only carries the
+// request to browsers. Unknown shapes are dropped: a malformed host event
+// must never break the Pi connection.
+func projectUiEvent(
+	event map[string]any,
+	emit func(kind string, update map[string]any) error,
+	extension func(kind string, update map[string]any) error,
+) error {
+	switch textValue(event["type"]) {
+	case piwire.UiRequestEvent:
+		update := map[string]any{
+			"requestId": textValue(event["requestId"]),
+			"sessionId": textValue(event["sessionId"]),
+			"primitive": textValue(event["primitive"]),
+			"title":     textValue(event["title"]),
+		}
+		for _, key := range []string{"message", "options", "placeholder", "prefill", "timeout"} {
+			if value, exists := event[key]; exists {
+				update[key] = value
+			}
+		}
+		return emit("ui_request", update)
+	case piwire.UiNotifyEvent:
+		return extension("ui_notify", map[string]any{
+			"message": textValue(event["message"]),
+			"level":   textValue(event["level"]),
+		})
+	case piwire.UiCancelEvent:
+		return emit("ui_cancel", map[string]any{"requestId": textValue(event["requestId"])})
 	}
 	return nil
 }

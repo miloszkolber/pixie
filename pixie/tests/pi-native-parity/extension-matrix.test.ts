@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import agents from "../../pi-host/src/extensions/agents.ts";
 import plans from "../../pi-host/src/extensions/plans.ts";
+import rpivAsk from "../../pi-host/src/extensions/rpiv-ask.ts";
 import rpivTodo from "../../pi-host/src/extensions/rpiv-todo.ts";
 import rpivWeb from "../../pi-host/src/extensions/rpiv-web.ts";
 import web from "../../pi-host/src/extensions/web.ts";
@@ -17,7 +18,7 @@ test("host reports Pi SDK version and advertises each optional profile", async (
 	const secret = "parity-matrix-secret";
 	for (const extensions of [
 		["mcp", "agents", "plans", "web"],
-		["mcp", "agents", "rpiv-todo", "rpiv-web"],
+		["mcp", "agents", "rpiv-todo", "rpiv-web", "rpiv-ask"],
 	]) {
 		const host = await startHost({ agentDir: dir, secret, port: 0, extensions });
 		try {
@@ -37,6 +38,7 @@ test("host reports Pi SDK version and advertises each optional profile", async (
 			} else {
 				expect(ready.capabilities["rpiv-todo"]).toBe(1);
 				expect(ready.capabilities["rpiv-web"]).toBe(1);
+				expect(ready.capabilities["rpiv-ask"]).toBe(1);
 				expect(ready.capabilities.plans).toBeUndefined();
 			}
 		} finally {
@@ -63,6 +65,7 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 		web,
 		rpivTodo,
 		rpivWeb,
+		rpivAsk,
 		echoProvider(),
 	]);
 	const entry = await sessions.create(dir);
@@ -77,6 +80,7 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 			"todo",
 			"web_fetch",
 			"web_search",
+			"ask_user_question",
 			"delegate",
 			"list_agents",
 		]),
@@ -87,6 +91,7 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 		web: 1,
 		"rpiv-todo": 1,
 		"rpiv-web": 1,
+		"rpiv-ask": 1,
 	});
 });
 

@@ -548,6 +548,25 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, fmt.Errorf("malformed question response")
 		}
 		return ack(h.Sessions.ResolveQuestion(request.SessionID, request.ToolCallID, request.Result))
+	case "session.uiReply":
+		var request struct {
+			SessionID string         `json:"sessionId"`
+			RequestID string         `json:"requestId"`
+			Result    map[string]any `json:"result"`
+		}
+		if h.Sessions == nil || decodeParams(raw, &request) != nil {
+			return nil, fmt.Errorf("malformed dialog response")
+		}
+		return ack(h.Sessions.ResolveDialog(ctx, request.SessionID, request.RequestID, request.Result))
+	case "session.uiCancel":
+		var request struct {
+			SessionID string `json:"sessionId"`
+			RequestID string `json:"requestId"`
+		}
+		if h.Sessions == nil || decodeParams(raw, &request) != nil {
+			return nil, fmt.Errorf("malformed dialog request")
+		}
+		return ack(h.Sessions.CancelDialog(ctx, request.SessionID, request.RequestID))
 	case "session.goalGet", "session.goalSet", "session.goalClear":
 		var request struct {
 			ProjectID string `json:"projectId"`
