@@ -1,6 +1,12 @@
 {
 	"name": "@pixie/pi-host",
 	"version": "0.1.0",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/miloszkolber/pixie.git",
+		"directory": "pi/host"
+	},
 	"type": "module",
 	"bin": {
 		"pixie-pi-host": "./src/main.ts"

@@ -58,7 +58,7 @@ jobs:
       - name: Set up Node for publishing
         uses: actions/setup-node@49933ea5288a43679e63670542f975f57cbd7c9 # v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Install workspace dependencies
@@ -76,8 +76,9 @@ jobs:
           bun pm pack --dry-run 2>&1 | tee pack.log
           grep -q '"bin"' pack.log || true
 
-      - name: Publish to npm
+      - name: Publish to npm over OIDC trusted publishing
         working-directory: pi/host
+        # No token: authentication comes from the workflow identity via
+        # id-token:write. Requires npm >= 11.5.1 (Node 24 ships npm 11) and a
+        # one-time trusted-publisher setup on the package (see deployment.md).
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

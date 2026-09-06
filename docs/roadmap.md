@@ -11,7 +11,7 @@ Pixie is a web application and integration layer around vanilla Pi, not an alter
 
 ## Gaps toward that vision
 
-- Published `@pixie/pi-host` releases: the npm workflow exists (`pi-host-v*` tags) but no release has been cut; the subagent child-runner patch does not travel through npm, so `bunx` users run subagent children under Node until upstream accepts the entrypoint fix.
+- Published `@pixie/pi-host` releases: the npm workflow publishes over OIDC trusted publishing with provenance (no stored token; needs npm 11+), staged end to end from a tarball install (bin runs, host boots, all profiles advertise). Still operator-side: create the `pixie` npm org if missing, publish once so the package exists, then attach this repo's `npm-publish.yml` as its trusted publisher. The subagent child-runner patch does not travel through npm, so `subagent` child runs fail under `bunx` until upstream accepts the entrypoint fix.
 - Extensions screen: compose the existing capability inventory and `config/profiles.json` into one UI surface listing installed/available profiles with enable toggles, instead of today's per-feature gating.
 - Host restart orchestration: changing the enabled set currently requires restarting the Pi service by hand; toggles need a reload operation or a privileged helper.
 - Profile alias collapse: `adapter-evaluation` duplicates `overlay` under a second MCP name; collapse to one toggle with the alias kept only as a compat shim for saved `pixie-overlay.json` files.
