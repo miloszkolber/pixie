@@ -8,15 +8,11 @@ dist/
 .idea/
 test-results*/
 .claude/
-.mockups/
-.superpowers/
-.gsd/
 .opencode/
 
 # Local env / secrets (Vite auto-loads .env*; app handles provider auth tokens)
 .env
 .pixie
-# Legacy deployment secret. Keep ignored until operators remove it after migration.
 .browser
 .env.local
 .env.*.local

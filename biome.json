@@ -9,7 +9,6 @@
 		"ignoreUnknown": true,
 		"includes": [
 			"**",
-			"!designs",
 			"!**/.claude",
 			"!**/node_modules",
 			"!**/dist",
@@ -65,17 +64,6 @@
 					},
 					"style": {
 						"useImportType": "off"
-					}
-				}
-			}
-		},
-		{
-			"includes": ["**/*.astro"],
-			"linter": {
-				"rules": {
-					"correctness": {
-						"noUnusedVariables": "off",
-						"noUnusedImports": "off"
 					}
 				}
 			}
