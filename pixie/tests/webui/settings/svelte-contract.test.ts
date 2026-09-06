@@ -10,7 +10,6 @@ const requiredComponents = [
 	"sections/models-settings.svelte",
 	"sections/provider-card.svelte",
 	"sections/providers-settings.svelte",
-	"sections/signet-settings.svelte",
 	"sections/system-settings.svelte",
 	"settings-dialog.svelte",
 ] as const;

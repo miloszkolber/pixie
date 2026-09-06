@@ -1,11 +1,9 @@
 package controller
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,19 +15,7 @@ type ModelReference struct {
 	ID       string `json:"id"`
 }
 
-// Deprecated-pending-parity: the MCP `signet` connection configured here
-// stays the writer until the Pi-native `signet` profile passes its parity
-// gate (docs/roadmap.md). Afterwards this connection is removed and the
-// Signet daemon remains an operator-owned external service, never a
-// Pixie-managed MCP connection.
-type SignetSettings struct {
-	Enabled bool   `json:"enabled"`
-	Address string `json:"address"`
-	Port    int    `json:"port"`
-}
-
 type AppConfig struct {
-	Signet       SignetSettings   `json:"signet"`
 	HiddenModels []ModelReference `json:"hiddenModels"`
 }
 
@@ -44,14 +30,6 @@ func (c *AppConfig) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("config must be an object")
 	}
 	value := defaultConfig()
-	var signet map[string]json.RawMessage
-	_ = json.Unmarshal(raw["signet"], &signet)
-	_ = json.Unmarshal(signet["enabled"], &value.Signet.Enabled)
-	_ = json.Unmarshal(signet["address"], &value.Signet.Address)
-	var port float64
-	if json.Unmarshal(signet["port"], &port) == nil && port >= 1 && port <= 65_535 && port == float64(int(port)) {
-		value.Signet.Port = int(port)
-	}
 	var models []json.RawMessage
 	_ = json.Unmarshal(raw["hiddenModels"], &models)
 	for _, model := range models {
@@ -64,21 +42,8 @@ func (c *AppConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type SignetPatch struct {
-	Enabled *bool   `json:"enabled"`
-	Address *string `json:"address"`
-	Port    *int    `json:"port"`
-}
-
 type AppConfigPatch struct {
-	Signet       *SignetPatch      `json:"signet"`
 	HiddenModels *[]ModelReference `json:"hiddenModels"`
-}
-
-type SignetStatus struct {
-	Enabled   bool   `json:"enabled"`
-	Endpoint  string `json:"endpoint"`
-	Reachable bool   `json:"reachable"`
 }
 
 type Settings struct {
@@ -118,17 +83,6 @@ func (s *Settings) getLocked() (AppConfig, error) {
 
 func (s *Settings) Update(patch AppConfigPatch) (AppConfig, error) {
 	return s.mutate(func(next *AppConfig) {
-		if patch.Signet != nil {
-			if patch.Signet.Enabled != nil {
-				next.Signet.Enabled = *patch.Signet.Enabled
-			}
-			if patch.Signet.Address != nil {
-				next.Signet.Address = *patch.Signet.Address
-			}
-			if patch.Signet.Port != nil {
-				next.Signet.Port = *patch.Signet.Port
-			}
-		}
 		if patch.HiddenModels != nil {
 			next.HiddenModels = append([]ModelReference(nil), (*patch.HiddenModels)...)
 		}
@@ -175,46 +129,12 @@ func (s *Settings) mutate(update func(*AppConfig)) (AppConfig, error) {
 	return result, nil
 }
 
-func (s *Settings) SignetStatus(ctx context.Context) (SignetStatus, error) {
-	config, err := s.Get()
-	if err != nil {
-		return SignetStatus{}, err
-	}
-	host := config.Signet.Address
-	if strings.Contains(host, ":") {
-		host = "[" + host + "]"
-	}
-	endpoint := fmt.Sprintf("http://%s:%d", host, config.Signet.Port)
-	status := SignetStatus{Enabled: config.Signet.Enabled, Endpoint: endpoint}
-	if !config.Signet.Enabled {
-		return status, nil
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/health", nil)
-	if err != nil {
-		return status, nil
-	}
-	response, err := s.client.Do(request)
-	if err == nil {
-		status.Reachable = response.StatusCode >= 200 && response.StatusCode < 300
-		_ = response.Body.Close()
-	}
-	return status, nil
-}
-
 func defaultConfig() AppConfig {
-	return AppConfig{Signet: SignetSettings{Address: "127.0.0.1", Port: 3850}, HiddenModels: []ModelReference{}}
+	return AppConfig{HiddenModels: []ModelReference{}}
 }
 
 func normalizeConfig(value AppConfig) AppConfig {
-	address := strings.TrimSpace(value.Signet.Address)
-	if address == "" || strings.ContainsAny(address, " \t\r\n/\\\x00") || strings.Contains(address, "://") {
-		address = "127.0.0.1"
-	}
-	port := value.Signet.Port
-	if port < 1 || port > 65_535 {
-		port = 3850
-	}
-	return AppConfig{Signet: SignetSettings{Enabled: value.Signet.Enabled, Address: address, Port: port}, HiddenModels: normalizeModelReferences(value.HiddenModels)}
+	return AppConfig{HiddenModels: normalizeModelReferences(value.HiddenModels)}
 }
 
 func normalizeModelReferences(values []ModelReference) []ModelReference {

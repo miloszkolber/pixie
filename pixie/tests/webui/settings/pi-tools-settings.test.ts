@@ -29,7 +29,7 @@ test("warning counts never expose warning text", () => {
 	expect(extensionWarningText(2)).not.toContain("warning text");
 });
 
-test("generic agent settings expose agent identity, Signet and System", () => {
+test("generic agent settings expose agent identity and System", () => {
 	const profile: AgentProfile = {
 		name: "Example agent",
 		version: "1.2.3",
@@ -53,7 +53,6 @@ test("generic agent settings expose agent identity, Signet and System", () => {
 	expect(appStoreApi.getState().settingsSection).toBe(SettingsSection.Agent);
 	expect(settingsTabs(true, false).map(({ label }) => label)).toEqual([
 		"Agent",
-		"Signet",
 		"System",
 	]);
 	expect(settingsTabs(true, false).map(({ label }) => label)).not.toContain("Pi");
@@ -132,5 +131,5 @@ test("vanilla Pi exposes core settings and hides unavailable extension surfaces"
 	]);
 	const extended = { ...profile, capabilities: { ...profile.capabilities, mcp: 1 } };
 	expect(settingsTabs(false, false, extended).map((t) => t.label)).not.toContain("Automation");
-	expect(settingsTabs(false, false, extended).map((t) => t.label)).toContain("Signet");
+	expect(settingsTabs(false, false, extended).map((t) => t.label)).not.toContain("Signet");
 });

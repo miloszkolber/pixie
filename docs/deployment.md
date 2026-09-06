@@ -52,7 +52,7 @@ Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container 
 
 Enable Browser in Settings → Tools with a compatible MCP extension loaded. Pixie discovers its catalog at `http://127.0.0.1:8787/v1/mcp/modules` and registers `pixie-browser` at `/browser`. The universal [Pi MCP extension](../pi/mcp/README.md) also accepts unrelated stdio, HTTP and SSE servers.
 
-Optional Signet memory is an operator-owned external service, not a Pixie-managed MCP connection. Install it with `signet setup` and run the daemon separately; Pi loads the managed `signet-pi.js` file extension with fail-open lifecycle hooks and hidden auto-recall. Pixie never reads or writes `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`), `signet.json` or per-session `SIGNET_ENABLED`. Until the [parity gate](roadmap.md) passes, Settings → Signet additionally attaches the daemon as the MCP `signet` connection for evaluation; that connection is deprecated and removed afterwards. Its health check verifies the daemon, not memory retrieval.
+Optional Signet memory is an operator-owned external service, not a Pixie-managed MCP connection. Install it with `signet setup` and run the daemon separately; Pi loads the managed `signet-pi.js` file extension with fail-open lifecycle hooks and hidden auto-recall. Pixie never reads or writes `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`), `signet.json` or per-session `SIGNET_ENABLED`.
 
 ## Operations
 

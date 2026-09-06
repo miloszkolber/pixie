@@ -20,7 +20,7 @@ const host = await startHost({
 	agentDir: dir,
 	secret: "native-fixture-secret",
 	port: 0,
-	extensions: profile === "optional" ? ["agents", "plans", "mcp"] : [],
+	extensions: profile === "optional" ? ["agents", "rpiv-todo", "mcp"] : [],
 });
 const entry = await host.sessions.create(project);
 await entry.session.setModel(entry.modelRuntime.getModel("fixture", "echo")!);

@@ -612,11 +612,6 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, fmt.Errorf("malformed settings request")
 		}
 		return h.Settings.Update(request.Config)
-	case "signet.status":
-		if h.Settings == nil {
-			return nil, fmt.Errorf("settings are not configured")
-		}
-		return h.Settings.SignetStatus(ctx)
 	case "model.list":
 		if h.Admin == nil {
 			return nil, fmt.Errorf("Pi administration is not configured")

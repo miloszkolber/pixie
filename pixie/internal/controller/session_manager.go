@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -1250,22 +1249,10 @@ func (m *SessionManager) resumeQueues(targets []queueResume) {
 }
 
 func (m *SessionManager) sessionServers(profile AgentProfile, token string) ([]piwire.McpServer, error) {
-	servers := m.objectiveServers(profile, token)
-	if m.settings == nil {
-		return servers, nil
-	}
-	config, err := m.settings.Get()
-	if err != nil {
-		return nil, err
-	}
-	if config.Signet.Enabled {
-		// Deprecated-pending-parity: keep attaching the daemon as the MCP
-		// `signet` connection until the Pi-native `signet` profile passes
-		// its parity gate (docs/roadmap.md). Do not delete this path early.
-		endpoint := "http://" + net.JoinHostPort(strings.Trim(config.Signet.Address, "[]"), strconv.Itoa(config.Signet.Port)) + "/mcp"
-		servers = append(servers, piwire.McpServer{Http: &piwire.McpServerHttpInline{Type: "http", Name: "signet", Url: endpoint, Headers: []piwire.HttpHeader{}}})
-	}
-	return servers, nil
+	// Signet memory attaches through the Pi-native managed extension
+	// (`~/.pi/agent/extensions/signet-pi.js`, operator-installed); Pixie
+	// connects no MCP connection for it.
+	return m.objectiveServers(profile, token), nil
 }
 
 func (m *SessionManager) objectiveServers(profile AgentProfile, token string) []piwire.McpServer {

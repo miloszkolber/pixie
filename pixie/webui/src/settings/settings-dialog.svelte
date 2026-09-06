@@ -13,7 +13,6 @@ const loaders: Partial<Record<SettingsSection, () => Promise<{ default: Componen
 	tools: () => import("./sections/pi-tools-settings.svelte"),
 	models: () => import("./sections/models-settings.svelte"),
 	providers: () => import("./sections/providers-settings.svelte"),
-	signet: () => import("./sections/signet-settings.svelte"),
 	system: () => import("./sections/system-settings.svelte"),
 };
 let visited = $state<SettingsSection[]>([]);
@@ -131,7 +130,7 @@ function handleTabKeydown(event: KeyboardEvent): void {
 			{/each}
 		</div>
   {#each visited as section (section)}
-   {#if section === activeSection || section === SettingsSection.Pi || section === SettingsSection.Signet}
+   {#if section === activeSection || section === SettingsSection.Pi}
     <div id={`settings-panel-${section}`} role="tabpanel" hidden={section !== activeSection} class="min-h-0 min-w-0 flex-1 overflow-y-auto p-md sm:p-lg">
      {#if section === SettingsSection.Agent && $appStore.agentProfile}
       <AgentSettings profile={$appStore.agentProfile} />

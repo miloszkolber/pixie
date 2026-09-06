@@ -52,7 +52,6 @@ import type {
 	RuntimeStatusReport,
 	Schedule,
 	SessionGoal,
-	SignetStatus,
 	TextResourceAttachment,
 } from "./domain";
 
@@ -155,7 +154,6 @@ export const WS_METHODS = {
 	providerLoginCancel: "provider.loginCancel",
 	providerLogout: "provider.logout",
 	settingsUpdate: "settings.update",
-	signetStatus: "signet.status",
 	historySearch: "history.search",
 	piStatus: "pi.status",
 	runtimeStatus: "runtime.status",
@@ -492,7 +490,6 @@ export interface WsMethodMap {
 	"provider.loginCancel": { params: { loginId: string }; result: Ack };
 	"provider.logout": { params: { providerId: string }; result: Ack };
 	"settings.update": { params: { config: AppConfigPatch }; result: AppConfig };
-	"signet.status": { params: Record<string, never>; result: SignetStatus };
 	"history.search": {
 		params: { query: string; scope: HistoryScope; limit?: number };
 		result: HistorySearchResult;

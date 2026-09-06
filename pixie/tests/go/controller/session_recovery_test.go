@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/miloszkolber/pixie/internal/controller"
 )
 
 func TestAbortWaitsForPromptSettlement(t *testing.T) {
@@ -61,30 +60,4 @@ func TestAbortWaitHonorsCallerDeadline(t *testing.T) {
 		t.Fatalf("abort deadline: %v", err)
 	}
 	_ = writeRPC(request["connection"].(*websocket.Conn), map[string]any{"jsonrpc": "2.0", "id": request["id"], "result": map[string]any{"stopReason": "cancelled"}})
-}
-
-func TestSignetSettingsAttachMemoryThroughStandardSessionMCP(t *testing.T) {
-	loaded := make(chan map[string]any, 1)
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, func(method string, params map[string]any) {
-		if method == "session.load" {
-			loaded <- params
-		}
-	})
-	settings := controller.NewSettings(store, nil)
-	enabled := true
-	if _, err := settings.Update(controller.AppConfigPatch{Signet: &controller.SignetPatch{Enabled: &enabled}}); err != nil {
-		t.Fatal(err)
-	}
-	manager.SetSettings(settings)
-	if _, err := manager.Messages(t.Context(), "chat", project.ID, project.Roots[0], "test"); err != nil {
-		t.Fatal(err)
-	}
-	params := <-loaded
-	for _, raw := range params["mcpServers"].([]any) {
-		server := raw.(map[string]any)
-		if server["name"] == "signet" && server["url"] == "http://127.0.0.1:3850/mcp" && server["type"] == "http" {
-			return
-		}
-	}
-	t.Fatalf("Signet MCP missing: %#v", params)
 }

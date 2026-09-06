@@ -552,35 +552,13 @@ export function normalizeModelReferences(value: unknown): ModelReference[] {
 }
 
 export interface AppConfig {
-	signet: SignetSettings;
 	/** Models hidden from pixie catalog and selection surfaces. */
 	hiddenModels?: ModelReference[];
 }
 
-export interface SignetSettings {
-	enabled: boolean;
-	address: string;
-	port: number;
-}
-
-export interface SignetStatus {
-	enabled: boolean;
-	endpoint: string;
-	reachable: boolean;
-}
-
-export type AppConfigPatch = Omit<Partial<AppConfig>, "signet"> & {
-	signet?: Partial<SignetSettings>;
-};
-
-export const DEFAULT_SIGNET_SETTINGS: SignetSettings = {
-	enabled: false,
-	address: "127.0.0.1",
-	port: 3850,
-};
+export type AppConfigPatch = Partial<AppConfig>;
 
 export const DEFAULT_CONFIG = {
-	signet: DEFAULT_SIGNET_SETTINGS,
 	hiddenModels: [],
 } satisfies AppConfig;
 
