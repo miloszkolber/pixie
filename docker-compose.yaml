@@ -33,10 +33,11 @@ services:
               target: /var/lib/pixie
               bind:
                   create_host_path: false
-            # Browser module sessions and artifacts mount into the same container.
+            # Browser module sessions and artifacts mount into the app data dir, matching
+            # the module's DataDir/mcp-browser storage root.
             - type: bind
               source: "${PIXIE_DATA_PATH:?set PIXIE_DATA_PATH in .pixie}/browser"
-              target: /var/lib/pixie-browser
+              target: /var/lib/pixie/mcp-browser
               bind:
                   create_host_path: false
             # Add each admitted project root here as a read-only bind at the same absolute path.
