@@ -9,7 +9,7 @@
 	},
 	"type": "module",
 	"bin": {
-		"pixie-assistant": "./src/main.ts"
+		"pixie-assistant": "src/main.ts"
 	},
 	"files": [
 		"src"
