@@ -1,6 +1,6 @@
 # Pixie MCP publisher
 
-The Browser module for trusted MCP clients is published by the main Pixie process on the application listener. It is separate from the universal [Pi MCP client extension](../pi/mcp/README.md).
+The Browser module for trusted MCP clients is published by the main Pixie process on the application listener. It is separate from the universal MCP client profile (`mcp`) above.
 
 | Endpoint | Purpose |
 | --- | --- |

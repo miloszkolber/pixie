@@ -4,7 +4,7 @@ The host starts with normal Pi resources and no bundled factories enabled. Add `
 
 | Extension | Added capability |
 | --- | --- |
-| `mcp` | Upstream MCP adapter runtime (proxy tool, raw resource and App-tool host APIs); [standalone package](../pi/mcp/README.md) |
+| `mcp` | Upstream MCP adapter runtime (proxy tool, raw resource and App-tool host APIs) |
 | `agents` | Markdown agent definition CRUD (`pi.sources.*`) and `@agent` mentions |
 | `rpiv-todo` | Upstream `todo` tool and `/todos` command; the single planning tool |
 | `rpiv-web` | Upstream `web_search` and `web_fetch`; the single web tool |

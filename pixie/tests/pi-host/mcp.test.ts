@@ -10,7 +10,9 @@ import {
 	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Sessions } from "../../../pi/host/src/sessions.ts";
-import mcpExtension from "../../../pi/mcp/src/index.ts";
+import { piMcpAdapterWithConfig } from "../../../pi/host/src/extensions/pi-mcp-adapter.ts";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+const mcpExtension = (pi: ExtensionAPI, dir: string) => piMcpAdapterWithConfig({ agentDir: dir })(pi);
 
 const priorDir = process.env.PI_CODING_AGENT_DIR;
 const priorViewer = process.env.MCP_UI_VIEWER;

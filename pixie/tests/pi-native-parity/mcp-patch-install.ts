@@ -27,8 +27,6 @@ try {
 			"--production",
 			"--filter",
 			"@pixie/pi-host",
-			"--filter",
-			"@pixie/pi-mcp",
 		],
 		{ cwd: temporary, stdout: "pipe", stderr: "pipe" },
 	);

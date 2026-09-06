@@ -31,21 +31,6 @@
         "typescript": "catalog:",
       },
     },
-    "pi/mcp": {
-      "name": "@pixie/pi-mcp",
-      "version": "0.1.0",
-      "dependencies": {
-        "@pixie/pi-host": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@earendil-works/pi-ai": "0.85.1",
-        "@earendil-works/pi-coding-agent": "0.85.1",
-      },
-    },
     "pixie": {
       "name": "pixie",
       "devDependencies": {
@@ -346,8 +331,6 @@
     "@pixie/contracts": ["@pixie/contracts@workspace:pixie/contracts"],
 
     "@pixie/pi-host": ["@pixie/pi-host@workspace:pi/host"],
-
-    "@pixie/pi-mcp": ["@pixie/pi-mcp@workspace:pi/mcp"],
 
     "@pixie/web": ["@pixie/web@workspace:pixie/webui"],
 

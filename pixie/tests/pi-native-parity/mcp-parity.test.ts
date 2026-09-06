@@ -5,6 +5,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
 	CallToolRequestSchema,
@@ -19,7 +20,7 @@ import piMcpAdapter, {
 import signet from "../../../pi/host/src/extensions/signet.ts";
 import { startHost } from "../../../pi/host/src/server.ts";
 import { Sessions } from "../../../pi/host/src/sessions.ts";
-import compatibilityMcp from "../../../pi/mcp/src/index.ts";
+const compatibilityMcp = (pi: ExtensionAPI, dir: string) => piMcpAdapterWithConfig({ agentDir: dir })(pi);
 import { cleanups, fixture } from "./helpers.ts";
 
 const savedEnv = new Map<string, string | undefined>();

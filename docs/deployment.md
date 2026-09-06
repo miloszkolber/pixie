@@ -50,7 +50,7 @@ Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container 
 
 ## MCP and Signet
 
-The Browser MCP publisher lives inside the main Pixie process on port `7312`: Browser tools are served at `/mcp/browser`, the module catalog at `/api/mcp/modules` and status at `/api/mcp/status`, authenticated with `PIXIE_MCP_TOKEN`. Enable Browser in Settings → Tools with a compatible MCP extension loaded. The universal [Pi MCP extension](../pi/mcp/README.md) also accepts unrelated stdio, HTTP and SSE servers.
+The Browser MCP publisher lives inside the main Pixie process on port `7312`: Browser tools are served at `/mcp/browser`, the module catalog at `/api/mcp/modules` and status at `/api/mcp/status`, authenticated with `PIXIE_MCP_TOKEN`. Enable Browser in Settings → Tools with a compatible MCP extension loaded. The universal MCP adapter also accepts unrelated stdio, HTTP and SSE servers.
 
 Optional Signet memory is an operator-owned external service, not a Pixie-managed MCP connection. Install it with `signet setup` and run the daemon separately; Pi loads the managed `signet-pi.js` file extension with fail-open lifecycle hooks and hidden auto-recall. Pixie never reads or writes `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`), `signet.json` or per-session `SIGNET_ENABLED`.
 

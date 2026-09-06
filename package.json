@@ -7,8 +7,7 @@
 			"pixie",
 			"pixie/contracts",
 			"pixie/webui",
-			"pi/host",
-			"pi/mcp"
+			"pi/host"
 		],
 		"catalog": {
 			"@tailwindcss/cli": "4.3.3",
