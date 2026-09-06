@@ -11,15 +11,16 @@ Pixie is a web application and integration layer around vanilla Pi, not an alter
 
 ## Gaps toward that vision
 
-- Published `@pixie_ai/pixie-assistant` releases: the npm workflow publishes over OIDC trusted publishing with provenance (no stored token; needs npm 11+), staged end to end from a tarball install (bin runs, host boots, all profiles advertise). Still operator-side: publish once under the existing `pixie_ai` organization so the package exists, then attach this repo's `npm-publish.yml` as its trusted publisher. The subagent child-runner patch does not travel through npm, so `subagent` child runs fail under `bunx` until upstream accepts the entrypoint fix.
-- Extensions screen: compose the existing capability inventory and `config/profiles.json` into one UI surface listing installed/available profiles with enable toggles, instead of today's per-feature gating.
-- Host restart orchestration: changing the enabled set currently requires restarting the Pi service by hand; toggles need a reload operation or a privileged helper.
-- Profile alias collapse: `adapter-evaluation` duplicates `overlay` under a second MCP name; collapse to one toggle with the alias kept only as a compat shim for saved `pixie-overlay.json` files.
-- Rewire transcript question-card answers to the generic UI bridge (`session.uiReply`): the card submit path still targets the removed controller question tool and fails cleanly today, while the bridge dialog is the working answer path.
-- Additional native Pi extension UI interfaces.
-- A dedicated schedules interface.
-- Rewire transcript question-card answers to the generic UI bridge (`session.uiReply`): the card submit path still targets the removed controller question tool and fails cleanly today, while the bridge dialog is the working answer path.
-- Deployment-host performance measurements on both supported Linux architectures.
+Ordered by implementation: quick cleanups first, then product surfaces, then validation, with the first automated release parked last.
+
+1. Profile alias collapse: `adapter-evaluation` duplicates `overlay` under a second MCP name; collapse to one toggle with the alias kept only as a compat shim for saved `pixie-overlay.json` files.
+2. Rewire transcript question-card answers to the generic UI bridge (`session.uiReply`): the card submit path still targets the removed controller question tool and fails cleanly today, while the bridge dialog is the working answer path.
+3. Additional native Pi extension UI interfaces.
+4. A dedicated schedules interface.
+5. Extensions screen: compose the existing capability inventory and `config/profiles.json` into one UI surface listing installed/available profiles with enable toggles, instead of today's per-feature gating.
+6. Host restart orchestration: changing the enabled set currently requires restarting the Pi service by hand; toggles need a reload operation or a privileged helper.
+7. Deployment-host performance measurements on both supported Linux architectures.
+8. First automated release (parked last): `@pixie_ai/pixie-assistant@0.1.0` is published manually; the npm workflow publishes over OIDC trusted publishing with provenance (no stored token; needs npm 11+). Still operator-side: attach this repo's `npm-publish.yml` as the package's trusted publisher, then cut a `pi-host-v0.2.0`-style tag to verify the unattended path end to end. Do not push a `pi-host-v0.1.0` tag (that version exists; the workflow would fail on conflict). The subagent child-runner patch does not travel through npm, so `subagent` child runs fail under `bunx` until upstream accepts the entrypoint fix.
 - Pi-native simplification parity gate (met): the custom `plans` (`update_plan`/`plans.read`) and `web` (`web_fetch`) host extensions are deleted after the `rpiv-todo`/`rpiv-web` profiles demonstrated equivalent plan display, search/fetch behavior, SSRF posture, session switching, and reload recovery; legacy `pixie-plan` transcript entries still render.
 - Pi-native question parity gate (met): Pixie's application-level `ask_user_question` tool is deleted; `rpiv-ask` demonstrated equivalent answers (including the exact-option answer contract), cancellation and error shapes, session-scoped single-use dialogs, timeout/abort handling, reload recovery, and question presentation. Upstream `ask_user_question` is the single question tool.
 - Pi-native Signet parity gate (met, 2026-09-06): the managed extension demonstrated live recall through the running daemon (`signet_recall` returned 3 memories) plus the four memory tools with fail-open behavior and no MCP dependency. The MCP `signet` connection, Signet controller settings, `signet.status` and the Signet settings screen were removed; the daemon stays an operator-owned external service.
@@ -94,4 +95,4 @@ Reconstructed from the simplification plan; profiles are added, deletions wait o
 - [x] Separate `pixie-mcp` process, container, gateway and `PIXIE_MCP_URL` deleted; the controller publishes Browser in-process (merge gate met).
 - [x] Separate `pixie-mcp` process and container deleted with obsolete MCP environment, capability contracts, cross-container coordination, duplicate health/lifecycle, and temp migration code (merge gate met; `PIXIE_MCP_TOKEN` remains for in-process publisher auth and adapter registration).
 - [x] Full baseline/parity suite green with consolidated configuration docs (bun suite 378 pass / 1 skip / 0 fail plus all Go packages ok under the pinned Bun 1.4.0; the container default Bun 1.3.14 shows pre-existing SSR-harness failures, so use the pinned toolchain).
-- [x] Reproducible `/pi` overlay: profiles manifest, checked-in upstream patches with clean-install verification, and documented manual setup that preserves native user configuration.
+- [x] Reproducible `/pi` overlay: profiles manifest, checked-in upstream patch with clean-install verification, and documented manual setup that preserves native user configuration.
