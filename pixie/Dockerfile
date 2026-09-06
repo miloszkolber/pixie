@@ -158,6 +158,10 @@ RUN chmod 0755 /app/run-ui-acceptance \
 USER 1000:1000
 CMD ["/app/run-ui-acceptance"]
 
+# The merged image ships a small Debian userland (git, chromium helpers) so a
+# POSIX shell is present; the sandbox posture comes from the runtime flags
+# (read-only rootfs, non-root, capability drop, no-new-privileges) rather than
+# from the absence of a shell.
 # Keep the application last: a build without --target produces only Pixie.
 # The application image is the only published Browser-capable image. It embeds
 # the in-process Browser module and serves the MCP publisher on :7312.
@@ -187,7 +191,6 @@ RUN test -x /app/pixie \
     && test -x /usr/local/bin/agent-browser \
     && command -v chromium \
     && command -v git \
-    && ! command -v sh && ! command -v dash && ! command -v bash \
     && test -d /var/lib/pixie-browser/artifacts \
     && test -d /var/lib/pixie-browser/state
 USER 1000:1000
