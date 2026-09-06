@@ -147,7 +147,6 @@ type app struct {
 	logger         *slog.Logger
 	started        time.Time
 	requests       diagnostics.RequestCounter
-	appViews       *appViewStore
 	accounting     sync.Mutex
 	reservations   map[string]int64
 	artifactUsage  map[string]int64
@@ -192,7 +191,7 @@ func newAppWithRuntime(config Config, build diagnostics.BuildInfo, logger *slog.
 	if logger == nil {
 		logger = diagnostics.NewLogger("browser", build)
 	}
-	app := &app{config: config, build: build, logger: logger, started: time.Now(), appViews: newAppViewStore(), reservations: map[string]int64{}, artifactUsage: map[string]int64{}, active: map[uint64]context.CancelFunc{}}
+	app := &app{config: config, build: build, logger: logger, started: time.Now(), reservations: map[string]int64{}, artifactUsage: map[string]int64{}, active: map[uint64]context.CancelFunc{}}
 	if err := app.initializeStorage(); err != nil {
 		return nil, err
 	}
@@ -217,7 +216,7 @@ func NewService(config Config, build diagnostics.BuildInfo, logger *slog.Logger)
 	return &Service{app: application}, nil
 }
 
-// ServeHTTP serves browser, artifact, diagnostic, App-view, and MCP routes.
+// ServeHTTP serves browser, artifact, diagnostic, and MCP routes.
 func (s *Service) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	s.app.ServeHTTP(response, request)
 }
@@ -227,7 +226,7 @@ func (s *Service) ServeHTTP(response http.ResponseWriter, request *http.Request)
 // for composite hosts; detailed diagnostics remain available at /readyz.
 func (s *Service) Ready() bool { return s.app.readiness().Ready }
 
-// Shutdown rejects new work, cancels active commands, and revokes App views.
+// Shutdown rejects new work and cancels active commands.
 func (s *Service) Shutdown() {
 	s.app.shutdown()
 }
@@ -1211,28 +1210,6 @@ func (a *app) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 		return
 	}
 	path := parsed.EscapedPath()
-	if parsed.RawQuery == "" && path == appViewPath {
-		if request.Method != http.MethodPost {
-			rejectMethod(response, request, http.MethodPost)
-		} else {
-			a.registerAppView(response, request)
-		}
-		return
-	}
-	if parsed.RawQuery == "" {
-		if ticket, ok := appViewTicket(path); ok {
-			switch request.Method {
-			case http.MethodGet:
-				a.serveAppView(response, request, ticket)
-			case http.MethodDelete:
-				a.deleteAppView(response, request, ticket)
-			default:
-				response.Header().Set("Allow", http.MethodGet+", "+http.MethodDelete)
-				writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"outcome": "rejected", "code": "method_not_allowed"}, nil)
-			}
-			return
-		}
-	}
 	if path == "/mcp" {
 		a.serveMCP(response, request)
 		return
@@ -1338,7 +1315,6 @@ func (a *app) shutdown() {
 	}
 	a.activeMu.Unlock()
 	a.leaseCancel()
-	a.appViews.close()
 	for _, cancel := range cancels {
 		cancel()
 	}

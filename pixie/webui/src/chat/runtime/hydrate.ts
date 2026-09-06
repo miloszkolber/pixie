@@ -91,7 +91,6 @@ export function messagesToRuntime(
 			const result: ToolResultState = {
 				status: message.isError ? "error" : "done",
 				raw: message.content,
-				...(message.app ? { app: message.app } : {}),
 				...(message.subagentActivity ? { subagentActivity: message.subagentActivity } : {}),
 			};
 			toolResults[message.toolCallId] = result;
@@ -104,7 +103,6 @@ export function messagesToRuntime(
 		const result: ToolResultState = {
 			status: "running",
 			raw: preview.output,
-			...(preview.app ? { app: preview.app } : {}),
 			...(preview.subagentActivity ? { subagentActivity: preview.subagentActivity } : {}),
 		};
 		toolResults[preview.toolCallId] = result;

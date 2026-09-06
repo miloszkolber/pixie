@@ -4,7 +4,6 @@ import DefaultToolRenderer from "./default-tool-renderer.svelte";
 import Icon from "../../components/icon.svelte";
 import { useFoldState } from "../runtime/fold-state";
 import type { ToolResultState } from "../runtime/types";
-import McpAppView from "../tools/apps/mcp-app-view.svelte";
 import { getToolRenderer, getToolSummary, resolveProminence } from "./tool-registry";
 
 const { readFold, toggleFold } = useFoldState();
@@ -38,7 +37,6 @@ let renderProps = $derived({
 	toolName,
 	args,
 	result: tool?.raw,
-	app: tool?.app,
 	subagentActivity: tool?.subagentActivity,
 	status,
 	projectAreaRoot,
@@ -86,7 +84,6 @@ $effect(() => {
 	{#if expanded}
 		<div class={`flex flex-col items-start gap-sm px-sm pb-xs ${isError ? "text-feedback-error" : ""}`}>
 			{#if status === "interrupted"}<DefaultToolRenderer {...renderProps} />{:else}<Renderer {...renderProps} />{/if}
-			<McpAppView {...renderProps} />
 		</div>
 	{/if}
 </div>

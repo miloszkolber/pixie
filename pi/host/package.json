@@ -1,8 +1,16 @@
 {
 	"name": "@pixie/pi-host",
 	"version": "0.1.0",
-	"private": true,
 	"type": "module",
+	"bin": {
+		"pixie-pi-host": "./src/main.ts"
+	},
+	"files": [
+		"src"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"exports": {
 		"./capabilities": "./src/capabilities.ts",
 		"./mcp": "./src/extensions/pi-mcp-adapter.ts"

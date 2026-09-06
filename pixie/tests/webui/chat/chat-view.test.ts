@@ -109,7 +109,6 @@ test("chat view is React-free Svelte and retains the complete interaction contra
 		"loadTranscriptUntil",
 		"setAskStatesContext",
 		"setChatActionsContext",
-		"setMcpAppSessionContext",
 		"createHistorySearch",
 		"createSessionCommandSync",
 		"bind:this={composer}",

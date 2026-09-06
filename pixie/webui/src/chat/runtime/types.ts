@@ -1,7 +1,6 @@
 import type {
 	AssistantMessage,
 	ImageContent,
-	McpAppAttachment,
 	SubagentActivity,
 	TextResourceAttachment,
 	UserMessage,
@@ -52,7 +51,6 @@ export type ToolStatus = "running" | "done" | "error" | "interrupted";
 export interface ToolResultState {
 	status: ToolStatus;
 	raw: unknown;
-	app?: McpAppAttachment;
 	subagentActivity?: SubagentActivity;
 }
 

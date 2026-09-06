@@ -25,7 +25,6 @@ export function activityToolRenderProps(
 		toolName: step.toolName,
 		args: step.args,
 		result: step.tool?.raw,
-		app: step.tool?.app,
 		subagentActivity: step.tool?.subagentActivity,
 		status: step.tool?.status ?? (step.dead ? "error" : "running"),
 		projectAreaRoot,

@@ -5,7 +5,7 @@ Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). Pi
 - Persistent concurrent chats, streaming, images and text attachments, steering, queues, search and forks.
 - Project directories with read-only files, image previews and Git diffs.
 - Native Pi provider, credential, model and thinking-level management.
-- Optional defined subagents, plans, MCP tools, interactive MCP Apps, Browser and Signet memory.
+- Optional defined subagents, plans, MCP tools, Browser and Signet memory.
 - Pixie-owned goals, tasks, questions and schedules.
 
 Optional controls appear when a compatible extension is available. The baseline uses the unmodified Pi SDK and its normal tools and settings.

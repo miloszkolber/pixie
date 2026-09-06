@@ -21,7 +21,6 @@ type CoreHandler struct {
 	Projects      *workspace.Projects
 	Files         *workspace.Files
 	Sessions      *SessionManager
-	Apps          *AppViews
 	Settings      *Settings
 	Admin         *PiAdmin
 	Git           *workspace.Git
@@ -355,84 +354,6 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, err
 		}
 		return h.Sessions.messageResponse(ctx, request.SessionID, request.ProjectID, cwd, clientKey, transcriptPageRequest{Before: request.Before})
-	case "session.appResourceRead":
-		var request struct {
-			ProjectID   string `json:"projectId"`
-			SessionID   string `json:"sessionId"`
-			ToolCallID  string `json:"toolCallId"`
-			ViewID      string `json:"viewId"`
-			OperationID string `json:"operationId"`
-			URI         string `json:"uri"`
-		}
-		if h.Apps == nil || decodeParams(raw, &request) != nil {
-			return nil, fmt.Errorf("malformed app resource request")
-		}
-		return h.Apps.ReadResource(ctx, request.ViewID, request.OperationID, request.ProjectID, request.SessionID, request.ToolCallID, request.URI, clientKey)
-	case "session.appOpen":
-		var request struct {
-			ProjectID    string `json:"projectId"`
-			SessionID    string `json:"sessionId"`
-			ToolCallID   string `json:"toolCallId"`
-			ParentOrigin string `json:"parentOrigin"`
-		}
-		if h.Apps == nil || decodeParams(raw, &request) != nil {
-			return nil, fmt.Errorf("malformed app open request")
-		}
-		return h.Apps.Open(ctx, request.ProjectID, request.SessionID, request.ToolCallID, request.ParentOrigin, clientKey)
-	case "session.appContentRead":
-		var request struct {
-			ProjectID  string `json:"projectId"`
-			SessionID  string `json:"sessionId"`
-			ToolCallID string `json:"toolCallId"`
-			ViewID     string `json:"viewId"`
-			Offset     int    `json:"offset"`
-		}
-		if h.Apps == nil || decodeParams(raw, &request) != nil {
-			return nil, fmt.Errorf("malformed app content request")
-		}
-		return h.Apps.Content(request.ViewID, request.ProjectID, request.SessionID, request.ToolCallID, clientKey, request.Offset)
-	case "session.appKeepAlive":
-		var request struct {
-			ProjectID  string `json:"projectId"`
-			SessionID  string `json:"sessionId"`
-			ToolCallID string `json:"toolCallId"`
-			ViewID     string `json:"viewId"`
-		}
-		if h.Apps == nil || decodeParams(raw, &request) != nil {
-			return nil, fmt.Errorf("malformed app lease request")
-		}
-		return ack(h.Apps.KeepAlive(request.ViewID, request.ProjectID, request.SessionID, request.ToolCallID, clientKey))
-	case "session.appClose":
-		var request struct {
-			ViewID string `json:"viewId"`
-		}
-		if h.Apps == nil || decodeParams(raw, &request) != nil {
-			return nil, fmt.Errorf("malformed app close request")
-		}
-		return ack(h.Apps.Close(ctx, request.ViewID, clientKey))
-	case "session.appToolCall":
-		var request struct {
-			ProjectID   string         `json:"projectId"`
-			SessionID   string         `json:"sessionId"`
-			ToolCallID  string         `json:"toolCallId"`
-			ViewID      string         `json:"viewId"`
-			OperationID string         `json:"operationId"`
-			Name        string         `json:"name"`
-			Arguments   map[string]any `json:"arguments"`
-		}
-		if h.Apps == nil || decodeParams(raw, &request) != nil {
-			return nil, fmt.Errorf("malformed app tool request")
-		}
-		return h.Apps.CallTool(ctx, request.ViewID, request.OperationID, request.ProjectID, request.SessionID, request.ToolCallID, request.Name, request.Arguments, clientKey)
-	case "session.appOperationCancel":
-		var request struct {
-			ViewID      string `json:"viewId"`
-			OperationID string `json:"operationId"`
-		}
-		if h.Apps == nil || decodeParams(raw, &request) != nil {
-			return nil, fmt.Errorf("malformed app operation cancellation")
-		}
-		return ack(h.Apps.CancelOperation(request.ViewID, request.OperationID, clientKey))
 	case "session.setLeases":
 		var request struct {
 			Revision uint64         `json:"revision"`

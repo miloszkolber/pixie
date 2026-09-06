@@ -1,4 +1,4 @@
-import type { McpAppAttachment, SubagentActivity } from "@pixie/contracts";
+import type { SubagentActivity } from "@pixie/contracts";
 import type { Component } from "svelte";
 import type { ToolStatus } from "../runtime/types";
 import DefaultToolRenderer from "./default-tool-renderer.svelte";
@@ -8,7 +8,6 @@ export interface ToolRenderProps {
 	toolName: string;
 	args: Record<string, unknown>;
 	result: unknown;
-	app?: McpAppAttachment | undefined;
 	subagentActivity?: SubagentActivity | undefined;
 	status: ToolStatus;
 	projectAreaRoot?: string | undefined;

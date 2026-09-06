@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { APP_CLOSE_TIMEOUT_MS, revokeMcpAppView } from "@/chat/tools/apps/mcp-app-client";
 import { WsTransport } from "@/connection/transport";
 
 class TestWebSocket {
@@ -112,16 +111,22 @@ describe("WsTransport channel replay", () => {
 });
 
 describe("WsTransport reconnect delivery", () => {
-	test("keeps an App close live across an outage for longer than controller cleanup", async () => {
-		expect(APP_CLOSE_TIMEOUT_MS).toBeGreaterThan(60_000);
+	test("keeps a long-lived request live across an outage for longer than controller cleanup", async () => {
 		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
 		transport.connect();
 		const first = TestWebSocket.instances[0];
 		first?.open();
 
-		const closing = revokeMcpAppView("a".repeat(64), transport);
-		const originalFrame = first?.sent.find((frame) => parse(frame).method === "session.appClose");
-		if (!originalFrame) throw new Error("App close frame missing");
+		// A 75s timeout exceeds the controller's disconnected-client grace
+		// period. Either the request is replayed after a reconnect or
+		// controller cleanup wins first.
+		const closing = transport.request(
+			"browser.panelClose",
+			{ panelId: "panel-1" },
+			{ timeoutMs: 75_000 },
+		);
+		const originalFrame = first?.sent.find((frame) => parse(frame).method === "browser.panelClose");
+		if (!originalFrame) throw new Error("close frame missing");
 		const id = parse(originalFrame).id;
 		first?.close();
 		await tick(520);

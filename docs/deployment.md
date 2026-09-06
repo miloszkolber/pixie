@@ -20,6 +20,18 @@ bun pi/host/src/main.ts --extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
 
 Omit `--extensions` for baseline Pi. `--agent-dir /absolute/path` selects Pi state; the default is `~/.pi/agent`. The service listens at `127.0.0.1:3284`; `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration.
 
+Published artifacts remove the checkout from the critical path. Each `pi-host-v*` tag publishes `@pixie/pi-host` to npm (one-time setup: create an `NPM_TOKEN` with publish access to the scope and add it as a repository secret); the container workflow already publishes `ghcr.io/<owner>/pixie` on every `v*` tag. Prefer the published artifacts for clean machines:
+
+```sh
+bunx @pixie/pi-host@<version> --extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
+```
+
+One `bunx` caveat: the upstream subagent child-runner patch does not travel through npm (root `patchedDependencies` apply to workspace installs only), so `subagent` child runs under `bunx` need Node until upstream accepts the entrypoint fix. Everything else, including local `llama.cpp` inference, works unchanged.
+
+## Optional local models
+
+Append `,llama` to the host `--extensions` list to register Pi's built-in llama.cpp provider inside Pixie sessions (embedded hosts do not auto-load it; without this profile the provider is absent from `pi.providers.list`). The endpoint comes from `LLAMA_BASE_URL` in the host service environment (for example `http://127.0.0.1:4667/v1`); authentication falls back to the dummy key `local`, which llama.cpp ignores. This stays opt-in: the universal profile list above omits it, and host-specific setup (such as a systemd unit) adds both the profile and the variable only where a local endpoint actually runs.
+
 ## Containers
 
 From the repository root:
@@ -53,6 +65,28 @@ Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container 
 The Browser MCP publisher lives inside the main Pixie process on port `7312`: Browser tools are served at `/mcp/browser`, the module catalog at `/api/mcp/modules` and status at `/api/mcp/status`, authenticated with `PIXIE_MCP_TOKEN`. Enable Browser in Settings → Tools with a compatible MCP extension loaded. The universal MCP adapter also accepts unrelated stdio, HTTP and SSE servers.
 
 Optional Signet memory is an operator-owned external service, not a Pixie-managed MCP connection. Install it with `signet setup` and run the daemon separately; Pi loads the managed `signet-pi.js` file extension with fail-open lifecycle hooks and hidden auto-recall. Pixie never reads or writes `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`), `signet.json` or per-session `SIGNET_ENABLED`.
+
+## Without Docker
+
+Docker stays the primary method, but the application also runs as plain binaries for machines where containers are unavailable. Build time needs Go, Bun and Node toolchains; run time needs only the two binaries plus a Chromium build and `agent-browser` on `PATH` if the Browser module is enabled (it degrades to `disabled` otherwise).
+
+```sh
+bun install --frozen-lockfile
+bun run build:web      # web UI into pixie/webui/dist (build time only)
+cd pixie && CGO_ENABLED=0 go build -trimpath -o /usr/local/bin/pixie ./cmd/pixie
+```
+
+Run with the same environment as the Compose service, plus two directory overrides that default to container paths:
+
+```sh
+PIXIE_DATA_DIR=/var/lib/pixie \
+PIXIE_STATIC_DIR=/path/to/pixie/webui/dist \
+PIXIE_PI_URL=ws://127.0.0.1:3284/pi \
+PIXIE_PI_SECRET_KEY=<secret> PIXIE_MCP_TOKEN=<token> \
+pixie
+```
+
+Data, auth, project mounts and health endpoints behave identically to the container layout. The Pi host service itself already runs on the host with no container involved.
 
 ## Operations
 

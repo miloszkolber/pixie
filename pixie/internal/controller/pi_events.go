@@ -76,7 +76,7 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 			status = "failed"
 		}
 		details := mapValue(result["details"])
-		meta := map[string]any{"pi": map[string]any{"mcpApp": mapValue(details["mcp"])["app"], "subagentActivity": details["subagent"]}}
+		meta := map[string]any{"pi": map[string]any{"subagentActivity": details["subagent"]}}
 		if err := emit("tool_call_update", map[string]any{"toolCallId": toolID, "status": status, "rawOutput": result, "_meta": meta}); err != nil {
 			return err
 		}

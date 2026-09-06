@@ -56,7 +56,6 @@ import SessionConfigControls from "./session/session-config-controls.svelte";
 import SessionModelControls from "./session/session-model-controls.svelte";
 import SessionPlanControl from "./session/session-plan-control.svelte";
 import { streamStatus } from "./session/stream-status";
-import { setMcpAppSessionContext } from "./tools/apps/mcp-app-context";
 import "./tools/register";
 import type { ChatTranscriptHandle } from "./view/chat-transcript.svelte";
 import ChatTranscript from "./view/chat-transcript.svelte";
@@ -190,14 +189,6 @@ setChatActionsContext({
 		}
 	},
 	focusComposer: () => composer?.refocus(),
-});
-setMcpAppSessionContext({
-	get projectId() {
-		return projectId;
-	},
-	get sessionId() {
-		return sessionId;
-	},
 });
 
 onDestroy(() => {

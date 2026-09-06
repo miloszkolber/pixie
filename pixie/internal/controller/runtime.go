@@ -44,7 +44,6 @@ type Runtime struct {
 	client    *PiClient
 	sessions  *SessionManager
 	schedules *Schedules
-	apps      *AppViews
 	socket    *WebSocketServer
 	logins    *ProviderLogins
 	watches   *workspace.ProjectWatches
@@ -147,12 +146,10 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	sessions.deviceCode = admin.logins.DeviceCode
 	git := workspace.NewGit(projects, config.Policy)
 	watches := workspace.NewProjectWatches(projects, git, publish)
-	apps := NewAppViews(sessions, authConfig, config.Port)
-	apps.SetBrowserHandler(mcpRegistry.BrowserLegacyHandler())
 	requests := &diagnostics.RequestCounter{}
 	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig)
 	statusProvider.schedules = schedules
-	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Apps: apps, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPRegistry: mcpRegistry}
+	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPRegistry: mcpRegistry}
 	welcome := func(ctx context.Context) (any, error) {
 		recent, err := projects.List(true)
 		if err != nil {
@@ -190,7 +187,6 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	}
 	socket.LoginSnapshot = admin.logins.Snapshot
 	socket.ClientReaped = func(clientKey string) {
-		apps.ReleaseClient(clientKey)
 		sessions.ReleaseClient(clientKey)
 		browserPanels.ReleaseClient(clientKey)
 	}
@@ -214,7 +210,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		return nil, err
 	}
 	httpHandler.MCPRegistry = mcpRegistry
-	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, apps: apps, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, registry: mcpRegistry}, nil
+	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, registry: mcpRegistry}, nil
 }
 
 func (r *Runtime) Start() (string, error) {
@@ -251,7 +247,6 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.logins.Close()
 	r.watches.Close()
 	r.socket.Close(ctx)
-	r.apps.CloseAll(ctx)
 	r.sessions.shutdown(ctx)
 	return r.server.Shutdown(ctx)
 }

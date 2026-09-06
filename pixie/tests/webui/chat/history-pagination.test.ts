@@ -10,16 +10,6 @@ import {
 } from "@/chat/runtime/session-runtime";
 
 test("transcript pages hydrate and prepend without changing identity, result precedence, or row keys", () => {
-	const olderApp = {
-		toolName: "read",
-		extensionName: "older-extension",
-		resourceUri: "ui://older/result",
-	};
-	const newerApp = {
-		toolName: "read",
-		extensionName: "newer-extension",
-		resourceUri: "ui://newer/result",
-	};
 	const olderSubagent = { events: [{ childSessionId: "older-child", toolName: "read" }] };
 	const newerSubagent = { events: [{ childSessionId: "newer-child", toolName: "read" }] };
 	const olderMessages: TranscriptMessage[] = [
@@ -34,7 +24,6 @@ test("transcript pages hydrate and prepend without changing identity, result pre
 			role: "toolResult",
 			toolCallId: "reused",
 			content: "older result",
-			app: olderApp,
 			subagentActivity: olderSubagent,
 		},
 		{ role: "user", content: "Continue" },
@@ -55,7 +44,6 @@ test("transcript pages hydrate and prepend without changing identity, result pre
 			{
 				toolCallId: "reused",
 				output: "newer result",
-				app: newerApp,
 				subagentActivity: newerSubagent,
 			},
 		],
@@ -107,20 +95,17 @@ test("transcript pages hydrate and prepend without changing identity, result pre
 		toolRows.map((row) => ({
 			path: row.args.path,
 			result: row.tool?.raw,
-			app: row.tool?.app,
 			subagentActivity: row.tool?.subagentActivity,
 		})),
 	).toEqual([
 		{
 			path: "/older",
 			result: "older result",
-			app: olderApp,
 			subagentActivity: olderSubagent,
 		},
 		{
 			path: "/newer",
 			result: "newer result",
-			app: newerApp,
 			subagentActivity: newerSubagent,
 		},
 	]);

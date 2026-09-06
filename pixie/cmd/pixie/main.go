@@ -46,7 +46,9 @@ func main() {
 }
 
 func run(ctx context.Context, build diagnostics.BuildInfo) error {
-	runtime, err := controller.NewRuntime(controller.RuntimeConfig{AppVersion: build.Version, AppRevision: build.Revision})
+	// Container defaults apply when unset, so plain `go build` binaries keep
+	// working outside Docker by pointing these at local directories.
+	runtime, err := controller.NewRuntime(controller.RuntimeConfig{AppVersion: build.Version, AppRevision: build.Revision, DataDir: os.Getenv("PIXIE_DATA_DIR"), StaticDir: os.Getenv("PIXIE_STATIC_DIR")})
 	if err != nil {
 		return err
 	}

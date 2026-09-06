@@ -19,7 +19,7 @@ Paths below are relative to `pixie/`.
 | `webui`, `contracts` | Svelte 5 interface and shared wire contracts |
 | `tests` | Unit, integration, deployment and browser checks |
 
-Pi sources live separately in top-level `pi/`: `host/` contains the SDK service and upstream extension profiles, `mcp/` preserves the old MCP package/file entry as a small compatibility shim, and `extensions/local-patches/` contains the pinned upstreamable MCP host API patch. The repository root holds the shared Bun workspace and lockfile.
+Pi sources live separately in top-level `pi/`: `host/` contains the SDK service and upstream extension profiles, and `extensions/local-patches/` contains the pinned upstreamable subagent patch. The repository root holds the shared Bun workspace and lockfile.
 
 Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets, Git and the Browser runtime. It runs non-root with a read-only root filesystem.
 
@@ -46,4 +46,4 @@ Schedule mutations and their retry results commit in one atomic store. The lates
 
 The browser receives the newest transcript page first. Older pages carry projection identities. Snapshots also carry pending tools and pending extension dialogs, so a reload mid-run, mid-tool, or mid-dialog reconciles against server state. Late message events from older runs never resurrect completed streaming state, and one prompt's several `agent_end` events never settle it early: only prompt settlement does. Inactive projections have count and memory budgets; active work, pending dialogs, registered liveness, and durable queues prevent eviction. Reconnect generations, session ownership and deletion markers reject stale work.
 
-Browser panels have persisted ownership and renewable leases. Startup retries cleanup of recorded panels. Interactive MCP Apps use a separate origin, short-lived tickets and same-session tool/resource authorization.
+Browser panels have persisted ownership and renewable leases. Startup retries cleanup of recorded panels.

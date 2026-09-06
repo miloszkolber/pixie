@@ -1,5 +1,21 @@
 # Roadmap
 
+## Vision
+
+Pixie is a web application and integration layer around vanilla Pi, not an alternative implementation of Pi. The target setup for a clean machine is: install vanilla Pi, add Pixie's published artifacts, open the Web UI. Every capability ships as an optional extension the UI detects and presents:
+
+- The host advertises a machine-readable inventory (`runtime.hello` capability snapshot plus per-session contracts); the UI gates each control on it, so baseline Pi works with zero factories and every profile only adds.
+- Profiles stay additive and independent. Adding one never requires another, and removing one never breaks the rest.
+- Published artifacts replace the checkout on clean machines: a versioned `@pixie/pi-host` npm package for the Pi service (`bunx @pixie/pi-host@<version>`) and the `ghcr.io/<owner>/pixie` container image for the application. Docker stays the primary application deployment; the Go binary plus a built web UI is the documented fallback.
+- The `llama` profile stays opt-in for machines with a local endpoint (`LLAMA_BASE_URL` plus the profile flag), documented as host-specific setup rather than part of the universal list.
+
+## Gaps toward that vision
+
+- Published `@pixie/pi-host` releases: the npm workflow exists (`pi-host-v*` tags) but no release has been cut; the subagent child-runner patch does not travel through npm, so `bunx` users run subagent children under Node until upstream accepts the entrypoint fix.
+- Extensions screen: compose the existing capability inventory and `config/profiles.json` into one UI surface listing installed/available profiles with enable toggles, instead of today's per-feature gating.
+- Host restart orchestration: changing the enabled set currently requires restarting the Pi service by hand; toggles need a reload operation or a privileged helper.
+- Profile alias collapse: `adapter-evaluation` duplicates `overlay` under a second MCP name; collapse to one toggle with the alias kept only as a compat shim for saved `pixie-overlay.json` files.
+- Rewire transcript question-card answers to the generic UI bridge (`session.uiReply`): the card submit path still targets the removed controller question tool and fails cleanly today, while the bridge dialog is the working answer path.
 - Additional native Pi extension UI interfaces.
 - A dedicated schedules interface.
 - Rewire transcript question-card answers to the generic UI bridge (`session.uiReply`): the card submit path still targets the removed controller question tool and fails cleanly today, while the bridge dialog is the working answer path.
@@ -8,7 +24,7 @@
 - Pi-native question parity gate (met): Pixie's application-level `ask_user_question` tool is deleted; `rpiv-ask` demonstrated equivalent answers (including the exact-option answer contract), cancellation and error shapes, session-scoped single-use dialogs, timeout/abort handling, reload recovery, and question presentation. Upstream `ask_user_question` is the single question tool.
 - Pi-native Signet parity gate (met, 2026-09-06): the managed extension demonstrated live recall through the running daemon (`signet_recall` returned 3 memories) plus the four memory tools with fail-open behavior and no MCP dependency. The MCP `signet` connection, Signet controller settings, `signet.status` and the Signet settings screen were removed; the daemon stays an operator-owned external service.
 - Pi-native subagent parity gate (met, 2026-09-06): the `pi-subagent` profile demonstrated equivalent user/project discovery with trust and project-over-user override, model frontmatter with per-call override, thinking, tool allowlist, no-tools, fresh/cloned initial context, ephemeral/named persistent sessions with continuation, parallel calls, cancellation, usage, child metadata, depth/cycle guards, and structured errors. A live child run (`explore` agent, local gemma-4-12b, 39 s, correct result) also settled the earlier Bun spawn-target concern on this host. Pixie keeps its agent Markdown CRUD, `pi.sources.*` operations, editor and `@agent` presentation; only the execution path was replaced.
-- Pi-native MCP client gate (met with the permitted local patch): both profile names use the pinned upstream adapter, and the custom transport is removed. A 113-line upstreamable patch supplies raw resource and App-origin tool APIs without changing model visibility or adding a protocol engine. Retained App authority, metadata/images, cancellation, native projection/reload, legacy configuration, profile aliases and idle cleanup are covered by SDK/host/controller tests. The old package/file entry remains a compatibility shim. See [MCP client verification](mcp-client-verification.md) for reproducible checks, measurements and deployment limitations.
+- Pi-native MCP client gate (met): both profile names use the pinned upstream adapter unchanged, and the custom transport, the interactive Apps feature, and the temporary local patch are removed. Retained metadata/images, cancellation, native projection/reload, profile aliases and idle cleanup are covered by SDK/host/controller tests.
 - MCP publisher merge gate (met, 2026-09-06): the in-process publisher demonstrated equivalent Browser publication (same tools and resources, storage isolation, sandboxing, and bearer auth), persist-store enablement with Tools UI parity (Enabled, Status, Endpoint), deprecated-environment fallback behavior, and dual-run catalog equivalence. The separate `pixie-mcp` process, container and controller gateway were deleted; the main Pixie image is browser-capable and publishes Browser itself on :7312. Browser stays the only module.
 - Browser engine gate: Obscura was evaluated from its published CDP interface and rejected as the preferred backend (upstream documents Target, Page, Runtime, DOM, Network, Fetch, IO, Storage, Input, and LP domains with no Accessibility domain, which agent-browser snapshots and element refs require). Chromium stays the default and preferred engine with Obscura available for experimentation only. There is no Tools UI engine toggle yet.
 - Subagent fallback order if `mjakl/pi-subagent` cannot reach parity unchanged: first a thin Pixie-side bridge that keeps the upstream tool unchanged (projection and event adaptation in Pixie only), then `nicobailon/pi-subagents`, then a custom implementation. Background/detached runs, steering, workflows, councils, missions, worktrees and external runners stay out of scope.
@@ -70,10 +86,10 @@ Reconstructed from the simplification plan; profiles are added, deletions wait o
 - [x] Application-level `ask_user_question` model tool deleted (parity gate met); upstream `ask_user_question` is the single question tool with the generic UI bridge.
 - [x] `PIXIE_MCP_MODULES`/`PIXIE_MCP_DISABLED_MODULES` retired: persisted Tools UI state is authoritative, legacy vars are ignored with a startup warning.
 - [x] Todo plan projection gated on successful, finished results (failed/partial snapshots never replace the plan).
-- [x] App views open/close through the in-process Browser module on an isolated loopback sandbox origin; external `PIXIE_BROWSER_URL` proxying unchanged.
+- [x] Interactive MCP App views removed end to end (controller, Browser service, registry route, web UI, contracts, tests, temporary patch APIs); model tools without `ui` metadata render as normal tool cards.
 - [x] Browser child processes carry no controller secrets (scoped HOME/TMPDIR, regression-tested).
 - [x] Custom `delegate`/`list_agents` execution deleted (parity gate met).
-- [x] Custom universal MCP transport deleted, with the permitted upstreamable host API patch and compatibility entry described above.
+- [x] Custom universal MCP transport deleted; the temporary local patch and the `pi/mcp` compatibility entry are removed with it, leaving the pinned upstream adapter unchanged.
 - [x] MCP `signet` connection, Signet settings and `signet.status` deleted (parity gate met).
 - [x] Separate `pixie-mcp` process, container, gateway and `PIXIE_MCP_URL` deleted; the controller publishes Browser in-process (merge gate met).
 - [x] Separate `pixie-mcp` process and container deleted with obsolete MCP environment, capability contracts, cross-container coordination, duplicate health/lifecycle, and temp migration code (merge gate met; `PIXIE_MCP_TOKEN` remains for in-process publisher auth and adapter registration).

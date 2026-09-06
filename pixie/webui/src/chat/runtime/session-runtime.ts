@@ -299,7 +299,6 @@ export function reduceSessionEvent(rt: SessionRuntime, event: AgentEvent): Sessi
 			const result: ToolResultState = {
 				status: "running",
 				raw: continuing ? previous.raw : undefined,
-				...(continuing && previous.app ? { app: previous.app } : {}),
 				...(continuing && previous.subagentActivity
 					? { subagentActivity: previous.subagentActivity }
 					: {}),
@@ -331,7 +330,6 @@ export function reduceSessionEvent(rt: SessionRuntime, event: AgentEvent): Sessi
 		case "tool-end": {
 			const toolCallId = event.toolCallId;
 			if (!toolCallId) return rt;
-			const app = event.app ?? rt.toolResults[toolCallId]?.app;
 			const subagentActivity =
 				event.subagentActivity ?? rt.toolResults[toolCallId]?.subagentActivity;
 			const result: ToolResultState = {
@@ -342,7 +340,6 @@ export function reduceSessionEvent(rt: SessionRuntime, event: AgentEvent): Sessi
 							? "done"
 							: "running",
 				raw: event.tool ?? rt.toolResults[toolCallId]?.raw ?? event.status,
-				...(app ? { app } : {}),
 				...(subagentActivity ? { subagentActivity } : {}),
 			};
 			return {

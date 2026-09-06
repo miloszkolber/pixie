@@ -7,7 +7,6 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import {
 	CallToolRequestSchema,
 	ListToolsRequestSchema,
-	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { piMcpAdapterWithConfig } from "../../../pi/host/src/extensions/pi-mcp-adapter.ts";
@@ -27,7 +26,7 @@ afterEach(() => {
 	else process.env.MCP_UI_VIEWER = priorViewer;
 });
 
-test("MCP tools, App resources and connection removal remain scoped to the extension", async () => {
+test("MCP tools and connection removal remain scoped to the extension", async () => {
 	const dir = await mkdtemp(tmpdir() + "/pixie-pi-mcp-");
 	isolate(dir);
 	async function serve(token = "") {
@@ -53,15 +52,6 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 		mcp.setRequestHandler(CallToolRequestSchema, async () => ({
 			content: [{ type: "text", text: "Tool completed" }],
 			structuredContent: { ok: true },
-		}));
-		mcp.setRequestHandler(ReadResourceRequestSchema, async () => ({
-			contents: [
-				{
-					uri: "ui://fixture/app",
-					mimeType: "text/html;profile=mcp-app",
-					text: "<p>Fixture App</p>",
-				},
-			],
 		}));
 		const transport = new WebStandardStreamableHTTPServerTransport({
 			sessionIdGenerator: () => crypto.randomUUID(),
@@ -112,13 +102,6 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 				mcpResult: { structuredContent: { ok: true } },
 			},
 		});
-		expect(
-			await entry.capabilities.call(
-				"pi.resources.read",
-				{ extensionName: "fixture", uri: "ui://fixture/app" },
-				ctx,
-			),
-		).toMatchObject({ result: { contents: [{ text: "<p>Fixture App</p>" }] } });
 		expect(
 			await entry.capabilities.call("pi.tools.call", { name: "fixture__show", arguments: {} }, ctx),
 		).toMatchObject({ isError: false, structuredContent: { ok: true } });

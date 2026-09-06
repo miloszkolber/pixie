@@ -97,10 +97,8 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 					promptRequests <- map[string]any{"connection": connection, "id": rpc.ID, "params": rpc.Params}
 					continue
 				}
-			case "pi.apps.tools.call", "pi.tools.call":
-				result = map[string]any{"isError": false, "content": []any{map[string]any{"type": "text", "text": "App-only result"}}, "structuredContent": map[string]any{"ok": true}, "_meta": map[string]any{"retained": true}}
-			case "pi.resources.read":
-				result = map[string]any{"result": map[string]any{"contents": []any{map[string]any{"uri": rpc.Params["uri"], "mimeType": "text/html;profile=mcp-app", "text": "<p>App</p>", "_meta": map[string]any{"ui": map[string]any{"prefersBorder": true}}}}}}
+			case "pi.tools.call":
+				result = map[string]any{"isError": false, "content": []any{map[string]any{"type": "text", "text": "tool result"}}, "structuredContent": map[string]any{"ok": true}, "_meta": map[string]any{"retained": true}}
 			}
 			if len(rpc.ID) > 0 && writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}) != nil {
 				return

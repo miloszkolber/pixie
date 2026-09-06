@@ -866,7 +866,7 @@ test("adapter bridge preserves legacy admin configuration and restores session m
 	expect(await readFile(join(dir, "mcp.json"), "utf8")).toBe(native);
 });
 
-test("public proxy resource output cannot fulfill Pixie's raw Apps resource contract", async () => {
+test("public proxy resource output stays rendered content without raw resource fields", async () => {
 	const http = await startHttpFixture();
 	cleanups.push(() => http.close());
 	const { entry, call } = await adapterSession({ mcpServers: { parity: { url: http.url } } });
@@ -875,18 +875,19 @@ test("public proxy resource output cannot fulfill Pixie's raw Apps resource cont
 	const read = await call({ server: "parity", tool: "read_hello", args: {} });
 	expect(read.content[0].text).toContain("hello-http-resource");
 	// The public output is rendered content, not ReadResourceResult. In particular
-	// it loses raw contents, MIME and _meta needed by the retained App iframe.
+	// it carries no raw contents, MIME or _meta fields.
 	expect(read.details.mcpResult).toBeUndefined();
 	expect(read.contents).toBeUndefined();
 	expect(listed.details.tools).not.toContain("parity_read_app");
 	const unlisted = await call({ server: "parity", tool: "ui://parity/app.html", args: {} });
 	expect(unlisted.details.error).toBe("tool_not_found");
-	// Raw host reads and App calls are separate APIs, not model proxy modes.
+	// The bridge exposes the upstream runtime and administration only.
 	expect(entry.capabilities.snapshot()).toMatchObject({
 		mcp: 1,
-		"mcp-apps": 1,
-		"mcp-app-tools": 1,
+		"pi-mcp-adapter": 1,
 	});
+	expect(entry.capabilities.snapshot()).not.toHaveProperty("mcp-apps");
+	expect(entry.capabilities.snapshot()).not.toHaveProperty("mcp-app-tools");
 });
 
 test("adapter OAuth uses local discovery, PKCE, state validation, token exchange and refresh", async () => {

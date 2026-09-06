@@ -65,7 +65,6 @@ type sessionEntry struct {
 	userResourceBytes  int
 	promptAcknowledged bool
 	pendingToolOutputs map[string]toolOutput
-	appAttachments     map[string]appAttachmentState
 	commands           []map[string]any
 	planState          *SessionPlanState
 	agentIdentity      string
@@ -455,7 +454,6 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 	entry.userResourceBytes = replay.userResourceBytes
 	entry.pendingToolOutputs = replay.pendingToolOutputs
 	entry.consumedQuestions = replay.consumedQuestions
-	entry.appAttachments = replay.appAttachments
 	entry.commands = replay.commands
 	entry.capabilities = replay.capabilities
 	entry.planState = replay.planState
@@ -1082,11 +1080,7 @@ func (m *SessionManager) evictLocked() {
 			entry.inactiveAt = m.now()
 		}
 		if entry.inactiveBytes == 0 {
-			attachments := make(map[string]AppAttachment, len(entry.appAttachments))
-			for toolCallID, state := range entry.appAttachments {
-				attachments[toolCallID] = state.attachment
-			}
-			encoded, err := json.Marshal([]any{entry.messages, entry.pendingToolOutputs, attachments, entry.planState})
+			encoded, err := json.Marshal([]any{entry.messages, entry.pendingToolOutputs, entry.planState})
 			if err != nil {
 				// A projection that cannot be measured must not bypass the budget.
 				delete(m.sessions, id)

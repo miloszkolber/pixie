@@ -15,8 +15,7 @@ interface Connection {
 type Membership = { add: Record<string, RecordValue>; remove: string[] };
 
 // Compatibility for persisted Pixie connection records only. Registration and
-// all execution belong to the upstream adapter, not an MCP client here. Raw reads
-// use its small locally patched public API, never a private manager import.
+// all execution belong to the upstream adapter, not an MCP client here.
 function connection(
 	value: unknown,
 	agentDir: string,
@@ -85,13 +84,6 @@ function connection(
 export function mcpRuntimeBridge(
 	pi: ExtensionAPI,
 	agentDir: string,
-	readResource: (server: string, uri: string, signal: AbortSignal) => Promise<RecordValue>,
-	callAppTool: (
-		server: string,
-		tool: string,
-		args: RecordValue,
-		signal: AbortSignal,
-	) => Promise<RecordValue>,
 ): {
 	operations: Capability["operations"];
 	close: () => Promise<void>;
@@ -223,50 +215,6 @@ export function mcpRuntimeBridge(
 	return {
 		close,
 		operations: {
-			"adapter.describeApp": async (p, ctx) => {
-				authorize(ctx);
-				const server = required(p.server, "MCP connection");
-				const tool = required(p.tool, "MCP tool");
-				await requireServer(server, ctx);
-				const list = await call({ server }, ctx);
-				const names = Array.isArray(list.tools) ? list.tools : [];
-				if (names.length > 2000) throw new Error("MCP catalog exceeds projection limit");
-				for (const name of names) {
-					const described = await call({ describe: name }, ctx);
-					const metadata = object(described.tool);
-					if (
-						described.server === server &&
-						metadata.originalName === tool &&
-						metadata.uiResourceUri
-					)
-						return {
-							toolName: tool,
-							extensionName: server,
-							resourceUri: metadata.uiResourceUri,
-							toolNameIsActual: true,
-						};
-				}
-				return {};
-			},
-			// The authenticated controller's AppView path invokes this method.
-			// Ordinary pi.tools.call remains on the model-visible proxy.
-			"pi.apps.tools.call": async (p, ctx) => {
-				authorize(ctx);
-				const server = required(p.extensionName, "MCP connection");
-				const tool = required(p.toolName, "MCP App tool");
-				await requireServer(server, ctx);
-				const result = await callAppTool(server, tool, object(p.arguments), ctx.signal);
-				authorize(ctx);
-				return { ...result, isError: result.isError === true };
-			},
-			"pi.resources.read": async (p, ctx) => {
-				authorize(ctx);
-				const server = required(p.extensionName ?? p.extension, "MCP connection");
-				await requireServer(server, ctx);
-				const result = await readResource(server, required(p.uri, "resource", 65536), ctx.signal);
-				authorize(ctx);
-				return { result };
-			},
 			"mcp.attach": (p, ctx) =>
 				serial(async () => {
 					authorize(ctx);

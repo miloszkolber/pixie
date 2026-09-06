@@ -4,12 +4,11 @@ import { registerCapability } from "../capabilities.ts";
 import type { RecordValue } from "../storage.ts";
 import { mcpRuntimeBridge } from "./mcp-runtime-bridge.ts";
 
-// Both MCP profile names select this upstream factory. The local patch adds
-// only raw resource and App-origin host APIs. Model tools, their visibility,
-// transports, discovery, auth and reconnect remain upstream-owned.
+// Both MCP profile names select this upstream factory. Model tools, their
+// visibility, transports, discovery, auth and reconnect remain upstream-owned.
 // createRequire avoids pulling upstream's untyped TS helpers into Pixie's
-// strict typecheck. It loads the same patched module used at runtime and
-// preserves the exact ExtensionAPI identity required by the host APIs.
+// strict typecheck. It loads the same module used at runtime and preserves
+// the exact ExtensionAPI identity required by the host APIs.
 
 export const PI_MCP_ADAPTER_VERSION = "2.32.1";
 export const PI_MCP_ADAPTER_STATUS_EVENT = "pi-mcp-adapter/status/v1";
@@ -20,16 +19,6 @@ export const PIXIE_BROWSER_RUNTIME_NAME = "pixie-browser";
 interface UpstreamAdapter {
 	createMcpAdapter: (options?: Record<string, never>) => (pi: ExtensionAPI) => void;
 	MCP_STATUS_EVENT?: string;
-	readMcpResourceV1?: (
-		pi: ExtensionAPI,
-		request: { version: 1; server: string; uri: string },
-		options?: { signal?: AbortSignal },
-	) => Promise<RecordValue>;
-	callMcpAppToolV1?: (
-		pi: ExtensionAPI,
-		request: { version: 1; server: string; tool: string; args: RecordValue },
-		options?: { signal?: AbortSignal },
-	) => Promise<RecordValue>;
 }
 
 interface RuntimeRegistration {
@@ -107,17 +96,7 @@ export function piMcpAdapterWithConfig(options?: {
 		loadUpstream().createMcpAdapter({
 			...(options?.config ? { config: options.config } : {}),
 		} as Record<string, never>)(pi);
-		const readResource = loadUpstream().readMcpResourceV1;
-		const callAppTool = loadUpstream().callMcpAppToolV1;
-		if (!readResource || !callAppTool)
-			throw new Error("Required pi-mcp-adapter host APIs v1 patch is missing");
-		const bridge = mcpRuntimeBridge(
-			pi,
-			options?.agentDir ?? getAgentDir(),
-			(server, uri, signal) => readResource(pi, { version: 1, server, uri }, { signal }),
-			(server, tool, args, signal) =>
-				callAppTool(pi, { version: 1, server, tool, args }, { signal }),
-		);
+		const bridge = mcpRuntimeBridge(pi, options?.agentDir ?? getAgentDir());
 
 		let snapshot: RecordValue | null = null;
 		pi.events.on(statusChannel(), (value: unknown) => {
@@ -168,12 +147,6 @@ export function piMcpAdapterWithConfig(options?: {
 			version: 1,
 			operations: bridge.operations,
 			close: bridge.close,
-		});
-		registerCapability(pi, { id: "mcp-apps", version: 1, operations: {} });
-		registerCapability(pi, {
-			id: "mcp-app-tools",
-			version: 1,
-			operations: { "pi.apps.tools.call": bridge.operations["pi.apps.tools.call"] },
 		});
 	};
 }

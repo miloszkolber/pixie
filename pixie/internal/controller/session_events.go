@@ -298,7 +298,6 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 			close(entry.toolChanged)
 			entry.toolChanged = nil
 		}
-		delete(entry.appAttachments, toolID)
 		input := update["rawInput"]
 		if input == nil {
 			input = map[string]any{}
@@ -333,19 +332,10 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 		status := textValue(update["status"])
 		finished := status == "completed" || status == "error" || status == "failed"
 		result, activity := projectToolOutputAndActivity(entry, toolID, update, finished, trustedPi)
-		var attachment map[string]any
-		if trustedPi {
-			attachment = projectAppAttachment(entry, toolID, update)
-		} else {
-			delete(entry.appAttachments, toolID)
-		}
 		if finished {
 			message := map[string]any{"role": "toolResult", "toolCallId": toolID, "content": result, "details": toolDetailsForAgent(update, trustedPi)}
 			if activity != nil {
 				message["subagentActivity"] = cloneJSON(activity)
-			}
-			if attachment != nil {
-				message["app"] = attachment
 			}
 			if status == "error" || status == "failed" {
 				message["isError"] = true
@@ -362,9 +352,6 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 		}
 		if activity != nil {
 			event["subagentActivity"] = activity
-		}
-		if attachment != nil {
-			event["app"] = attachment
 		}
 		return []map[string]any{event}
 	case "config_option_update":
@@ -471,6 +458,28 @@ const (
 type subagentActivityEvent struct {
 	ChildSessionID string `json:"childSessionId"`
 	ToolName       string `json:"toolName"`
+}
+
+// Trusted Pi details pass through unchanged. Untrusted metadata stays out
+// of agent-visible tool details.
+func toolDetailsForAgent(update map[string]any, trustedPi bool) map[string]any {
+	if trustedPi {
+		return update
+	}
+	meta := mapValue(update["_meta"])
+	if len(meta) == 0 {
+		return update
+	}
+	details := maps.Clone(update)
+	cleanMeta := maps.Clone(meta)
+	delete(cleanMeta, "pi")
+	delete(cleanMeta, "toolNotification")
+	if len(cleanMeta) == 0 {
+		delete(details, "_meta")
+	} else {
+		details["_meta"] = cleanMeta
+	}
+	return details
 }
 
 func projectToolOutputAndActivity(entry *sessionEntry, id string, update map[string]any, finished, trustedPi bool) (any, map[string]any) {
@@ -583,9 +592,6 @@ func pendingToolPreviewsLocked(entry *sessionEntry) []any {
 		}
 		if activity := subagentActivityValue(output); activity != nil {
 			preview["subagentActivity"] = activity
-		}
-		if state, ok := entry.appAttachments[id]; ok {
-			preview["app"] = appAttachmentValue(state.attachment)
 		}
 		previews = append(previews, preview)
 	}

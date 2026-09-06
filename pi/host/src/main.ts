@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";

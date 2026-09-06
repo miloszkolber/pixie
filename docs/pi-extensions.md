@@ -4,7 +4,7 @@ The host starts with normal Pi resources and no bundled factories enabled. Add `
 
 | Extension | Added capability |
 | --- | --- |
-| `mcp` | Upstream MCP adapter runtime (proxy tool, raw resource and App-tool host APIs) |
+| `mcp` | Upstream MCP adapter runtime (proxy tool and administration) |
 | `agents` | Markdown agent definition CRUD (`pi.sources.*`) and `@agent` mentions |
 | `rpiv-todo` | Upstream `todo` tool and `/todos` command; the single planning tool |
 | `rpiv-web` | Upstream `web_search` and `web_fetch`; the single web tool |
@@ -35,7 +35,7 @@ Public upstream events, transported by the host for future subscribers:
 
 The `pi-subagent` profile registers the upstream `subagent` tool unchanged and owns child execution. Discovery reads the same Markdown files with richer frontmatter (`model`, `thinking`, `tools`, `noTools`, `inactivityTimeout`, `sessionPreference`, `sessionHint`); project definitions apply only when the project is trusted and override user ones. Calls share one shape for single and parallel runs with per-call model override, `empty` (default) or exceptional `parent` initial context, and an optional `session` handle for named persistent sessions; depth and cycle guards bound delegation. Progress updates and the final details project through the generic tool path onto the shared child-run card, which also renders parallel calls. The `agents` profile keeps only Markdown CRUD.
 
-Pixie capabilities register through `pixie:capability:v1`; their operations are defined in `pi/host/src/capabilities.ts`. The MCP compatibility entry delegates to the upstream adapter profile and assumes no Pixie addresses, Browser service or Docker layout.
+Pixie capabilities register through `pixie:capability:v1`; their operations are defined in `pi/host/src/capabilities.ts`. The `mcp` profile is the upstream adapter unchanged and assumes no Pixie addresses, Browser service or Docker layout.
 
 The `rpiv-web` search backend is operator-owned external configuration. Provider selection, API keys, and the SearXNG endpoint live in `~/.config/rpiv-web-tools/config.json` and provider environment variables (`WEB_SEARCH_PROVIDER`, `SEARXNG_URL`, per-provider `*_API_KEY`); the default is self-hosted SearXNG at `http://localhost:8080`. Pixie never reads or writes this config. The upstream `web_fetch` SSRF guard refuses loopback and private targets, so it cannot reach Docker-local loopback services; this protection is retained, not weakened.
 
@@ -45,7 +45,7 @@ Global MCP changes apply on subsequent session initialization. Session membershi
 
 The MCP profiles use the pinned upstream model tools, transports, discovery, auth and reconnect behavior. The model calls `mcp`; upstream's optional `mcpScript` follows native settings. Pixie's bridge adds administration and presentation without tool interception or an MCP transport. Session attachment registers proxy-only servers through the public runtime event. Identical attachments are idempotent, conflicting definitions fail closed, and idle reload restores membership and controller attachments. Explicit removal/addition replaces a managed definition. Browser-specific registration remains first-wins. Legacy administration does not rewrite native `{mcpServers: ...}` configuration. The host CLI aligns `PI_CODING_AGENT_DIR` with its selected agent directory and suppresses desktop viewer launching by default.
 
-`mcp` and `pi-mcp-adapter` select the same runtime, and selecting both names loads it once. The custom transport is removed. The local Bun patch adds `readMcpResourceV1` and the separate `callMcpAppToolV1` host API through upstream's existing manager. App-only tools stay absent from the model catalog and proxy, while App-origin calls enforce App visibility and upstream configured approvals. The controller selects the App method after AppView/project/session and same-server checks. Hidden native entries retain trusted App presentation metadata across reload without altering the model's tool result. The bridge advertises complete `mcp`/`mcp-apps` capabilities and `mcp-app-tools` for origin-aware calls, with old-host protocol fallback in the controller. [MCP client verification](mcp-client-verification.md) records the patch scope and reproducible checks.
+`mcp` and `pi-mcp-adapter` select the same runtime, and selecting both names loads it once. The custom transport is removed. The bridge advertises the complete `mcp` capability. Legacy administration does not rewrite native `{mcpServers: ...}` configuration.
 
 ## Local llama.cpp provider
 

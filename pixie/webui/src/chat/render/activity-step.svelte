@@ -4,7 +4,6 @@ import Icon, { type IconName } from "../../components/icon.svelte";
 import { useFoldState } from "../runtime/fold-state";
 import DefaultToolRenderer from "./default-tool-renderer.svelte";
 import type { ActivityStep } from "../runtime/rows";
-import McpAppView from "../tools/apps/mcp-app-view.svelte";
 import { activityToolRenderProps, formatActivityChars } from "./activity-group";
 import { getToolRenderer, getToolSummary } from "./tool-registry";
 
@@ -78,7 +77,6 @@ function toggle(): void {
 		{:else if Renderer && renderProps}
 			<div class={`flex flex-col items-start gap-sm px-sm pb-xs pl-lg ${renderProps.status === "error" ? "text-feedback-error" : ""}`}>
 				{#if renderProps.status === "interrupted"}<DefaultToolRenderer {...renderProps} />{:else}<Renderer {...renderProps} />{/if}
-				<McpAppView {...renderProps} />
 			</div>
 		{/if}
 	{/if}

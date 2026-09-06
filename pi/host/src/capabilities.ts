@@ -40,16 +40,12 @@ const requiredOperations: Record<string, string[]> = {
 		"pi.session.extensions.list",
 		"pi.session.extensions.add",
 		"pi.session.extensions.remove",
-		"pi.resources.read",
 		"pi.tools.call",
 	],
 	"pi-mcp-adapter": [
-		"adapter.describeApp",
-		"pi.apps.tools.call",
 		"adapter.status",
 		"adapter.registerBrowser",
 		"adapter.session.forget",
-		"pi.resources.read",
 		"mcp.attach",
 		"pi.config.extensions.list",
 		"pi.config.extensions.add",
@@ -60,7 +56,6 @@ const requiredOperations: Record<string, string[]> = {
 		"pi.session.extensions.remove",
 		"pi.tools.call",
 	],
-	"mcp-app-tools": ["pi.apps.tools.call"],
 };
 export class Capabilities {
 	private conflicts = new Set<string>();
@@ -90,11 +85,7 @@ export class Capabilities {
 		this.entries.set(c.id, c);
 	}
 	snapshot(): Record<string, number> {
-		return Object.fromEntries(
-			[...this.entries]
-				.filter(([id]) => id !== "mcp-apps" || this.entries.has("mcp"))
-				.map(([id, c]) => [id, c.version]),
-		);
+		return Object.fromEntries([...this.entries].map(([id, c]) => [id, c.version]));
 	}
 	async call(method: string, params: RecordValue, context: CapabilityContext): Promise<unknown> {
 		for (const c of this.entries.values())

@@ -115,7 +115,7 @@ func (m *SessionManager) olderMessagePage(ctx context.Context, sessionID, projec
 
 // The caller holds entry.state. A page starts on a user message whenever one
 // exists, so a prepend does not split a tool/activity round. Message values are
-// passed through unchanged, including images and MCP App metadata.
+// passed through unchanged, including images.
 func transcriptPageLocked(entry *sessionEntry, before *transcriptBefore) ([]any, transcriptPage, error) {
 	end := len(entry.messages)
 	if before != nil {

@@ -1,14 +1,7 @@
 import { expect, test } from "bun:test";
-import { resolve } from "node:path";
 import { messagesToRuntime } from "@/chat/runtime/hydrate";
 import { deriveRows } from "@/chat/runtime/rows";
 import { createSessionRuntime, reduceSessionEvent } from "@/chat/runtime/session-runtime";
-import {
-	canOpenMcpApp,
-	MCP_APP_IFRAME_SANDBOX,
-	mcpAppPermissionLabels,
-	toMcpToolResult,
-} from "@/chat/tools/apps/mcp-app-view";
 import { resultText } from "@/chat/tools/tool-helpers";
 import { renderSvelte } from "./svelte-render";
 
@@ -105,95 +98,6 @@ test("Apps creation and iteration keep their concise saved state", async () => {
 	).not.toContain("App saved");
 });
 
-test("settled session-bound MCP Apps preserve errors and declared permission labels", async () => {
-	const app = {
-		toolName: "weather",
-		extensionName: "weather-server",
-		resourceUri: "ui://weather/dashboard",
-	};
-	expect(canOpenMcpApp(app, "done")).toBe(true);
-	expect(canOpenMcpApp(app, "error")).toBe(true);
-	expect(canOpenMcpApp(app, "running")).toBe(false);
-	expect(canOpenMcpApp({ ...app, resourceUri: "https://unsafe.example" }, "done")).toBe(false);
-	expect(MCP_APP_IFRAME_SANDBOX).toBe("allow-scripts allow-same-origin allow-forms");
-	expect(mcpAppPermissionLabels({ clipboardWrite: {}, camera: {}, geolocation: {} })).toEqual([
-		"Camera",
-		"Location",
-		"Clipboard write",
-	]);
-	const appProps = {
-		toolCallId: "tool-1",
-		args: { city: "Warsaw" },
-		result: { content: [{ type: "text", text: "Clear" }] },
-		app,
-		status: "done",
-	};
-	expect(await renderSvelte("src/chat/tools/apps/mcp-app-view.svelte", appProps)).not.toContain(
-		"Open app",
-	);
-	expect(
-		await renderSvelte("tests/webui/chat/fixtures/mcp-app-view-host.svelte", {
-			...appProps,
-			projectId: "project-1",
-			sessionId: "session-1",
-		}),
-	).toContain("Open app");
-	expect(toMcpToolResult("legacy result")).toEqual({
-		content: [{ type: "text", text: "legacy result" }],
-	});
-	expect(
-		toMcpToolResult({ content: [{ type: "text", text: "MCP result" }], isError: true }),
-	).toEqual({
-		content: [{ type: "text", text: "MCP result" }],
-		isError: true,
-	});
-	expect(toMcpToolResult([{ type: "text", text: "Failed" }], true)).toEqual({
-		content: [{ type: "text", text: "Failed" }],
-		isError: true,
-	});
-	expect(
-		await renderSvelte("tests/webui/chat/fixtures/mcp-app-view-host.svelte", {
-			...appProps,
-			toolCallId: "tool-error",
-			result: [{ type: "text", text: "Provider failed" }],
-			status: "error",
-			projectId: "project-1",
-			sessionId: "session-1",
-		}),
-	).toContain("Open app");
-});
-
-test("MCP App SSR shares component context from workspace and application working directories", async () => {
-	const applicationRoot = resolve(import.meta.dir, "../../..");
-	const source = `
-		import { renderSvelte } from ${JSON.stringify(resolve(import.meta.dir, "svelte-render.ts"))};
-		console.log(await renderSvelte("tests/webui/chat/fixtures/mcp-app-view-host.svelte", {
-			projectId: "project-1",
-			sessionId: "session-1",
-			toolCallId: "tool-1",
-			args: {},
-			result: "Clear",
-			app: { toolName: "weather", extensionName: "weather-server", resourceUri: "ui://weather/dashboard" },
-			status: "done",
-		}));
-	`;
-	for (const cwd of [resolve(applicationRoot, ".."), applicationRoot]) {
-		// Fresh processes avoid the harness module cache masking cwd-dependent resolution.
-		const child = Bun.spawn([process.execPath, "--eval", source], {
-			cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const [code, stdout, stderr] = await Promise.all([
-			child.exited,
-			new Response(child.stdout).text(),
-			new Response(child.stderr).text(),
-		]);
-		expect({ cwd, code, stderr }).toEqual({ cwd, code: 0, stderr: "" });
-		expect(stdout).toContain("Open app");
-	}
-});
-
 test("official developer and summon results use their real arguments and show returned output", async () => {
 	const shellProbe = await renderSvelte("tests/webui/chat/fixtures/tool-registry-probe.svelte", {
 		name: "shell",
@@ -265,18 +169,12 @@ test("status-only tool completion retains the right streamed result and matches 
 		events: [{ childSessionId: "child-1", toolName: "shell" }],
 		truncated: true,
 	};
-	const app = {
-		toolName: "read_image",
-		extensionName: "images",
-		resourceUri: "ui://images/viewer",
-	};
 	const pending = messagesToRuntime([], {
-		pendingTools: [{ toolCallId: "image", output: image, app, subagentActivity }],
+		pendingTools: [{ toolCallId: "image", output: image, subagentActivity }],
 	});
 	expect(pending.toolResults.image).toEqual({
 		status: "running",
 		raw: image,
-		app,
 		subagentActivity,
 	});
 	const precedence = messagesToRuntime(
@@ -322,7 +220,7 @@ test("status-only tool completion retains the right streamed result and matches 
 		toolCallId: "image",
 		status: "completed",
 	});
-	expect(reloaded.toolResults.image).toEqual({ status: "done", raw: image, app, subagentActivity });
+	expect(reloaded.toolResults.image).toEqual({ status: "done", raw: image, subagentActivity });
 	let runtime = createSessionRuntime(null, "off");
 	runtime = reduceSessionEvent(runtime, {
 		type: "tool-start",
@@ -335,7 +233,6 @@ test("status-only tool completion retains the right streamed result and matches 
 		type: "tool-update",
 		toolCallId: "image",
 		tool: image,
-		app,
 		subagentActivity,
 	});
 	runtime = reduceSessionEvent(runtime, {
@@ -349,7 +246,7 @@ test("status-only tool completion retains the right streamed result and matches 
 		status: "completed",
 	});
 	const history = messagesToRuntime([
-		{ role: "toolResult", toolCallId: "image", content: image, app, subagentActivity },
+		{ role: "toolResult", toolCallId: "image", content: image, subagentActivity },
 	]);
 	expect(runtime.toolResults.image).toEqual(history.toolResults.image);
 	expect(runtime.toolResults.other?.raw).toBe("other result");

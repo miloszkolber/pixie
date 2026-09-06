@@ -22,7 +22,7 @@ A ready publisher has not necessarily launched Chromium. Verify browsing by open
 
 Browser is the only module. Signet, Web, Todo, Questions, and Subagents are never published through Pixie MCP. Browser storage stays isolated under the controller data directory (`mcp-browser`), and switching publisher engines does not alter the model-facing API (`pixie-browser`, same tools and resource surface). The `mcpAdapter.status` projection surfaces the Pi-side adapter state (connected, cached, failed, needs-auth, not-connected, disabled) and stays fail-open when the adapter profile is not enabled.
 
-The Pi MCP client uses `pi-mcp-adapter` with a narrow, pinned host API patch for raw resources and App-origin calls. The old package name remains only as a compatibility entry, with no custom transport. See [MCP client verification](mcp-client-verification.md) for scope and evidence.
+The Pi MCP client uses the pinned upstream `pi-mcp-adapter` runtime unchanged, with no custom transport.
 
 ## Browser engine
 

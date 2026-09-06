@@ -58,33 +58,6 @@ export interface ManagedSession {
 	hasExtensionWork?: () => boolean;
 	close: () => Promise<void>;
 	forgetMcp?: () => Promise<unknown>;
-	mcpApps?: Map<string, RecordValue>;
-}
-
-function projectMcpApp(
-	entry: ManagedSession,
-	toolCallId: string,
-	result: RecordValue,
-): RecordValue {
-	const app = entry.mcpApps?.get(toolCallId);
-	if (!app) return result;
-	const details = object(result.details);
-	const raw = object(details.mcpResult);
-	return {
-		...result,
-		details: {
-			...details,
-			mcp: {
-				...object(details.mcp),
-				app,
-				server: app.extensionName,
-				toolName: app.toolName,
-				meta: raw._meta,
-				structuredContent: raw.structuredContent,
-				isError: raw.isError === true,
-			},
-		},
-	};
 }
 
 // Bound for AgentSession.abort(): a stalled provider stream must not wedge
@@ -276,52 +249,12 @@ export class Sessions {
 		const capabilities = new Capabilities();
 		bus.on(CAPABILITY_EVENT, (v) => capabilities.register(v));
 
-		let observedEntry: ManagedSession | undefined;
 		const loader = new DefaultResourceLoader({
 			cwd,
 			agentDir: this.agentDir,
 			settingsManager: settings,
 			eventBus: bus,
-			extensionFactories: [
-				...this.factories,
-				(pi) => {
-					// Observe without changing execution or the model's tool result. A
-					// hidden native entry retains trusted App presentation across reload.
-					pi.on("tool_result", async (event) => {
-						const entry = observedEntry;
-						const details = object(event.details);
-						if (
-							!entry ||
-							event.toolName !== "mcp" ||
-							!details.server ||
-							!details.tool ||
-							!("uiOpen" in details) ||
-							!entry.capabilities.snapshot()["pi-mcp-adapter"]
-						)
-							return;
-						try {
-							const app = object(
-								await entry.capabilities.call(
-									"adapter.describeApp",
-									{ server: details.server, tool: details.tool },
-									this.context(entry),
-								),
-							);
-							if (!app.resourceUri) return;
-							entry.mcpApps?.set(event.toolCallId, app);
-							entry.session.sessionManager.appendCustomEntry("pixie-mcp-app", {
-								toolCallId: event.toolCallId,
-								app,
-							});
-						} catch {
-							this.publish(entry.session.sessionId, {
-								type: "extension_error",
-								error: "MCP App metadata is unavailable",
-							});
-						}
-					});
-				},
-			],
+			extensionFactories: [...this.factories],
 		});
 		let built: AgentSession | undefined;
 		try {
@@ -366,15 +299,6 @@ export class Sessions {
 				inputs: [],
 				partialTools: new Map(),
 				hasExtensionWork: () => extensionWork.size > 0,
-				mcpApps: new Map(
-					manager
-						.getBranch()
-						.flatMap((e) =>
-							e.type === "custom" && e.customType === "pixie-mcp-app"
-								? [[text(object(e.data).toolCallId), object(object(e.data).app)] as const]
-								: [],
-						),
-				),
 				close: () =>
 					(closing ??= (async () => {
 						stopLiveness();
@@ -397,7 +321,6 @@ export class Sessions {
 						}
 					})()),
 			};
-			observedEntry = entry;
 			const forget =
 				capabilities.snapshot()["pi-mcp-adapter"] === 1
 					? (ctx: CapabilityContext) => capabilities.call("adapter.session.forget", {}, ctx)
@@ -500,12 +423,12 @@ export class Sessions {
 				if (event.type === "tool_execution_end") {
 					this.publish(session.sessionId, {
 						...event,
-						result: projectMcpApp(entry, event.toolCallId, object(event.result)),
+						result: object(event.result),
 					});
 				} else if (event.type === "message_end" && event.message.role === "toolResult") {
 					this.publish(session.sessionId, {
 						...event,
-						message: projectMcpApp(entry, event.message.toolCallId, object(event.message)),
+						message: object(event.message),
 					});
 				} else this.publish(session.sessionId, event);
 			});
@@ -698,11 +621,7 @@ export class Sessions {
 				const index = inputs.findIndex((input) => input.text === prompt);
 				if (index >= 0) message.displayContent = inputs.splice(index, 1)[0].content;
 			}
-			messages.push(
-				e.message.role === "toolResult"
-					? projectMcpApp(entry, e.message.toolCallId, message)
-					: message,
-			);
+			messages.push(message);
 		}
 		if (entry.partialMessage) {
 			const partial = structuredClone(entry.partialMessage);

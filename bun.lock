@@ -73,7 +73,6 @@
   ],
   "patchedDependencies": {
     "@mjakl/pi-subagent@3.0.1": "pi/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch",
-    "pi-mcp-adapter@2.32.1": "pi/extensions/local-patches/pi-mcp-adapter@2.32.1.patch",
   },
   "catalog": {
     "@tailwindcss/cli": "4.3.3",

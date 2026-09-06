@@ -183,7 +183,10 @@ func ReadAuthConfig(getenv func(string) string) (AuthConfig, error) {
 		if err != nil {
 			return AuthConfig{}, fmt.Errorf("%s must be an absolute http(s) origin without credentials or a path", publicOriginSetting)
 		}
-		if publicOrigin != "" && sameAppViewOrigin(browserPublicOrigin, publicOrigin) {
+		// Both origins are normalized above, so plain equality is exact.
+		// The Browser surface stays isolated from the application origin
+		// for panel and artifact framing.
+		if publicOrigin != "" && browserPublicOrigin == publicOrigin {
 			return AuthConfig{}, fmt.Errorf("%s must differ from PIXIE_PUBLIC_ORIGIN", publicOriginSetting)
 		}
 	}

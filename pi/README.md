@@ -4,7 +4,7 @@ This directory supplies a reproducible overlay on the unmodified Pi SDK, not a P
 
 ## Setup
 
-Start with a checkout and the Bun version in root [`package.json`](../package.json). Root `package.json` and `bun.lock` are the only workspace dependency authority. [`host/package.json`](host/package.json) pins Pi and upstream extensions. The root `patchedDependencies` declaration applies the checked-in [MCP host API patch](extensions/local-patches/README.md) during installation. Keep that patch with the manifests and lockfile for a clean install. No global Pi package, duplicate lockfile or additional dependency is required. An existing vanilla Pi installation and its configuration can be reused in place, without copying credentials or native state.
+Start with a checkout and the Bun version in root [`package.json`](../package.json). Root `package.json` and `bun.lock` are the only workspace dependency authority. [`host/package.json`](host/package.json) pins Pi and upstream extensions. The root `patchedDependencies` declaration applies the checked-in [subagent patch](extensions/local-patches/README.md) during installation. Keep that patch with the manifests and lockfile for a clean install. No global Pi package, duplicate lockfile or additional dependency is required. An existing vanilla Pi installation and its configuration can be reused in place, without copying credentials or native state.
 
 Install once from the repository root:
 
@@ -28,7 +28,7 @@ Before starting, supply `PIXIE_PI_SECRET_KEY` through your private environment, 
 - `overlay`: upstream todo, web, questions, Signet, subagents and llama.cpp, plus agent-definition CRUD and the upstream MCP adapter selected through `mcp`.
 - `adapter-evaluation`: the same overlay using the explicit `pi-mcp-adapter` name.
 
-Both MCP names use the same pinned upstream runtime with public raw resource and App-tool APIs. See [MCP client verification](../docs/mcp-client-verification.md) for contract checks and the patch support boundary. Profiles do not disable existing user extensions or resolve user-created duplicate tool registrations. Switching profiles changes only host factories.
+Both MCP names select the same pinned upstream runtime. Profiles do not disable existing user extensions or resolve user-created duplicate tool registrations. Switching profiles changes only host factories.
 
 ## Signet bootstrap
 

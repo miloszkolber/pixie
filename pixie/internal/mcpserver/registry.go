@@ -30,9 +30,6 @@ const (
 	// the in-process route; exact paths remain an implementation detail.
 	CatalogPath = "/api/mcp/modules"
 	StatusPath  = "/api/mcp/status"
-	// appViewRoute is the Browser service's own App view surface, served
-	// through the publisher with the path intact for the merged deployment.
-	appViewRoute = "/v1/app-views"
 
 	storeFile  = "mcp-modules.json"
 	browserID  = "browser"
@@ -390,8 +387,8 @@ func (r *Registry) Shutdown() {
 }
 
 // BrowserLegacyHandler serves the Browser service's own REST surface
-// (/v1/browser, /v1/browser/leases, /v1/artifacts/*, /v1/app-views*) from the
-// in-process module, preserving the former separate host's panel and artifact
+// (/v1/browser, /v1/browser/leases, /v1/artifacts/*) from the in-process
+// module, preserving the former separate host's panel and artifact
 // compatibility routes. The handler re-checks module enablement on every call
 // and returns nil while the module is disabled or degraded; callers fall back
 // to their external BrowserURL proxy in that case.
@@ -545,8 +542,7 @@ func (r *Registry) ServeHTTP(response http.ResponseWriter, request *http.Request
 			"build": r.build, "startedAt": r.started.UTC().Format(time.RFC3339), "catalog": catalog,
 			"browserEngine": r.Engine(),
 		})
-	case request.URL.Path == BrowserRoute || strings.HasPrefix(request.URL.Path, BrowserRoute+"/") ||
-		request.URL.Path == appViewRoute || strings.HasPrefix(request.URL.Path, appViewRoute+"/"):
+	case request.URL.Path == BrowserRoute || strings.HasPrefix(request.URL.Path, BrowserRoute+"/"):
 		r.mu.RLock()
 		service := r.browser
 		enabled := r.enabled[browserID]
