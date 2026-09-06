@@ -86,7 +86,11 @@ FROM ${GIT_IMAGE} AS git-runtime-source
 FROM ${DEBIAN_IMAGE} AS git-runtime-trim
 COPY --from=git-runtime-source / /rootfs/
 COPY pixie/tests/deployment/git-runtime.test.sh /usr/local/bin/verify-git-runtime
-RUN rm -f \
+# Chainguard's /usr/lib64 conflicts with the Debian browser base's directory of
+# the same name; the base already carries its own dynamic loader, so drop the
+# Chainguard entry before the rootfs merge.
+RUN rm -rf /rootfs/usr/lib64 /rootfs/lib64 \
+    && rm -f \
         /rootfs/bin/sh /rootfs/usr/bin/sh \
         /rootfs/bin/dash /rootfs/usr/bin/dash \
         /rootfs/usr/bin/git-receive-pack \
