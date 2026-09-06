@@ -1,7 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import rpivWeb from "../../../pi/host/src/extensions/rpiv-web.ts";
-import web from "../../../pi/host/src/extensions/web.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {
@@ -29,26 +28,6 @@ test("upstream web profiles register web_search, web_fetch, and the config comma
 	);
 });
 
-test("custom web_fetch has no loopback guard while upstream refuses it", async () => {
-	const url = await localServer("local fixture response");
-	const custom = await fixture([web]);
-	const customResult = await findTool(
-		await custom.sessions.create(custom.dir),
-		"web_fetch",
-	).execute("parity-custom-loopback", { url }, new AbortController().signal);
-	expect(customResult.content[0].text).toContain("local fixture response");
-	expect(customResult.details).toMatchObject({ url, truncated: false });
-
-	const upstream = await fixture([rpivWeb]);
-	await expect(
-		findTool(await upstream.sessions.create(upstream.dir), "web_fetch").execute(
-			"parity-upstream-loopback",
-			{ url },
-			new AbortController().signal,
-		),
-	).rejects.toThrow(/private\/loopback/i);
-});
-
 test("upstream web_fetch keeps its SSRF guard for private IPs and protocols", async () => {
 	const { dir, sessions } = await fixture([rpivWeb]);
 	const tool = findTool(await sessions.create(dir), "web_fetch");
@@ -66,18 +45,6 @@ test("upstream web_fetch keeps its SSRF guard for private IPs and protocols", as
 	await expect(
 		tool.execute("parity-ssrf-file", { url: "file:///etc/hostname" }, signal),
 	).rejects.toThrow(/protocol|URL/i);
-});
-
-test("custom web_fetch truncates large responses inline without spilling to file", async () => {
-	const url = await localServer(`${"payload\n".repeat(200000)}`);
-	const { dir, sessions } = await fixture([web]);
-	const result = await findTool(await sessions.create(dir), "web_fetch").execute(
-		"parity-custom-large",
-		{ url },
-		new AbortController().signal,
-	);
-	expect(result.details).toMatchObject({ truncated: true });
-	expect(result.details.fullOutputPath).toBeUndefined();
 });
 
 test("upstream web_fetch reads live HTML as text with title metadata", async () => {

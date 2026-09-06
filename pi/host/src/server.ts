@@ -13,7 +13,6 @@ import rpivAsk from "./extensions/rpiv-ask.ts";
 import rpivTodo from "./extensions/rpiv-todo.ts";
 import rpivWeb from "./extensions/rpiv-web.ts";
 import signet from "./extensions/signet.ts";
-import web from "./extensions/web.ts";
 import { Providers } from "./providers.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
 import { HostError, object, type RecordValue, required, serviceStore, text } from "./storage.ts";
@@ -66,10 +65,8 @@ async function startUnlockedHost(options: HostOptions) {
 					close: () => sessions.release(entry.session.sessionId),
 				};
 			}),
-		web,
 		// Optional Pi-native replacements, enabled with e.g.
-		// `--extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask`. The custom
-		// `web` factory stays available until parity is verified.
+		// `--extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask`.
 		// `rpiv-ask` answers through the generic UI bridge; the Pixie
 		// application-level question tool stays the writer until its own
 		// parity gate (docs/roadmap.md) is met.

@@ -7,7 +7,6 @@ import rpivAsk from "../../../pi/host/src/extensions/rpiv-ask.ts";
 import rpivTodo from "../../../pi/host/src/extensions/rpiv-todo.ts";
 import rpivWeb from "../../../pi/host/src/extensions/rpiv-web.ts";
 import signet from "../../../pi/host/src/extensions/signet.ts";
-import web from "../../../pi/host/src/extensions/web.ts";
 import { startHost } from "../../../pi/host/src/server.ts";
 import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { cleanups, echoProvider, findTool, fixture, tempDir, toolNames } from "./helpers.ts";
@@ -85,7 +84,7 @@ test("unknown or duplicate extension profiles are rejected", async () => {
 		"Unknown or duplicate",
 	);
 	await expect(
-		startHost({ agentDir: dir, secret, port: 0, extensions: ["web", "web"] }),
+		startHost({ agentDir: dir, secret, port: 0, extensions: ["rpiv-todo", "rpiv-todo"] }),
 	).rejects.toThrow("Unknown or duplicate");
 	await expect(
 		startHost({ agentDir: dir, secret, port: 0, extensions: ["signet", "signet"] }),
@@ -119,7 +118,6 @@ test("signet and pi-subagent profiles advertise additive markers", async () => {
 test("each profile adds tools without replacing Pi core tools", async () => {
 	const { dir, sessions } = await fixture([
 		(pi) => agents(pi, dir),
-		web,
 		rpivTodo,
 		rpivWeb,
 		rpivAsk,
@@ -159,7 +157,6 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 		);
 		expect(entry.capabilities.snapshot()).toMatchObject({
 			agents: 1,
-			web: 1,
 			"rpiv-todo": 1,
 			"rpiv-web": 1,
 			"rpiv-ask": 1,
@@ -172,16 +169,6 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 	}
 });
 
-test("enabling custom web and upstream rpiv-web together keeps the first web_fetch", async () => {
-	const { dir, sessions } = await fixture([web, rpivWeb]);
-	const entry = await sessions.create(dir);
-	const matches = entry.session.agent.state.tools.filter((t: any) => t.name === "web_fetch");
-	// Both profiles register `web_fetch`: the first factory wins and the
-	// second registration is silently dropped. Enable either `web` or
-	// `rpiv-web`, never both; profile order on the CLI decides the winner.
-	expect(matches).toHaveLength(1);
-	expect(matches[0].description).toContain("Browser MCP tools");
-});
 
 test("agent definitions survive CRUD and list_agents reflects them", async () => {
 	const { dir, sessions } = await fixture([(pi) => agents(pi, dir), echoProvider()]);

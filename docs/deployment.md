@@ -15,7 +15,7 @@ This installs the host and MCP extension runtime dependencies without the web de
 Generate separate random values for `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file. The optional Browser connection expands its token from the host environment.
 
 ```sh
-bun pi/host/src/main.ts --extensions mcp,agents,plans,web
+bun pi/host/src/main.ts --extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
 ```
 
 Omit `--extensions` for baseline Pi. `--agent-dir /absolute/path` selects Pi state; the default is `~/.pi/agent`. The service listens at `127.0.0.1:3284`; `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration.
