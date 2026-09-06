@@ -2,7 +2,6 @@
 
 ARG BUN_IMAGE=oven/bun:1.4.0-debian@sha256:5bb0f9be3a1a36a03e27c9a9dd894a3b1ad26657155c7df4dda771e17bf872ef
 ARG GO_IMAGE=golang:1.27.1-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728
-ARG GIT_IMAGE=cgr.dev/chainguard/git:latest@sha256:d57114522a99da01911b9c6702ef6c4a18bd19f79ccd49a780e78303b1d36640
 ARG DEBIAN_IMAGE=debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
 ARG AGENT_BROWSER_VERSION=0.34.0
 ARG VERSION=0.0.0-dev
@@ -81,50 +80,6 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
 
 # Preserve Chainguard Git's dependency closure, but remove the shells and local
 # server entry points that Pixie does not use.
-FROM ${GIT_IMAGE} AS git-runtime-source
-
-FROM ${DEBIAN_IMAGE} AS git-runtime-trim
-COPY --from=git-runtime-source / /rootfs/
-COPY pixie/tests/deployment/git-runtime.test.sh /usr/local/bin/verify-git-runtime
-# Chainguard publishes /usr/lib64 as a symlink while the Debian browser base
-# has a real directory there, which COPY cannot merge. Materialize the
-# symlink target into a real directory so the chrooted git runtime keeps its
-# loader and the rootfs merge stays a directory-onto-directory copy.
-RUN set -eu; \
-    if [ -L /rootfs/usr/lib64 ] || [ -f /rootfs/usr/lib64 ]; then \
-        target="$(readlink /rootfs/usr/lib64 || true)"; \
-        rm -rf /rootfs/usr/lib64; \
-        mkdir -p /rootfs/usr/lib64; \
-        if [ -n "$target" ] && [ -e "/rootfs/${target#/}/ld-linux-x86-64.so.2" ]; then \
-            cp -aL "/rootfs/${target#/}/ld-linux-x86-64.so.2" /rootfs/usr/lib64/; \
-        fi; \
-    fi \
-    && rm -f \
-        /rootfs/bin/sh /rootfs/usr/bin/sh \
-        /rootfs/bin/dash /rootfs/usr/bin/dash \
-        /rootfs/usr/bin/git-receive-pack \
-        /rootfs/usr/bin/git-upload-archive \
-        /rootfs/usr/bin/git-upload-pack \
-        /rootfs/usr/libexec/git-core/git-receive-pack \
-        /rootfs/usr/libexec/git-core/git-upload-archive \
-        /rootfs/usr/libexec/git-core/git-upload-pack \
-    && for executable in \
-        /bin/sh /usr/bin/sh /bin/dash /usr/bin/dash \
-        /bin/bash /usr/bin/bash /bin/ash /usr/bin/ash \
-        /bin/busybox /usr/bin/busybox \
-        /sbin/apk /usr/sbin/apk /usr/bin/apk \
-        /usr/bin/apt /usr/bin/apt-get /usr/bin/dpkg \
-        /usr/bin/dnf /usr/bin/microdnf /usr/bin/rpm /usr/bin/yum \
-        /usr/bin/git-shell /usr/libexec/git-core/git-shell \
-        /usr/bin/git-receive-pack /usr/libexec/git-core/git-receive-pack \
-        /usr/bin/git-upload-archive /usr/libexec/git-core/git-upload-archive \
-        /usr/bin/git-upload-pack /usr/libexec/git-core/git-upload-pack; do \
-        test ! -e "/rootfs$executable"; \
-    done \
-    && install -d -m 0755 -o 1000 -g 1000 /rootfs/app /rootfs/home/pixie /rootfs/var/lib/pixie \
-    && install -d -m 1777 -o 0 -g 0 /rootfs/tmp \
-    && /usr/local/bin/verify-git-runtime /rootfs
-
 FROM ${DEBIAN_IMAGE} AS agent-browser-fetch
 ARG AGENT_BROWSER_VERSION
 ARG TARGETARCH
@@ -158,6 +113,7 @@ RUN --mount=type=cache,id=browser-runtime-apt,target=/var/cache/apt,sharing=lock
         fonts-liberation \
         fonts-noto-cjk \
         fonts-noto-color-emoji \
+        git \
         tini \
     && install -d /app/legal /home/pixie \
         /var/lib/pixie-browser/artifacts /var/lib/pixie-browser/state \
@@ -220,7 +176,6 @@ ENV HOME=/home/pixie \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     GOGC=200
 WORKDIR /app
-COPY --from=git-runtime-trim /rootfs/ /
 COPY LICENSE NOTICE.md /app/legal/
 COPY --from=go-build /out/pixie /app/pixie
 COPY --from=go-build /out/licenses/pixie /app/licenses
@@ -231,6 +186,8 @@ RUN test -x /app/pixie \
     && test -f /app/config.json \
     && test -x /usr/local/bin/agent-browser \
     && command -v chromium \
+    && command -v git \
+    && ! command -v sh && ! command -v dash && ! command -v bash \
     && test -d /var/lib/pixie-browser/artifacts \
     && test -d /var/lib/pixie-browser/state
 USER 1000:1000
