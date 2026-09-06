@@ -33,6 +33,15 @@ Generic hardening toward the reference web client, adapted to Pixie's split host
 
 Omitted with reasons: periodic 15s state polling (the event stream plus reconnect rehydration already reconciles, so polling adds no signal); widget visuals (transport and per-key state exist, but a widget rail is new product surface); editor-text push (it would clobber the composer); in-session branch navigation UI (Pi semantics preserved, fork covers the new-chat case); `custom` component rendering (needs a TUI; upstream questionnaires already fall back to the select/input walker).
 
+## Live host verification (2026-09-06, no model prompts issued)
+
+Against `pixie-pi-host.service` (Pi 0.85.1, host Bun, all six upstream profiles enabled) and the Compose stack:
+
+- `runtime.hello` reports protocol 1 with all 13 capability markers; `session.create`/`session.list` round-trip with cross-connection persistence.
+- Browser over the custom MCP path: `mcp.attach` ok, `open`/`snapshot`/`screenshot`/`close` all completed on `https://example.com` with stable element refs (`ref=e1`, `ref=e2`) and a screenshot artifact URL; `plans.read` returns entries on a live session.
+- Session lifecycle: `fork` yields a new independent session id, `session.load` reloads with messages, `archive` and `session.delete` succeed; all probe sessions removed afterwards.
+- Not yet proven live (each needs model inference through a configured remote provider): todo CRUD/display equivalence, web_search/fetch behavior, question answer shapes, subagent child runs (plus the known Bun spawn-target gap), Signet recall (managed extension absent, daemon degraded), and compaction/reload recovery with real turns.
+
 ## Pi-native simplification definition of done
 
 Reconstructed from the simplification plan; profiles are added, deletions wait on their gates.
