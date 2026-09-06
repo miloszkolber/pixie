@@ -1,85 +1,10 @@
 package controller
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
-	"time"
 )
 
-const questionTimeout = 30 * time.Minute
-
 type questionKey struct{ sessionID, toolCallID string }
-
-func (m *SessionManager) AskQuestion(ctx context.Context, sessionID string, value any) (map[string]any, error) {
-	args, err := validateQuestionArgs(value)
-	if err != nil {
-		return nil, err
-	}
-	entry, err := m.entry(sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer m.releaseEntry(entry)
-	var toolCallID string
-	var promptDone <-chan struct{}
-	registration, stop := context.WithTimeout(ctx, time.Second)
-	defer stop()
-	for {
-		entry.state.Lock()
-		toolCallID = latestQuestionToolCall(entry, args)
-		if entry.promptActive {
-			promptDone = entry.promptDone
-		}
-		if toolCallID != "" {
-			entry.consumedQuestions[toolCallID] = true
-		}
-		if entry.toolChanged == nil {
-			entry.toolChanged = make(chan struct{})
-		}
-		changed := entry.toolChanged
-		entry.state.Unlock()
-		if toolCallID != "" {
-			break
-		}
-		select {
-		case <-registration.Done():
-			return nil, fmt.Errorf("no matching active question: %w", registration.Err())
-		case <-changed:
-		}
-	}
-	if toolCallID == "" {
-		return nil, fmt.Errorf("no matching ask_user_question tool call is active")
-	}
-	pending := &pendingQuestion{sessionID: sessionID, args: args, result: make(chan map[string]any, 1)}
-	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
-		return map[string]any{"answers": []any{}, "cancelled": true}, nil
-	}
-	key := questionKey{sessionID, toolCallID}
-	m.questions[key] = pending
-	m.mu.Unlock()
-	timer := time.NewTimer(questionTimeout)
-	defer timer.Stop()
-	var result map[string]any
-	select {
-	case result = <-pending.result:
-	case <-promptDone:
-		result = map[string]any{"answers": []any{}, "cancelled": true}
-	case <-ctx.Done():
-		result = map[string]any{"answers": []any{}, "cancelled": true}
-	case <-timer.C:
-		result = map[string]any{"answers": []any{}, "cancelled": true}
-	}
-	m.mu.Lock()
-	if m.questions[key] == pending {
-		delete(m.questions, key)
-	}
-	m.mu.Unlock()
-	return result, nil
-}
 
 func (m *SessionManager) ResolveQuestion(sessionID, toolCallID string, result map[string]any) error {
 	m.mu.Lock()
@@ -99,60 +24,6 @@ func (m *SessionManager) ResolveQuestion(sessionID, toolCallID string, result ma
 	default:
 		return fmt.Errorf("question is no longer awaiting input")
 	}
-}
-
-func validateQuestionArgs(value any) (map[string]any, error) {
-	args, ok := value.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("question arguments must be an object")
-	}
-	questions := arrayValue(args["questions"])
-	if len(questions) < 1 || len(questions) > 8 {
-		return nil, fmt.Errorf("ask between 1 and 8 questions")
-	}
-	for _, rawQuestion := range questions {
-		question := mapValue(rawQuestion)
-		prompt, header := strings.TrimSpace(textValue(question["question"])), strings.TrimSpace(textValue(question["header"]))
-		options := arrayValue(question["options"])
-		if prompt == "" || utf16Length(prompt) > 2_000 || header == "" || utf16Length(header) > 200 || len(options) < 1 || len(options) > 12 {
-			return nil, fmt.Errorf("question text, header, or options are invalid")
-		}
-		labels := make(map[string]bool)
-		for _, rawOption := range options {
-			option := mapValue(rawOption)
-			label := strings.TrimSpace(textValue(option["label"]))
-			if label == "" || labels[label] {
-				return nil, fmt.Errorf("question options are invalid")
-			}
-			labels[label] = true
-			if _, ok := option["description"].(string); !ok {
-				return nil, fmt.Errorf("question options are invalid")
-			}
-		}
-	}
-	return args, nil
-}
-
-func latestQuestionToolCall(entry *sessionEntry, args map[string]any) string {
-	wanted := stableJSON(args)
-	for messageIndex := len(entry.messages) - 1; messageIndex >= 0; messageIndex-- {
-		message := mapValue(entry.messages[messageIndex])
-		if message["role"] == "user" {
-			break
-		}
-		if message["role"] != "assistant" {
-			continue
-		}
-		content := arrayValue(message["content"])
-		for blockIndex := len(content) - 1; blockIndex >= 0; blockIndex-- {
-			block := mapValue(content[blockIndex])
-			id := textValue(block["id"])
-			if _, active := entry.pendingToolOutputs[id]; active && block["type"] == "toolCall" && block["name"] == "ask_user_question" && !entry.consumedQuestions[id] && stableJSON(block["arguments"]) == wanted {
-				return id
-			}
-		}
-	}
-	return ""
 }
 
 func validateQuestionResult(result, args map[string]any) error {
@@ -237,12 +108,6 @@ func validateQuestionResult(result, args map[string]any) error {
 		seen[index] = true
 	}
 	return nil
-}
-
-func stableJSON(value any) string {
-	// encoding/json sorts string map keys, including nested objects.
-	encoded, _ := json.Marshal(value)
-	return string(encoded)
 }
 
 func (m *SessionManager) cancelQuestions(sessionID string) {

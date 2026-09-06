@@ -359,7 +359,7 @@ func TestTextResourceEchoDoesNotDuplicateOptimisticMarkers(t *testing.T) {
 	}
 }
 
-func TestQuestionsStaySessionBoundAndSingleUse(t *testing.T) {
+func TestToolCallReplayOrdering(t *testing.T) {
 	questionArgs := map[string]any{"questions": []any{map[string]any{
 		"header": "Choice", "question": "Choose one", "options": []any{map[string]any{"label": "A", "description": "First option"}},
 	}}}
@@ -392,49 +392,6 @@ func TestQuestionsStaySessionBoundAndSingleUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertReplay(snapshot)
-
-	emitLiveQuestion(t, manager, "question-tool", questionArgs)
-	questionResult := make(chan map[string]any, 1)
-	go func() {
-		result, _ := manager.AskQuestion(ctx, "chat", questionArgs)
-		questionResult <- result
-	}()
-	malformed := map[string]any{"answers": []any{map[string]any{"questionIndex": 2}}, "cancelled": false}
-	for {
-		err := manager.ResolveQuestion("chat", "question-tool", malformed)
-		if err != nil && strings.Contains(err.Error(), "no longer awaiting") {
-			select {
-			case <-ctx.Done():
-				t.Fatal("question did not become pending")
-			case <-time.After(time.Millisecond):
-				continue
-			}
-		}
-		if err == nil || !strings.Contains(err.Error(), "malformed") {
-			t.Fatalf("malformed question response: %v", err)
-		}
-		break
-	}
-	answer := map[string]any{"answers": []any{map[string]any{
-		"questionIndex": 0, "question": "Choose one", "kind": "option", "answer": "A",
-	}}, "cancelled": false}
-	if err := manager.ResolveQuestion("other", "question-tool", answer); err == nil {
-		t.Fatal("question response crossed session ownership")
-	}
-	if err := manager.ResolveQuestion("chat", "question-tool", answer); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case result := <-questionResult:
-		if result["cancelled"] != false || len(result["answers"].([]any)) != 1 {
-			t.Fatalf("question result: %#v", result)
-		}
-	case <-ctx.Done():
-		t.Fatal("question result did not settle")
-	}
-	if err := manager.ResolveQuestion("chat", "question-tool", answer); err == nil {
-		t.Fatal("question response was accepted twice")
-	}
 }
 
 func TestConcurrentPromptQueuesAndLifecycleRemainSerialized(t *testing.T) {

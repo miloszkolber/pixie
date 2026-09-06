@@ -89,20 +89,6 @@ func (h ObjectiveHandler) ServeHTTP(response http.ResponseWriter, request *http.
 			writeToolResult(response, rpc.ID, result)
 			return
 		}
-		// Deprecated pending parity: upstream `ask_user_question`
-		// (@juicesharp/rpiv-ask-user-question, `rpiv-ask` host profile) is the
-		// candidate replacement. This application-level question tool remains
-		// the writer until the parity deletion gate in docs/roadmap.md is met;
-		// do not expose both to the model once parity passes.
-		if name == "ask_user_question" {
-			result, err := h.Sessions.AskQuestion(request.Context(), sessionID, arguments)
-			if err != nil {
-				writeRPCError(response, rpc.ID, err.Error())
-				return
-			}
-			writeToolResult(response, rpc.ID, result)
-			return
-		}
 		var state SessionGoal
 		var operationErr error
 		switch name {
@@ -153,28 +139,6 @@ func (h ObjectiveHandler) ServeHTTP(response http.ResponseWriter, request *http.
 
 func objectiveTools() []map[string]any {
 	text := map[string]any{"type": "string", "minLength": 1, "maxLength": 2_000, "pattern": `^[^\u0000]*[^\s\u0000][^\u0000]*$`}
-	option := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"label":             map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
-			"description":       map[string]any{"type": "string", "maxLength": 2_000},
-			"preview":           map[string]any{"type": "string", "maxLength": 8_000},
-			"recommendedReason": map[string]any{"type": "string", "maxLength": 2_000},
-		},
-		"required":             []string{"label", "description"},
-		"additionalProperties": false,
-	}
-	question := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"question":    text,
-			"header":      map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
-			"options":     map[string]any{"type": "array", "minItems": 1, "maxItems": 12, "items": option},
-			"multiSelect": map[string]any{"type": "boolean"},
-		},
-		"required":             []string{"question", "header", "options"},
-		"additionalProperties": false,
-	}
 	return []map[string]any{
 		{
 			"name": "objective_get", "description": "Get this session's objective and tasks.",
@@ -200,13 +164,6 @@ func objectiveTools() []map[string]any {
 					},
 				},
 				"minProperties": 1, "additionalProperties": false,
-			},
-		},
-		{
-			"name": "ask_user_question", "description": "Pause and ask the user one or more supporting questions before continuing.",
-			"inputSchema": map[string]any{
-				"type": "object", "properties": map[string]any{"questions": map[string]any{"type": "array", "minItems": 1, "maxItems": 8, "items": question}},
-				"required": []string{"questions"}, "additionalProperties": false,
 			},
 		},
 	}
