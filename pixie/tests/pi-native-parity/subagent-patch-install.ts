@@ -34,9 +34,7 @@ try {
 		"--ignore-scripts",
 		"--production",
 		"--filter",
-		"@pixie/pi-host",
-		"--filter",
-		"@pixie/pi-mcp",
+		"@pixie_ai/pi-host",
 	]);
 	if (installed.code !== 0) throw new Error(installed.output);
 	const testArgs = [

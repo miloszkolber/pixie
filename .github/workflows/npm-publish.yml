@@ -1,7 +1,7 @@
 name: Publish host package
 
-# Publishes @pixie/pi-host to the npm registry so the Pi service runs
-# without a checkout: `bunx @pixie/pi-host@<version> --extensions <profiles>`.
+# Publishes @pixie_ai/pi-host to the npm registry so the Pi service runs
+# without a checkout: `bunx @pixie_ai/pi-host@<version> --extensions <profiles>`.
 # Tags look like `pi-host-v1.2.3`; the tag version stamps package.json at
 # publish time and is never committed.
 
@@ -28,7 +28,7 @@ jobs:
       contents: read
 
   publish:
-    name: Publish @pixie/pi-host
+    name: Publish @pixie_ai/pi-host
     needs: validate
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
