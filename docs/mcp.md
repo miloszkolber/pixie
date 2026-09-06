@@ -12,7 +12,7 @@ The Browser module for trusted MCP clients is published by the main Pixie proces
 
 Requests use `Authorization: Bearer <PIXIE_MCP_TOKEN>`. The catalog contains module IDs, names, paths, transport, state and an opaque revision. Browser uses ID `browser`, connection name `pixie-browser` and path `/mcp/browser`.
 
-`PIXIE_MCP_MODULES` (deprecated-pending-parity) defaults to `browser`; `PIXIE_MCP_DISABLED_MODULES` subtracts modules and they remain only the fallback default until the Tools toggle reaches parity. Publication enablement lives in the Pixie persist store (`mcp-modules.json`) and in the Tools UI in-process section (Enabled, Status, Endpoint), exposed as `mcpRegistry.catalog` / `mcpRegistry.moduleSetEnabled`; persisted enablement wins once the operator toggles a module.
+`PIXIE_MCP_MODULES` and `PIXIE_MCP_DISABLED_MODULES` are retired and ignored; setting either logs a startup warning pointing at the Tools UI. Publication enablement lives in the Pixie persist store (`mcp-modules.json`) and in the Tools UI in-process section (Enabled, Status, Endpoint), exposed as `mcpRegistry.catalog` / `mcpRegistry.moduleSetEnabled`; the Browser module defaults to enabled.
 
 Browser provides `browser_command`, `browser_guidance` and `pixie://browser/guide`. It limits sessions to 16, artifacts to 64 MiB per session and 256 MiB total, and commands to 120 seconds. Controller-owned panels have five-minute leases, renewed every minute; abandoned panels are cleaned up. Ordinary MCP client sessions remain the caller's responsibility.
 
@@ -22,7 +22,7 @@ A ready publisher has not necessarily launched Chromium. Verify browsing by open
 
 Browser is the only module. Signet, Web, Todo, Questions, and Subagents are never published through Pixie MCP. Browser storage stays isolated under the controller data directory (`mcp-browser`), and switching publisher engines does not alter the model-facing API (`pixie-browser`, same tools and resource surface). The `mcpAdapter.status` projection surfaces the Pi-side adapter state (connected, cached, failed, needs-auth, not-connected, disabled) and stays fail-open when the adapter profile is not enabled.
 
-The custom MCP *client* `@pixie/pi-mcp` intentionally remains: the `pi-mcp-adapter` replacement failed its proxied-call parity gate (adapter `mcp connect` succeeds, but proxied `describe`/`call` return "server currently unavailable" while the custom path automates Browser fine), so the per-tool client stays until protocol-level debugging closes the gap. See the [roadmap](roadmap.md).
+The Pi MCP client uses `pi-mcp-adapter` with a narrow, pinned host API patch for raw resources and App-origin calls. The old package name remains only as a compatibility entry, with no custom transport. See [MCP client verification](mcp-client-verification.md) for scope and evidence.
 
 ## Browser engine
 

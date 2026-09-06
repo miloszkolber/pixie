@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
@@ -12,8 +12,22 @@ import {
 import { Sessions } from "../../../pi/host/src/sessions.ts";
 import mcpExtension from "../../../pi/mcp/src/index.ts";
 
+const priorDir = process.env.PI_CODING_AGENT_DIR;
+const priorViewer = process.env.MCP_UI_VIEWER;
+function isolate(dir: string) {
+	process.env.PI_CODING_AGENT_DIR = dir;
+	process.env.MCP_UI_VIEWER = "none";
+}
+afterEach(() => {
+	if (priorDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+	else process.env.PI_CODING_AGENT_DIR = priorDir;
+	if (priorViewer === undefined) delete process.env.MCP_UI_VIEWER;
+	else process.env.MCP_UI_VIEWER = priorViewer;
+});
+
 test("MCP tools, App resources and connection removal remain scoped to the extension", async () => {
 	const dir = await mkdtemp(tmpdir() + "/pixie-pi-mcp-");
+	isolate(dir);
 	async function serve(token = "") {
 		const mcp = new Server(
 			{ name: "fixture", version: "1.0.0" },
@@ -78,7 +92,8 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 			},
 			ctx,
 		);
-		expect(entry.session.getActiveToolNames()).toContain("fixture__show");
+		expect(entry.session.getActiveToolNames()).toContain("mcp");
+		expect(entry.session.getActiveToolNames()).not.toContain("fixture__show");
 		expect(
 			await entry.capabilities.call(
 				"pi.tools.call",
@@ -87,14 +102,12 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 			),
 		).toMatchObject({ isError: false });
 		expect(entry.session.getActiveToolNames()).toContain("bash");
-		const tool = entry.session.agent.state.tools.find((t) => t.name === "fixture__show")!;
-		const result = await tool.execute("test-call", {}, new AbortController().signal);
+		const tool = entry.session.agent.state.tools.find((t) => t.name === "mcp")!;
+		const args = { server: "fixture", tool: "show", args: {} };
+		const result = await tool.execute("test-call", args, new AbortController().signal);
 		expect(result).toMatchObject({
-			content: [{ type: "text", text: "Tool completed" }],
 			details: {
-				mcp: {
-					app: { extensionName: "fixture", toolName: "show", resourceUri: "ui://fixture/app" },
-				},
+				mcpResult: { structuredContent: { ok: true } },
 			},
 		});
 		expect(
@@ -124,8 +137,8 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 			),
 		).rejects.toThrow();
 		expect(
-			await tool.execute("after-failed-replacement", {}, new AbortController().signal),
-		).toMatchObject({ content: [{ type: "text", text: "Tool completed" }] });
+			await tool.execute("after-failed-replacement", args, new AbortController().signal),
+		).toMatchObject({ details: { mcpResult: { structuredContent: { ok: true } } } });
 		await entry.capabilities.call(
 			"mcp.attach",
 			{
@@ -139,9 +152,12 @@ test("MCP tools, App resources and connection removal remain scoped to the exten
 			},
 			ctx,
 		);
-		expect(entry.session.getActiveToolNames()).toContain("fixture__show");
-		expect(await tool.execute("rotated-call", {}, new AbortController().signal)).toMatchObject({
-			content: [{ type: "text", text: "Tool completed" }],
+		expect(entry.session.getActiveToolNames()).not.toContain("fixture__show");
+		// A changed attachment cannot replace an existing registration silently.
+		expect(
+			await tool.execute("original-registration", args, new AbortController().signal),
+		).toMatchObject({
+			details: { mcpResult: { structuredContent: { ok: true } } },
 		});
 		await entry.capabilities.call(
 			"pi.config.extensions.add",
@@ -199,6 +215,7 @@ test("the MCP extension loads standalone in vanilla Pi and honors stdio cwd, env
 		ModelRuntime,
 	} = await import("@earendil-works/pi-coding-agent");
 	const dir = await mkdtemp(tmpdir() + "/pi-mcp-stdio-");
+	isolate(dir);
 	const models = await ModelRuntime.create({
 		authPath: dir + "/auth.json",
 		modelsPath: dir + "/models.json",
@@ -236,14 +253,24 @@ test("the MCP extension loads standalone in vanilla Pi and honors stdio cwd, env
 	try {
 		await session.bindExtensions({ mode: "rpc" });
 		expect(session.getActiveToolNames()).toContain("bash");
-		const tool = session.agent.state.tools.find((t) => t.name === "fixture__echo");
+		const tool = session.agent.state.tools.find((t) => t.name === "mcp");
 		if (!tool) throw new Error("MCP tool unavailable");
-		expect(await tool.execute("stdio", {}, new AbortController().signal)).toMatchObject({
+		expect(
+			await tool.execute(
+				"stdio",
+				{ server: "fixture", tool: "echo", args: {} },
+				new AbortController().signal,
+			),
+		).toMatchObject({
 			content: [{ type: "text", text: `standalone:${await realpath(dir)}` }],
 		});
-		await expect(
-			tool.execute("error", { fail: true }, new AbortController().signal),
-		).rejects.toThrow("Expected fixture error");
+		expect(
+			await tool.execute(
+				"error",
+				{ server: "fixture", tool: "echo", args: { fail: true } },
+				new AbortController().signal,
+			),
+		).toMatchObject({ details: { error: "tool_error", mcpResult: { isError: true } } });
 	} finally {
 		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 		session.dispose();
@@ -253,6 +280,7 @@ test("the MCP extension loads standalone in vanilla Pi and honors stdio cwd, env
 
 test("malformed MCP entries remain removable and do not hide valid inventory", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/pi-mcp-invalid-`);
+	isolate(dir);
 	await writeFile(
 		joinPath(dir, "mcp.json"),
 		JSON.stringify({
@@ -288,6 +316,7 @@ test("standalone MCP supports authenticated SSE and cancels a blocked tool", asy
 	const { createServer } = await import("node:http");
 	const { SSEServerTransport } = await import("@modelcontextprotocol/sdk/server/sse.js");
 	const dir = await mkdtemp(tmpdir() + "/pixie-sse-");
+	isolate(dir);
 	const server = new Server({ name: "sse-fixture", version: "1" }, { capabilities: { tools: {} } });
 	server.setRequestHandler(ListToolsRequestSchema, async () => ({
 		tools: [{ name: "wait__here", inputSchema: { type: "object" } }],
@@ -334,7 +363,7 @@ test("standalone MCP supports authenticated SSE and cancels a blocked tool", asy
 	const sessions = new Sessions(dir, [(pi) => mcpExtension(pi, dir)], () => {});
 	try {
 		const entry = await sessions.create(dir);
-		expect(entry.session.getActiveToolNames()).toContain("sse__wait__here");
+		expect(entry.session.getActiveToolNames()).toContain("mcp");
 		const abort = new AbortController();
 		const call = entry.capabilities.call(
 			"pi.tools.call",

@@ -48,10 +48,24 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		}
 		source := "builtin"
 		actual := name
+		input := tool["arguments"]
 		if parts := strings.SplitN(name, "__", 2); len(parts) == 2 {
 			source, actual = parts[0], parts[1]
 		}
-		return emit("tool_call", map[string]any{"toolCallId": toolID, "title": actual, "status": "in_progress", "rawInput": tool["arguments"], "_meta": map[string]any{"pi": map[string]any{"toolCall": map[string]any{"toolName": actual, "extensionName": source}}}})
+		if proxy := mapValue(input); name == "mcp" && textValue(proxy["tool"]) != "" {
+			actual, source = textValue(proxy["tool"]), textValue(proxy["server"])
+			if source == "" {
+				source = "mcp"
+			}
+			input = proxy["args"]
+			if encoded, ok := input.(string); ok {
+				var arguments map[string]any
+				if json.Unmarshal([]byte(encoded), &arguments) == nil {
+					input = arguments
+				}
+			}
+		}
+		return emit("tool_call", map[string]any{"toolCallId": toolID, "title": actual, "status": "in_progress", "rawInput": input, "_meta": map[string]any{"pi": map[string]any{"toolCall": map[string]any{"toolName": actual, "extensionName": source}}}})
 	}
 	toolEnd := func(toolID string, result map[string]any, finished bool, isError bool) error {
 		status := "in_progress"
@@ -66,14 +80,20 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		if err := emit("tool_call_update", map[string]any{"toolCallId": toolID, "status": status, "rawOutput": result, "_meta": meta}); err != nil {
 			return err
 		}
-		if plan := mapValue(details["plan"]); plan["entries"] != nil {
-			return emit("plan", plan)
-		}
-		// Dual-read migration: the legacy update_plan envelope above remains
-		// the writer, while upstream `todo` results (details.tasks/nextId)
-		// project onto the same plan display.
-		if entries := projectTodoPlanEntries(details); entries != nil {
-			return emit("plan", map[string]any{"entries": entries})
+		// Plan state updates only on successful, finished results: a failed,
+		// partial, or unrelated task-shaped payload must never replace the
+		// displayed plan, including on replay.
+		if !isError && finished {
+			if plan := mapValue(details["plan"]); plan["entries"] != nil {
+				return emit("plan", plan)
+			}
+			// Dual-read migration: the legacy update_plan envelope above is
+			// read back from persisted transcripts only, while upstream
+			// `todo` results (details.tasks/nextId) project onto the same
+			// plan display.
+			if entries := projectTodoPlanEntries(details); entries != nil {
+				return emit("plan", map[string]any{"entries": entries})
+			}
 		}
 		return nil
 	}

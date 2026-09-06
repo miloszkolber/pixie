@@ -23,6 +23,7 @@ type browserPanelOwnership struct {
 // Loading does not contact the browser service. Runtime.Start resumes cleanup.
 func NewPersistentBrowserPanels(auth AuthConfig, client *http.Client, store persist.Store, browser func() http.Handler) (*BrowserPanels, error) {
 	p := NewBrowserPanels(auth, client)
+	p.browser = browser
 	p.store = &store
 	p.journalName = fmt.Sprintf("browser-panels-%x.json", sha256.Sum256([]byte(strings.TrimRight(auth.BrowserURL, "/"))))
 	path := filepath.Join(store.Dir, p.journalName)

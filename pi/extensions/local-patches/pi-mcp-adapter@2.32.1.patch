@@ -1,0 +1,138 @@
+diff --git a/index.ts b/index.ts
+index 56ce4be95808a8e8f7a5d705e4b62d4ad6251d06..31b1d41f5631c6f0f303a955945e9ae7cb946a64 100644
+--- a/index.ts
++++ b/index.ts
+@@ -22,6 +22,10 @@ import { publishMcpStatusShutdown } from "./mcp-status.ts";
+ import { runMcpScript } from "./mcp-code.ts";
+ import { cleanupMaterializedBinaryResources } from "./tool-registrar.ts";
+ import { syncNamespaceProxyTools } from "./namespace-tools.ts";
++import { abortable } from "./abort.ts";
++import type { CallToolResult, ReadResourceResult } from "@modelcontextprotocol/client";
++import { extractUiToolVisibility, isUiToolCallableByApp } from "./ui-tool-visibility.ts";
++import { ensureToolCallApproved } from "./tool-approval.ts";
+ 
+ export type { McpAdapterOptions } from "./types.ts";
+ export type { ServerEntry } from "./types.ts";
+@@ -91,6 +95,46 @@ export interface McpRuntimeSnapshotRequest {
+ const runtimeRegistrars = new WeakMap<ExtensionAPI, (name: string, definition: ServerEntry) => McpServerRegistration>();
+ const runtimeSnapshotters = new WeakMap<ExtensionAPI, (name: string) => McpRuntimeServerSnapshot>();
+ 
++/** JSON-safe resource request. Authority is the exact installed ExtensionAPI,
++ * not a caller-supplied session id. AbortSignal is an out-of-band option. */
++export interface McpResourceReadRequestV1 {
++  version: 1;
++  server: string;
++  uri: string;
++}
++type ResourceReader = (request: McpResourceReadRequestV1, signal?: AbortSignal) => Promise<ReadResourceResult>;
++const resourceReaders = new WeakMap<ExtensionAPI, ResourceReader>();
++export interface McpAppToolCallRequestV1 {
++  version: 1;
++  server: string;
++  tool: string;
++  args?: Record<string, unknown>;
++}
++type AppToolCaller = (request: McpAppToolCallRequestV1, signal?: AbortSignal) => Promise<CallToolResult>;
++const appToolCallers = new WeakMap<ExtensionAPI, AppToolCaller>();
++
++/** Host/App-origin only. The host must authorize App ownership and same-server
++ * access before calling. This API never registers a model tool or changes visibility. */
++export function callMcpAppToolV1(pi: ExtensionAPI, request: McpAppToolCallRequestV1,
++  options: { signal?: AbortSignal } = {}): Promise<CallToolResult> {
++  const caller = appToolCallers.get(pi);
++  if (!caller) return Promise.reject(new Error("MCP adapter is not installed for this Pi instance"));
++  return caller(request, options.signal);
++}
++
++/** Raw resources/read, including unlisted URIs, through this instance's connection.
++ * Does not authorize untrusted callers or expose the manager. Hosts must authorize
++ * their caller before invoking this API. Errors reject, cancellation is not data. */
++export function readMcpResourceV1(
++  pi: ExtensionAPI,
++  request: McpResourceReadRequestV1,
++  options: { signal?: AbortSignal } = {},
++): Promise<ReadResourceResult> {
++  const reader = resourceReaders.get(pi);
++  if (!reader) return Promise.reject(new Error("MCP adapter is not installed for this Pi instance"));
++  return reader(request, options.signal);
++}
++
+ async function awaitWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | typeof INIT_WAIT_TIMED_OUT> {
+   let timer: ReturnType<typeof setTimeout> | undefined;
+   try {
+@@ -503,6 +547,75 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
+   };
+   runtimeRegistrars.set(pi, registerRuntimeServer);
+   runtimeSnapshotters.set(pi, getRuntimeServerSnapshot);
++  const withHostConnection = async <T>(server: string, callerSignal: AbortSignal | undefined,
++    operation: (active: McpExtensionState, signal: AbortSignal) => Promise<T>): Promise<T> => {
++    if (typeof server !== "string" || !server) throw new Error("Invalid MCP server");
++    const owner = currentOwner;
++    const generation = lifecycleGeneration;
++    if (!owner) throw new Error("MCP session is not active");
++    const signal = callerSignal ? AbortSignal.any([owner.signal, callerSignal]) : owner.signal;
++    signal.throwIfAborted();
++    const active = state ?? (initPromise ? await abortable(initPromise, signal) : null);
++    const checkOwner = () => {
++      signal.throwIfAborted();
++      owner.throwIfInactive();
++      if (owner !== currentOwner || generation !== lifecycleGeneration || active !== state) {
++        throw new Error("MCP session changed during resource read");
++      }
++    };
++    checkOwner();
++    if (!active) throw new Error("MCP is not initialized");
++    const definition = Object.hasOwn(active.config.mcpServers, server) ? active.config.mcpServers[server] : undefined;
++    if (!definition || definition.disabled) throw new Error("MCP server is unavailable in this session");
++    if (active.manager.getConnection(server)?.status !== "connected") {
++      await abortable(active.manager.connect(server, definition, signal), signal);
++    }
++    checkOwner();
++    const result = await abortable(operation(active, signal), signal);
++    checkOwner();
++    return JSON.parse(JSON.stringify(result)) as T;
++  };
++  resourceReaders.set(pi, async (request, signal) => {
++    if (request?.version !== 1 || typeof request.uri !== "string" || !request.uri || request.uri.includes("\0")) {
++      throw new Error("Invalid MCP resource read v1 request");
++    }
++    const { server, uri } = request;
++    return withHostConnection(server, signal, (active, ownedSignal) => active.manager.readResource(server, uri, ownedSignal));
++  });
++  appToolCallers.set(pi, async (request, signal) => {
++    if (request?.version !== 1 || typeof request.tool !== "string" || !request.tool ||
++        (request.args !== undefined && (!request.args || typeof request.args !== "object" || Array.isArray(request.args)))) {
++      throw new Error("Invalid MCP App tool call v1 request");
++    }
++    const { server, tool } = request;
++    const args = JSON.parse(JSON.stringify(request.args ?? {})) as Record<string, unknown>;
++    return withHostConnection(server, signal, async (active, ownedSignal) => {
++      const connection = active.manager.getConnection(server);
++      const definition = connection?.tools.find(candidate => candidate.name === tool);
++      if (!connection || !definition || !isUiToolCallableByApp(extractUiToolVisibility(definition._meta))) {
++        throw new Error("MCP tool is not callable by Apps on this server");
++      }
++      const metadata = new Map(active.toolMetadata);
++      metadata.set(server, connection.tools.map(candidate => ({
++        name: candidate.name, originalName: candidate.name, description: candidate.description ?? "",
++      })));
++      const approval = await ensureToolCallApproved(active, server, {
++        name: tool, originalName: tool, description: definition.description ?? "",
++        inputSchema: definition.inputSchema, uiVisibility: extractUiToolVisibility(definition._meta),
++      }, args, ownedSignal, "iframe", metadata);
++      if (!approval.ok) throw new Error(`MCP App tool approval: ${approval.reason}`);
++      ownedSignal.throwIfAborted();
++      active.manager.touch(server);
++      active.manager.incrementInFlight(server);
++      try {
++        await active.manager.ensureListen(server, connection);
++        return await connection.client.callTool({ name: tool, arguments: args }, active.manager.getRequestOptions(server, ownedSignal));
++      } finally {
++        active.manager.decrementInFlight(server);
++        active.manager.touch(server);
++      }
++    });
++  });
+   pi.events.on(MCP_RUNTIME_REGISTER_EVENT, (rawRequest: unknown) => {
+     if (typeof rawRequest !== "object" || rawRequest === null || Array.isArray(rawRequest)) return;
+     const request = rawRequest as McpRuntimeRegistrationRequest;

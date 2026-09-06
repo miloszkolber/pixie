@@ -17,6 +17,7 @@ COPY pixie/webui/package.json webui/package.json
 COPY pixie/contracts/package.json contracts/package.json
 COPY pi/host/package.json /work/pi/host/package.json
 COPY pi/mcp/package.json /work/pi/mcp/package.json
+COPY pi/extensions/local-patches/*.patch /work/pi/extensions/local-patches/
 RUN --mount=type=cache,id=bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
     bun install --frozen-lockfile
 COPY pixie/webui/ webui/

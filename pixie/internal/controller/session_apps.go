@@ -238,11 +238,24 @@ func (m *SessionManager) CallAppTool(ctx context.Context, projectID, sessionID, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	raw, err := m.client.CallPi(entry.context(ctx), "pi.tools.call", map[string]any{
+	method := "pi.tools.call"
+	params := map[string]any{
 		"sessionId": sessionID,
 		"name":      name,
 		"arguments": arguments,
-	})
+	}
+	_, profile, err := m.client.Profile(entry.context(ctx))
+	if err != nil {
+		return nil, err
+	}
+	if profile.Capabilities["mcp-app-tools"] == 1 {
+		// Origin is selected here, after AppView/project/session and same-server
+		// checks, never from a browser-supplied flag or tool argument.
+		method = "pi.apps.tools.call"
+		params = map[string]any{"sessionId": sessionID, "extensionName": state.attachment.ExtensionName,
+			"toolName": strings.TrimPrefix(name, prefix), "arguments": arguments}
+	}
+	raw, err := m.client.CallPi(entry.context(ctx), method, params)
 	if err != nil {
 		return nil, fmt.Errorf("Pi could not call the App tool")
 	}

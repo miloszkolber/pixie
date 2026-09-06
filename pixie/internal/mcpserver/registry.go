@@ -30,6 +30,9 @@ const (
 	// the in-process route; exact paths remain an implementation detail.
 	CatalogPath = "/api/mcp/modules"
 	StatusPath  = "/api/mcp/status"
+	// appViewRoute is the Browser service's own App view surface, served
+	// through the publisher with the path intact for the merged deployment.
+	appViewRoute = "/v1/app-views"
 
 	storeFile  = "mcp-modules.json"
 	browserID  = "browser"
@@ -48,11 +51,11 @@ const (
 	defaultEngine   = engineChromium
 )
 
-// Deprecated-pending-parity: PIXIE_MCP_MODULES and PIXIE_MCP_DISABLED_MODULES
-// remain the fallback default for publication until the Tools UI toggle
-// reaches parity. Persisted enablement in mcp-modules.json wins once the
-// operator toggles a module; afterwards the environment is ignored for
-// that module.
+// Retired environment selection: PIXIE_MCP_MODULES and
+// PIXIE_MCP_DISABLED_MODULES are ignored. Module enablement is owned by the
+// Pixie persist store (mcp-modules.json) and toggled from the Tools UI; the
+// Browser module defaults to enabled. A startup warning names the migration
+// path when either variable is still set.
 const (
 	envModules  = "PIXIE_MCP_MODULES"
 	envDisabled = "PIXIE_MCP_DISABLED_MODULES"
@@ -198,22 +201,13 @@ func NewRegistry(config Config, build diagnostics.BuildInfo, logger *slog.Logger
 }
 
 func (r *Registry) loadEnabled() error {
-	defaults := map[string]bool{browserID: true}
 	if r.config.Getenv != nil {
-		modulesEnv, _ := r.config.Getenv(envModules)
-		disabledEnv, _ := r.config.Getenv(envDisabled)
-		modules := parseList(modulesEnv, browserID)
-		disabled := parseList(disabledEnv, "")
-		active := make(map[string]bool, len(modules))
-		for _, id := range modules {
-			if id == browserID {
-				active[id] = true
-			}
+		if modulesEnv, ok := r.config.Getenv(envModules); ok && modulesEnv != "" {
+			r.logger.Warn("PIXIE_MCP_MODULES is retired; toggle modules in Tools instead")
 		}
-		for _, id := range disabled {
-			delete(active, id)
+		if disabledEnv, ok := r.config.Getenv(envDisabled); ok && disabledEnv != "" {
+			r.logger.Warn("PIXIE_MCP_DISABLED_MODULES is retired; toggle modules in Tools instead")
 		}
-		defaults[browserID] = active[browserID]
 	}
 	var saved persistedState
 	found, err := persist.Read(r.store, storeFile, &saved, validateState)
@@ -221,13 +215,13 @@ func (r *Registry) loadEnabled() error {
 		return fmt.Errorf("read in-process MCP module state: %w", err)
 	}
 	if !found {
-		r.enabled = defaults
+		r.enabled = map[string]bool{browserID: true}
 		return nil
 	}
 	if state, ok := saved.Modules[browserID]; ok {
 		r.enabled[browserID] = state.Enabled
 	} else {
-		r.enabled[browserID] = defaults[browserID]
+		r.enabled[browserID] = true
 	}
 	return nil
 }
@@ -297,23 +291,6 @@ func (r *Registry) SetEngine(engine string) error {
 	}
 	r.startLocked()
 	return nil
-}
-
-func parseList(value, fallback string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		if fallback == "" {
-			return nil
-		}
-		return []string{fallback}
-	}
-	var result []string
-	for _, item := range strings.Split(value, ",") {
-		if trimmed := strings.TrimSpace(item); trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-	return result
 }
 
 // SetEnabled persists module enablement in the Pixie app state and starts or
@@ -568,7 +545,8 @@ func (r *Registry) ServeHTTP(response http.ResponseWriter, request *http.Request
 			"build": r.build, "startedAt": r.started.UTC().Format(time.RFC3339), "catalog": catalog,
 			"browserEngine": r.Engine(),
 		})
-	case request.URL.Path == BrowserRoute || strings.HasPrefix(request.URL.Path, BrowserRoute+"/"):
+	case request.URL.Path == BrowserRoute || strings.HasPrefix(request.URL.Path, BrowserRoute+"/") ||
+		request.URL.Path == appViewRoute || strings.HasPrefix(request.URL.Path, appViewRoute+"/"):
 		r.mu.RLock()
 		service := r.browser
 		enabled := r.enabled[browserID]

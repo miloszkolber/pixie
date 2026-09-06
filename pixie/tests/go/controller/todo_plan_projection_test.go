@@ -68,6 +68,9 @@ func TestUpstreamTodoResultsProjectOntoPlan(t *testing.T) {
 		push(map[string]any{"type": "tool_execution_end", "toolCallId": "todo-call", "result": map[string]any{"content": []any{}, "details": todoDetails}})
 		// No nextId: not a todo envelope, so no plan may follow.
 		push(map[string]any{"type": "tool_execution_end", "toolCallId": "other-call", "result": map[string]any{"content": []any{}, "details": map[string]any{"tasks": []any{}}}})
+		// Failed and unfinished results must not replace the displayed plan.
+		push(map[string]any{"type": "tool_execution_end", "toolCallId": "failed-call", "isError": true, "result": map[string]any{"content": []any{}, "details": map[string]any{"tasks": []any{}, "nextId": 1.0}}})
+		push(map[string]any{"type": "tool_execution_update", "toolCallId": "partial-call", "partialResult": map[string]any{"content": []any{}, "details": todoDetails}})
 		// Legacy update_plan envelopes keep projecting unchanged.
 		push(map[string]any{"type": "tool_execution_end", "toolCallId": "legacy-call", "result": map[string]any{"content": []any{}, "details": legacyDetails}})
 		for {

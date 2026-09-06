@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,5 +115,52 @@ func TestChildEnvironmentPassesCDPEndpoint(t *testing.T) {
 	handler, _ := newCDPProbe(t, "127.0.0.1:9222")
 	if stdout := probeCDP(t, handler, "obscura-selected"); stdout != "127.0.0.1:9222" {
 		t.Fatalf("child AGENT_BROWSER_CDP = %q", stdout)
+	}
+}
+
+// The merged deployment shares one container UID between the controller and
+// the Browser subprocess, so the child environment must not inherit any
+// controller secrets: a compromised renderer sees only scoped directories.
+func TestChildEnvironmentCarriesNoControllerSecrets(t *testing.T) {
+	t.Setenv("PIXIE_TOKEN", "controller-secret-must-not-leak")
+	t.Setenv("PIXIE_MCP_TOKEN", "mcp-secret-must-not-leak")
+	t.Setenv("PIXIE_BROWSER_TOKEN", "browser-secret-must-not-leak")
+	t.Setenv("PIXIE_PI_SECRET_KEY", "pi-secret-must-not-leak")
+	root := t.TempDir()
+	probe := filepath.Join(root, "env-probe")
+	script := "#!/bin/sh\nfor name in PIXIE_TOKEN PIXIE_MCP_TOKEN PIXIE_BROWSER_TOKEN PIXIE_PI_SECRET_KEY HOME TMPDIR; do printf '%s=%s\\n' \"$name\" \"$(eval echo \\$$name)\"; done\n"
+	if err := os.WriteFile(probe, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configFile := filepath.Join(root, "config.json")
+	if err := os.WriteFile(configFile, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateRoot := filepath.Join(root, "state")
+	service, err := browser.NewService(browser.Config{
+		Host: "127.0.0.1", Port: 8787,
+		ArtifactRoot: filepath.Join(root, "artifacts"), StateRoot: stateRoot,
+		AgentBrowser: probe, BrowserConfig: configFile,
+		CommandTimeout: 5 * time.Second, RequestTimeout: 10 * time.Second,
+		MaxArtifactBytes: 1 << 20, MaxTotalArtifactBytes: 1 << 20, MaxStateBytes: 1 << 20,
+		MaxSessions: 4, MaxStateEntries: 100,
+	}, diagnostics.NormalizeBuild("test", "test"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(service.Shutdown)
+	stdout := probeCDP(t, service, "env-secrecy")
+	for _, leaked := range []string{"controller-secret-must-not-leak", "mcp-secret-must-not-leak", "browser-secret-must-not-leak", "pi-secret-must-not-leak"} {
+		if strings.Contains(stdout, leaked) {
+			t.Fatalf("child environment leaked a controller secret: %q", stdout)
+		}
+	}
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.HasPrefix(line, "HOME=") && !strings.HasPrefix(strings.TrimPrefix(line, "HOME="), stateRoot) {
+			t.Fatalf("child HOME escaped browser state: %q", stdout)
+		}
+		if strings.HasPrefix(line, "TMPDIR=") && !strings.HasPrefix(strings.TrimPrefix(line, "TMPDIR="), stateRoot) {
+			t.Fatalf("child TMPDIR escaped browser state: %q", stdout)
+		}
 	}
 }

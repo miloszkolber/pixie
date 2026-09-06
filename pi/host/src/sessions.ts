@@ -16,7 +16,6 @@ import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
 } from "@juicesharp/rpiv-ask-user-question/events";
-import { MCP_SERVICE_EVENT, type MCPService } from "@pixie/pi-mcp";
 import { CAPABILITY_EVENT, Capabilities, type CapabilityContext } from "./capabilities.ts";
 import { createUiBridge, type UiBridge } from "./extensions/ui-bridge.ts";
 import {
@@ -55,16 +54,50 @@ export interface ManagedSession {
 	run?: Promise<void>;
 	partialMessage?: RecordValue;
 	partialTools: Map<string, RecordValue>;
+	/** Extension-owned work only pins residence, never changes native run state. */
+	hasExtensionWork?: () => boolean;
 	close: () => Promise<void>;
 	forgetMcp?: () => Promise<unknown>;
+	mcpApps?: Map<string, RecordValue>;
+}
+
+function projectMcpApp(
+	entry: ManagedSession,
+	toolCallId: string,
+	result: RecordValue,
+): RecordValue {
+	const app = entry.mcpApps?.get(toolCallId);
+	if (!app) return result;
+	const details = object(result.details);
+	const raw = object(details.mcpResult);
+	return {
+		...result,
+		details: {
+			...details,
+			mcp: {
+				...object(details.mcp),
+				app,
+				server: app.extensionName,
+				toolName: app.toolName,
+				meta: raw._meta,
+				structuredContent: raw.structuredContent,
+				isError: raw.isError === true,
+			},
+		},
+	};
 }
 
 // Bound for AgentSession.abort(): a stalled provider stream must not wedge
 // Stop (or session teardown) forever. Observed against a throttled free-tier
 // stream where abort never settled: without a bound, session.cancel and
-// entry.close hang indefinitely. Callers always resolve; a late run_end from
+// entry.close hang indefinitely. Rejections still propagate; a late run_end from
 // the abandoned stream still carries its runId for reconciliation.
 const ABORT_TIMEOUT_MS = 10_000;
+
+// Emit through pi.events with { key: <unique work id>, active: boolean }.
+// The bus is local to one native session. Repeating a signal is idempotent.
+// Owners release their key in finally. Explicit teardown ignores these pins.
+export const SESSION_LIVENESS_EVENT = "pixie:session:liveness:v1";
 async function abortBounded(session: AgentSession, ms = ABORT_TIMEOUT_MS): Promise<boolean> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
@@ -233,41 +266,62 @@ export class Sessions {
 		});
 		const settings = SettingsManager.create(cwd, this.agentDir);
 		const bus = createEventBus();
-		const capabilities = new Capabilities();
-		let forgetMcp: ((ctx: CapabilityContext) => Promise<unknown>) | undefined;
-		bus.on(CAPABILITY_EVENT, (v) => capabilities.register(v));
-		bus.on(MCP_SERVICE_EVENT, (value) => {
-			const service = value as MCPService;
-			if (service?.version !== 1 || !service.operations) return;
-			if (!manager.getSessionFile()) service.prepare?.({ connectOnStart: false });
-			if (service.operations["session.forget"])
-				forgetMcp = async (ctx) => service.operations["session.forget"]({}, ctx);
-			const names: Record<string, string> = {
-				"mcp.attach": "attach",
-				"pi.config.extensions.list": "connections.list",
-				"pi.config.extensions.add": "connections.add",
-				"pi.config.extensions.set-enabled": "connections.set-enabled",
-				"pi.config.extensions.remove": "connections.remove",
-				"pi.session.extensions.list": "session.list",
-				"pi.session.extensions.add": "session.add",
-				"pi.session.extensions.remove": "session.remove",
-				"pi.resources.read": "resources.read",
-				"pi.tools.call": "tools.call",
-			};
-			const operations = Object.fromEntries(
-				Object.entries(names).map(([wire, native]) => [wire, service.operations[native]]),
-			);
-			if (Object.values(operations).some((operation) => typeof operation !== "function")) return;
-			capabilities.register({ id: "mcp", version: 1, operations, close: service.close });
-			capabilities.register({ id: "mcp-apps", version: 1, operations: {} });
+		const extensionWork = new Set<string>();
+		const stopLiveness = bus.on(SESSION_LIVENESS_EVENT, (value) => {
+			const event = object(value);
+			if (typeof event.key !== "string" || !event.key || typeof event.active !== "boolean") return;
+			if (event.active) extensionWork.add(event.key);
+			else extensionWork.delete(event.key);
 		});
+		const capabilities = new Capabilities();
+		bus.on(CAPABILITY_EVENT, (v) => capabilities.register(v));
 
+		let observedEntry: ManagedSession | undefined;
 		const loader = new DefaultResourceLoader({
 			cwd,
 			agentDir: this.agentDir,
 			settingsManager: settings,
 			eventBus: bus,
-			extensionFactories: this.factories,
+			extensionFactories: [
+				...this.factories,
+				(pi) => {
+					// Observe without changing execution or the model's tool result. A
+					// hidden native entry retains trusted App presentation across reload.
+					pi.on("tool_result", async (event) => {
+						const entry = observedEntry;
+						const details = object(event.details);
+						if (
+							!entry ||
+							event.toolName !== "mcp" ||
+							!details.server ||
+							!details.tool ||
+							!("uiOpen" in details) ||
+							!entry.capabilities.snapshot()["pi-mcp-adapter"]
+						)
+							return;
+						try {
+							const app = object(
+								await entry.capabilities.call(
+									"adapter.describeApp",
+									{ server: details.server, tool: details.tool },
+									this.context(entry),
+								),
+							);
+							if (!app.resourceUri) return;
+							entry.mcpApps?.set(event.toolCallId, app);
+							entry.session.sessionManager.appendCustomEntry("pixie-mcp-app", {
+								toolCallId: event.toolCallId,
+								app,
+							});
+						} catch {
+							this.publish(entry.session.sessionId, {
+								type: "extension_error",
+								error: "MCP App metadata is unavailable",
+							});
+						}
+					});
+				},
+			],
 		});
 		let built: AgentSession | undefined;
 		try {
@@ -311,31 +365,50 @@ export class Sessions {
 				lastUsed: Date.now(),
 				inputs: [],
 				partialTools: new Map(),
-			close: () =>
-				(closing ??= (async () => {
-					bridge.cancelAll("session closed");
-					this.bridges.delete(sessionId);
-					await abortBounded(session);
+				hasExtensionWork: () => extensionWork.size > 0,
+				mcpApps: new Map(
+					manager
+						.getBranch()
+						.flatMap((e) =>
+							e.type === "custom" && e.customType === "pixie-mcp-app"
+								? [[text(object(e.data).toolCallId), object(object(e.data).app)] as const]
+								: [],
+						),
+				),
+				close: () =>
+					(closing ??= (async () => {
+						stopLiveness();
+						extensionWork.clear();
+						bridge.cancelAll("session closed");
+						this.bridges.delete(sessionId);
 						try {
-							await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+							await abortBounded(session);
 						} finally {
 							try {
-								await capabilities.close();
+								await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 							} finally {
-								session.dispose();
-								await settings.flush();
+								try {
+									await capabilities.close();
+								} finally {
+									session.dispose();
+									await settings.flush();
+								}
 							}
 						}
 					})()),
 			};
-			const forget = forgetMcp;
+			observedEntry = entry;
+			const forget =
+				capabilities.snapshot()["pi-mcp-adapter"] === 1
+					? (ctx: CapabilityContext) => capabilities.call("adapter.session.forget", {}, ctx)
+					: undefined;
 			entry.forgetMcp = forget ? () => forget(this.context(entry)) : undefined;
-		await session.bindExtensions({
-			mode: "rpc",
-			uiContext: bridge.ui,
-			onError: (e) =>
-				this.publish(session.sessionId, { type: "extension_error", error: e.error }),
-		});
+			await session.bindExtensions({
+				mode: "rpc",
+				uiContext: bridge.ui,
+				onError: (e) =>
+					this.publish(session.sessionId, { type: "extension_error", error: e.error }),
+			});
 			const streamed = new Map<number, number>();
 			session.subscribe((event) => {
 				if (event.type === "message_start" && event.message.role === "assistant") streamed.clear();
@@ -424,10 +497,22 @@ export class Sessions {
 					});
 					return;
 				}
-				this.publish(session.sessionId, event);
+				if (event.type === "tool_execution_end") {
+					this.publish(session.sessionId, {
+						...event,
+						result: projectMcpApp(entry, event.toolCallId, object(event.result)),
+					});
+				} else if (event.type === "message_end" && event.message.role === "toolResult") {
+					this.publish(session.sessionId, {
+						...event,
+						message: projectMcpApp(entry, event.message.toolCallId, object(event.message)),
+					});
+				} else this.publish(session.sessionId, event);
 			});
 			return entry;
 		} catch (error) {
+			stopLiveness();
+			extensionWork.clear();
 			try {
 				await capabilities.close();
 			} finally {
@@ -451,9 +536,19 @@ export class Sessions {
 			entry.lastUsed = Date.now();
 		}
 	}
+	private isIdle(id: string, entry: ManagedSession): boolean {
+		return (
+			!entry.refs &&
+			!entry.run &&
+			entry.session.isIdle &&
+			!entry.session.isBashRunning &&
+			!entry.hasExtensionWork?.() &&
+			!this.bridges.get(id)?.pendingCount()
+		);
+	}
 	async release(id: string): Promise<void> {
 		const entry = this.entries.get(id);
-		if (!entry || entry.refs || entry.run || entry.session.isStreaming) return;
+		if (!entry || !this.isIdle(id, entry)) return;
 		this.entries.delete(id);
 		const closing = entry.close();
 		this.evicting.set(id, closing);
@@ -465,7 +560,7 @@ export class Sessions {
 	}
 	async sweep(now = Date.now()): Promise<void> {
 		const idle = [...this.entries.entries()]
-			.filter(([, e]) => !e.refs && !e.run && !e.session.isStreaming)
+			.filter(([id, e]) => this.isIdle(id, e))
 			.sort((a, b) => a[1].lastUsed - b[1].lastUsed);
 		const excess = Math.max(0, idle.length - this.limits.maxIdle);
 		await Promise.all(
@@ -603,7 +698,11 @@ export class Sessions {
 				const index = inputs.findIndex((input) => input.text === prompt);
 				if (index >= 0) message.displayContent = inputs.splice(index, 1)[0].content;
 			}
-			messages.push(message);
+			messages.push(
+				e.message.role === "toolResult"
+					? projectMcpApp(entry, e.message.toolCallId, message)
+					: message,
+			);
 		}
 		if (entry.partialMessage) {
 			const partial = structuredClone(entry.partialMessage);
@@ -771,14 +870,14 @@ export class Sessions {
 		return this.use(id, text(p.cwd) || undefined, async (entry) => {
 			const s = entry.session;
 			switch (method) {
-			case "session.load":
-				// Replaying unresolved dialogs lets a reconnecting controller
-				// restore modals that live subscribers already hold (deduplicated
-				// by request ID) and late subscribers missed entirely. The
-				// server buffers these events during the load and flushes them
-				// after the snapshot, which also carries the same pending set.
-				this.bridges.get(id)?.republishPending();
-				return this.snapshot(entry, true);
+				case "session.load":
+					// Replaying unresolved dialogs lets a reconnecting controller
+					// restore modals that live subscribers already hold (deduplicated
+					// by request ID) and late subscribers missed entirely. The
+					// server buffers these events during the load and flushes them
+					// after the snapshot, which also carries the same pending set.
+					this.bridges.get(id)?.republishPending();
+					return this.snapshot(entry, true);
 				case "session.prompt": {
 					if (entry.run || s.isStreaming) throw new Error("Session is already running");
 					const content = this.promptContent(p.content);
@@ -821,13 +920,15 @@ export class Sessions {
 					await s.steer(content.text, content.images);
 					return { accepted: true };
 				}
-			case "session.cancel": {
-				const aborted = await abortBounded(s);
-				this.bridges.get(id)?.cancelAll("cancelled");
-				if (!aborted)
-					this.publish(id, { type: "run_abort_timeout", sessionId: id, runId: entry.runId });
-				return { ok: true, aborted };
-			}
+				case "session.cancel": {
+					// abort waits for native execution, which may itself await ctx.ui.
+					// Settle dialogs first even when abort rejects or never settles.
+					this.bridges.get(id)?.cancelAll("cancelled");
+					const aborted = await abortBounded(s);
+					if (!aborted)
+						this.publish(id, { type: "run_abort_timeout", sessionId: id, runId: entry.runId });
+					return { ok: true, aborted };
+				}
 				case "session.configure": {
 					const key = text(p.configId),
 						value = required(p.value, "configuration value");
@@ -850,11 +951,11 @@ export class Sessions {
 				case "pi.session.rename":
 					s.setSessionName(required(p.title, "title", 1000));
 					return { ok: true };
-			case "pi.session.archive":
-			case "pi.session.unarchive":
-				if (entry.run) throw new Error("Stop the running session first");
-				if (method.endsWith(".archive")) this.bridges.get(id)?.cancelAll("archived");
-				await this.catalog.update((c) => {
+				case "pi.session.archive":
+				case "pi.session.unarchive":
+					if (entry.run) throw new Error("Stop the running session first");
+					if (method.endsWith(".archive")) this.bridges.get(id)?.cancelAll("archived");
+					await this.catalog.update((c) => {
 						if (!c[id])
 							c[id] = {
 								path: required(s.sessionFile, "session file"),
@@ -889,13 +990,13 @@ export class Sessions {
 						delete c[id];
 					});
 					return { ok: true };
-			case "pi.slash-commands.list":
-				return { commands: this.commands(entry) };
-			case "session.uiResponse":
-				return this.resolveUiResponse(p);
-			case "session.uiCancel":
-				return this.cancelUiRequest(p);
-			case "pi.tools.list":
+				case "pi.slash-commands.list":
+					return { commands: this.commands(entry) };
+				case "session.uiResponse":
+					return this.resolveUiResponse(p);
+				case "session.uiCancel":
+					return this.cancelUiRequest(p);
+				case "pi.tools.list":
 					return {
 						tools: s
 							.getAllTools()

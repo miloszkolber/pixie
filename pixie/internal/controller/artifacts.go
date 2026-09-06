@@ -59,6 +59,9 @@ func (h *HTTPHandler) serveBrowserArtifact(response http.ResponseWriter, request
 			}
 			upstream.Header.Set("Authorization", "Bearer "+browserToken)
 		}
+		// Direct dispatch must supply the server-side origin-form request fields.
+		upstream.RequestURI = upstream.URL.RequestURI()
+		upstream.Host = "127.0.0.1"
 		recorder := newBrowserResponseRecorder()
 		handler.ServeHTTP(recorder, upstream)
 		if recorder.code == 0 {

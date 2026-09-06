@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { messagesToRuntime } from "@/chat/runtime/hydrate";
 import { deriveRows } from "@/chat/runtime/rows";
 import { createSessionRuntime, reduceSessionEvent } from "@/chat/runtime/session-runtime";
@@ -160,6 +161,37 @@ test("settled session-bound MCP Apps preserve errors and declared permission lab
 			sessionId: "session-1",
 		}),
 	).toContain("Open app");
+});
+
+test("MCP App SSR shares component context from workspace and application working directories", async () => {
+	const applicationRoot = resolve(import.meta.dir, "../../..");
+	const source = `
+		import { renderSvelte } from ${JSON.stringify(resolve(import.meta.dir, "svelte-render.ts"))};
+		console.log(await renderSvelte("tests/webui/chat/fixtures/mcp-app-view-host.svelte", {
+			projectId: "project-1",
+			sessionId: "session-1",
+			toolCallId: "tool-1",
+			args: {},
+			result: "Clear",
+			app: { toolName: "weather", extensionName: "weather-server", resourceUri: "ui://weather/dashboard" },
+			status: "done",
+		}));
+	`;
+	for (const cwd of [resolve(applicationRoot, ".."), applicationRoot]) {
+		// Fresh processes avoid the harness module cache masking cwd-dependent resolution.
+		const child = Bun.spawn([process.execPath, "--eval", source], {
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const [code, stdout, stderr] = await Promise.all([
+			child.exited,
+			new Response(child.stdout).text(),
+			new Response(child.stderr).text(),
+		]);
+		expect({ cwd, code, stderr }).toEqual({ cwd, code: 0, stderr: "" });
+		expect(stdout).toContain("Open app");
+	}
 });
 
 test("official developer and summon results use their real arguments and show returned output", async () => {

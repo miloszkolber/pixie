@@ -2,12 +2,11 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import mcp from "@pixie/pi-mcp";
 import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
 import agents from "./extensions/agents.ts";
 import llama from "./extensions/llama.ts";
-import piMcpAdapter from "./extensions/pi-mcp-adapter.ts";
+import { piMcpAdapterWithConfig } from "./extensions/pi-mcp-adapter.ts";
 import piSubagent from "./extensions/pi-subagent.ts";
 import rpivAsk from "./extensions/rpiv-ask.ts";
 import rpivTodo from "./extensions/rpiv-todo.ts";
@@ -51,7 +50,7 @@ async function startUnlockedHost(options: HostOptions) {
 	if (options.secret.length < 16)
 		throw new Error("Pi host secret must contain at least 16 characters");
 	const profiles: Record<string, ExtensionFactory> = {
-		mcp: (pi) => mcp(pi, agentDir),
+		mcp: piMcpAdapterWithConfig({ agentDir }),
 		// Agent definition authoring (pi.sources.* + @agent mentions). Child
 		// execution belongs to the upstream `pi-subagent` profile.
 		agents: (pi) => agents(pi, agentDir),
@@ -71,12 +70,9 @@ async function startUnlockedHost(options: HostOptions) {
 		// execution; the `agents` profile keeps only Markdown CRUD.
 		signet,
 		"pi-subagent": piSubagent,
-		// Optional Pi-native MCP client. The upstream `pi-mcp-adapter`
-		// factory is used unchanged (single `mcp` proxy tool); this profile
-		// only adds an additive marker plus `adapter.status` /
-		// `adapter.registerBrowser` projection operations. The custom `mcp`
-		// extension stays the writer until parity is verified.
-		"pi-mcp-adapter": piMcpAdapter,
+		// Alias of mcp. The pinned upstream runtime owns all transport/tool
+		// execution, with narrow patched host APIs for retained Apps.
+		"pi-mcp-adapter": piMcpAdapterWithConfig({ agentDir }),
 		// Optional local provider. Loads the SDK's own built-in llama.cpp
 		// extension unchanged (provider registration plus `/llama` command);
 		// see extensions/llama.ts for the loading detour and the headless
@@ -102,7 +98,8 @@ async function startUnlockedHost(options: HostOptions) {
 	};
 	const sessions = new Sessions(
 		agentDir,
-		names.map((n) => profiles[n]),
+		// Both names are persisted profile spellings for the same runtime.
+		names.filter((n) => n !== "mcp" || !names.includes("pi-mcp-adapter")).map((n) => profiles[n]),
 		(sessionId, event, sequence) => {
 			for (const peer of peers) {
 				const message = { method: "session.event", params: { sessionId, event, sequence } };
@@ -134,7 +131,8 @@ async function startUnlockedHost(options: HostOptions) {
 		...entry.capabilities.snapshot(),
 	});
 	const attach = async (entry: ManagedSession, p: RecordValue) => {
-		if (entry.capabilities.snapshot().mcp === 1 && Array.isArray(p.mcpServers))
+		const supported = entry.capabilities.snapshot();
+		if ((supported.mcp === 1 || supported["pi-mcp-adapter"] === 1) && Array.isArray(p.mcpServers))
 			await entry.capabilities.call(
 				"mcp.attach",
 				{ servers: p.mcpServers },

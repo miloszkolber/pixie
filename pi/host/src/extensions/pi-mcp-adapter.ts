@@ -1,40 +1,15 @@
 import { createRequire } from "node:module";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { registerCapability } from "../capabilities.ts";
 import type { RecordValue } from "../storage.ts";
+import { mcpRuntimeBridge } from "./mcp-runtime-bridge.ts";
 
-// Optional Pi-native MCP profile (`--extensions ...,pi-mcp-adapter`).
-//
-// The upstream `pi-mcp-adapter@2.32.1` factory is used unchanged: a single
-// proxy tool `mcp` (~200 tokens) with lazy/eager/keep-alive lifecycle,
-// metadata cache `~/.pi/agent/mcp-cache.json`, stdio (`command`/`args`/`env`/
-// `cwd`), Streamable HTTP with SSE fallback, rmcp-mux sockets, header secrets
-// (`${VAR}`, `$env:VAR`, `!command`), OAuth/bearer auth with tokens in
-// `~/.pi/agent/mcp-tokens`, resources via `exposeResources` (default true),
-// `directTools` promotion, `disabledTools`/`toolPrefix`, reconnect, keep-alive
-// health, runtime registration over the Pi event bus, and a read-only status
-// channel. Config discovery is project `.mcp.json` > `.pi/mcp.json` > user
-// `~/.config/mcp/mcp.json`. This bridge only advertises an additive
-// capability marker plus two projection operations (`adapter.status`,
-// `adapter.registerBrowser`) so the controller can surface adapter state in
-// the Tools UI. It adds no tools, prompts, or interception.
-//
-// Bun compatibility is explicitly unknown: upstream declares
-// `engines: {node: ">=20"}` and only `@types/bun` in devDependencies. The
-// parity suite (`tests/pi-native-parity/mcp-parity.test.ts`) starts the host
-// with this profile under Bun and records the outcome there.
-//
-// The factory is loaded through `createRequire` instead of a static import,
-// following the `pi-subagent` profile: the package ships TypeScript sources
-// importing untyped helpers, and a static import would pull those sources
-// into Pixie's strict typecheck. The runtime module is identical either way;
-// only the type visibility changes, and the call below passes the live `pi`
-// object through untouched.
-//
-// The custom `mcp` extension (`@pixie/pi-mcp`) stays the writer until the
-// parity deletion gate in docs/roadmap.md passes; enabling `pi-mcp-adapter`
-// before then surfaces both the per-tool `<conn>__<tool>` surface and the
-// single `mcp` proxy tool, so use it only for parity evaluation.
+// Both MCP profile names select this upstream factory. The local patch adds
+// only raw resource and App-origin host APIs. Model tools, their visibility,
+// transports, discovery, auth and reconnect remain upstream-owned.
+// createRequire avoids pulling upstream's untyped TS helpers into Pixie's
+// strict typecheck. It loads the same patched module used at runtime and
+// preserves the exact ExtensionAPI identity required by the host APIs.
 
 export const PI_MCP_ADAPTER_VERSION = "2.32.1";
 export const PI_MCP_ADAPTER_STATUS_EVENT = "pi-mcp-adapter/status/v1";
@@ -45,6 +20,16 @@ export const PIXIE_BROWSER_RUNTIME_NAME = "pixie-browser";
 interface UpstreamAdapter {
 	createMcpAdapter: (options?: Record<string, never>) => (pi: ExtensionAPI) => void;
 	MCP_STATUS_EVENT?: string;
+	readMcpResourceV1?: (
+		pi: ExtensionAPI,
+		request: { version: 1; server: string; uri: string },
+		options?: { signal?: AbortSignal },
+	) => Promise<RecordValue>;
+	callMcpAppToolV1?: (
+		pi: ExtensionAPI,
+		request: { version: 1; server: string; tool: string; args: RecordValue },
+		options?: { signal?: AbortSignal },
+	) => Promise<RecordValue>;
 }
 
 interface RuntimeRegistration {
@@ -62,7 +47,7 @@ function loadUpstream(): UpstreamAdapter {
 	return createRequire(import.meta.url)("pi-mcp-adapter") as UpstreamAdapter;
 }
 
-function statusChannel(pi: ExtensionAPI): string {
+function statusChannel(): string {
 	try {
 		const channel = loadUpstream().MCP_STATUS_EVENT;
 		if (typeof channel === "string" && channel !== "") return channel;
@@ -109,22 +94,33 @@ export default function piMcpAdapterExtension(pi: ExtensionAPI): void {
 	piMcpAdapterWithConfig()(pi);
 }
 
-// Programmatic-config variant for parity evaluation. The options object is
-// passed through to the upstream factory untouched; only the capability
-// marker and projection operations are Pixie's.
+// Programmatic configuration is passed through unchanged. agentDir only scopes
+// legacy Pixie records. Upstream cache/config roots use PI_CODING_AGENT_DIR.
 export function piMcpAdapterWithConfig(options?: {
 	config?: Record<string, unknown>;
+	agentDir?: string;
 }): (pi: ExtensionAPI) => void {
 	return (pi: ExtensionAPI) => {
-		// Upstream unchanged: standard config discovery by default (or the
+		// Standard upstream config discovery by default (or the
 		// supplied programmatic config), single `mcp` proxy tool, lazy
 		// lifecycle, cached schemas, reconnect, and status channel.
 		loadUpstream().createMcpAdapter({
 			...(options?.config ? { config: options.config } : {}),
 		} as Record<string, never>)(pi);
+		const readResource = loadUpstream().readMcpResourceV1;
+		const callAppTool = loadUpstream().callMcpAppToolV1;
+		if (!readResource || !callAppTool)
+			throw new Error("Required pi-mcp-adapter host APIs v1 patch is missing");
+		const bridge = mcpRuntimeBridge(
+			pi,
+			options?.agentDir ?? getAgentDir(),
+			(server, uri, signal) => readResource(pi, { version: 1, server, uri }, { signal }),
+			(server, tool, args, signal) =>
+				callAppTool(pi, { version: 1, server, tool, args }, { signal }),
+		);
 
 		let snapshot: RecordValue | null = null;
-		pi.events.on(statusChannel(pi), (value: unknown) => {
+		pi.events.on(statusChannel(), (value: unknown) => {
 			if (value && typeof value === "object") snapshot = value as RecordValue;
 		});
 
@@ -146,7 +142,9 @@ export function piMcpAdapterWithConfig(options?: {
 		registerCapability(pi, {
 			id: "pi-mcp-adapter",
 			version: 1,
+			close: bridge.close,
 			operations: {
+				...bridge.operations,
 				"adapter.status": () => ({
 					engine: "pi-mcp-adapter",
 					version: PI_MCP_ADAPTER_VERSION,
@@ -164,6 +162,18 @@ export function piMcpAdapterWithConfig(options?: {
 					return { ok: true };
 				},
 			},
+		});
+		registerCapability(pi, {
+			id: "mcp",
+			version: 1,
+			operations: bridge.operations,
+			close: bridge.close,
+		});
+		registerCapability(pi, { id: "mcp-apps", version: 1, operations: {} });
+		registerCapability(pi, {
+			id: "mcp-app-tools",
+			version: 1,
+			operations: { "pi.apps.tools.call": bridge.operations["pi.apps.tools.call"] },
 		});
 	};
 }

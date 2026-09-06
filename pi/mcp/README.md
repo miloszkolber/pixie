@@ -1,34 +1,36 @@
-# Pi MCP extension
+# Pi MCP compatibility entry
 
-An ordinary Pi extension for stdio, Streamable HTTP and SSE MCP servers. It requires no Pixie service, Browser module, container layout or fixed address.
+`@pixie/pi-mcp` is a small compatibility entry for persisted package and file-extension imports. It loads the pinned `pi-mcp-adapter` profile from this workspace. There is no custom MCP transport, protocol engine or per-tool registration implementation here.
 
-After installing this workspace's dependencies, load the extension in vanilla Pi:
+After installing workspace dependencies, the existing vanilla Pi entry remains valid:
 
 ```sh
 pi -e /absolute/path/to/pixie/pi/mcp/src/index.ts
 ```
 
-Create `<Pi agent directory>/mcp.json`, normally `~/.pi/agent/mcp.json`. Connection names use letters, digits, hyphens and single underscores. The file maps names to settings:
+The model uses upstream's `mcp` proxy:
+
+```js
+mcp({ connect: "remote" })
+mcp({ describe: "remote_echo" })
+mcp({ server: "remote", tool: "echo", args: { text: "hello" } })
+```
+
+Upstream's optional `mcpScript` follows native settings. Text, images, structured results, resources, OAuth/bearer mechanics, discovery and reconnect remain upstream-owned. The extension assumes no Pixie address or Browser service.
+
+## Existing configuration
+
+Existing `<agentDir>/mcp.json` bare connection maps and `mcp-sessions.json` memberships remain readable. Pixie's connection administration continues to maintain this legacy shape with locked atomic writes:
 
 ```json
 {
-  "local": {
-    "type": "stdio",
-    "command": "/absolute/path/to/mcp-server",
-    "args": [],
-    "env": { "SERVICE_KEY": "${SERVICE_KEY}" },
-    "cwd": "/absolute/path/to/work"
-  },
-  "remote": {
-    "type": "http",
-    "url": "https://your-server.example/mcp",
-    "headers": { "Authorization": "Bearer ${SERVICE_TOKEN}" }
-  }
+  "local": { "type": "stdio", "command": "/absolute/path/to/server", "args": [], "env": { "SERVICE_KEY": "${SERVICE_KEY}" }, "cwd": "/absolute/path/to/work" },
+  "remote": { "type": "http", "url": "https://your-server.example/mcp", "headers": { "Authorization": "Bearer ${SERVICE_TOKEN}" } }
 }
 ```
 
-`type` accepts `stdio`, `http` (or `streamable_http`) and `sse`. `enabled` defaults to true. Stdio inherits the host environment, then applies `env`; it starts the executable directly, without a shell. Relative `cwd` resolves from the agent directory. Commands, arguments, environment values and headers support `${ENV_NAME}`. Missing variables reject that connection. Keep this file private.
+Names use letters, digits, hyphens and single underscores. Legacy `enabled` defaults to true. `stdio`, `http`, `streamable_http` and `sse` are accepted. Relative legacy `cwd` resolves from the selected agent directory. Keep configuration private. Invalid legacy entries remain visible and removable. Runtime registration is lazy, identical attachments are idempotent, and conflicting replacements fail closed. Remove and add a connection explicitly to replace its definition.
 
-Tools are named `<connection>__<tool>`. Text, images, structured results and MCP App metadata are retained. Tool errors remain errors. Removing a connection affects only its tools. Connections load on session initialization; unavailable servers leave Pi's native tools usable. Startup attempts up to four connections concurrently within a ten-second discovery budget. Inventory refresh retries disconnected servers; tool-list notifications refresh tools. A failed replacement keeps the previous usable connection. Invalid inventory entries remain visible and removable. Explicit tool calls keep the server's tool name intact, including embedded `__`. Optional host-managed membership is stored in `mcp-sessions.json` beside the configuration.
+Native `{mcpServers: ...}` configuration and discovery remain upstream-owned and are not rewritten by the legacy administration methods. Native servers support the same host App APIs without a second registration. The host CLI aligns `PI_CODING_AGENT_DIR` with `--agent-dir` and defaults `MCP_UI_VIEWER` to `none` so the Web UI service does not launch a desktop browser.
 
-The extension emits `pi-mcp:service:v1` for compatible host integrations. Vanilla Pi needs no listener. Pixie's separate SDK host supplies its own adapter and service connections.
+The host bridge advertises `mcp`, `mcp-apps`, `mcp-app-tools` and `pi-mcp-adapter`. Retained `<server>__<tool>` names are decoded only at the host protocol boundary, not registered as model tools. The [local upstreamable patch](../extensions/local-patches/README.md) supplies raw resource and App-origin tool APIs while preserving model visibility. See [verification](../../docs/mcp-client-verification.md).

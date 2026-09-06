@@ -41,5 +41,9 @@
 		"lint": "bun run --cwd pixie lint",
 		"format": "bun run --cwd pixie format",
 		"check:deps": "bun run --cwd pixie check:deps"
+	},
+	"patchedDependencies": {
+		"pi-mcp-adapter@2.32.1": "pi/extensions/local-patches/pi-mcp-adapter@2.32.1.patch",
+		"@mjakl/pi-subagent@3.0.1": "pi/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch"
 	}
 }

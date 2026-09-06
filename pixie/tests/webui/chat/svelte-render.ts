@@ -75,6 +75,11 @@ function componentModule(path: string): Promise<unknown> {
 				{
 					name: "test-svelte-server",
 					setup(build) {
+						// The virtual entry otherwise resolves from cwd and can load a second
+						// Svelte runtime with a separate component-context stack.
+						build.onResolve({ filter: /^svelte(?:\/|$)/ }, ({ path: specifier }) => ({
+							path: Bun.resolveSync(specifier, import.meta.dir),
+						}));
 						build.onLoad({ filter: /\.svelte$/ }, async ({ path: filename }) => ({
 							contents: compile(await Bun.file(filename).text(), {
 								filename,

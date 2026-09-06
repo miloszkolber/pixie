@@ -281,7 +281,8 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 				toolName = "tool"
 			}
 		}
-		if strings.HasSuffix(toolName, "__ask_user_question") {
+		if strings.HasSuffix(toolName, "__ask_user_question") ||
+			(textValue(trustedTool["extensionName"]) == "mcp" && strings.HasSuffix(toolName, "_ask_user_question")) {
 			toolName = "ask_user_question"
 		}
 		toolID := textValue(update["toolCallId"])

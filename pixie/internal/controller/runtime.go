@@ -148,6 +148,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	git := workspace.NewGit(projects, config.Policy)
 	watches := workspace.NewProjectWatches(projects, git, publish)
 	apps := NewAppViews(sessions, authConfig, config.Port)
+	apps.SetBrowserHandler(mcpRegistry.BrowserLegacyHandler())
 	requests := &diagnostics.RequestCounter{}
 	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig)
 	statusProvider.schedules = schedules

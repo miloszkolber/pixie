@@ -36,10 +36,13 @@ var appViewTicketPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // AppViews is the narrow authenticated adapter between a trusted Pi MCP App
 // attachment and the credential-free browser sandbox host.
 type AppViews struct {
-	sessions         *SessionManager
-	auth             AuthConfig
-	controllerPort   int
-	client           *http.Client
+	sessions       *SessionManager
+	auth           AuthConfig
+	controllerPort int
+	client         *http.Client
+	// browser serves the in-process Browser REST surface when
+	// PIXIE_BROWSER_URL is unset (merged publisher deployment).
+	browser          func() http.Handler
 	mu               sync.Mutex
 	views            map[string]*appViewBinding
 	earlyCancels     map[appViewOperationKey]struct{}
@@ -89,6 +92,115 @@ func NewAppViews(sessions *SessionManager, auth AuthConfig, controllerPort int) 
 	}
 }
 
+// SetBrowserHandler wires the merged publisher's Browser REST surface for
+// App view registration and ticket revocation when no external
+// PIXIE_BROWSER_URL is configured.
+func (a *AppViews) SetBrowserHandler(browser func() http.Handler) {
+	a.browser = browser
+}
+
+// sandboxOrigin derives a loopback sandbox origin from the requesting parent
+// origin by swapping 127.0.0.1 and localhost. The two hostnames are distinct
+// origins under the same-origin policy, so the App iframe stays isolated
+// from the parent application while remaining served by this controller.
+// Custom remote origins fall back to the loopback sandbox with the same
+// reachability limits as the former default Browser service address.
+func (a *AppViews) sandboxOrigin(parentOrigin string) (string, error) {
+	parsed, err := url.Parse(parentOrigin)
+	if err != nil || parsed.Hostname() == "" {
+		return "", fmt.Errorf("App parent origin is invalid")
+	}
+	sandboxHost := "localhost"
+	if parsed.Hostname() == "localhost" {
+		sandboxHost = "127.0.0.1"
+	}
+	port := a.controllerPort
+	if port <= 0 || port > 65535 {
+		port = DefaultControllerPort
+	}
+	return "http://" + net.JoinHostPort(sandboxHost, strconv.Itoa(port)), nil
+}
+
+// browserCall posts one App view request either to the in-process module
+// (PIXIE_BROWSER_URL unset) or to the configured external Browser service.
+// It returns the response status and body for shared validation.
+func (a *AppViews) browserCall(ctx context.Context, path string, sandboxOrigin string, body []byte) (int, []byte, error) {
+	method := http.MethodPost
+	if body == nil {
+		method = http.MethodDelete
+	}
+	if a.auth.BrowserURL != "" {
+		target, err := url.Parse(a.auth.BrowserURL + path)
+		if err != nil {
+			return 0, nil, fmt.Errorf("App sandbox is unavailable")
+		}
+		request, err := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(body))
+		if err != nil {
+			return 0, nil, fmt.Errorf("App sandbox is unavailable")
+		}
+		if method == http.MethodPost {
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept", "application/json")
+		} else {
+			request.Header.Set("Accept", "application/json")
+		}
+		if browserAuth, browserToken := a.auth.BrowserServiceAuth(); browserAuth {
+			if !strongToken(browserToken) {
+				return 0, nil, fmt.Errorf("App sandbox is unavailable")
+			}
+			request.Header.Set("Authorization", "Bearer "+browserToken)
+		}
+		response, err := a.client.Do(request)
+		if err != nil {
+			return 0, nil, fmt.Errorf("App sandbox is unavailable")
+		}
+		defer response.Body.Close()
+		content, err := io.ReadAll(io.LimitReader(response.Body, maxAppViewRequestBytes+1))
+		if err != nil {
+			return 0, nil, fmt.Errorf("App sandbox returned an invalid response")
+		}
+		return response.StatusCode, content, nil
+	}
+	if a.browser == nil {
+		return 0, nil, fmt.Errorf("App sandbox is unavailable")
+	}
+	handler := a.browser()
+	if handler == nil {
+		return 0, nil, fmt.Errorf("App sandbox is unavailable")
+	}
+	target, err := url.Parse(sandboxOrigin + path)
+	if err != nil {
+		return 0, nil, fmt.Errorf("App sandbox is unavailable")
+	}
+	request, err := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, fmt.Errorf("App sandbox is unavailable")
+	}
+	// Browser request validation reads the origin-form RequestURI.
+	request.RequestURI = request.URL.RequestURI()
+	if method == http.MethodPost {
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json")
+	} else {
+		request.Header.Set("Accept", "application/json")
+	}
+	if browserAuth, browserToken := a.auth.BrowserServiceAuth(); browserAuth {
+		if !strongToken(browserToken) {
+			return 0, nil, fmt.Errorf("App sandbox is unavailable")
+		}
+		request.Header.Set("Authorization", "Bearer "+browserToken)
+	}
+	recorder := newBrowserResponseRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.code == 0 {
+		recorder.code = http.StatusOK
+	}
+	if len(recorder.body.Bytes()) > maxAppViewRequestBytes+1 {
+		return 0, nil, fmt.Errorf("App sandbox returned an invalid response")
+	}
+	return recorder.code, recorder.body.Bytes(), nil
+}
+
 func (a *AppViews) Open(ctx context.Context, projectID, sessionID, toolCallID, parentOrigin, clientKey string) (any, error) {
 	if a == nil || a.sessions == nil {
 		return nil, fmt.Errorf("App views are unavailable")
@@ -103,13 +215,23 @@ func (a *AppViews) Open(ctx context.Context, projectID, sessionID, toolCallID, p
 	if err != nil {
 		return nil, err
 	}
-	browserOrigin, err := a.browserOrigin()
-	if err != nil {
-		return nil, err
-	}
 	viewOrigin := a.auth.BrowserPublicOrigin
 	if viewOrigin == "" {
-		viewOrigin = browserOrigin
+		if a.auth.BrowserURL != "" {
+			browserOrigin, err := a.browserOrigin()
+			if err != nil {
+				return nil, err
+			}
+			viewOrigin = browserOrigin
+		} else {
+			// Merged publisher: serve the sandbox from this controller on
+			// the loopback hostname the parent origin does not use.
+			sandbox, err := a.sandboxOrigin(parentOrigin)
+			if err != nil {
+				return nil, err
+			}
+			viewOrigin = sandbox
+		}
 	}
 	viewOrigin, err = normalizeOrigin(viewOrigin)
 	if err != nil {
@@ -134,21 +256,11 @@ func (a *AppViews) Open(ctx context.Context, projectID, sessionID, toolCallID, p
 	if err != nil || len(body) > maxAppViewRequestBytes {
 		return nil, fmt.Errorf("App sandbox policy is invalid")
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, browserOrigin+appViewPath, bytes.NewReader(body))
+	status, content, err := a.browserCall(ctx, appViewPath, viewOrigin, body)
 	if err != nil {
-		return nil, fmt.Errorf("App sandbox is unavailable")
+		return nil, err
 	}
-	request.Header.Set("Accept", "application/json")
-	if browserAuth, browserToken := a.auth.BrowserServiceAuth(); browserAuth {
-		request.Header.Set("Authorization", "Bearer "+browserToken)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := a.client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("App sandbox is unavailable")
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusCreated {
+	if status != http.StatusCreated {
 		return nil, fmt.Errorf("App sandbox rejected the view")
 	}
 	var registered struct {
@@ -157,29 +269,29 @@ func (a *AppViews) Open(ctx context.Context, projectID, sessionID, toolCallID, p
 		URL    string `json:"url"`
 		Expiry string `json:"expiresAt"`
 	}
-	if err := readAppViewJSON(response, &registered); err != nil || !appViewTicketPattern.MatchString(registered.Ticket) {
+	if err := json.Unmarshal(content, &registered); err != nil || !appViewTicketPattern.MatchString(registered.Ticket) {
 		if appViewTicketPattern.MatchString(registered.Ticket) {
-			a.cleanupTicket(registered.Ticket)
+			a.cleanupTicket(registered.Ticket, viewOrigin)
 		}
 		return nil, fmt.Errorf("App sandbox returned an invalid view")
 	}
 	expectedPath := appViewPath + "/" + registered.Ticket
 	expectedURL := viewOrigin + expectedPath
 	if registered.Path != expectedPath || registered.URL != expectedURL {
-		a.cleanupTicket(registered.Ticket)
+		a.cleanupTicket(registered.Ticket, viewOrigin)
 		return nil, fmt.Errorf("App sandbox returned an invalid view")
 	}
 	expiresAt, err := time.Parse(time.RFC3339Nano, registered.Expiry)
 	if err != nil {
-		a.cleanupTicket(registered.Ticket)
+		a.cleanupTicket(registered.Ticket, viewOrigin)
 		return nil, fmt.Errorf("App sandbox returned an invalid view")
 	}
 	if err := ctx.Err(); err != nil {
-		a.cleanupTicket(registered.Ticket)
+		a.cleanupTicket(registered.Ticket, viewOrigin)
 		return nil, err
 	}
-	if err := a.registerView(registered.Ticket, projectID, sessionID, toolCallID, clientKey, attachment, resource.HTML, expiresAt); err != nil {
-		a.cleanupTicket(registered.Ticket)
+	if err := a.registerView(registered.Ticket, viewOrigin, projectID, sessionID, toolCallID, clientKey, attachment, resource.HTML, expiresAt); err != nil {
+		a.cleanupTicket(registered.Ticket, viewOrigin)
 		return nil, err
 	}
 	return AppViewOpenResult{
@@ -207,45 +319,33 @@ func (a *AppViews) resolveRootResource(ctx context.Context, projectID, sessionID
 }
 
 func (a *AppViews) Close(ctx context.Context, viewID, clientKey string) error {
-	if _, err := a.revokeView(viewID, clientKey); err != nil {
+	view, err := a.revokeView(viewID, clientKey)
+	if err != nil {
 		return err
 	}
-	return a.deleteTicket(ctx, viewID)
+	return a.deleteTicket(ctx, viewID, view.origin)
 }
 
-func (a *AppViews) deleteTicket(ctx context.Context, viewID string) error {
-	browserOrigin, err := a.browserOrigin()
+func (a *AppViews) deleteTicket(ctx context.Context, viewID, origin string) error {
+	status, content, err := a.browserCall(ctx, appViewPath+"/"+viewID, origin, nil)
 	if err != nil {
 		return err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, browserOrigin+appViewPath+"/"+viewID, nil)
-	if err != nil {
-		return fmt.Errorf("App sandbox is unavailable")
-	}
-	request.Header.Set("Accept", "application/json")
-	if browserAuth, browserToken := a.auth.BrowserServiceAuth(); browserAuth {
-		request.Header.Set("Authorization", "Bearer "+browserToken)
-	}
-	response, err := a.client.Do(request)
-	if err != nil {
-		return fmt.Errorf("App sandbox is unavailable")
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNotFound {
+	if status != http.StatusOK && status != http.StatusNotFound {
 		return fmt.Errorf("App sandbox could not close the view")
 	}
-	if _, err := readAppViewBody(response); err != nil {
+	if !json.Valid(content) {
 		return fmt.Errorf("App sandbox returned an invalid response")
 	}
 	return nil
 }
 
-func (a *AppViews) cleanupTicket(viewID string) {
+func (a *AppViews) cleanupTicket(viewID, origin string) {
 	// Keep a malformed registration below the frontend's open deadline while
 	// still making one bounded attempt to revoke the known browser ticket.
 	cleanupContext, cancel := context.WithTimeout(context.Background(), appViewCleanupTimeout)
 	defer cancel()
-	_ = a.deleteTicket(cleanupContext, viewID)
+	_ = a.deleteTicket(cleanupContext, viewID, origin)
 }
 
 func (a *AppViews) browserOrigin() (string, error) {

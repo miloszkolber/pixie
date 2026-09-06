@@ -58,7 +58,7 @@ func TestNativePiSnapshotAndToolEventsProjectBeforeRPCCompletes(t *testing.T) {
 					return
 				}
 				result = map[string]any{"sessionId": "native", "messages": []any{
-					map[string]any{"role": "assistant", "messageId": "a1", "content": []any{map[string]any{"type": "text", "text": "Working"}, map[string]any{"type": "toolCall", "id": "call1", "name": "browser__show", "arguments": map[string]any{"url": "https://example.com"}}}},
+					map[string]any{"role": "assistant", "messageId": "a1", "content": []any{map[string]any{"type": "text", "text": "Working"}, map[string]any{"type": "toolCall", "id": "call1", "name": "mcp", "arguments": map[string]any{"server": "browser", "tool": "show", "args": map[string]any{"url": "https://example.com"}}}}},
 				}}
 			}
 			if req.Method == "pi.providers.list" {
@@ -103,6 +103,15 @@ func TestNativePiSnapshotAndToolEventsProjectBeforeRPCCompletes(t *testing.T) {
 		t.Fatalf("tool lifecycle lost: %#v %#v", partial, final)
 	}
 	output := final["rawOutput"].(map[string]any)
+	var call map[string]any
+	for _, update := range sink.updates {
+		if update["sessionUpdate"] == "tool_call" {
+			call = update
+		}
+	}
+	if call == nil || call["title"] != "show" || call["rawInput"].(map[string]any)["url"] != "https://example.com" {
+		t.Fatalf("proxy presentation lost: %#v", call)
+	}
 	if output["details"] == nil || final["_meta"] == nil {
 		t.Fatalf("tool details or App metadata lost: %#v", final)
 	}

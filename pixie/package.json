@@ -2,6 +2,9 @@
 	"name": "pixie",
 	"private": true,
 	"type": "module",
+	"devDependencies": {
+		"@modelcontextprotocol/sdk": "1.30.0"
+	},
 	"scripts": {
 		"build": "bun run build:go && bun run build:web",
 		"build:go": "go build -trimpath -o dist/pixie ./cmd/pixie",

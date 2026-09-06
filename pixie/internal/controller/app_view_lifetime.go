@@ -23,6 +23,7 @@ const (
 )
 
 type appViewBinding struct {
+	origin         string
 	projectID      string
 	sessionID      string
 	toolCallID     string
@@ -52,7 +53,7 @@ type revokedAppView struct {
 	operations []*appViewOperation
 }
 
-func (a *AppViews) registerView(viewID, projectID, sessionID, toolCallID, clientKey string, attachment AppAttachment, html string, expiresAt time.Time) error {
+func (a *AppViews) registerView(viewID, origin, projectID, sessionID, toolCallID, clientKey string, attachment AppAttachment, html string, expiresAt time.Time) error {
 	if !appViewTicketPattern.MatchString(viewID) || !clientKeyPattern.MatchString(clientKey) {
 		return fmt.Errorf("invalid App view binding")
 	}
@@ -78,7 +79,7 @@ func (a *AppViews) registerView(viewID, projectID, sessionID, toolCallID, client
 		lease = appViewLeaseDuration
 	}
 	view := &appViewBinding{
-		projectID: projectID, sessionID: sessionID, toolCallID: toolCallID, clientKey: clientKey,
+		origin: origin, projectID: projectID, sessionID: sessionID, toolCallID: toolCallID, clientKey: clientKey,
 		attachment: attachment, html: html, contentPending: len(html) > 0, leaseUntil: time.Now().Add(lease),
 		ctx: viewContext, cancel: cancel, operations: make(map[string]*appViewOperation),
 	}
@@ -182,6 +183,7 @@ func (a *AppViews) expireView(viewID string, expected *appViewBinding) {
 		a.mu.Unlock()
 		return
 	}
+	origin := view.origin
 	revoked := a.revokeViewLocked(viewID, view)
 	a.cleanup.Add(1)
 	a.mu.Unlock()
@@ -190,7 +192,7 @@ func (a *AppViews) expireView(viewID string, expected *appViewBinding) {
 		defer a.cleanup.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), appViewRequestTimeout)
 		defer cancel()
-		_ = a.deleteTicket(ctx, viewID)
+		_ = a.deleteTicket(ctx, viewID, origin)
 	}()
 }
 
@@ -383,7 +385,11 @@ func (a *AppViews) deleteViews(ctx context.Context, views map[string]revokedAppV
 	if len(views) == 0 {
 		return
 	}
-	viewIDs := make(chan string)
+	type deleteEntry struct {
+		viewID string
+		origin string
+	}
+	viewIDs := make(chan deleteEntry)
 	workers := maxAppViewDeleteWorkers
 	if len(views) < workers {
 		workers = len(views)
@@ -393,14 +399,14 @@ func (a *AppViews) deleteViews(ctx context.Context, views map[string]revokedAppV
 	for range workers {
 		go func() {
 			defer pending.Done()
-			for viewID := range viewIDs {
-				_ = a.deleteTicket(ctx, viewID)
+			for entry := range viewIDs {
+				_ = a.deleteTicket(ctx, entry.viewID, entry.origin)
 			}
 		}()
 	}
-	for viewID := range views {
+	for viewID, revoked := range views {
 		select {
-		case viewIDs <- viewID:
+		case viewIDs <- deleteEntry{viewID: viewID, origin: revoked.view.origin}:
 		case <-ctx.Done():
 			close(viewIDs)
 			pending.Wait()

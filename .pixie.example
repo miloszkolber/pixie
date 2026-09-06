@@ -11,8 +11,8 @@ PIXIE_PI_SECRET_KEY=replace-with-a-random-pi-secret
 # token. It authenticates the catalog, the embedded Browser module and the
 # application's artifact proxy. Keep this token in Pi's private service environment too.
 PIXIE_MCP_TOKEN=replace-with-a-random-mcp-token
-# PIXIE_MCP_MODULES=browser
-# PIXIE_MCP_DISABLED_MODULES=
+# Retired: PIXIE_MCP_MODULES and PIXIE_MCP_DISABLED_MODULES are ignored.
+# Toggle modules in Tools instead; the Browser module defaults to enabled.
 
 # Optional controller login; required for remote binding unless explicitly acknowledged.
 PIXIE_AUTH_ENABLED=false

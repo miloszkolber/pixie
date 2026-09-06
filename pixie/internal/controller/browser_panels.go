@@ -360,10 +360,17 @@ func (p *BrowserPanels) browserCall(ctx context.Context, path string, body []byt
 		request.Header.Set("Authorization", "Bearer "+browserToken)
 	}
 	if p.auth.BrowserURL == "" {
+		if p.browser == nil {
+			return nil, 0, fmt.Errorf("browser panel is unavailable")
+		}
 		handler := p.browser()
 		if handler == nil {
 			return nil, 0, fmt.Errorf("browser panel is unavailable")
 		}
+		// Direct dispatch needs server-side request fields. Browser validates
+		// the origin-form RequestURI, which client request constructors omit.
+		request.RequestURI = request.URL.RequestURI()
+		request.Host = "127.0.0.1"
 		recorder := newBrowserResponseRecorder()
 		handler.ServeHTTP(recorder, request)
 		if recorder.code == 0 {

@@ -37,3 +37,6 @@
 
 !pi/mcp/
 !pi/mcp/package.json
+!pi/extensions/
+!pi/extensions/local-patches/
+!pi/extensions/local-patches/*.patch

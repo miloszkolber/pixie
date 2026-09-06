@@ -4,7 +4,7 @@ Pixie is for one trusted user. Pi tools and configured MCP subprocesses run with
 
 The application mounts admitted project directories read-only. Every file read rechecks resolved paths and size limits. Pi performs host-side edits. Browser receives only its own state and artifacts. Containers run non-root with read-only roots, dropped capabilities and bounded resources.
 
-Chromium runs with `--no-sandbox`. Browser sessions share a UID and filesystem, and host networking permits access to local services. Treat page content as untrusted.
+Chromium runs with `--no-sandbox`. The merged deployment shares one container and UID between the controller and the Browser subprocess, and host networking permits access to local services. Treat page content as untrusted. The Browser subprocess environment carries no controller secrets (only scoped HOME/TMPDIR, socket dir and bounds); admitted project mounts stay read-only. Operators who need UID-level isolation can run the Browser service separately and point `PIXIE_BROWSER_URL` at it instead of the in-process module.
 
 | Boundary | Credential |
 | --- | --- |

@@ -184,7 +184,7 @@ func TestRegistryDisableStopsModuleAndPersists(t *testing.T) {
 	}
 }
 
-func TestRegistryHonorsDeprecatedEnvironmentFallback(t *testing.T) {
+func TestRegistryIgnoresRetiredEnvironmentSelection(t *testing.T) {
 	registry := testRegistry(t, func(config *mcpserver.Config) {
 		config.Getenv = func(key string) (string, bool) {
 			if key == "PIXIE_MCP_DISABLED_MODULES" {
@@ -193,7 +193,7 @@ func TestRegistryHonorsDeprecatedEnvironmentFallback(t *testing.T) {
 			return "", false
 		}
 	})
-	if registry.Catalog().Modules[0].Enabled {
-		t.Fatal("deprecated PIXIE_MCP_DISABLED_MODULES fallback was ignored")
+	if !registry.Catalog().Modules[0].Enabled {
+		t.Fatal("retired PIXIE_MCP_DISABLED_MODULES fallback disabled the module")
 	}
 }
