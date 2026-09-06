@@ -53,4 +53,4 @@ Reconstructed from the simplification plan; profiles are added, deletions wait o
 - [ ] Custom universal MCP client deleted (parity gate above pending).
 - [ ] MCP `signet` connection deleted (parity gate above pending).
 - [ ] Separate `pixie-mcp` process and container deleted with obsolete MCP environment, capability contracts, cross-container coordination, duplicate health/lifecycle, and temp migration code (merge gate above pending).
-- [ ] Full baseline/parity suite green with consolidated configuration docs.
+- [x] Full baseline/parity suite green with consolidated configuration docs (bun suite 339 pass / 1 skip / 0 fail plus all Go packages ok under the pinned Bun 1.4.0; the container default Bun 1.3.14 shows pre-existing SSR-harness failures, so use the pinned toolchain).
