@@ -1,5 +1,5 @@
 {
-	"name": "@pixie_ai/pi-host",
+	"name": "@pixie_ai/pixie-assistant",
 	"version": "0.1.0",
 	"license": "Apache-2.0",
 	"repository": {
@@ -9,7 +9,7 @@
 	},
 	"type": "module",
 	"bin": {
-		"pixie-pi-host": "./src/main.ts"
+		"pixie-assistant": "./src/main.ts"
 	},
 	"files": [
 		"src"

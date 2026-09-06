@@ -1,11 +1,11 @@
-# @pixie_ai/pi-host
+# @pixie_ai/pixie-assistant
 
 Pi SDK service with Pixie's extension profiles: todo, web, questions, Signet marker, subagents, MCP adapter, agent authoring and the generic extension UI bridge. No Pi fork; the unmodified `@earendil-works/pi-coding-agent` SDK stays the runtime.
 
 Requires [Bun](https://bun.sh) 1.4.0 or compatible. Published from [pixie](https://github.com/miloszkolber/pixie) release tags (`pi-host-v*`); see `docs/deployment.md` there for the full setup.
 
 ```sh
-PIXIE_PI_SECRET_KEY=<at-least-16-chars> bunx @pixie_ai/pi-host@<version> \
+PIXIE_PI_SECRET_KEY=<at-least-16-chars> bunx @pixie_ai/pixie-assistant@<version> \
 	--agent-dir ~/.pi/agent \
 	--extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
 ```

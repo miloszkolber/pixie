@@ -7,7 +7,7 @@ The primary setup is Linux x86-64 or arm64 with Docker Compose and Bun on the ho
 ```sh
 git clone https://github.com/miloszkolber/pixie.git
 cd pixie
-bun install --frozen-lockfile --production --filter @pixie_ai/pi-host
+bun install --frozen-lockfile --production --filter @pixie_ai/pixie-assistant
 ```
 
 This installs the host and MCP extension runtime dependencies without the web development toolchain.
@@ -20,10 +20,10 @@ bun pi/host/src/main.ts --extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
 
 Omit `--extensions` for baseline Pi. `--agent-dir /absolute/path` selects Pi state; the default is `~/.pi/agent`. The service listens at `127.0.0.1:3284`; `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration.
 
-Published artifacts remove the checkout from the critical path. Each `pi-host-v*` tag publishes `@pixie_ai/pi-host` to npm via OIDC trusted publishing (no stored token); the container workflow already publishes `ghcr.io/<owner>/pixie` on every `v*` tag. One-time npm setup, in order: publish the package once under the existing `pixie_ai` organization so it exists (any short-lived granular token with publish access to the scope works, then discard it); open the package Settings → Trusted publisher and add this repository with the `npm-publish.yml` workflow; afterwards every `pi-host-v*` tag publishes unattended with provenance attestation. Prefer the published artifacts for clean machines:
+Published artifacts remove the checkout from the critical path. Each `pi-host-v*` tag publishes `@pixie_ai/pixie-assistant` to npm via OIDC trusted publishing (no stored token); the container workflow already publishes `ghcr.io/<owner>/pixie` on every `v*` tag. One-time npm setup, in order: publish the package once under the existing `pixie_ai` organization so it exists (any short-lived granular token with publish access to the scope works, then discard it); open the package Settings → Trusted publisher and add this repository with the `npm-publish.yml` workflow; afterwards every `pi-host-v*` tag publishes unattended with provenance attestation. Prefer the published artifacts for clean machines:
 
 ```sh
-bunx @pixie_ai/pi-host@<version> --extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
+bunx @pixie_ai/pixie-assistant@<version> --extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
 ```
 
 One `bunx` caveat: the upstream subagent child-runner patch does not travel through npm (root `patchedDependencies` apply to workspace installs only), so `subagent` child runs fail under `bunx` until upstream accepts the entrypoint fix. Everything else, including local `llama.cpp` inference, works unchanged from the published package (verified: tarball install, `--version`, host boot with five profiles, capability snapshot).

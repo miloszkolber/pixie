@@ -10,10 +10,10 @@
       },
     },
     "pi/host": {
-      "name": "@pixie_ai/pi-host",
+      "name": "@pixie_ai/pixie-assistant",
       "version": "0.1.0",
       "bin": {
-        "pixie-pi-host": "./src/main.ts",
+        "pixie-assistant": "./src/main.ts",
       },
       "dependencies": {
         "@earendil-works/pi-ai": "0.85.1",
@@ -334,7 +334,7 @@
 
     "@pixie/web": ["@pixie/web@workspace:pixie/webui"],
 
-    "@pixie_ai/pi-host": ["@pixie_ai/pi-host@workspace:pi/host"],
+    "@pixie_ai/pixie-assistant": ["@pixie_ai/pixie-assistant@workspace:pi/host"],
 
     "@pkgr/core": ["@pkgr/core@0.1.2", "", {}, "sha512-fdDH1LSGfZdTH2sxdpVMw31BanV28K/Gry0cVFxaNP77neJSkd82mM8ErPNYs9e+0O7SdHBLTDzDgwUuy18RnQ=="],
 

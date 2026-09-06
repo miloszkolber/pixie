@@ -14,7 +14,7 @@ const { values } = parseArgs({
 	},
 });
 if (values.version) {
-	console.log("pixie-pi 0.1.0 (Pi SDK 0.85.1)");
+	console.log("pixie-assistant 0.1.0 (Pi SDK 0.85.1)");
 	process.exit(0);
 }
 const agentDir = resolve(values["agent-dir"] ?? getAgentDir());
