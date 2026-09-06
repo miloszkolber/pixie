@@ -1,14 +1,6 @@
 import { open, readdir, readFile, realpath, rm } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
-import {
-	type AgentSession,
-	createAgentSession,
-	type ExtensionAPI,
-	getAgentDir,
-	ModelRuntime,
-	SessionManager,
-} from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { basename, dirname, join } from "node:path";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parse, stringify } from "yaml";
 import { registerCapability } from "../capabilities.ts";
 import { atomicWrite, object, type RecordValue, required, text } from "../storage.ts";
@@ -23,15 +15,15 @@ interface Definition {
 	writable: boolean;
 	properties: RecordValue;
 }
-export default function agentsExtension(
-	pi: ExtensionAPI,
-	agentDir = getAgentDir(),
-	runner?: (cwd: string) => Promise<{
-		session: AgentSession;
-		prompt: (text: string) => Promise<unknown>;
-		close: () => Promise<void>;
-	}>,
-): void {
+
+// Agent definition authoring only. Delegation itself is owned by the upstream
+// `pi-subagent` profile (`subagent` tool): discovery at execution time, the
+// child Pi process, model/thinking/tool handling, persistent child sessions,
+// parallel calls and recursion guards. This extension only manages the same
+// native Markdown files (`~/.pi/agent/agents/*.md`, `<project>/.pi/agents/*.md`)
+// through `pi.sources.*` plus `@agent` mention discovery, so the web UI keeps
+// its agent editor without duplicating any execution engine.
+export default function agentsExtension(pi: ExtensionAPI, agentDir = getAgentDir()): void {
 	const directories = (cwd?: string) => [
 		{ path: join(agentDir, "agents"), global: true },
 		...(cwd ? [{ path: join(cwd, ".pi", "agents"), global: false }] : []),
@@ -152,154 +144,6 @@ export default function agentsExtension(
 					mention: `@${a.name}`,
 				})),
 			}),
-		},
-	});
-	pi.registerTool({
-		name: "list_agents",
-		label: "List agents",
-		description: "List the named agents available for delegation in this project.",
-		parameters: Type.Object({}),
-		execute: async (_id, _params, _signal, _update, ctx) => ({
-			content: [
-				{
-					type: "text",
-					text: JSON.stringify(
-						(await list(ctx.cwd)).map((a) => ({
-							name: a.name,
-							description: a.description,
-							model: a.properties.model,
-						})),
-					),
-				},
-			],
-			details: {},
-		}),
-	});
-	pi.registerTool({
-		name: "delegate",
-		label: "Delegate",
-		description:
-			"Delegate a task to a named agent defined in ~/.pi/agent/agents or the project .pi/agents directory. Each task has an isolated context.",
-		parameters: Type.Object({ agent: Type.String(), task: Type.String() }),
-		execute: async (_id, p, signal, onUpdate, ctx) => {
-			const definitions = await list(ctx.cwd);
-			const definition = definitions.filter((a) => a.name === p.agent).at(-1);
-			if (!definition) throw new Error("Unknown agent");
-			let model = ctx.model;
-			const execution = runner
-				? await runner(ctx.cwd)
-				: await (async () => {
-						const models = await ModelRuntime.create({
-							authPath: join(agentDir, "auth.json"),
-							modelsPath: join(agentDir, "models.json"),
-						});
-						const { session } = await createAgentSession({
-							cwd: ctx.cwd,
-							agentDir,
-							modelRuntime: models,
-							model,
-							sessionManager: SessionManager.create(
-								ctx.cwd,
-								join(
-									agentDir,
-									"sessions",
-									`--${resolve(ctx.cwd)
-										.replace(/^[/\\]/, "")
-										.replace(/[/\\:]/g, "-")}--`,
-								),
-							),
-						});
-						// Intentionally headless: child sessions bind with no uiContext, so a
-					// blocked child ctx.ui call pends to timeout and surfaces as
-					// blocked/question state to the parent instead of owning a
-					// top-level browser modal (see docs/pi-extensions.md).
-					await session.bindExtensions({ mode: "rpc" });
-						return {
-							session,
-							prompt: (text: string) => session.prompt(text),
-							close: async () => session.dispose(),
-						};
-					})();
-			const { session } = execution;
-			try {
-				const preference = text(definition.properties.model);
-				if (preference) {
-					const slash = preference.indexOf("/");
-					model =
-						slash > 0
-							? session.modelRuntime.getModel(
-									preference.slice(0, slash),
-									preference.slice(slash + 1),
-								)
-							: session.modelRuntime.getModel(model?.provider ?? "", preference);
-					if (!model) throw new Error("Agent model is unavailable");
-				}
-				if (model) await session.setModel(model);
-			} catch (error) {
-				await execution.close();
-				throw error;
-			}
-			const abort = () => void session.abort();
-			if (signal?.aborted) {
-				await execution.close();
-				throw new Error("Delegation cancelled");
-			}
-			signal?.addEventListener("abort", abort, { once: true });
-			const events: RecordValue[] = [];
-			const unsubscribe = session.subscribe((event) => {
-				if (event.type === "tool_execution_start") {
-					events.push({ type: "tool", name: event.toolName });
-					onUpdate?.({
-						content: [{ type: "text", text: `${p.agent}: ${event.toolName}` }],
-						details: {
-							subagent: { agent: p.agent, sessionId: session.sessionId, events: events.slice(-20) },
-							mode: "single",
-							childSessionId: session.sessionId,
-							status: "running",
-						},
-					});
-				}
-			});
-			try {
-				await execution.prompt(`${definition.content}\n\nDelegated task:\n${p.task}`);
-				const last = session.messages.filter((m) => m.role === "assistant").at(-1);
-				if (signal?.aborted || last?.stopReason === "aborted")
-					throw new Error("Delegation cancelled");
-				if (last?.stopReason === "error") throw new Error("Delegated agent failed");
-				const output =
-					last && "content" in last
-						? last.content
-								.filter((block) => block.type === "text")
-								.map((block) => block.text)
-								.join("\n")
-						: "Agent completed.";
-				return {
-					content: [{ type: "text", text: output }],
-					details: {
-						subagent: { agent: p.agent, sessionId: session.sessionId, events: events.slice(-20) },
-						mode: "single",
-						childSessionId: session.sessionId,
-						status: "completed",
-						results: [
-							{
-								runId: session.sessionId,
-								agent: "child",
-								task: p.task,
-								status: "completed",
-								model: session.model,
-								thinkingLevel: session.thinkingLevel,
-								finalOutput: output,
-								outputState: "present",
-							},
-						],
-						usage: session.getSessionStats(),
-					},
-				};
-			} finally {
-				unsubscribe();
-				signal?.removeEventListener("abort", abort);
-				await execution.close();
-			}
 		},
 	});
 }

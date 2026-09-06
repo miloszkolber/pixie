@@ -63,7 +63,7 @@ function statusOf(value: unknown): ChildStatus | undefined {
 }
 
 // Upstream `pi-subagent` results carry no status field: derive one from the
-// process outcome so parallel and finished calls render like `delegate`
+// process outcome so parallel and finished calls render uniformly
 // children. Delegate results already carry status and never carry exitCode,
 // so this derivation never alters them.
 function statusFromExit(result: {

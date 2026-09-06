@@ -3,7 +3,6 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
-import agents from "../../../pi/host/src/extensions/agents.ts";
 import piSubagent from "../../../pi/host/src/extensions/pi-subagent.ts";
 import { cleanups, echoProvider, findTool, fixture, tempDir } from "./helpers.ts";
 
@@ -304,22 +303,3 @@ test("an empty user directory gains the upstream starter agent", async () => {
 	expect(agents.map((a) => a.name)).toContain("explore");
 });
 
-test("custom delegate execution stays intact alongside subagent", async () => {
-	// Production uses one agent directory for both readers; point the
-	// upstream user-agent lookup at the fixture directory to mirror that.
-	const { dir, sessions } = await fixture([(pi) => agents(pi, dir), piSubagent, echoProvider()]);
-	setEnv("PI_CODING_AGENT_DIR", dir);
-	await writeUserAgent(dir, "reviewer.md", REVIEWER);
-	const entry = await sessions.create(dir);
-	expect(entry.session.getActiveToolNames()).toEqual(
-		expect.arrayContaining(["delegate", "list_agents", "subagent"]),
-	);
-	const listed = await findTool(entry, "list_agents").execute(
-		"parity-subagent-delegate",
-		{},
-		new AbortController().signal,
-	);
-	expect(JSON.parse(listed.content[0].text)).toMatchObject([{ name: "reviewer" }]);
-	const delegated = await executeCalls(entry, [{ agent: "nope", prompt: "hi" }]);
-	expect(String(delegated.content[0].text)).toContain('"reviewer"');
-});

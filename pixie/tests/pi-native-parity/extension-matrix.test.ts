@@ -9,7 +9,7 @@ import rpivWeb from "../../../pi/host/src/extensions/rpiv-web.ts";
 import signet from "../../../pi/host/src/extensions/signet.ts";
 import { startHost } from "../../../pi/host/src/server.ts";
 import { Sessions } from "../../../pi/host/src/sessions.ts";
-import { cleanups, echoProvider, findTool, fixture, tempDir, toolNames } from "./helpers.ts";
+import { cleanups, echoProvider, fixture, tempDir, toolNames } from "./helpers.ts";
 
 afterEach(async () => {
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -146,8 +146,6 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 				"web_fetch",
 				"web_search",
 				"ask_user_question",
-				"delegate",
-				"list_agents",
 				"subagent",
 				"signet_recall",
 				"signet_source_search",
@@ -170,7 +168,7 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 });
 
 
-test("agent definitions survive CRUD and list_agents reflects them", async () => {
+test("agent definitions survive CRUD through pi.sources operations", async () => {
 	const { dir, sessions } = await fixture([(pi) => agents(pi, dir), echoProvider()]);
 	const entry = await sessions.create(dir);
 	const ctx = sessions.context(entry);
@@ -182,12 +180,9 @@ test("agent definitions survive CRUD and list_agents reflects them", async () =>
 	expect(await entry.capabilities.call("pi.sources.list", {}, ctx)).toMatchObject({
 		sources: [{ name: "Reviewer" }],
 	});
-	const list = await findTool(entry, "list_agents").execute(
-		"parity-list",
-		{},
-		new AbortController().signal,
-	);
-	expect(JSON.parse(list.content[0].text)).toMatchObject([{ name: "Reviewer" }]);
+	expect(
+		(await entry.capabilities.call("pi.agent-mentions.list", {}, ctx) as any).agents,
+	).toMatchObject([{ mention: "@Reviewer" }]);
 	await entry.capabilities.call(
 		"pi.sources.update",
 		{

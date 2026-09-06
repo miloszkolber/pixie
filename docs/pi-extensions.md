@@ -5,7 +5,7 @@ The host starts with normal Pi resources and no bundled factories enabled. Add `
 | Extension | Added capability |
 | --- | --- |
 | `mcp` | Configurable MCP tools, resources and App metadata; [standalone package](../pi/mcp/README.md) |
-| `agents` | Markdown agent definitions, `list_agents` and `delegate` |
+| `agents` | Markdown agent definition CRUD (`pi.sources.*`) and `@agent` mentions |
 | `web` | Bounded HTTP(S) `web_fetch` tool |
 | `rpiv-todo` | Upstream `todo` tool and `/todos` command |
 | `rpiv-web` | Upstream `web_search` and `web_fetch`; Pi-native `web` replacement candidate |
@@ -36,7 +36,7 @@ Public upstream events, transported by the host for future subscribers:
 | `rpiv:ask-user:prompt` | `questions` with `question`, `header`, `multiSelect` and `options` (`label`, `description`, `hasPreview`) |
 | `rpiv:ask-user:blocked` | `active` while the questionnaire awaits input |
 
-The `pi-subagent` profile registers the upstream `subagent` tool unchanged next to the custom `delegate` tool. Discovery reads the same Markdown files with richer frontmatter (`model`, `thinking`, `tools`, `noTools`, `inactivityTimeout`, `sessionPreference`, `sessionHint`); project definitions apply only when the project is trusted and override user ones. Calls share one shape for single and parallel runs with per-call model override, `empty` (default) or exceptional `parent` initial context, and an optional `session` handle for named persistent sessions; depth and cycle guards bound delegation. Progress updates and the final details project through the generic tool path onto the shared child-run card, which also renders parallel calls. The custom `delegate` execution stays until the [parity gate](roadmap.md) passes; both tools must not reach the model together once parity passes.
+The `pi-subagent` profile registers the upstream `subagent` tool unchanged and owns child execution. Discovery reads the same Markdown files with richer frontmatter (`model`, `thinking`, `tools`, `noTools`, `inactivityTimeout`, `sessionPreference`, `sessionHint`); project definitions apply only when the project is trusted and override user ones. Calls share one shape for single and parallel runs with per-call model override, `empty` (default) or exceptional `parent` initial context, and an optional `session` handle for named persistent sessions; depth and cycle guards bound delegation. Progress updates and the final details project through the generic tool path onto the shared child-run card, which also renders parallel calls. The custom `delegate`/`list_agents` execution was removed after the subagent parity gate passed (live child run verified on the local model); the `agents` profile keeps only Markdown CRUD.
 
 Pixie capabilities register through `pixie:capability:v1`; their operations are defined in `pi/host/src/capabilities.ts`. The independent MCP package emits `pi-mcp:service:v1`; the host adapts it to Pixie's protocol. It has no dependency on Pixie's addresses, credentials, Browser service or Docker deployment.
 

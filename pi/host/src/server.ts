@@ -52,19 +52,9 @@ async function startUnlockedHost(options: HostOptions) {
 		throw new Error("Pi host secret must contain at least 16 characters");
 	const profiles: Record<string, ExtensionFactory> = {
 		mcp: (pi) => mcp(pi, agentDir),
-		agents: (pi) =>
-			agents(pi, agentDir, async (cwd) => {
-				const entry = await sessions.create(cwd);
-				return {
-					session: entry.session,
-					prompt: async (text) =>
-						sessions.call("session.prompt", {
-							sessionId: entry.session.sessionId,
-							content: [{ type: "text", text }],
-						}),
-					close: () => sessions.release(entry.session.sessionId),
-				};
-			}),
+		// Agent definition authoring (pi.sources.* + @agent mentions). Child
+		// execution belongs to the upstream `pi-subagent` profile.
+		agents: (pi) => agents(pi, agentDir),
 		// Optional Pi-native replacements, enabled with e.g.
 		// `--extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask`.
 		// `rpiv-ask` answers through the generic UI bridge; the Pixie
@@ -77,8 +67,8 @@ async function startUnlockedHost(options: HostOptions) {
 		// only: the operator-installed Signet managed file extension loads
 		// through Pi's own `<agentDir>/extensions` discovery, and importing
 		// it here as well would register its tools twice. `pi-subagent`
-		// registers the upstream `subagent` tool unchanged; the custom
-		// `agents` extension stays the writer until parity is verified.
+		// registers the upstream `subagent` tool unchanged and owns child
+		// execution; the `agents` profile keeps only Markdown CRUD.
 		signet,
 		"pi-subagent": piSubagent,
 		// Optional Pi-native MCP client. The upstream `pi-mcp-adapter`

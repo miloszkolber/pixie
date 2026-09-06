@@ -85,7 +85,7 @@ test("agent definitions add tools without replacing Pi core tools", async () => 
 	const entry = await sessions.create(dir);
 	expect(entry.capabilities.snapshot()).toEqual({ agents: 1 });
 	expect(entry.session.getActiveToolNames()).toEqual(
-		expect.arrayContaining(["read", "bash", "edit", "write", "delegate"]),
+		expect.arrayContaining(["read", "bash", "edit", "write"]),
 	);
 	const saved = await entry.capabilities.call(
 		"pi.sources.create",
@@ -133,50 +133,6 @@ test("session attachment checks each concurrent caller and accepts the same dire
 	]);
 	expect(valid.status).toBe("fulfilled");
 	expect(invalid.status).toBe("rejected");
-});
-
-test("defined agents execute through ordinary SDK child sessions", async () => {
-	const dir = await mkdtemp(tmpdir() + "/pixie-pi-jobs-");
-	cleanups.push(() => rm(dir, { recursive: true, force: true }));
-	const runner = async (cwd: string) => {
-		const entry = await sessions.create(cwd);
-		await entry.session.setModel(entry.modelRuntime.getModel("fixture", "echo")!);
-		return {
-			session: entry.session,
-			prompt: (text: string) =>
-				sessions.call("session.prompt", {
-					sessionId: entry.session.sessionId,
-					content: [{ type: "text", text }],
-				}),
-			close: async () => {},
-		};
-	};
-	const sessions = new Sessions(dir, [provider, (pi) => agents(pi, dir, runner)], () => {});
-	cleanups.push(() => sessions.close());
-	const entry = await sessions.create(dir),
-		ctx = sessions.context(entry);
-	await entry.session.setModel(entry.modelRuntime.getModel("fixture", "echo")!);
-	await entry.capabilities.call(
-		"pi.sources.create",
-		{
-			name: "Reviewer",
-			description: "Review",
-			content: "Review the task",
-			properties: { model: "fixture/echo" },
-		},
-		ctx,
-	);
-	const tool = entry.session.agent.state.tools.find((t) => t.name === "delegate")!;
-	const result = await tool.execute(
-		"delegate-test",
-		{ agent: "Reviewer", task: "Check this" },
-		new AbortController().signal,
-	);
-	expect(result).toMatchObject({
-		content: [{ type: "text", text: "Hello from Pi" }],
-		details: { status: "completed" },
-	});
-	expect((await sessions.list("")).sessions).toHaveLength(2);
 });
 
 test("incompatible or incomplete optional registrations leave vanilla Pi usable", async () => {
