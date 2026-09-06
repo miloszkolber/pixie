@@ -78,4 +78,4 @@ Reconstructed from the simplification plan; profiles are added, deletions wait o
 - [x] Separate `pixie-mcp` process, container, gateway and `PIXIE_MCP_URL` deleted; the controller publishes Browser in-process (merge gate met).
 - [x] Separate `pixie-mcp` process and container deleted with obsolete MCP environment, capability contracts, cross-container coordination, duplicate health/lifecycle, and temp migration code (merge gate met; `PIXIE_MCP_TOKEN` remains for in-process publisher auth and adapter registration).
 - [x] Full baseline/parity suite green with consolidated configuration docs (bun suite 378 pass / 1 skip / 0 fail plus all Go packages ok under the pinned Bun 1.4.0; the container default Bun 1.3.14 shows pre-existing SSR-harness failures, so use the pinned toolchain).
-- [x] Reproducible `/pi` overlay: install/configure/verify/start scripts with profiles manifest, clean-install patch verification, and Signet installer that preserves native user configuration.
+- [x] Reproducible `/pi` overlay: profiles manifest, checked-in upstream patches with clean-install verification, and documented manual setup that preserves native user configuration.
