@@ -303,6 +303,9 @@ func (m *SessionManager) shutdown(ctx context.Context) {
 		default:
 		}
 	}
+	// Shutdown unwinds blocked UI on every session: dismiss browser modals.
+	// The host closes its own bridges on session close.
+	m.cancelDialogs("")
 	var pending sync.WaitGroup
 	if m.client != nil {
 		for id, generation := range active {

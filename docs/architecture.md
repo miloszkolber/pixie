@@ -30,8 +30,9 @@ Each setting has one owner. Pixie never reads or writes another owner's state.
 
 | Owner | Settings | Examples |
 | --- | --- | --- |
-| Pi (host service) | Providers, models, thinking, credentials, extensions, subagents, agents | `~/.pi/agent`, Pi settings APIs |
-| Pixie (application state) | Projects, sessions, MCP enablement, Browser engine, schedules, goals, settings | Controller data directory (`config.json`, `mcp-modules.json`, `browser.json`) |
+| Pi (host service) | Providers, models, thinking, credentials, extensions, subagents, agents, transcripts, run settlement | `~/.pi/agent`, Pi settings APIs |
+| Extension (guest capabilities) | Dialog answers, status/widget/title/working hints, background work signals | `ctx.ui` bridge, per-session liveness |
+| Pixie (application state) | Projects, sessions, MCP enablement, Browser engine, schedules, goals, settings, dialog and event projection | Controller data directory (`config.json`, `mcp-modules.json`, `browser.json`) |
 | External (operator-owned) | Memory daemon, search backend and credentials | `SIGNET_DAEMON_URL`, `~/.config/rpiv-web-tools/config.json`, provider `*_API_KEY` |
 
 See [Pi integration](pi.md) for Pi-owned settings, [Pixie MCP service](mcp.md) for Pixie-owned MCP and Browser state, and [deployment](deployment.md) for external services.
@@ -44,6 +45,6 @@ Schedule occurrences are recorded before dispatch. Runs create native sessions i
 
 Schedule mutations and their retry results commit in one atomic store. The latest 512 successful mutation identities survive restart; MCP callers can supply `mutationId` for retries. The runner allows eight concurrent jobs, retries persistence failures with backoff and exposes failures in application health. Cron expressions are cached until the schedule changes.
 
-The browser receives the newest transcript page first. Older pages carry projection identities. Inactive projections have count and memory budgets; active work and durable queues prevent eviction. Reconnect generations, session ownership and deletion markers reject stale work.
+The browser receives the newest transcript page first. Older pages carry projection identities. Snapshots also carry pending tools and pending extension dialogs, so a reload mid-run, mid-tool, or mid-dialog reconciles against server state. Late message events from older runs never resurrect completed streaming state, and one prompt's several `agent_end` events never settle it early: only prompt settlement does. Inactive projections have count and memory budgets; active work, pending dialogs, registered liveness, and durable queues prevent eviction. Reconnect generations, session ownership and deletion markers reject stale work.
 
 Browser panels have persisted ownership and renewable leases. Startup retries cleanup of recorded panels. Interactive MCP Apps use a separate origin, short-lived tickets and same-session tool/resource authorization.

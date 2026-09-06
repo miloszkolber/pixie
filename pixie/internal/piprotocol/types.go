@@ -170,6 +170,10 @@ const (
 	UiRequestEvent = "pixie:ui:request"
 	UiNotifyEvent  = "pixie:ui:notify"
 	UiCancelEvent  = "pixie:ui:cancel"
+	UiStatusEvent  = "pixie:ui:status"
+	UiWidgetEvent  = "pixie:ui:widget"
+	UiTitleEvent   = "pixie:ui:title"
+	UiWorkingEvent = "pixie:ui:working"
 	// Controller-to-host JSON-RPC methods.
 	UiResponseMethod = "session.uiResponse"
 	UiCancelMethod   = "session.uiCancel"

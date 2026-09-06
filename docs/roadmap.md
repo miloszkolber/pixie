@@ -14,6 +14,25 @@
 
 Current behavior is documented in the [README](../README.md).
 
+## Extension UI bridge parity
+
+Generic hardening toward the reference web client, adapted to Pixie's split host/controller/browser processes. No reference code is imported, proxied, or depended on.
+
+| Pattern | Pixie state |
+| --- | --- |
+| Server owns session, subscriptions, pending UI, run, cancel, binding, idle | Host `Sessions` owns `AgentSession`, the bridge, run IDs, and cancel; the controller owns projection, pending dialogs, and eviction; the browser only projects |
+| Binding supplies the UI implementation once per session | `bindExtensions({ uiContext, mode: "rpc" })`; no post-load extension patching |
+| Blocking UI replays to late subscribers; vanishes only on answered/cancelled/timed-out/stopped/destroyed | Host re-publishes on `session.load`, snapshots carry `pendingDialogs`, controller deduplicates by request ID |
+| Stop unwinds blocked UI on all paths | Prompt cancel, archive, delete, and shutdown dismiss modals and settle host calls |
+| First `agent_end` is never final | Prompt RPC settlement is authoritative; stale `agent_start` and late chunks are dropped when no run is open |
+| Reconciliation against server state on reconnect | Snapshot carries pending tools and dialogs; the browser rehydrates open chats on reconnect |
+| Fork is a new independent session; branches stay in-session | `session.fork` copies history into a fresh session file without mutating the source; `navigate_tree` branches are not exposed |
+| Per-session liveness delays idle cleanup only | Generic `RegisterSessionLiveness` guards eviction; never schedules work |
+| Status, widget, title, working-message projection; terminal members no-op | `ui_status`, `ui_widget`, `ui_title`, `ui_working` events; editor text, `custom` factories, and TUI chrome stay unprojected |
+| Subagents through normal tooling; headless children | Tool start/update/end with child metadata; no nested top-level modals |
+
+Omitted with reasons: periodic 15s state polling (the event stream plus reconnect rehydration already reconciles, so polling adds no signal); widget visuals (transport and per-key state exist, but a widget rail is new product surface); editor-text push (it would clobber the composer); in-session branch navigation UI (Pi semantics preserved, fork covers the new-chat case); `custom` component rendering (needs a TUI; upstream questionnaires already fall back to the select/input walker).
+
 ## Pi-native simplification definition of done
 
 Reconstructed from the simplification plan; profiles are added, deletions wait on their gates.

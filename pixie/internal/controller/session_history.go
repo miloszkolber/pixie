@@ -68,14 +68,16 @@ func (m *SessionManager) messageSnapshot(ctx context.Context, sessionID, project
 	if detach {
 		resultMessages = cloneJSON(messages)
 	}
+	pendingDialogs := m.pendingDialogRequests(sessionID)
 	result := map[string]any{
-		"kind":         "snapshot",
-		"summary":      m.summaryLocked(sessionID, entry),
-		"messages":     resultMessages,
-		"pendingTools": pendingToolPreviewsLocked(entry),
-		"commands":     cloneSlashCommands(entry.commands),
-		"planState":    cloneSessionPlan(entry.planState),
-		"page":         page,
+		"kind":           "snapshot",
+		"summary":        m.summaryLocked(sessionID, entry),
+		"messages":       resultMessages,
+		"pendingTools":   pendingToolPreviewsLocked(entry),
+		"pendingDialogs": pendingDialogs,
+		"commands":       cloneSlashCommands(entry.commands),
+		"planState":      cloneSessionPlan(entry.planState),
+		"page":           page,
 	}
 	var once sync.Once
 	release := func() {

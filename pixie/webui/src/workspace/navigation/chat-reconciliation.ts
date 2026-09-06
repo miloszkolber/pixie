@@ -71,7 +71,7 @@ export function hydrateChatResource(
 		.request("session.getMessages", { projectId: projectAreaId, sessionId })
 		.then((response) => {
 			if (response.kind !== "snapshot") throw new Error("invalid chat snapshot");
-			const { summary, messages, pendingTools, commands, planState, page } = response;
+			const { summary, messages, pendingTools, pendingDialogs, commands, planState, page } = response;
 			const current = appStoreApi.getState();
 			if (!isConnectedGeneration(current, generation)) return false;
 			if (
@@ -99,6 +99,9 @@ export function hydrateChatResource(
 				});
 			}
 			appStoreApi.getState().setCommands(sessionId, commands);
+			// A reconnect or reload mid-dialog restores the modal from the
+			// snapshot's pending set; settled dialogs vanish instead of going stale.
+			appStoreApi.getState().reconcileUiDialogs(sessionId, pendingDialogs ?? []);
 			const installed = appStoreApi.getState();
 			return (
 				installed.sessions[sessionId] !== undefined &&

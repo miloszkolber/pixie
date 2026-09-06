@@ -396,6 +396,7 @@ function loadEarlierMessages(): Promise<TranscriptLoadOutcome> {
 					.getState()
 					.replaceTranscriptSnapshot(sessionId, snapshot.summary, hydrated, snapshot.planState);
 				appStoreApi.getState().setCommands(sessionId, snapshot.commands);
+				appStoreApi.getState().reconcileUiDialogs(sessionId, snapshot.pendingDialogs ?? []);
 				if (isCurrent()) transcriptLoadState = "idle";
 				resetToBottom = true;
 				return "reloaded";

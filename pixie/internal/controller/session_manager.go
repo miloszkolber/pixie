@@ -120,6 +120,7 @@ type SessionManager struct {
 
 	questions       map[questionKey]*pendingQuestion
 	dialogs         map[dialogKey]*pendingDialog
+	liveness        map[string]map[uint64]sessionLivenessProvider
 	creating        int
 	pendingCommands map[string]pendingCommandCatalog
 	publish         SessionPublisher
@@ -390,7 +391,11 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		return nil
 	}
 	m.cancelQuestions(sessionID)
-	m.cancelDialogs(sessionID)
+	// Pending dialogs survive re-attachment on purpose: the host keeps the
+	// matching promise and re-publishes unresolved requests on session.load
+	// (deduplicated by request ID), while snapshots carry pendingDialogs for
+	// late subscribers. Cancelling here would orphan the host call until its
+	// timeout with no way for the browser to answer.
 	entry.state.Lock()
 	replay := newSessionEntry(sessionID, entry.projectID, entry.cwd, entry.parentSessionID, entry.objectiveToken)
 	replay.title = entry.title
@@ -1047,9 +1052,24 @@ func (m *SessionManager) evictLocked() {
 		if entry.refs > 0 {
 			continue
 		}
+		// Liveness probes must stay trivial and non-blocking: they run while
+		// the manager lock is held and never schedule work themselves.
+		if leased[id] || m.hasActiveLivenessLocked(id) {
+			entry.state.Lock()
+			entry.inactiveAt = time.Time{}
+			entry.state.Unlock()
+			continue
+		}
+		hasDialogs := false
+		for key := range m.dialogs {
+			if key.sessionID == id {
+				hasDialogs = true
+				break
+			}
+		}
 		entry.state.Lock()
 		memoryOnlyQueue := m.queues == nil && queuedFollowUpCount(entry.queue) > 0
-		if leased[id] || entry.streaming || entry.promptActive || entry.runID != "" || len(entry.queue.Steering) > 0 || memoryOnlyQueue || entry.drainScheduled || entry.drainRetry != nil || entry.replay != nil {
+		if hasDialogs || entry.streaming || entry.promptActive || entry.runID != "" || len(entry.queue.Steering) > 0 || memoryOnlyQueue || entry.drainScheduled || entry.drainRetry != nil || entry.replay != nil {
 			entry.inactiveAt = time.Time{}
 			entry.state.Unlock()
 			continue

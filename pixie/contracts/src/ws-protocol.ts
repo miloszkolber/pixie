@@ -14,6 +14,7 @@ import type {
 	SlashCommandInfo,
 	ThinkingLevel,
 	TranscriptMessage,
+	UiDialogRequest,
 	UiDialogResult,
 	WireModel,
 } from "./agent-protocol";
@@ -208,6 +209,7 @@ export type SessionMessagesResult =
 			summary: SessionSummary;
 			messages: TranscriptMessage[];
 			pendingTools: PendingToolPreview[];
+			pendingDialogs?: UiDialogRequest[];
 			commands: SlashCommandInfo[];
 			planState: SessionPlanState | null;
 			page: TranscriptPage;

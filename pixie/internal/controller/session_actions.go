@@ -440,6 +440,10 @@ func (m *SessionManager) Abort(ctx context.Context, sessionID string) error {
 	entry.state.Unlock()
 
 	m.cancelQuestions(sessionID)
+	// Stop unwinds blocked UI on the controller side as well: dismiss the
+	// browser modal immediately. The host settles its awaiting extension call
+	// through session.cancel, which fans back as ui_cancel (idempotent here).
+	m.cancelDialogs(sessionID)
 	err = m.client.Cancel(entry.context(ctx), sessionID)
 	entry.op.Unlock()
 	if err != nil || done == nil {

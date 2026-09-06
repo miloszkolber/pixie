@@ -17,9 +17,14 @@ const dialogTimeout = 30 * time.Minute
 type dialogKey struct{ sessionID, requestID string }
 
 type pendingDialog struct {
-	sessionID string
-	primitive string
-	timer     *time.Timer
+	sessionID   string
+	primitive   string
+	title       string
+	message     string
+	options     []any
+	placeholder string
+	prefill     string
+	timer       *time.Timer
 }
 
 func validDialogPrimitive(primitive string) bool {
@@ -93,7 +98,11 @@ func validateDialogResult(result, request map[string]any) error {
 
 // registerDialog records a host dialog request and publishes it to browsers.
 // Invalid or duplicate requests are dropped; a dialog fires once and settles
-// cancelled on timeout so neither side waits forever.
+// cancelled on timeout so neither side waits forever. Pending dialogs survive
+// Pi re-attachment: the host re-publishes unresolved requests on
+// session.load (deduplicated here by request ID), and late subscribers catch
+// up through the snapshot's pendingDialogs. A request vanishes only when it
+// is answered, cancelled, times out, or its session stops.
 func (m *SessionManager) registerDialog(update map[string]any) {
 	sessionID, requestID, primitive, timeout, err := validateDialogRequest(update)
 	if err != nil {
@@ -112,7 +121,15 @@ func (m *SessionManager) registerDialog(update map[string]any) {
 		m.mu.Unlock()
 		return
 	}
-	pending := &pendingDialog{sessionID: sessionID, primitive: primitive}
+	pending := &pendingDialog{
+		sessionID:   sessionID,
+		primitive:   primitive,
+		title:       textValue(update["title"]),
+		message:     textValue(update["message"]),
+		options:     arrayValue(update["options"]),
+		placeholder: textValue(update["placeholder"]),
+		prefill:     textValue(update["prefill"]),
+	}
 	pending.timer = time.AfterFunc(timeout, func() {
 		m.mu.Lock()
 		if m.dialogs[key] == pending {
@@ -205,8 +222,9 @@ func (m *SessionManager) CancelDialog(ctx context.Context, sessionID, requestID 
 }
 
 // applyUiUpdate routes projected UI bridge updates. Dialog requests register
-// pending state and reach browsers through registerDialog; notifications and
-// host-side cancellations only fan out to browsers.
+// pending state and reach browsers through registerDialog; notifications,
+// status/widget/title/working projections, and host-side cancellations only
+// fan out to browsers.
 func (m *SessionManager) applyUiUpdate(sessionID, kind string, update map[string]any) error {
 	switch kind {
 	case "ui_request":
@@ -236,17 +254,101 @@ func (m *SessionManager) applyUiUpdate(sessionID, kind string, update map[string
 	case "ui_cancel":
 		m.CancelDialog(context.Background(), sessionID, textValue(update["requestId"]))
 		return nil
+	case "ui_status":
+		m.emit("agent.event", map[string]any{
+			"sessionId": sessionID,
+			"event": map[string]any{
+				"type": "ui_status",
+				"key":  textValue(update["key"]),
+				"text": textValue(update["text"]),
+			},
+		})
+		return nil
+	case "ui_widget":
+		event := map[string]any{"type": "ui_widget", "key": textValue(update["key"])}
+		if lines, ok := update["lines"].([]any); ok {
+			strings := make([]any, 0, len(lines))
+			for _, line := range lines {
+				if text, ok := line.(string); ok {
+					strings = append(strings, text)
+				}
+			}
+			event["lines"] = strings
+		}
+		if placement := textValue(update["placement"]); placement != "" {
+			event["placement"] = placement
+		}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": event})
+		return nil
+	case "ui_title":
+		m.emit("agent.event", map[string]any{
+			"sessionId": sessionID,
+			"event":     map[string]any{"type": "ui_title", "title": textValue(update["title"])},
+		})
+		return nil
+	case "ui_working":
+		m.emit("agent.event", map[string]any{
+			"sessionId": sessionID,
+			"event":     map[string]any{"type": "ui_working", "message": textValue(update["message"])},
+		})
+		return nil
 	}
 	return nil
 }
 
-func (m *SessionManager) cancelDialogs(sessionID string) {
+// pendingDialogRequests returns the unresolved blocking dialogs for one
+// session so snapshots can reconcile late subscribers after a reconnect.
+func (m *SessionManager) pendingDialogRequests(sessionID string) []map[string]any {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var requests []map[string]any
 	for key, pending := range m.dialogs {
-		if sessionID == "" || key.sessionID == sessionID {
-			pending.timer.Stop()
-			delete(m.dialogs, key)
+		if key.sessionID != sessionID {
+			continue
 		}
+		request := map[string]any{
+			"requestId": key.requestID,
+			"sessionId": pending.sessionID,
+			"primitive": pending.primitive,
+			"title":     pending.title,
+		}
+		if pending.message != "" {
+			request["message"] = pending.message
+		}
+		if len(pending.options) > 0 {
+			request["options"] = append([]any(nil), pending.options...)
+		}
+		if pending.placeholder != "" {
+			request["placeholder"] = pending.placeholder
+		}
+		if pending.prefill != "" {
+			request["prefill"] = pending.prefill
+		}
+		requests = append(requests, request)
+	}
+	return requests
+}
+
+func (m *SessionManager) cancelDialogs(sessionID string) {
+	m.mu.Lock()
+	pending := make([]dialogKey, 0)
+	for key := range m.dialogs {
+		if sessionID == "" || key.sessionID == sessionID {
+			if entry := m.dialogs[key]; entry != nil {
+				entry.timer.Stop()
+			}
+			delete(m.dialogs, key)
+			pending = append(pending, key)
+		}
+	}
+	m.mu.Unlock()
+	// Dismiss the browser modal for every discarded dialog. The host settles
+	// its own awaiting call through session.cancel/close, so this side only
+	// needs the fan-out (idempotent with a racing host ui_cancel).
+	for _, key := range pending {
+		m.emit("agent.event", map[string]any{
+			"sessionId": key.sessionID,
+			"event":     map[string]any{"type": "ui_cancel", "requestId": key.requestID},
+		})
 	}
 }

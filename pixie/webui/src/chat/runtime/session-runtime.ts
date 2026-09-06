@@ -43,6 +43,8 @@ export interface SessionRuntime {
 	disclosures: FoldState;
 	submission: ChatSubmission | null;
 	activity: string | null;
+	/** Latest string-array extension widgets by key. No visual surface yet. */
+	extensionWidgets: Record<string, { lines: string[]; placement: string }>;
 	goal: SessionGoalRuntime;
 	goalRevision: number;
 }
@@ -84,6 +86,7 @@ export function createSessionRuntime(
 		disclosures: createFoldState(),
 		submission: null,
 		activity: null,
+		extensionWidgets: {},
 		goal: {
 			projectAreaId: null,
 			status: "idle",

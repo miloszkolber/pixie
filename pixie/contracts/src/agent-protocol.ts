@@ -331,7 +331,11 @@ export type AgentEvent =
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
 	| { type: "ui_request"; request: UiDialogRequest }
 	| { type: "ui_notify"; message: string; level?: "info" | "warning" | "error" }
-	| { type: "ui_cancel"; requestId: string };
+	| { type: "ui_cancel"; requestId: string }
+	| { type: "ui_status"; key: string; text?: string }
+	| { type: "ui_widget"; key: string; lines?: string[]; placement?: "aboveEditor" | "belowEditor" }
+	| { type: "ui_title"; title: string }
+	| { type: "ui_working"; message?: string };
 export interface SessionEventPayload {
 	sessionId: string;
 	event: AgentEvent;

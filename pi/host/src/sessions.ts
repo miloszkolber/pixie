@@ -107,6 +107,12 @@ export class Sessions {
 		if (!(await stat(cwd)).isDirectory()) throw new Error("Project is not a directory");
 		let manager: SessionManager;
 		if (parent) {
+			// A fork is a new independent session: forkFrom copies history up
+			// to the fork point into a fresh session file. The source entry
+			// and its bridge are never mutated, so the old session ID keeps
+			// pointing at the unbranched transcript. In-session branches
+			// (navigate_tree) are a separate Pi operation and are not exposed
+			// here; the UI presents forks as new chats.
 			const source = await this.metadata(parent);
 			manager = SessionManager.forkFrom(
 				source.path,
@@ -534,6 +540,7 @@ export class Sessions {
 		];
 	}
 	snapshot(entry: ManagedSession, history = false): RecordValue {
+		const bridge = this.bridges.get(entry.session.sessionId);
 		return {
 			sessionId: entry.session.sessionId,
 			eventSequence: this.sequences.get(entry.session.sessionId) ?? 0,
@@ -541,6 +548,12 @@ export class Sessions {
 			metadata: { model: entry.session.model },
 			commands: this.commands(entry),
 			runId: entry.runId,
+			streaming: entry.session.isStreaming,
+			compacting:
+				typeof (entry.session as { isCompacting?: unknown }).isCompacting === "boolean"
+					? (entry.session as unknown as { isCompacting: boolean }).isCompacting
+					: false,
+			pendingDialogs: bridge?.pendingRequests() ?? [],
 			capabilities: { sessions: 1, providers: 1, ...entry.capabilities.snapshot() },
 			...(history ? { messages: this.history(entry) } : {}),
 		};
@@ -738,8 +751,14 @@ export class Sessions {
 		return this.use(id, text(p.cwd) || undefined, async (entry) => {
 			const s = entry.session;
 			switch (method) {
-				case "session.load":
-					return this.snapshot(entry, true);
+			case "session.load":
+				// Replaying unresolved dialogs lets a reconnecting controller
+				// restore modals that live subscribers already hold (deduplicated
+				// by request ID) and late subscribers missed entirely. The
+				// server buffers these events during the load and flushes them
+				// after the snapshot, which also carries the same pending set.
+				this.bridges.get(id)?.republishPending();
+				return this.snapshot(entry, true);
 				case "session.prompt": {
 					if (entry.run || s.isStreaming) throw new Error("Session is already running");
 					const content = this.promptContent(p.content);
@@ -808,10 +827,11 @@ export class Sessions {
 				case "pi.session.rename":
 					s.setSessionName(required(p.title, "title", 1000));
 					return { ok: true };
-				case "pi.session.archive":
-				case "pi.session.unarchive":
-					if (entry.run) throw new Error("Stop the running session first");
-					await this.catalog.update((c) => {
+			case "pi.session.archive":
+			case "pi.session.unarchive":
+				if (entry.run) throw new Error("Stop the running session first");
+				if (method.endsWith(".archive")) this.bridges.get(id)?.cancelAll("archived");
+				await this.catalog.update((c) => {
 						if (!c[id])
 							c[id] = {
 								path: required(s.sessionFile, "session file"),

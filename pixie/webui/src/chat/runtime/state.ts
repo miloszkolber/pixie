@@ -26,6 +26,8 @@ export interface ChatState {
 	sessions: Record<string, SessionRuntime>;
 	uiDialogs: Record<string, UiDialogRequest>;
 	dismissUiDialog: (requestId: string) => void;
+	/** Reconcile one session's dialogs with the snapshot's pending set (reconnect recovery). */
+	reconcileUiDialogs: (sessionId: string, requests: UiDialogRequest[]) => void;
 	appendUserMessage: (sessionId: string, text: string, attachments?: ChatAttachment[]) => void;
 	setSubmission: (sessionId: string, submission: ChatSubmission | null) => void;
 	appendErrorTurn: (sessionId: string, text: string) => void;
@@ -136,6 +138,17 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 		set((state) =>
 			state.uiDialogs[requestId] ? { uiDialogs: omitKey(state.uiDialogs, requestId) } : {},
 		),
+	reconcileUiDialogs: (sessionId, requests) =>
+		set((state) => {
+			const next: Record<string, UiDialogRequest> = {};
+			for (const [requestId, dialog] of Object.entries(state.uiDialogs)) {
+				if (dialog.sessionId !== sessionId) next[requestId] = dialog;
+			}
+			for (const request of requests) {
+				if (request?.requestId && request.sessionId === sessionId) next[request.requestId] = request;
+			}
+			return { uiDialogs: next };
+		}),
 	appendUserMessage: (sessionId, text, attachments) =>
 		set((s) =>
 			withRuntime(s, sessionId, (rt) => ({
@@ -214,6 +227,50 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 		if (event.type === "ui_notify") {
 			if (event.level === "error") get().pushToast({ variant: "error", message: event.message });
 			else get().pushToast({ variant: "info", message: event.message });
+			return;
+		}
+		if (event.type === "ui_status" || event.type === "ui_working") {
+			// Ephemeral extension projections. A cleared status removes the
+			// line; anything else replaces it. They never touch the transcript.
+			const text =
+				event.type === "ui_status"
+					? (event.text ?? null)
+					: (event.message ?? null);
+			set((s) => withRuntime(s, sessionId, (rt) => ({ ...rt, activity: text })));
+			return;
+		}
+		if (event.type === "ui_widget") {
+			set((s) =>
+				withRuntime(s, sessionId, (rt) => ({
+					...rt,
+					extensionWidgets: event.lines
+						? { ...rt.extensionWidgets, [event.key]: { lines: event.lines, placement: event.placement ?? "aboveEditor" } }
+						: omitKey(rt.extensionWidgets, event.key),
+				})),
+			);
+			return;
+		}
+		if (event.type === "ui_title") {
+			if (!event.title) return;
+			const state = get();
+			for (const projectId of new Set([
+				...Object.keys(state.tabsByProjectArea),
+				...Object.keys(state.closedChatsByProjectArea),
+			])) {
+				if (
+					state.tabsByProjectArea[projectId]?.some(
+						(tab) => tab.kind === "chat" && tab.sessionId === sessionId,
+					) ||
+					state.closedChatsByProjectArea[projectId]?.some((chat) => chat.sessionId === sessionId)
+				) {
+					state.applySessionLifecycle({
+						projectId,
+						sessionId,
+						operation: "renamed",
+						title: event.title,
+					});
+				}
+			}
 			return;
 		}
 		if (event.type === "session-info" && event.title) {

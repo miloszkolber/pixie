@@ -191,7 +191,25 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		return emit("plan", map[string]any{"entries": event["entries"]})
 	case "extension_error":
 		return extension("status_message", map[string]any{"status": map[string]any{"type": "notice", "message": event["error"]}})
-	case piwire.UiRequestEvent, piwire.UiNotifyEvent, piwire.UiCancelEvent:
+	case "agent_start", "agent_end", "agent_settled",
+		"compaction_start", "compaction_end",
+		"auto_retry_start", "auto_retry_end",
+		"summarization_retry_scheduled", "summarization_retry_finished",
+		"thinking_level_changed":
+		// One prompt can emit several agent_end events (retry, compaction,
+		// extension-injected or queued turns). The browser keeps its stream
+		// open until prompt settlement; these events only annotate it, so
+		// they travel verbatim without touching the transcript projection.
+		// Stale late events are dropped by the controller's run guard.
+		update := map[string]any{}
+		for key, value := range event {
+			if key != "type" {
+				update[key] = value
+			}
+		}
+		return emit(textValue(event["type"]), update)
+	case piwire.UiRequestEvent, piwire.UiNotifyEvent, piwire.UiCancelEvent,
+		piwire.UiStatusEvent, piwire.UiWidgetEvent, piwire.UiTitleEvent, piwire.UiWorkingEvent:
 		return projectUiEvent(event, emit, extension)
 	}
 	return nil
@@ -228,6 +246,30 @@ func projectUiEvent(
 		})
 	case piwire.UiCancelEvent:
 		return emit("ui_cancel", map[string]any{"requestId": textValue(event["requestId"])})
+	case piwire.UiStatusEvent:
+		return emit("ui_status", map[string]any{
+			"key":  textValue(event["key"]),
+			"text": textValue(event["text"]),
+		})
+	case piwire.UiWidgetEvent:
+		update := map[string]any{"key": textValue(event["key"])}
+		if lines, ok := event["lines"].([]any); ok {
+			update["lines"] = lines
+		} else if lines, ok := event["lines"].([]string); ok {
+			converted := make([]any, 0, len(lines))
+			for _, line := range lines {
+				converted = append(converted, line)
+			}
+			update["lines"] = converted
+		}
+		if placement := textValue(event["placement"]); placement != "" {
+			update["placement"] = placement
+		}
+		return emit("ui_widget", update)
+	case piwire.UiTitleEvent:
+		return emit("ui_title", map[string]any{"title": textValue(event["title"])})
+	case piwire.UiWorkingEvent:
+		return emit("ui_working", map[string]any{"message": textValue(event["message"])})
 	}
 	return nil
 }

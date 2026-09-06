@@ -51,8 +51,10 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 	update := mapValue(notification["update"])
 	kind := textValue(update["sessionUpdate"])
 	// Generic extension dialogs are manager-level (session-bound, single-use)
-	// and never touch the transcript projection.
-	if kind == "ui_request" || kind == "ui_notify" || kind == "ui_cancel" {
+	// and never touch the transcript projection. Ephemeral status, widget,
+	// title, and working-message projections fan out the same way.
+	if kind == "ui_request" || kind == "ui_notify" || kind == "ui_cancel" ||
+		kind == "ui_status" || kind == "ui_widget" || kind == "ui_title" || kind == "ui_working" {
 		return m.applyUiUpdate(sessionID, kind, update)
 	}
 	origin := agentPiUpdate
@@ -107,6 +109,40 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 		return nil
 	}
 	previousTitle := target.title
+	// Settled semantics: one prompt can emit several agent_end events
+	// (retry, compaction, extension-injected or queued turns). The browser
+	// keeps its stream open until prompt settlement, so these lifecycle
+	// annotations travel verbatim and never touch the transcript. A stale
+	// agent_start arriving after settlement must not resurrect streaming
+	// state; anything replayed into history is not a live run annotation.
+	if lifecycleKind(kind) {
+		if !publish {
+			entry.state.Unlock()
+			return nil
+		}
+		if kind == "agent_start" && !target.promptActive && !target.streaming {
+			entry.state.Unlock()
+			return nil
+		}
+		event := make(map[string]any, len(update))
+		for key, value := range update {
+			if key != "sessionUpdate" {
+				event[key] = value
+			}
+		}
+		event["type"] = kind
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": event})
+		entry.state.Unlock()
+		return nil
+	}
+	// Late message events from an older run must not resurrect a completed
+	// stream. Live chunks only extend a run that is still open; replayed
+	// history (publish == false) still rebuilds the transcript.
+	if publish && (kind == "agent_message_chunk" || kind == "agent_thought_chunk") &&
+		!target.promptActive && !target.streaming {
+		entry.state.Unlock()
+		return nil
+	}
 	events := applySessionUpdate(target, kind, update, origin)
 	if !publish && kind == "tool_call" {
 		// Replay is historical evidence, never authority for a new HTTP question.
@@ -913,6 +949,22 @@ func (m *SessionManager) emit(channel string, data any) {
 	if m.publish != nil {
 		m.publish(channel, stripNilFields(data))
 	}
+}
+
+// lifecycleKind reports native run annotations that travel verbatim to
+// browsers without touching the transcript projection. Prompt settlement
+// stays authoritative in the prompt RPC path; the first agent_end is never
+// treated as final.
+func lifecycleKind(kind string) bool {
+	switch kind {
+	case "agent_start", "agent_end", "agent_settled",
+		"compaction_start", "compaction_end",
+		"auto_retry_start", "auto_retry_end",
+		"summarization_retry_scheduled", "summarization_retry_finished",
+		"thinking_level_changed":
+		return true
+	}
+	return false
 }
 
 func objectValue(value any) map[string]any {
