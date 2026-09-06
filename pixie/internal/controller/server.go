@@ -56,9 +56,6 @@ func (h *HTTPHandler) inProcessBrowserHandler() http.Handler {
 }
 
 func NewHTTPHandler(webSocket *WebSocketServer, objective ObjectiveHandler, projects *workspace.Projects, files *workspace.Files, authConfig AuthConfig, staticDir string, ready http.HandlerFunc) (*HTTPHandler, error) {
-	if authConfig.BrowserURL == "" {
-		authConfig.BrowserURL = "http://127.0.0.1:8787"
-	}
 	result := &HTTPHandler{WebSocket: webSocket, Objective: objective, Projects: projects, Files: files, Auth: authConfig, StaticDir: staticDir, Ready: ready, browserClient: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	if authConfig.Enabled {
 		auth, err := NewAuth(authConfig.ControllerToken)

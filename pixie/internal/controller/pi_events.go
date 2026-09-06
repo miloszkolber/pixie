@@ -51,9 +51,6 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		if parts := strings.SplitN(name, "__", 2); len(parts) == 2 {
 			source, actual = parts[0], parts[1]
 		}
-		if name == "delegate" {
-			source = "summon"
-		}
 		return emit("tool_call", map[string]any{"toolCallId": toolID, "title": actual, "status": "in_progress", "rawInput": tool["arguments"], "_meta": map[string]any{"pi": map[string]any{"toolCall": map[string]any{"toolName": actual, "extensionName": source}}}})
 	}
 	toolEnd := func(toolID string, result map[string]any, finished bool, isError bool) error {

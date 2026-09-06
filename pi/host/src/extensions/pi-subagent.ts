@@ -18,13 +18,11 @@ import { registerCapability } from "../capabilities.ts";
 // The runtime module is identical either way; only the type visibility
 // changes, and the call below passes the live `pi` object through untouched.
 //
-// The existing `agents` extension (agents.ts) stays the writer for Pixie's
-// agent Markdown CRUD (`pi.sources.*`), the `list_agents`/`delegate` tools
-// and the Web UI editor: both implementations read the same Markdown files,
-// so definitions created in Pixie are visible to `subagent` discovery.
-// `delegate` execution is kept intact until the parity gate in
-// docs/roadmap.md passes; enabling `pi-subagent` before then surfaces both
-// tools, so use it only for parity evaluation.
+// The `agents` profile keeps Pixie's agent Markdown CRUD (`pi.sources.*`)
+// and the Web UI editor; both read the same Markdown files, so definitions
+// created in Pixie are visible to `subagent` discovery. The custom
+// `delegate`/`list_agents` execution was removed after the subagent parity
+// gate passed (docs/roadmap.md); `subagent` is the single delegation tool.
 //
 // Projection verdict: the normal Pi `onUpdate` partials plus the final
 // `result.details` (`{kind: "pi-subagent", projectAgentsDir, results,
