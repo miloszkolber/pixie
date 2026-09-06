@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { PiConnector } from "@signetai/connector-pi";
 import agents from "../../pi-host/src/extensions/agents.ts";
+import llama from "../../pi-host/src/extensions/llama.ts";
 import piSubagent from "../../pi-host/src/extensions/pi-subagent.ts";
 import plans from "../../pi-host/src/extensions/plans.ts";
 import rpivAsk from "../../pi-host/src/extensions/rpiv-ask.ts";
@@ -62,6 +63,25 @@ test("host reports Pi SDK version and advertises each optional profile", async (
 			await host.close();
 		}
 	}
+});
+
+test("llama profile loads the SDK built-in and registers the provider", async () => {
+	const dir = await tempDir("pixie-pi-parity-llama-");
+	const secret = "parity-llama-secret";
+	const host = await startHost({ agentDir: dir, secret, port: 0, extensions: ["llama"] });
+	try {
+		const base = `http://127.0.0.1:${host.server.port}`;
+		const ready = (await (
+			await fetch(`${base}/readyz`, { headers: { Authorization: `Bearer ${secret}` } })
+		).json()) as { capabilities: Record<string, number> };
+		expect(ready.capabilities.llama).toBe(1);
+	} finally {
+		await host.close();
+	}
+	const { sessions } = await fixture([llama]);
+	const entry = await sessions.create(dir);
+	expect(entry.modelRuntime.getProviders().map((p) => p.id)).toContain("llama.cpp");
+	expect(entry.capabilities.snapshot()).toMatchObject({ llama: 1 });
 });
 
 test("unknown or duplicate extension profiles are rejected", async () => {

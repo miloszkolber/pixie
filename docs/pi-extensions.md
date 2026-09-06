@@ -14,6 +14,7 @@ The host starts with normal Pi resources and no bundled factories enabled. Add `
 | `signet` | Marker for the operator-installed Signet memory file extension; Pi-native memory candidate |
 | `pi-subagent` | Upstream `subagent` tool; Pi-native delegation candidate |
 | `pi-mcp-adapter` | Upstream `mcp` proxy tool; Pi-native MCP client candidate |
+| `llama` | SDK built-in llama.cpp extension unchanged: local `llama.cpp` provider plus `/llama` command |
 
 Use either `plans` with `web`, or `rpiv-todo` with `rpiv-web`. Both web profiles register `web_fetch`, and the first listed factory wins; the pair is mutually exclusive. The custom `plans` and `web` extensions remain the defaults pending the [parity gate](roadmap.md).
 
@@ -47,6 +48,10 @@ Global MCP changes apply on subsequent session initialization. Session membershi
 ## Pi-native MCP client
 
 The `pi-mcp-adapter` profile registers the upstream `pi-mcp-adapter` factory unchanged: one `mcp` proxy tool with lazy/eager/keep-alive lifecycle, a metadata cache, stdio and Streamable HTTP transports with SSE fallback, header secrets, OAuth/bearer auth, resources, reconnect, and runtime registration over the Pi event bus. Pixie only adds an additive marker plus `adapter.status` and `adapter.registerBrowser` projection operations; it adds no tools, prompts, or interception. Pixie Browser registers through the adapter runtime API proxy-only (`pixie-browser`, first-wins, fail-closed on duplicates). The custom `mcp` extension stays the writer until the [parity gate](roadmap.md) passes; enabling `pi-mcp-adapter` before then surfaces both the per-tool `<conn>__<tool>` surface and the single `mcp` proxy tool, so use it only for parity evaluation. Upstream declares `engines: {node: ">=20"}` with unknown Bun compatibility; the parity suite records the Bun startup outcome.
+
+## Local llama.cpp provider
+
+The `llama` profile loads the Pi SDK's own built-in llama.cpp extension unchanged: it registers the local `llama.cpp` provider (OpenAI-completions against `LLAMA_BASE_URL`) plus the `/llama` model-management command, with an additive `llama` marker. Model selection keeps flowing through `pi.providers.*` and `session.configure`. The operator gives the host `LLAMA_BASE_URL` (service `Environment=` or equivalent); auth uses the stored `llama.cpp` credential when present and otherwise falls back to `LLAMA_API_KEY` or the dummy key `local`, which llama.cpp ignores. The `/llama` management command itself renders through Pi TUI components and needs an interactive terminal; provider registration, catalog refresh, and inference work headless.
 
 ## Signet memory
 

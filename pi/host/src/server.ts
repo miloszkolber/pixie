@@ -6,6 +6,7 @@ import mcp from "@pixie/pi-mcp";
 import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
 import agents from "./extensions/agents.ts";
+import llama from "./extensions/llama.ts";
 import piMcpAdapter from "./extensions/pi-mcp-adapter.ts";
 import piSubagent from "./extensions/pi-subagent.ts";
 import plans from "./extensions/plans.ts";
@@ -91,6 +92,11 @@ async function startUnlockedHost(options: HostOptions) {
 		// `adapter.registerBrowser` projection operations. The custom `mcp`
 		// extension stays the writer until parity is verified.
 		"pi-mcp-adapter": piMcpAdapter,
+		// Optional local provider. Loads the SDK's own built-in llama.cpp
+		// extension unchanged (provider registration plus `/llama` command);
+		// see extensions/llama.ts for the loading detour and the headless
+		// caveat on the `/llama` management command itself.
+		llama,
 	};
 	const names = options.extensions ?? [];
 	if (new Set(names).size !== names.length || names.some((n) => !profiles[n]))
