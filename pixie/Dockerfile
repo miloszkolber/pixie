@@ -86,10 +86,17 @@ FROM ${GIT_IMAGE} AS git-runtime-source
 FROM ${DEBIAN_IMAGE} AS git-runtime-trim
 COPY --from=git-runtime-source / /rootfs/
 COPY pixie/tests/deployment/git-runtime.test.sh /usr/local/bin/verify-git-runtime
-# Chainguard's /usr/lib64 conflicts with the Debian browser base's directory of
-# the same name; the base already carries its own dynamic loader, so drop the
-# Chainguard entry before the rootfs merge.
-RUN rm -rf /rootfs/usr/lib64 /rootfs/lib64 \
+# Chainguard publishes /usr/lib64 as a symlink while the Debian browser base
+# has a real directory there, which COPY cannot merge. Materialize the
+# symlink target into a real directory so the chrooted git runtime keeps its
+# loader and the rootfs merge stays a directory-onto-directory copy.
+RUN set -eu; \
+    if [ -L /rootfs/usr/lib64 ] || [ -f /rootfs/usr/lib64 ]; then \
+        target="$(readlink /rootfs/usr/lib64 || true)"; \
+        rm -rf /rootfs/usr/lib64; \
+        mkdir -p /rootfs/usr/lib64; \
+        if [ -n "$target" ]; then cp -aL "/rootfs/${target#/}"/. /rootfs/usr/lib64/; fi; \
+    fi \
     && rm -f \
         /rootfs/bin/sh /rootfs/usr/bin/sh \
         /rootfs/bin/dash /rootfs/usr/bin/dash \
