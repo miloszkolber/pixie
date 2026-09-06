@@ -117,7 +117,7 @@ RUN --mount=type=cache,id=browser-runtime-apt,target=/var/cache/apt,sharing=lock
         tini \
     && install -d /app/legal /home/pixie \
         /var/lib/pixie/mcp-browser/artifacts /var/lib/pixie/mcp-browser/state \
-    && chown -R 1000:1000 /app /home/pixie /var/lib/pixie-browser
+    && chown -R 1000:1000 /app /home/pixie /var/lib/pixie/mcp-browser
 COPY LICENSE NOTICE.md /app/legal/
 ENV HOME=/home/pixie
 WORKDIR /app
