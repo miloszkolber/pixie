@@ -3,7 +3,6 @@ import { PiConnector } from "@signetai/connector-pi";
 import agents from "../../../pi/host/src/extensions/agents.ts";
 import llama from "../../../pi/host/src/extensions/llama.ts";
 import piSubagent from "../../../pi/host/src/extensions/pi-subagent.ts";
-import plans from "../../../pi/host/src/extensions/plans.ts";
 import rpivAsk from "../../../pi/host/src/extensions/rpiv-ask.ts";
 import rpivTodo from "../../../pi/host/src/extensions/rpiv-todo.ts";
 import rpivWeb from "../../../pi/host/src/extensions/rpiv-web.ts";
@@ -35,8 +34,8 @@ test("host reports Pi SDK version and advertises each optional profile", async (
 	const dir = await tempDir("pixie-pi-parity-host-");
 	const secret = "parity-matrix-secret";
 	for (const extensions of [
-		["mcp", "agents", "plans", "web"],
 		["mcp", "agents", "rpiv-todo", "rpiv-web", "rpiv-ask"],
+		["mcp", "agents", "rpiv-todo", "rpiv-web", "rpiv-ask", "signet", "pi-subagent", "llama"],
 	]) {
 		const host = await startHost({ agentDir: dir, secret, port: 0, extensions });
 		try {
@@ -50,15 +49,10 @@ test("host reports Pi SDK version and advertises each optional profile", async (
 			};
 			expect(ready.protocolVersion).toBe(1);
 			expect(ready.runtimeId).toBeString();
-			if (extensions.includes("plans")) {
-				expect(ready.capabilities.plans).toBe(1);
-				expect(ready.capabilities["rpiv-todo"]).toBeUndefined();
-			} else {
-				expect(ready.capabilities["rpiv-todo"]).toBe(1);
-				expect(ready.capabilities["rpiv-web"]).toBe(1);
-				expect(ready.capabilities["rpiv-ask"]).toBe(1);
-				expect(ready.capabilities.plans).toBeUndefined();
-			}
+			expect(ready.capabilities["rpiv-todo"]).toBe(1);
+			expect(ready.capabilities["rpiv-web"]).toBe(1);
+			expect(ready.capabilities["rpiv-ask"]).toBe(1);
+			expect(ready.capabilities.plans).toBeUndefined();
 		} finally {
 			await host.close();
 		}
@@ -125,7 +119,6 @@ test("signet and pi-subagent profiles advertise additive markers", async () => {
 test("each profile adds tools without replacing Pi core tools", async () => {
 	const { dir, sessions } = await fixture([
 		(pi) => agents(pi, dir),
-		plans,
 		web,
 		rpivTodo,
 		rpivWeb,
@@ -151,7 +144,6 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 				"bash",
 				"edit",
 				"write",
-				"update_plan",
 				"todo",
 				"web_fetch",
 				"web_search",
@@ -167,7 +159,6 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 		);
 		expect(entry.capabilities.snapshot()).toMatchObject({
 			agents: 1,
-			plans: 1,
 			web: 1,
 			"rpiv-todo": 1,
 			"rpiv-web": 1,

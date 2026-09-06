@@ -9,7 +9,6 @@ import agents from "./extensions/agents.ts";
 import llama from "./extensions/llama.ts";
 import piMcpAdapter from "./extensions/pi-mcp-adapter.ts";
 import piSubagent from "./extensions/pi-subagent.ts";
-import plans from "./extensions/plans.ts";
 import rpivAsk from "./extensions/rpiv-ask.ts";
 import rpivTodo from "./extensions/rpiv-todo.ts";
 import rpivWeb from "./extensions/rpiv-web.ts";
@@ -67,11 +66,10 @@ async function startUnlockedHost(options: HostOptions) {
 					close: () => sessions.release(entry.session.sessionId),
 				};
 			}),
-		plans,
 		web,
 		// Optional Pi-native replacements, enabled with e.g.
 		// `--extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask`. The custom
-		// `plans` and `web` factories stay available until parity is verified.
+		// `web` factory stays available until parity is verified.
 		// `rpiv-ask` answers through the generic UI bridge; the Pixie
 		// application-level question tool stays the writer until its own
 		// parity gate (docs/roadmap.md) is met.

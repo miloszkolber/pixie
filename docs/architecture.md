@@ -20,7 +20,7 @@ Paths below are relative to `pixie/`.
 | `webui`, `contracts` | Svelte 5 interface and shared wire contracts |
 | `tests` | Unit, integration, deployment and browser checks |
 
-Pi sources live separately in top-level `pi/`: `host/` contains the SDK service and optional agents, plans and web extensions; `mcp/` contains the independent MCP extension. The repository root holds the shared Bun workspace and lockfile.
+Pi sources live separately in top-level `pi/`: `host/` contains the SDK service and optional agents and web extensions plus upstream Pi extension profiles; `mcp/` contains the independent MCP extension. The repository root holds the shared Bun workspace and lockfile.
 
 Bun builds the frontend with verified Mewa UI assets. The Go application image includes static UI assets and Git. The MCP image includes the Browser runtime. Both run non-root with read-only root filesystems.
 

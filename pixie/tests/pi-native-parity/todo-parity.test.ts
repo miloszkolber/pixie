@@ -1,34 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import plans from "../../../pi/host/src/extensions/plans.ts";
 import rpivTodo from "../../../pi/host/src/extensions/rpiv-todo.ts";
 import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
-
-test("custom update_plan writes pixie-plan entries readable via plans.read", async () => {
-	const { dir, sessions } = await fixture([plans]);
-	const entry = await sessions.create(dir);
-	const result = await findTool(entry, "update_plan").execute(
-		"parity-plan",
-		{ entries: [{ content: "Research", priority: "high", status: "in_progress" }] },
-		new AbortController().signal,
-	);
-	expect(result.details).toMatchObject({
-		plan: { entries: [{ content: "Research", priority: "high", status: "in_progress" }] },
-	});
-	expect(await entry.capabilities.call("plans.read", {}, sessions.context(entry))).toMatchObject({
-		entries: [{ content: "Research" }],
-	});
-	// The custom plan survives reload by replaying pixie-plan branch entries.
-	const reloaded = new Sessions(dir, [plans], () => {});
-	cleanups.push(() => reloaded.close());
-	const loaded = await reloaded.get(entry.session.sessionId);
-	expect(await loaded.capabilities.call("plans.read", {}, reloaded.context(loaded))).toMatchObject({
-		entries: [{ content: "Research", status: "in_progress" }],
-	});
 });
 
 test("upstream todo returns details.tasks/details.nextId with per-action envelopes", async () => {
@@ -170,22 +146,3 @@ test("upstream todo keeps per-session state isolated", async () => {
 	expect(listed.details.nextId).toBe(1);
 });
 
-test("custom plans and upstream todo coexist for dual-read migration", async () => {
-	const { dir, sessions } = await fixture([plans, rpivTodo]);
-	const entry = await sessions.create(dir);
-	const signal = new AbortController().signal;
-	await findTool(entry, "update_plan").execute(
-		"parity-dual-plan",
-		{ entries: [{ content: "Legacy plan", priority: "medium", status: "pending" }] },
-		signal,
-	);
-	const created = await findTool(entry, "todo").execute(
-		"parity-dual-todo",
-		{ action: "create", subject: "Upstream task" },
-		signal,
-	);
-	expect(created.details.nextId).toBe(2);
-	expect(await entry.capabilities.call("plans.read", {}, sessions.context(entry))).toMatchObject({
-		entries: [{ content: "Legacy plan" }],
-	});
-});

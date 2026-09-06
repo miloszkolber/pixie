@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import agents from "../../../pi/host/src/extensions/agents.ts";
-import plans from "../../../pi/host/src/extensions/plans.ts";
 import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { JsonStore } from "../../../pi/host/src/storage.ts";
 import { makeProvider } from "./provider-fixture.ts";
@@ -81,12 +80,12 @@ test("native SDK streams and replays text attachments without losing display met
 	expect(reloaded.snapshot(loaded, true).messages).toEqual(snapshot.messages);
 });
 
-test("agent definitions and plans add tools without replacing Pi core tools", async () => {
-	const { dir, sessions } = await fixture([(pi) => agents(pi, dir), plans]);
+test("agent definitions add tools without replacing Pi core tools", async () => {
+	const { dir, sessions } = await fixture([(pi) => agents(pi, dir)]);
 	const entry = await sessions.create(dir);
-	expect(entry.capabilities.snapshot()).toEqual({ agents: 1, plans: 1 });
+	expect(entry.capabilities.snapshot()).toEqual({ agents: 1 });
 	expect(entry.session.getActiveToolNames()).toEqual(
-		expect.arrayContaining(["read", "bash", "edit", "write", "delegate", "update_plan"]),
+		expect.arrayContaining(["read", "bash", "edit", "write", "delegate"]),
 	);
 	const saved = await entry.capabilities.call(
 		"pi.sources.create",

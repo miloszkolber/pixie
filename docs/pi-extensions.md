@@ -1,14 +1,13 @@
 # Pi extensions
 
-The host starts with normal Pi resources and no bundled factories enabled. Add `--extensions mcp,agents,plans,web` to select optional factories. These are ordinary Pi extensions; Pixie checks their service contracts in the selected project or session before exposing related controls.
+The host starts with normal Pi resources and no bundled factories enabled. Add `--extensions mcp,agents,rpiv-todo,web` to select optional factories. These are ordinary Pi extensions; Pixie checks their service contracts in the selected project or session before exposing related controls.
 
 | Extension | Added capability |
 | --- | --- |
 | `mcp` | Configurable MCP tools, resources and App metadata; [standalone package](../pi/mcp/README.md) |
 | `agents` | Markdown agent definitions, `list_agents` and `delegate` |
-| `plans` | Persistent `update_plan` tool |
 | `web` | Bounded HTTP(S) `web_fetch` tool |
-| `rpiv-todo` | Upstream `todo` tool and `/todos` command; Pi-native `plans` replacement candidate |
+| `rpiv-todo` | Upstream `todo` tool and `/todos` command |
 | `rpiv-web` | Upstream `web_search` and `web_fetch`; Pi-native `web` replacement candidate |
 | `rpiv-ask` | Upstream `ask_user_question` tool; Pi-native question replacement candidate |
 | `signet` | Marker for the operator-installed Signet memory file extension; Pi-native memory candidate |
@@ -16,7 +15,7 @@ The host starts with normal Pi resources and no bundled factories enabled. Add `
 | `pi-mcp-adapter` | Upstream `mcp` proxy tool; Pi-native MCP client candidate |
 | `llama` | SDK built-in llama.cpp extension unchanged: local `llama.cpp` provider plus `/llama` command |
 
-Use either `plans` with `web`, or `rpiv-todo` with `rpiv-web`. Both web profiles register `web_fetch`, and the first listed factory wins; the pair is mutually exclusive. The custom `plans` and `web` extensions remain the defaults pending the [parity gate](roadmap.md).
+Use `rpiv-todo` with either `web` or `rpiv-web`. Both web profiles register `web_fetch`, and the first listed factory wins; the pair is mutually exclusive. The custom `web` extension remains available pending the [parity gate](roadmap.md).
 
 Agent definitions live in `<agentDir>/agents/*.md` and `<project>/.pi/agents/*.md`. Frontmatter contains `name`, `description` and optional `model` (`provider/model` or a model ID within the inherited provider). The body supplies task instructions. Edits preserve unspecified frontmatter, including the model. Names use letters, numbers, spaces, underscores or hyphens (up to 80 UTF-8 bytes); each complete file is limited to 64 KiB. Invalid files produce diagnostics while valid definitions remain available. Delegation creates a separate native Pi session using the selected host extension profile.
 

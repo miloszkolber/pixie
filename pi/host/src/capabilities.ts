@@ -43,7 +43,6 @@ const requiredOperations: Record<string, string[]> = {
 		"pi.resources.read",
 		"pi.tools.call",
 	],
-	plans: ["plans.read"],
 	"pi-mcp-adapter": ["adapter.status", "adapter.registerBrowser"],
 };
 export class Capabilities {
