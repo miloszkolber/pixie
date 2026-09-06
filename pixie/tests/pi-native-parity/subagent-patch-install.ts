@@ -1,8 +1,7 @@
 // Exercise real child processes from a clean production-only frozen install.
 import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "../../..");
 const temporary = await mkdtemp(join(tmpdir(), "pixie-subagent-patch-install-"));

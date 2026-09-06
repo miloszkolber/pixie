@@ -3,8 +3,8 @@
 // Each sample is a fresh process with an empty metadata cache. These are local
 // fixture measurements, not provider token counts or production-host timings.
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { piMcpAdapterWithConfig } from "../../../pi/host/src/extensions/pi-mcp-adapter.ts";
 import { Sessions } from "../../../pi/host/src/sessions.ts";
 

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Resolve the host's locked dependency, not stale application-local installs.
@@ -84,7 +84,7 @@ test("Bun runs native known-agent children with settings, named continuation and
 		};
 		const fresh = await runAgent({ ...options, prompt: "fresh" });
 		expect(fresh.stderr).not.toMatch(/error/i);
-	expect(fresh.exitCode).toBe(0);
+		expect(fresh.exitCode).toBe(0);
 		expect(getFinalOutput(fresh.messages)).toBe('["fresh"]');
 		expect(fresh.usage).toMatchObject({ input: 5, output: 4, turns: 1 });
 		const [launch] = await audit();
@@ -125,7 +125,7 @@ test("Bun runs native known-agent children with settings, named continuation and
 			persistentSessionDir: join(agentDir, "sessions"),
 		});
 		expect(named.stderr).not.toMatch(/error/i);
-	expect(named.exitCode).toBe(0);
+		expect(named.exitCode).toBe(0);
 		const continued = await runAgent({
 			...options,
 			prompt: "continue",
@@ -133,7 +133,7 @@ test("Bun runs native known-agent children with settings, named continuation and
 			persistentSessionDir: join(agentDir, "sessions"),
 		});
 		expect(continued.stderr).not.toMatch(/error/i);
-	expect(continued.exitCode).toBe(0);
+		expect(continued.exitCode).toBe(0);
 		expect(getFinalOutput(continued.messages)).toBe('["remember","continue"]');
 		expect(continued.session.id).toBe(session.id);
 		pending = runAgent({ ...options, prompt: "hold", signal: controller.signal });

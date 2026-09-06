@@ -2,8 +2,7 @@
 // modified node_modules. Run using the pinned Bun from the repository root.
 import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "../../..");
 const temporary = await mkdtemp(join(tmpdir(), "pixie-mcp-patch-install-"));
