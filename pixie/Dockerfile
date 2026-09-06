@@ -116,7 +116,7 @@ RUN --mount=type=cache,id=browser-runtime-apt,target=/var/cache/apt,sharing=lock
         git \
         tini \
     && install -d /app/legal /home/pixie \
-        /var/lib/pixie-browser/artifacts /var/lib/pixie-browser/state \
+        /var/lib/pixie/mcp-browser/artifacts /var/lib/pixie/mcp-browser/state \
     && chown -R 1000:1000 /app /home/pixie /var/lib/pixie-browser
 COPY LICENSE NOTICE.md /app/legal/
 ENV HOME=/home/pixie
@@ -191,8 +191,8 @@ RUN test -x /app/pixie \
     && test -x /usr/local/bin/agent-browser \
     && command -v chromium \
     && command -v git \
-    && test -d /var/lib/pixie-browser/artifacts \
-    && test -d /var/lib/pixie-browser/state
+    && test -d /var/lib/pixie/mcp-browser/artifacts \
+    && test -d /var/lib/pixie/mcp-browser/state
 USER 1000:1000
 EXPOSE 7312
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
