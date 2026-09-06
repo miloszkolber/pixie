@@ -42,8 +42,8 @@ Preserve the focused current baseline. Keep features, dependencies, tests, proto
 
 ## Runtime boundaries
 
-- Pi runs on the host as the user's authenticated loopback service. The default deployment uses two host-networked containers: the application and the `pixie-mcp` host, which embeds the Browser module from the same Go module.
-- Objective updates use session-scoped MCP on the application listener. Browser tools and essential instructions use the MCP host's `/browser` module; it publishes a catalog at `/v1/mcp/modules` and keeps Browser HTTP/artifact compatibility routes available. Both MCP surfaces can serve trusted external host-network services.
+- Pi runs on the host as the user's authenticated loopback service. The default deployment uses one host-networked container: the application, which embeds the Browser module and MCP publisher from the same Go module on port `7312`.
+- Objective updates use session-scoped MCP on the application listener. Browser tools and essential instructions publish through the in-process Browser module at `/mcp/browser`; the catalog lives at `/api/mcp/modules`. The MCP surface can serve trusted external host-network services.
 - Pixie configures discovered MCP modules through Pi administration. The Browser connection is named `pixie-browser`. The universal Pi MCP client extension must not assume this service or any deployment address. Do not install host skills or put secrets in model-visible instructions.
 - The browser has its own state mount, without project, application-state or Pi-configuration mounts. Its sessions still share one UID and filesystem; host networking is not network isolation.
 

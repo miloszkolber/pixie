@@ -39,7 +39,6 @@ import type {
 	LoginFrame,
 	LoginReply,
 	McpAdapterStatus,
-	McpGatewayCatalog,
 	McpRegistryCatalog,
 	PiAgentCatalogEntry,
 	PiExtensionCatalog,
@@ -533,14 +532,6 @@ export interface WsMethodMap {
 	"runtime.status": {
 		params: Record<string, never>;
 		result: RuntimeStatusReport;
-	};
-	"mcpGateway.catalog": {
-		params: Record<string, never>;
-		result: McpGatewayCatalog;
-	};
-	"mcpGateway.moduleSetPiEnabled": {
-		params: { moduleId: string; enabled: boolean; revision?: string };
-		result: McpGatewayCatalog;
 	};
 	"mcpRegistry.catalog": {
 		params: Record<string, never>;

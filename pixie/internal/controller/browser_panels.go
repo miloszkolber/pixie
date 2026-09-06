@@ -46,8 +46,11 @@ type browserPanel struct {
 // BrowserPanels keeps random browser session identifiers on the application
 // side. Browser remains authoritative for session serialization and quotas.
 type BrowserPanels struct {
-	auth          AuthConfig
-	client        *http.Client
+	auth   AuthConfig
+	client *http.Client
+	// browser serves the in-process Browser REST surface when
+	// PIXIE_BROWSER_URL is unset (merged publisher deployment).
+	browser       func() http.Handler
 	mu            sync.Mutex
 	panels        map[string]browserPanel
 	draining      bool
@@ -327,34 +330,84 @@ func (p *BrowserPanels) call(ctx context.Context, session, command string, args 
 	if err != nil {
 		return browserPanelResult{}, fmt.Errorf("encode browser command: %w", err)
 	}
+	content, status, err := p.browserCall(ctx, "/v1/browser", body, true)
+	if err != nil {
+		return browserPanelResult{}, err
+	}
+	if status != http.StatusOK {
+		return browserPanelResult{}, browserPanelFailure(content, status)
+	}
+	return parseBrowserPanelResult(content, session, command)
+}
+
+// browserCall posts one Browser REST command either to the in-process module
+// (PIXIE_BROWSER_URL unset) or to the configured external Browser service.
+func (p *BrowserPanels) browserCall(ctx context.Context, path string, body []byte, lease bool) ([]byte, int, error) {
 	bounded, cancel := context.WithTimeout(ctx, browserPanelTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(bounded, http.MethodPost, p.auth.BrowserURL+"/v1/browser", bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(bounded, http.MethodPost, path, bytes.NewReader(body))
 	if err != nil {
-		return browserPanelResult{}, fmt.Errorf("create browser command: %w", err)
+		return nil, 0, fmt.Errorf("create browser command: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Pixie-Panel-Lease", "1")
+	if lease {
+		request.Header.Set("X-Pixie-Panel-Lease", "1")
+	}
 	if browserAuth, browserToken := p.auth.BrowserServiceAuth(); browserAuth {
 		if !strongToken(browserToken) {
-			return browserPanelResult{}, fmt.Errorf("browser panel is unavailable")
+			return nil, 0, fmt.Errorf("browser panel is unavailable")
 		}
 		request.Header.Set("Authorization", "Bearer "+browserToken)
 	}
+	if p.auth.BrowserURL == "" {
+		handler := p.browser()
+		if handler == nil {
+			return nil, 0, fmt.Errorf("browser panel is unavailable")
+		}
+		recorder := newBrowserResponseRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.code == 0 {
+			recorder.code = http.StatusOK
+		}
+		return recorder.body.Bytes(), recorder.code, nil
+	}
+	request.URL = nil
+	target, err := url.Parse(p.auth.BrowserURL + path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("browser command unavailable: %w", err)
+	}
+	request.URL = target
 	response, err := p.client.Do(request)
 	if err != nil {
-		return browserPanelResult{}, fmt.Errorf("browser command unavailable: %w", err)
+		return nil, 0, fmt.Errorf("browser command unavailable: %w", err)
 	}
 	defer response.Body.Close()
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxBrowserPanelBody+1))
 	if err != nil || len(content) > maxBrowserPanelBody {
-		return browserPanelResult{}, fmt.Errorf("browser command returned an invalid response")
+		return nil, 0, fmt.Errorf("browser command returned an invalid response")
 	}
-	if response.StatusCode != http.StatusOK {
-		return browserPanelResult{}, browserPanelFailure(content, response.StatusCode)
-	}
-	return parseBrowserPanelResult(content, session, command)
+	return content, response.StatusCode, nil
 }
+
+// browserResponseRecorder captures one in-process Browser response so panel
+// and artifact callers can share the external-service code paths.
+type browserResponseRecorder struct {
+	header http.Header
+	body   bytes.Buffer
+	code   int
+}
+
+func newBrowserResponseRecorder() *browserResponseRecorder {
+	return &browserResponseRecorder{header: http.Header{}}
+}
+
+func (r *browserResponseRecorder) Header() http.Header { return r.header }
+
+func (r *browserResponseRecorder) Write(content []byte) (int, error) {
+	return r.body.Write(content)
+}
+
+func (r *browserResponseRecorder) WriteHeader(status int) { r.code = status }
 
 func browserPanelFailure(content []byte, status int) error {
 	var failure struct {

@@ -22,14 +22,12 @@ import (
 )
 
 const (
-	// BrowserRoute is the in-process Browser module path on the controller
-	// listener. The separate pixie-mcp host keeps serving /browser on its own
-	// listener; the two publishers are dual-run until the removal gate in
-	// docs/roadmap.md passes.
+	// BrowserRoute is the Browser module path on the controller listener; the
+	// publisher now lives in the main Pixie process (Stage F merge).
 	BrowserRoute = "/mcp/browser"
 	// CatalogPath and StatusPath are the in-process publisher API. They mirror
-	// the separate host's /v1/mcp/modules and /v1/mcp/status shape with the
-	// in-process route; exact paths remain an implementation detail.
+	// the former separate host's /v1/mcp/modules and /v1/mcp/status shape with
+	// the in-process route; exact paths remain an implementation detail.
 	CatalogPath = "/api/mcp/modules"
 	StatusPath  = "/api/mcp/status"
 
@@ -51,11 +49,10 @@ const (
 )
 
 // Deprecated-pending-parity: PIXIE_MCP_MODULES and PIXIE_MCP_DISABLED_MODULES
-// remain the fallback default for in-process publication until the Tools UI
-// toggle reaches parity. Persisted enablement in mcp-modules.json wins once
-// the operator toggles a module; afterwards the environment is ignored for
-// that module. The separate pixie-mcp host keeps reading the same variables
-// as its own source of truth.
+// remain the fallback default for publication until the Tools UI toggle
+// reaches parity. Persisted enablement in mcp-modules.json wins once the
+// operator toggles a module; afterwards the environment is ignored for
+// that module.
 const (
 	envModules  = "PIXIE_MCP_MODULES"
 	envDisabled = "PIXIE_MCP_DISABLED_MODULES"
@@ -77,8 +74,8 @@ type Module struct {
 	Endpoint      string `json:"endpoint,omitempty"`
 }
 
-// Catalog mirrors the separate host catalog shape so Tools UI projections and
-// Pi extension wiring stay identical across publisher engines.
+// Catalog mirrors the former separate host catalog shape so Tools UI
+// projections and Pi extension wiring stay identical across publisher engines.
 type Catalog struct {
 	SchemaVersion int            `json:"schemaVersion"`
 	Revision      string         `json:"revision"`
@@ -110,8 +107,8 @@ func (r *Registry) Health(id string) (ready bool, detail string) {
 }
 
 // Config describes the in-process publisher. Browser storage roots are always
-// derived from the controller data directory so the dual-run separate host
-// never shares Browser session or artifact state with this publisher.
+// derived from the controller data directory so Browser state never mixes
+// with application data.
 type Config struct {
 	Host         string
 	Port         int
@@ -150,7 +147,7 @@ type engineState struct {
 
 // Registry is the in-process Pixie MCP publisher. It wraps one Browser module
 // behind enable/disable state owned by the Pixie persist store, served on the
-// controller listener alongside (not instead of) the separate pixie-mcp host.
+// controller listener by the main Pixie process.
 type Registry struct {
 	config  Config
 	build   diagnostics.BuildInfo
@@ -415,6 +412,30 @@ func (r *Registry) Shutdown() {
 	}
 }
 
+// BrowserLegacyHandler serves the Browser service's own REST surface
+// (/v1/browser, /v1/browser/leases, /v1/artifacts/*, /v1/app-views*) from the
+// in-process module, preserving the former separate host's panel and artifact
+// compatibility routes. The handler re-checks module enablement on every call
+// and returns nil while the module is disabled or degraded; callers fall back
+// to their external BrowserURL proxy in that case.
+func (r *Registry) BrowserLegacyHandler() func() http.Handler {
+	return func() http.Handler {
+		r.mu.RLock()
+		service := r.browser
+		enabled := r.enabled[browserID]
+		r.mu.RUnlock()
+		if !enabled || service == nil {
+			return nil
+		}
+		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			// The Browser service keeps its own bearer, host, and origin checks;
+			// it stays the trust boundary for panel and artifact traffic.
+			clone := request.Clone(request.Context())
+			service.ServeHTTP(response, clone)
+		})
+	}
+}
+
 func (r *Registry) startLocked() {
 	if !r.enabled[browserID] {
 		if r.browser != nil {
@@ -493,9 +514,8 @@ func (r *Registry) browserConfig() browser.Config {
 	if r.engine != engineObscura {
 		config.CDPEndpoint = ""
 	}
-	// Storage isolation: the dual-run separate host keeps its own Browser
-	// roots; this publisher stores Browser state under the controller data
-	// directory instead.
+	// Storage isolation: this publisher stores Browser state under the
+	// controller data directory instead of the image-level browser roots.
 	config.ArtifactRoot = filepath.Join(r.config.DataDir, "mcp-browser", "artifacts")
 	config.StateRoot = filepath.Join(r.config.DataDir, "mcp-browser", "state")
 	if binaries := r.config.Binaries; binaries != nil {
@@ -580,7 +600,7 @@ func (r *Registry) ServeHTTP(response http.ResponseWriter, request *http.Request
 
 // authorized guards the publisher metadata endpoints with the same credential
 // as module traffic: the shared PIXIE_MCP_TOKEN bearer when configured,
-// otherwise same-origin fetch metadata like the separate host.
+// otherwise same-origin fetch metadata like the former separate host.
 func (r *Registry) authorized(request *http.Request) bool {
 	r.mu.RLock()
 	token := r.config.Token

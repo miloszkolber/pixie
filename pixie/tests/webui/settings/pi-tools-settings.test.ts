@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import type { AgentProfile, McpRegistryModule, PiToolSummary } from "@pixie/contracts";
+import type { AgentProfile, McpRegistryModule } from "@pixie/contracts";
 import { agentOperationRows } from "@/settings/sections/agent-settings";
 import {
 	extensionWarningText,
@@ -51,10 +51,7 @@ test("generic agent settings expose agent identity and System", () => {
 	appStoreApi.setState({ agentProfile: profile, settingsOpen: false });
 	appStoreApi.getState().openSettings();
 	expect(appStoreApi.getState().settingsSection).toBe(SettingsSection.Agent);
-	expect(settingsTabs(true, false).map(({ label }) => label)).toEqual([
-		"Agent",
-		"System",
-	]);
+	expect(settingsTabs(true, false).map(({ label }) => label)).toEqual(["Agent", "System"]);
 	expect(settingsTabs(true, false).map(({ label }) => label)).not.toContain("Pi");
 	expect(agentOperationRows(profile)).toContainEqual({
 		operation: "httpMcp",

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"io"
 	"mime"
 	"net/http"
@@ -35,6 +36,59 @@ func (h *HTTPHandler) serveBrowserArtifact(response http.ResponseWriter, request
 		http.NotFound(response, request)
 		return
 	}
+	var body io.ReadCloser
+	status := 0
+	if h.Auth.BrowserURL == "" {
+		// In-process Browser module: serve the artifact directly through the
+		// publisher's legacy surface with the publisher credential injected,
+		// preserving the former proxy's behavior for unauthenticated viewers.
+		handler := h.inProcessBrowserHandler()
+		if handler == nil {
+			http.Error(response, "browser artifact proxy unavailable", http.StatusBadGateway)
+			return
+		}
+		upstream, err := http.NewRequestWithContext(request.Context(), http.MethodGet, "/v1/artifacts/"+url.PathEscape(session)+"/"+url.PathEscape(name), nil)
+		if err != nil {
+			http.Error(response, "browser artifact proxy unavailable", http.StatusBadGateway)
+			return
+		}
+		if browserAuth, browserToken := h.Auth.BrowserServiceAuth(); browserAuth {
+			if !strongToken(browserToken) {
+				http.Error(response, "browser artifact proxy unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			upstream.Header.Set("Authorization", "Bearer "+browserToken)
+		}
+		recorder := newBrowserResponseRecorder()
+		handler.ServeHTTP(recorder, upstream)
+		if recorder.code == 0 {
+			recorder.code = http.StatusOK
+		}
+		status = recorder.code
+		if status < 200 || status >= 300 {
+			if status == http.StatusNotFound {
+				http.NotFound(response, request)
+			} else {
+				http.Error(response, "browser artifact proxy unavailable", http.StatusBadGateway)
+			}
+			return
+		}
+		payload := recorder.body.Bytes()
+		body = io.NopCloser(bytes.NewReader(payload))
+		defer body.Close()
+		contentType, _, err := mime.ParseMediaType(recorder.header.Get("Content-Type"))
+		if err != nil || (contentType != "image/png" && contentType != "image/jpeg" && contentType != "image/webp") {
+			http.Error(response, "invalid browser artifact", http.StatusBadGateway)
+			return
+		}
+		response.Header().Set("Content-Type", contentType)
+		response.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		response.Header().Set("Cache-Control", "no-store")
+		response.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		response.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = io.Copy(response, body)
+		return
+	}
 	upstream, err := http.NewRequestWithContext(request.Context(), http.MethodGet, h.Auth.BrowserURL+"/v1/artifacts/"+url.PathEscape(session)+"/"+url.PathEscape(name), nil)
 	if err != nil {
 		http.Error(response, "browser artifact proxy unavailable", http.StatusBadGateway)
@@ -53,11 +107,13 @@ func (h *HTTPHandler) serveBrowserArtifact(response http.ResponseWriter, request
 		return
 	}
 	defer result.Body.Close()
-	if result.StatusCode >= 300 && result.StatusCode < 400 {
+	body = result.Body
+	status = result.StatusCode
+	if status >= 300 && status < 400 {
 		http.Error(response, "browser artifact proxy unavailable", http.StatusBadGateway)
 		return
 	}
-	if result.StatusCode < 200 || result.StatusCode >= 300 {
+	if status < 200 || status >= 300 {
 		http.NotFound(response, request)
 		return
 	}
@@ -71,5 +127,5 @@ func (h *HTTPHandler) serveBrowserArtifact(response http.ResponseWriter, request
 	response.Header().Set("Cache-Control", "no-store")
 	response.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	response.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = io.CopyN(response, result.Body, result.ContentLength)
+	_, _ = io.CopyN(response, body, result.ContentLength)
 }

@@ -38,7 +38,7 @@ test("the Svelte settings surface retains the settings and login selectors", asy
 		"settings-providers",
 		"system-settings",
 		"tool-inventory",
-		"mcp-module-row",
+		"in-process-mcp-module-row",
 		"model-row",
 		"models-filter",
 		"providers-refresh",

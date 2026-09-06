@@ -3,10 +3,9 @@
 | Process | Location | Owns |
 | --- | --- | --- |
 | Pi SDK service, `:3284` | Host user | Native sessions, providers, credentials, models and extensions |
-| Pixie, `:7312` | Application container | Web UI, projects, files, Git, goals, questions, queues and schedules |
-| Pixie MCP, `:8787` | Separate container | Browser, Chromium, artifacts and interactive App origin |
+| Pixie, `:7312` | Application container | Web UI, projects, files, Git, goals, questions, queues, schedules, Browser MCP publisher, Chromium and artifacts |
 
-Linux host networking lets both containers reach host services over loopback. Only the application receives project mounts, read-only and at the same absolute paths used by Pi. Browser has its own state and no project, application-state or Pi-configuration mounts.
+Host networking lets the container reach host services over loopback. Only the application receives project mounts, read-only and at the same absolute paths used by Pi. Browser state mounts into the same container at `/var/lib/pixie-browser` and has no project, application-state or Pi-configuration mounts.
 
 ## Source
 
@@ -14,15 +13,15 @@ Paths below are relative to `pixie/`.
 
 | Directory | Responsibility |
 | --- | --- |
-| `cmd/pixie`, `internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection and lifecycle |
-| `cmd/pixie-mcp`, `internal/mcphost`, `internal/browser` | MCP catalog, Browser routes and runtime |
+| `cmd/pixie`, `internal/controller` | Application HTTP/WebSocket/MCP, MCP publisher, native Pi projection and lifecycle |
+| `internal/mcpserver`, `internal/browser` | In-process Browser module publication and browser runtime |
 | `internal/workspace`, `internal/persist` | Bounded project access and durable state |
 | `webui`, `contracts` | Svelte 5 interface and shared wire contracts |
 | `tests` | Unit, integration, deployment and browser checks |
 
 Pi sources live separately in top-level `pi/`: `host/` contains the SDK service and optional agents and web extensions plus upstream Pi extension profiles; `mcp/` contains the independent MCP extension. The repository root holds the shared Bun workspace and lockfile.
 
-Bun builds the frontend with verified Mewa UI assets. The Go application image includes static UI assets and Git. The MCP image includes the Browser runtime. Both run non-root with read-only root filesystems.
+Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets, Git and the Browser runtime. It runs non-root with a read-only root filesystem.
 
 ## Configuration ownership
 
@@ -35,7 +34,7 @@ Each setting has one owner. Pixie never reads or writes another owner's state.
 | Pixie (application state) | Projects, sessions, MCP enablement, Browser engine, schedules, goals, settings, dialog and event projection | Controller data directory (`config.json`, `mcp-modules.json`, `browser.json`) |
 | External (operator-owned) | Memory daemon, search backend and credentials | `SIGNET_DAEMON_URL`, `~/.config/rpiv-web-tools/config.json`, provider `*_API_KEY` |
 
-See [Pi integration](pi.md) for Pi-owned settings, [Pixie MCP service](mcp.md) for Pixie-owned MCP and Browser state, and [deployment](deployment.md) for external services.
+See [Pi integration](pi.md) for Pi-owned settings, [MCP publisher](mcp.md) for Pixie-owned MCP and Browser state, and [deployment](deployment.md) for external services.
 
 ## State and lifecycle
 

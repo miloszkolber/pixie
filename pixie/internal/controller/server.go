@@ -44,6 +44,17 @@ type HTTPHandler struct {
 	browserClient *http.Client
 }
 
+// inProcessBrowserHandler exposes the merged publisher's Browser REST surface
+// for panel and artifact traffic when no external PIXIE_BROWSER_URL is set.
+func (h *HTTPHandler) inProcessBrowserHandler() http.Handler {
+	if legacy, ok := h.MCPRegistry.(interface{ BrowserLegacyHandler() func() http.Handler }); ok {
+		if handler := legacy.BrowserLegacyHandler(); handler != nil {
+			return handler()
+		}
+	}
+	return nil
+}
+
 func NewHTTPHandler(webSocket *WebSocketServer, objective ObjectiveHandler, projects *workspace.Projects, files *workspace.Files, authConfig AuthConfig, staticDir string, ready http.HandlerFunc) (*HTTPHandler, error) {
 	if authConfig.BrowserURL == "" {
 		authConfig.BrowserURL = "http://127.0.0.1:8787"

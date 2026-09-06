@@ -1,6 +1,6 @@
 # Pixie
 
-Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). Pi runs on the host; Pixie and its Browser MCP service run in Docker.
+Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). Pi runs on the host; Pixie with its embedded Browser MCP publisher runs in Docker.
 
 - Persistent concurrent chats, streaming, images and text attachments, steering, queues, search and forks.
 - Project directories with read-only files, image previews and Git diffs.
@@ -20,6 +20,6 @@ docker compose --env-file .pixie up -d --build
 
 Open <http://127.0.0.1:7312>. Pixie is intended for one trusted user.
 
-[Architecture](docs/architecture.md) · [Pi integration](docs/pi.md) · [Extensions](docs/pi-extensions.md) · [MCP service](docs/mcp.md) · [Development](docs/development.md) · [Security](docs/security.md)
+[Architecture](docs/architecture.md) · [Pi integration](docs/pi.md) · [Extensions](docs/pi-extensions.md) · [MCP publisher](docs/mcp.md) · [Development](docs/development.md) · [Security](docs/security.md)
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).

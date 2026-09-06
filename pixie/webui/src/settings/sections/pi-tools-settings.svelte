@@ -4,8 +4,6 @@ import type {
 	PiExtensionSummary,
 	PiSessionExtensionSummary,
 	PiToolSummary,
-	McpGatewayCatalog,
-	McpGatewayModule,
 	McpRegistryCatalog,
 	McpRegistryModule,
 } from "@pixie/contracts";
@@ -22,7 +20,6 @@ import {
 } from "./pi-tools-settings";
 
 let catalog = $state<PiExtensionCatalog | null>(null);
-let gatewayCatalog = $state<McpGatewayCatalog | null>(null);
 let registryCatalog = $state<McpRegistryCatalog | null>(null);
 let extensions = $state<PiSessionExtensionSummary[]>([]);
 let tools = $state<PiToolSummary[]>([]);
@@ -70,24 +67,18 @@ async function load(): Promise<void> {
 	loading = true;
 	error = null;
 	loadedSessionTarget = null;
-	const [nextCatalog, nextGatewayCatalog, nextRegistryCatalog, nextExtensions, nextTools] =
-		await Promise.allSettled([
-			mcpAvailable ? getTransport().request("pi.extensionList", {}) : Promise.resolve(null),
-			mcpAvailable || sessionMcpAvailable
-				? getTransport().request("mcpGateway.catalog", {})
-				: Promise.resolve(null),
-			getTransport().request("mcpRegistry.catalog", {}),
-			projectId && sessionId && sessionMcpAvailable
-				? getTransport().request("session.extensionList", { projectId, sessionId })
-				: Promise.resolve([]),
-			projectId && sessionId
-				? getTransport().request("session.toolList", { projectId, sessionId })
-				: Promise.resolve([]),
-		]);
+	const [nextCatalog, nextRegistryCatalog, nextExtensions, nextTools] = await Promise.allSettled([
+		mcpAvailable ? getTransport().request("pi.extensionList", {}) : Promise.resolve(null),
+		getTransport().request("mcpRegistry.catalog", {}),
+		projectId && sessionId && sessionMcpAvailable
+			? getTransport().request("session.extensionList", { projectId, sessionId })
+			: Promise.resolve([]),
+		projectId && sessionId
+			? getTransport().request("session.toolList", { projectId, sessionId })
+			: Promise.resolve([]),
+	]);
 	if (!mounted || sequence !== loadSequence || target !== activeTarget) return;
 	if (nextCatalog.status === "fulfilled") catalog = nextCatalog.value;
-	if (nextGatewayCatalog.status === "fulfilled") gatewayCatalog = nextGatewayCatalog.value;
-	if (nextRegistryCatalog.status === "fulfilled") registryCatalog = nextRegistryCatalog.value;
 	if (nextRegistryCatalog.status === "fulfilled") registryCatalog = nextRegistryCatalog.value;
 	if (nextExtensions.status === "fulfilled") extensions = nextExtensions.value;
 	if (nextTools.status === "fulfilled") tools = nextTools.value;
@@ -98,13 +89,9 @@ async function load(): Promise<void> {
 		nextTools.status === "fulfilled"
 	)
 		loadedSessionTarget = target;
-	const failures = [
-		nextCatalog,
-		nextGatewayCatalog,
-		nextRegistryCatalog,
-		nextExtensions,
-		nextTools,
-	].filter((result) => result.status === "rejected");
+	const failures = [nextCatalog, nextRegistryCatalog, nextExtensions, nextTools].filter(
+		(result) => result.status === "rejected",
+	);
 	error = failures.length
 		? "Some tool settings could not be refreshed. Successful results are retained; retry to refresh the rest."
 		: null;
@@ -138,28 +125,6 @@ async function mutate(key: string, action: () => Promise<unknown>): Promise<void
 	} finally {
 		if (mounted) busy = null;
 	}
-}
-
-function gatewayModuleLabel(module: McpGatewayModule): string {
-	if (module.binding === "conflict") return "Conflict";
-	if (module.binding === "unavailable") return "Pi unavailable";
-	if (module.binding === "enabled") return "Enabled in Pi";
-	if (module.binding === "disabled") return "Disabled in Pi";
-	return "Not configured in Pi";
-}
-
-function gatewayActionLabel(module: McpGatewayModule): string {
-	return module.binding === "enabled" ? "Disable" : "Use in Pi";
-}
-
-function setGatewayEnabled(module: McpGatewayModule, enabled: boolean): void {
-	void mutate(`gateway:${module.id}`, () =>
-		getTransport().request("mcpGateway.moduleSetPiEnabled", {
-			moduleId: module.id,
-			enabled,
-			...(gatewayCatalog?.gateway.revision ? { revision: gatewayCatalog.gateway.revision } : {}),
-		}),
-	);
 }
 
 function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
@@ -217,68 +182,7 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 		</p>
 	{/if}
 
-	{#if mcpAvailable || sessionMcpAvailable}
-	<section class="flex flex-col gap-sm" aria-labelledby="mcp-modules-heading">
-		<div>
-			<h4 id="mcp-modules-heading" class="tr-text-eyebrow text-text-muted">
-				Pixie MCP modules
-			</h4>
-			<p class="text-text-muted tr-text-metadata">
-				Published modules stay available in Pixie MCP when disabled here.
- {#if !mcpAvailable}Global module configuration requires a global MCP extension.{/if}
-			</p>
-		</div>
-		{#if loading && !gatewayCatalog}
-			<p role="status" class="text-text-muted tr-text-metadata">Checking MCP host…</p>
-		{:else if gatewayCatalog?.gateway.state === "not-configured"}
-			<p class="text-text-muted tr-text-metadata">
-				Pixie MCP is not configured. Configure the MCP host to publish Browser tools.
-			</p>
-		{:else if gatewayCatalog?.gateway.state === "unreachable" || gatewayCatalog?.gateway.state === "incompatible"}
-			<p role="status" class="text-text-muted tr-text-metadata">
-				{gatewayCatalog.gateway.detail ?? "Pixie MCP is unavailable."}
-			</p>
-		{/if}
-		{#if gatewayCatalog?.modules.length === 0 && gatewayCatalog.gateway.state === "ready"}
-			<p class="text-text-muted tr-text-metadata">No MCP modules are published.</p>
-		{:else}
-			{#each gatewayCatalog?.modules ?? [] as module (module.id)}
-				<div class="card flex flex-wrap items-center justify-between gap-sm p-sm" data-testid="mcp-module-row">
-					{@render ExtensionLabel({
-						name: module.extensionName,
-						displayName: module.displayName,
-						description: module.description,
-						type: "mcp",
-					})}
-					<div class="flex min-w-0 flex-wrap items-center gap-xs">
-						<div class="min-w-0 tr-text-metadata text-text-muted">
-<span>{gatewayModuleLabel(module)}</span>
-<p>{module.detail ?? `Host module: ${module.state}`}</p>
-{#if module.bindingDetail}<p>{module.bindingDetail}</p>{/if}
-<p>{sessionInventoryCurrent ? sessionNames.has(module.extensionName) ? "Present in the current session" : "Not in the current session" : "Current-session membership not checked"}</p>
-</div>
-						<Button
-							size="sm"
-							variant="outline"
-						disabled={
-								!mcpAvailable || busy !== null ||
-								module.binding === "conflict" ||
-								module.binding === "unavailable" ||
-								(module.state !== "ready" && module.binding !== "enabled")
-							}
-							aria-label={`${gatewayActionLabel(module)} ${module.displayName}`}
-							onclick={() => setGatewayEnabled(module, module.binding !== "enabled")}
-						>
-							{gatewayActionLabel(module)}
-						</Button>
-					</div>
-				</div>
-			{/each}
-		{/if}
-	</section>
-
- {/if}
- {#if mcpAvailable}
+	{#if mcpAvailable}
 	<section class="flex flex-col gap-sm" aria-labelledby="global-extensions-heading">
 		<div>
 			<h4 id="global-extensions-heading" class="tr-text-eyebrow text-text-muted">
@@ -357,14 +261,13 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 	{/if}
 	<section class="flex flex-col gap-sm" aria-labelledby="in-process-mcp-heading">
 		<div>
-			<h4 id="in-process-mcp-heading" class="tr-text-eyebrow text-text-muted">
-				In-process MCP publisher
-			</h4>
-			<p class="text-text-muted tr-text-metadata">
-				Published here by the controller alongside the separate Pixie MCP host. Toggling
-				persists in Pixie state and starts or stops publication; Pi connection
-				configuration is unchanged.
-			</p>
+		<h4 id="in-process-mcp-heading" class="tr-text-eyebrow text-text-muted">
+			In-process MCP publisher
+		</h4>
+		<p class="text-text-muted tr-text-metadata">
+			Published by the Pixie process itself. Toggling persists in Pixie state
+			and starts or stops publication; Pi connection configuration is unchanged.
+		</p>
 		</div>
 		{#if loading && !registryCatalog}
 			<p role="status" class="text-text-muted tr-text-metadata">Checking in-process publisher…</p>

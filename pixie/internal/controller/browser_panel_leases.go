@@ -1,11 +1,8 @@
 package controller
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
 	"time"
 )
 
@@ -45,21 +42,5 @@ func (p *BrowserPanels) renewPanelLeases() {
 	}
 	ctx, cancel := context.WithTimeout(p.cleanupCtx, browserPanelTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.auth.BrowserURL+"/v1/browser/leases", bytes.NewReader(body))
-	if err != nil {
-		return
-	}
-	request.Header.Set("Content-Type", "application/json")
-	if auth, token := p.auth.BrowserServiceAuth(); auth {
-		if !strongToken(token) {
-			return
-		}
-		request.Header.Set("Authorization", "Bearer "+token)
-	}
-	response, err := p.client.Do(request)
-	if err != nil {
-		return
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxBrowserPanelBody))
+	_, _, _ = p.browserCall(ctx, "/v1/browser/leases", body, false)
 }

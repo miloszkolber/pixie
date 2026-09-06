@@ -76,37 +76,10 @@ export type McpGatewayState =
 
 export type McpModuleState = "ready" | "unavailable";
 
-export type McpModuleBinding =
-	| "not-configured"
-	| "disabled"
-	| "enabled"
-	| "conflict"
-	| "unavailable";
-
 export interface McpGatewaySummary {
 	state: McpGatewayState;
 	detail?: string;
 	revision?: string;
-}
-
-/** Browser-safe projection of one MCP module published by Pixie MCP. */
-export interface McpGatewayModule {
-	id: string;
-	extensionName: string;
-	displayName: string;
-	description: string;
-	path: string;
-	transport: "streamable_http";
-	state: McpModuleState;
-	detail?: string;
-	binding: McpModuleBinding;
-	bindingDetail?: string;
-}
-
-export interface McpGatewayCatalog {
-	schemaVersion: 1;
-	gateway: McpGatewaySummary;
-	modules: McpGatewayModule[];
 }
 
 /** Browser-safe projection of one module published by the in-process Pixie MCP publisher. */

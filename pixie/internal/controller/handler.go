@@ -29,7 +29,6 @@ type CoreHandler struct {
 	Requests      *diagnostics.RequestCounter
 	RuntimeStatus func(context.Context) runtimeStatusReport
 	BrowserPanels *BrowserPanels
-	MCPGateway    *MCPGateway
 	MCPRegistry   *mcpserver.Registry
 }
 
@@ -78,21 +77,6 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, fmt.Errorf("runtime status is not configured")
 		}
 		return h.RuntimeStatus(ctx), nil
-	case "mcpGateway.catalog":
-		if h.MCPGateway == nil {
-			return map[string]any{"schemaVersion": 1, "gateway": map[string]any{"state": "not-configured", "detail": "MCP host is not configured."}, "modules": []any{}}, nil
-		}
-		return h.MCPGateway.Catalog(ctx, h.Admin)
-	case "mcpGateway.moduleSetPiEnabled":
-		var request struct {
-			ModuleID string `json:"moduleId"`
-			Enabled  *bool  `json:"enabled"`
-			Revision string `json:"revision"`
-		}
-		if h.MCPGateway == nil || h.Admin == nil || decodeParams(raw, &request) != nil || request.ModuleID == "" || request.Enabled == nil {
-			return nil, fmt.Errorf("malformed MCP module request")
-		}
-		return h.MCPGateway.SetPiEnabled(ctx, h.Admin, request.ModuleID, *request.Enabled, request.Revision)
 	case "mcpRegistry.catalog":
 		if h.MCPRegistry == nil {
 			return map[string]any{"schemaVersion": 1, "engine": "in-process", "gateway": map[string]any{"state": "not-configured", "detail": "In-process MCP publisher is not configured."}, "modules": []any{}}, nil

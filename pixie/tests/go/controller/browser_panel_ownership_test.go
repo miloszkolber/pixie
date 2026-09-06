@@ -28,7 +28,7 @@ func TestBrowserPanelOwnershipRecoversOnlyItsEndpointAfterRestart(t *testing.T) 
 	defer server.Close()
 	store := persist.Store{Dir: t.TempDir()}
 	auth := controller.AuthConfig{BrowserEnabled: true, BrowserURL: server.URL, BrowserToken: browserPanelToken}
-	first, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store)
+	first, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestBrowserPanelOwnershipRecoversOnlyItsEndpointAfterRestart(t *testing.T) 
 	// Simulate a crash: discard the controller without graceful cleanup.
 	otherAuth := auth
 	otherAuth.BrowserURL += "/different-service"
-	other, err := controller.NewPersistentBrowserPanels(otherAuth, server.Client(), store)
+	other, err := controller.NewPersistentBrowserPanels(otherAuth, server.Client(), store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestBrowserPanelOwnershipRecoversOnlyItsEndpointAfterRestart(t *testing.T) 
 	}
 	// Token rotation at the same endpoint retains ownership without storing it.
 	auth.BrowserToken = "rotated-token-01234567890123456789"
-	restarted, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store)
+	restarted, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestBrowserPanelOwnershipRecoversOnlyItsEndpointAfterRestart(t *testing.T) 
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	final, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store)
+	final, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestBrowserPanelOwnershipRejectsCorruptionAndFailedWrites(t *testing.T) {
 	for _, damage := range []string{"corrupt", "missing-primary", "write-failure"} {
 		t.Run(damage, func(t *testing.T) {
 			store := persist.Store{Dir: t.TempDir()}
-			panels, err := controller.NewPersistentBrowserPanels(auth, nil, store)
+			panels, err := controller.NewPersistentBrowserPanels(auth, nil, store, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -129,7 +129,7 @@ func TestBrowserPanelOwnershipRejectsCorruptionAndFailedWrites(t *testing.T) {
 				if id, err := panels.Open("client", "project"); err == nil || id != "" {
 					t.Fatal("panel exposed before ownership was durable")
 				}
-			} else if _, err := controller.NewPersistentBrowserPanels(auth, nil, store); err == nil {
+			} else if _, err := controller.NewPersistentBrowserPanels(auth, nil, store, nil); err == nil {
 				t.Fatal("damaged ownership was silently restored from stale backup")
 			}
 		})
@@ -143,7 +143,7 @@ func TestBrowserPanelFailedCleanupSurvivesAnotherRestart(t *testing.T) {
 	defer server.Close()
 	store := persist.Store{Dir: t.TempDir()}
 	auth := controller.AuthConfig{BrowserEnabled: true, BrowserURL: server.URL, BrowserToken: browserPanelToken}
-	panels, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store)
+	panels, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestBrowserPanelFailedCleanupSurvivesAnotherRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	panels.CloseAll(context.Background())
-	restarted, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store)
+	restarted, err := controller.NewPersistentBrowserPanels(auth, server.Client(), store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,7 +21,7 @@ type browserPanelOwnership struct {
 // NewPersistentBrowserPanels records only controller-owned session IDs. Each
 // endpoint has its own journal; changing credentials does not change ownership.
 // Loading does not contact the browser service. Runtime.Start resumes cleanup.
-func NewPersistentBrowserPanels(auth AuthConfig, client *http.Client, store persist.Store) (*BrowserPanels, error) {
+func NewPersistentBrowserPanels(auth AuthConfig, client *http.Client, store persist.Store, browser func() http.Handler) (*BrowserPanels, error) {
 	p := NewBrowserPanels(auth, client)
 	p.store = &store
 	p.journalName = fmt.Sprintf("browser-panels-%x.json", sha256.Sum256([]byte(strings.TrimRight(auth.BrowserURL, "/"))))

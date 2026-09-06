@@ -70,8 +70,6 @@ jobs:
         include:
           - target: pixie
             image: pixie
-          - target: mcp
-            image: pixie-mcp
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -180,10 +178,10 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           REVISION: ${{ github.sha }}
         run: |
-          gh run download "$GITHUB_RUN_ID" --name deployment-pixie --name deployment-pixie-mcp --dir image-identities
+          gh run download "$GITHUB_RUN_ID" --name deployment-pixie --dir image-identities
           jq -s --arg revision "$REVISION" --arg owner "$OWNER" '
-            if length != 2 or any(.[]; .revision != $revision or (.digest | test("^sha256:[a-f0-9]{64}$") | not))
-              or ([.[].image] | sort) != (["ghcr.io/" + $owner + "/pixie", "ghcr.io/" + $owner + "/pixie-mcp"] | sort)
+            if length != 1 or any(.[]; .revision != $revision or (.digest | test("^sha256:[a-f0-9]{64}$") | not))
+              or ([.[].image] | sort) != (["ghcr.io/" + $owner + "/pixie"] | sort)
             then error("Images do not form one deployment revision")
             else {schemaVersion: 1, revision: $revision, images: map({image, digest, reference: (.image + "@" + .digest)})} end
           ' image-identities/*/image.json > deployment.json

@@ -29,7 +29,7 @@ cp .pixie.example .pixie
 chmod 600 .pixie
 ```
 
-Set `PIXIE_DATA_PATH`, `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. The [example](../.pixie.example) lists optional addresses, authentication and resource limits. Create `app`, `browser/artifacts` and `browser/state` inside the data directory. They must be writable by container UID/GID `1000:1000`.
+Set `PIXIE_DATA_PATH`, `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. The [example](../.pixie.example) lists optional addresses, authentication and resource limits. Create `app`, `browser/artifacts` and `browser/state` inside the data directory. They must be writable by container UID/GID `1000:1000`. The `browser` directory mounts into the same Pixie container at `/var/lib/pixie-browser`.
 
 Add project roots to the `pixie` service's mounts, preserving host absolute paths:
 
@@ -46,18 +46,18 @@ Add project roots to the `pixie` service's mounts, preserving host absolute path
 docker compose --env-file .pixie up -d --build
 ```
 
-Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. For remote access configure authentication, HTTPS and exact, distinct application and MCP origins.
+Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. For remote access configure authentication, HTTPS and an exact public origin.
 
 ## MCP and Signet
 
-Enable Browser in Settings → Tools with a compatible MCP extension loaded. Pixie discovers its catalog at `http://127.0.0.1:8787/v1/mcp/modules` and registers `pixie-browser` at `/browser`. The universal [Pi MCP extension](../pi/mcp/README.md) also accepts unrelated stdio, HTTP and SSE servers.
+The Browser MCP publisher lives inside the main Pixie process on port `7312`: Browser tools are served at `/mcp/browser`, the module catalog at `/api/mcp/modules` and status at `/api/mcp/status`, authenticated with `PIXIE_MCP_TOKEN`. Enable Browser in Settings → Tools with a compatible MCP extension loaded. The universal [Pi MCP extension](../pi/mcp/README.md) also accepts unrelated stdio, HTTP and SSE servers.
 
 Optional Signet memory is an operator-owned external service, not a Pixie-managed MCP connection. Install it with `signet setup` and run the daemon separately; Pi loads the managed `signet-pi.js` file extension with fail-open lifecycle hooks and hidden auto-recall. Pixie never reads or writes `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`), `signet.json` or per-session `SIGNET_ENABLED`.
 
 ## Operations
 
-Application `/livez` checks liveness; `/readyz` checks state, UI and Pi connectivity. MCP `/health` checks liveness; authenticated `/readyz` checks published modules without launching Chromium. See [MCP service](mcp.md) for diagnostics.
+Application `/health` and `/livez` check liveness; `/readyz` checks state, UI and Pi connectivity. The in-process MCP publisher shares the application listener. See [MCP publisher](mcp.md) for diagnostics.
 
 Schedules run while Pixie is up. Ask a chat with MCP support to create, list, pause, resume, run or stop a schedule. Each scheduled run is a separate chat in that project. For example, `schedule_manage` with `action: "create", prompt: "Review open tasks", cron: "0 9 * * 1-5", timezone: "Europe/Warsaw", mutationId: "weekday-review-1"` runs at 09:00 on weekdays. It uses the current project; repeat the mutation ID only for a retry of the same request. Cron has five fields and an IANA timezone (UTC by default). Pause prevents future dispatch; stop cancels the current run; run-now starts one immediately. See [state and restart behavior](architecture.md#state-and-lifecycle).
 
-Back up Pi state, Pixie data and private environment files after active work settles. Use matching application and MCP image revisions. A publishing workflow produces digest references; set `PIXIE_IMAGE` and `PIXIE_MCP_IMAGE` to those references and use Compose `pull` followed by `up -d --no-build` for a prebuilt deployment.
+Back up Pi state, Pixie data and private environment files after active work settles. A publishing workflow produces digest references; set `PIXIE_IMAGE` to that reference and use Compose `pull` followed by `up -d --no-build` for a prebuilt deployment.

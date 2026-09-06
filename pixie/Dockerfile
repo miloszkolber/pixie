@@ -56,23 +56,19 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=go-build-cache,target=/root/.cache/go-build,sharing=locked \
     export CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH; \
     set -eu; \
-    mkdir -p /out; \
-    for entry in pixie:./cmd/pixie pixie-mcp:./cmd/pixie-mcp; do \
-        binary=${entry%%:*}; package=${entry#*:}; \
-        go build -trimpath -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o "/out/$binary" "$package"; \
-        mkdir -p "/out/licenses/$binary/go"; \
-        cp /usr/local/go/LICENSE "/out/licenses/$binary/go/LICENSE"; \
-        go list -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' "$package" \
-            > /tmp/modules.unsorted; \
-        sort -u /tmp/modules.unsorted > /tmp/modules; \
-        cut -d ' ' -f1 /tmp/modules > "/out/licenses/$binary/modules.txt"; \
-        while read -r module directory; do \
-            test -n "$module" || continue; \
-            mkdir -p "/out/licenses/$binary/$module"; \
-            find "$directory" -maxdepth 1 -type f \( -iname 'license*' -o -iname 'notice*' \) \
-                -exec cp '{}' "/out/licenses/$binary/$module/" \;; \
-        done < /tmp/modules; \
-    done
+    mkdir -p /out/licenses/pixie/go; \
+    cp /usr/local/go/LICENSE /out/licenses/pixie/go/LICENSE; \
+    go build -trimpath -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie ./cmd/pixie; \
+    go list -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd/pixie \
+        > /tmp/modules.unsorted; \
+    sort -u /tmp/modules.unsorted > /tmp/modules; \
+    cut -d ' ' -f1 /tmp/modules > /out/licenses/pixie/modules.txt; \
+    while read -r module directory; do \
+        test -n "$module" || continue; \
+        mkdir -p "/out/licenses/pixie/$module"; \
+        find "$directory" -maxdepth 1 -type f \( -iname 'license*' -o -iname 'notice*' \) \
+            -exec cp '{}' "/out/licenses/pixie/$module/" \;; \
+    done < /tmp/modules
 
 FROM go-source AS ui-test-build
 COPY pixie/tests/ui/fixture/ tests/ui/fixture/
@@ -171,30 +167,6 @@ RUN printf '%s\n' \
     && test -x /usr/local/libexec/agent-browser \
     && test -s /app/licenses/agent-browser/LICENSE
 
-# The MCP host is the only published Browser-capable service image. It embeds
-# the Browser module and keeps its legacy HTTP/MCP compatibility routes.
-FROM browser-automation AS mcp
-ARG VERSION
-ARG REVISION
-ARG SOURCE_URL
-ARG CREATED
-LABEL org.opencontainers.image.title="Pixie MCP" \
-    org.opencontainers.image.version="${VERSION}" \
-    org.opencontainers.image.revision="${REVISION}" \
-    org.opencontainers.image.source="${SOURCE_URL}" \
-    org.opencontainers.image.created="${CREATED}"
-COPY --from=go-build /out/pixie-mcp /app/pixie-mcp
-COPY --from=go-build /out/licenses/pixie-mcp /app/licenses
-COPY pixie/internal/browser/config.json /app/config.json
-RUN test -x /app/pixie-mcp \
-    && test -f /app/config.json \
-    && ! command -v git && ! command -v bun && ! command -v node && ! command -v go
-USER 1000:1000
-EXPOSE 8787
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["/app/pixie-mcp", "healthcheck"]
-CMD ["/app/pixie-mcp"]
-
 FROM browser-automation AS ui-acceptance
 RUN --mount=type=cache,id=ui-acceptance-apt,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=ui-acceptance-apt-lists,target=/var/lib/apt/lists,sharing=locked \
@@ -218,7 +190,9 @@ USER 1000:1000
 CMD ["/app/run-ui-acceptance"]
 
 # Keep the application last: a build without --target produces only Pixie.
-FROM scratch AS pixie
+# The application image is the only published Browser-capable image. It embeds
+# the in-process Browser module and serves the MCP publisher on :7312.
+FROM browser-automation AS pixie
 ARG VERSION
 ARG REVISION
 ARG SOURCE_URL
@@ -239,6 +213,13 @@ COPY --from=go-build /out/pixie /app/pixie
 COPY --from=go-build /out/licenses/pixie /app/licenses
 COPY --from=web-build /work/pixie/webui/dist /app/web
 COPY --from=web-build /out/licenses /app/licenses
+COPY pixie/internal/browser/config.json /app/config.json
+RUN test -x /app/pixie \
+    && test -f /app/config.json \
+    && test -x /usr/local/bin/agent-browser \
+    && command -v chromium \
+    && test -d /var/lib/pixie-browser/artifacts \
+    && test -d /var/lib/pixie-browser/state
 USER 1000:1000
 EXPOSE 7312
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

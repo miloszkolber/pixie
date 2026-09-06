@@ -14,9 +14,9 @@ services:
             - ALL
         security_opt:
             - no-new-privileges:true
-        mem_limit: "${PIXIE_MEMORY_LIMIT:-1g}"
+        mem_limit: "${PIXIE_MEMORY_LIMIT:-2g}"
         cpus: "${PIXIE_CPU_LIMIT:-2.0}"
-        pids_limit: "${PIXIE_PIDS_LIMIT:-256}"
+        pids_limit: "${PIXIE_PIDS_LIMIT:-512}"
         environment:
             PIXIE_PI_URL: "${PIXIE_PI_URL:-ws://127.0.0.1:3284/pi}"
             PIXIE_PI_SECRET_KEY: "${PIXIE_PI_SECRET_KEY:?set the Pi service secret in .pixie}"
@@ -25,61 +25,21 @@ services:
             PIXIE_CONTROLLER_HOST: "${PIXIE_CONTROLLER_HOST:-127.0.0.1}"
             PIXIE_ALLOW_UNAUTHENTICATED_REMOTE: "${PIXIE_ALLOW_UNAUTHENTICATED_REMOTE:-false}"
             PIXIE_PUBLIC_ORIGIN: "${PIXIE_PUBLIC_ORIGIN:-}"
-            # Discovery, Browser commands and App views share the MCP host.
-            PIXIE_MCP_URL: "${PIXIE_MCP_URL:-http://127.0.0.1:8787}"
+            # The in-process MCP publisher and Pi adapter registration share this token.
             PIXIE_MCP_TOKEN: "${PIXIE_MCP_TOKEN:?set a strong MCP token in .pixie}"
-            PIXIE_MCP_PUBLIC_ORIGIN: "${PIXIE_MCP_PUBLIC_ORIGIN:-}"
         volumes:
             - type: bind
               source: "${PIXIE_DATA_PATH:?set PIXIE_DATA_PATH in .pixie}/app"
               target: /var/lib/pixie
               bind:
                   create_host_path: false
-            # Add each admitted project root here as a read-only bind at the same absolute path.
-        tmpfs:
-            - /tmp:size=128m,mode=1777,uid=1000,gid=1000
-            - /run:size=16m,mode=700,uid=1000,gid=1000
-        logging:
-            driver: local
-            options:
-                max-size: "10m"
-                max-file: "3"
-        stop_grace_period: 20s
-
-    mcp:
-        build:
-            context: .
-            dockerfile: pixie/Dockerfile
-            target: mcp
-        image: "${PIXIE_MCP_IMAGE:-ghcr.io/miloszkolber/pixie-mcp:latest}"
-        container_name: pixie-mcp
-        restart: unless-stopped
-        network_mode: host
-        user: "1000:1000"
-        read_only: true
-        cap_drop:
-            - ALL
-        security_opt:
-            - no-new-privileges:true
-        mem_limit: "${PIXIE_MCP_MEMORY_LIMIT:-2g}"
-        cpus: "${PIXIE_MCP_CPU_LIMIT:-2.0}"
-        pids_limit: "${PIXIE_MCP_PIDS_LIMIT:-512}"
-        environment:
-            PIXIE_MCP_AUTH: "true"
-            PIXIE_MCP_TOKEN: "${PIXIE_MCP_TOKEN:?set a strong MCP token in .pixie}"
-            PIXIE_MCP_HOST: "${PIXIE_MCP_HOST:-127.0.0.1}"
-            PIXIE_MCP_PORT: "${PIXIE_MCP_PORT:-8787}"
-            PIXIE_MCP_PUBLIC_ORIGIN: "${PIXIE_MCP_PUBLIC_ORIGIN:-}"
-            PIXIE_MCP_MODULES: "${PIXIE_MCP_MODULES:-browser}"
-            PIXIE_MCP_DISABLED_MODULES: "${PIXIE_MCP_DISABLED_MODULES:-}"
-        volumes:
-            # Embedded Browser module sessions and screenshots only; no application,
-            # project or Pi configuration mounts.
+            # Browser module sessions and artifacts mount into the same container.
             - type: bind
               source: "${PIXIE_DATA_PATH:?set PIXIE_DATA_PATH in .pixie}/browser"
               target: /var/lib/pixie-browser
               bind:
                   create_host_path: false
+            # Add each admitted project root here as a read-only bind at the same absolute path.
         tmpfs:
             - /tmp:size=128m,mode=1777,uid=1000,gid=1000
             - /run:size=16m,mode=700,uid=1000,gid=1000

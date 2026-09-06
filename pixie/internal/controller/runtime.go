@@ -50,7 +50,6 @@ type Runtime struct {
 	watches   *workspace.ProjectWatches
 	status    *runtimeStatusProvider
 	browser   *BrowserPanels
-	mcp       *MCPGateway
 	registry  *mcpserver.Registry
 	errors    chan error
 }
@@ -83,7 +82,27 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		}
 	}
 	store := persist.Store{Dir: config.DataDir}
-	browserPanels, err := NewPersistentBrowserPanels(authConfig, nil, store)
+	// In-process Pixie MCP publisher: the Browser module publishes on the
+	// controller listener. A Browser module that cannot start here degrades
+	// the catalog instead of failing startup.
+	mcpRegistry, err := mcpserver.NewRegistry(mcpserver.Config{
+		Host:         config.Host,
+		Port:         config.Port,
+		Token:        authConfig.MCPToken,
+		PublicOrigin: authConfig.PublicOrigin,
+		DataDir:      store.Dir,
+		Getenv: func(key string) (string, bool) {
+			if config.Getenv == nil {
+				return "", false
+			}
+			value := config.Getenv(key)
+			return value, value != ""
+		},
+	}, build, nil)
+	if err != nil {
+		return nil, err
+	}
+	browserPanels, err := NewPersistentBrowserPanels(authConfig, nil, store, mcpRegistry.BrowserLegacyHandler())
 	if err != nil {
 		return nil, err
 	}
@@ -130,30 +149,9 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	watches := workspace.NewProjectWatches(projects, git, publish)
 	apps := NewAppViews(sessions, authConfig, config.Port)
 	requests := &diagnostics.RequestCounter{}
-	mcpGateway := NewMCPGateway(authConfig)
-	// In-process Pixie MCP publisher (Stage F dual-run): the separate
-	// pixie-mcp host keeps running unchanged. A Browser module that cannot
-	// start here degrades the in-process catalog instead of failing startup.
-	mcpRegistry, err := mcpserver.NewRegistry(mcpserver.Config{
-		Host:         config.Host,
-		Port:         config.Port,
-		Token:        authConfig.MCPToken,
-		PublicOrigin: authConfig.PublicOrigin,
-		DataDir:      store.Dir,
-		Getenv: func(key string) (string, bool) {
-			if config.Getenv == nil {
-				return "", false
-			}
-			value := config.Getenv(key)
-			return value, value != ""
-		},
-	}, build, nil)
-	if err != nil {
-		return nil, err
-	}
 	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig)
 	statusProvider.schedules = schedules
-	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Apps: apps, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPGateway: mcpGateway, MCPRegistry: mcpRegistry}
+	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Apps: apps, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPRegistry: mcpRegistry}
 	welcome := func(ctx context.Context) (any, error) {
 		recent, err := projects.List(true)
 		if err != nil {
@@ -215,7 +213,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		return nil, err
 	}
 	httpHandler.MCPRegistry = mcpRegistry
-	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, apps: apps, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, mcp: mcpGateway, registry: mcpRegistry}, nil
+	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, apps: apps, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, registry: mcpRegistry}, nil
 }
 
 func (r *Runtime) Start() (string, error) {
@@ -245,7 +243,6 @@ func (r *Runtime) Errors() <-chan error { return r.errors }
 func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.schedules.Close(ctx)
 	r.status.close()
-	r.mcp.Close()
 	if r.registry != nil {
 		r.registry.Shutdown()
 	}
