@@ -276,6 +276,7 @@ export function subagentSummary(args: Record<string, unknown>): string {
 	const calls = args.calls;
 	const extra =
 		Array.isArray(calls) && calls.length > 1 && callLabel ? ` (+${calls.length - 1} more)` : "";
-	const value = task || instructions || source || (callLabel ? `${callLabel}${extra}` : "");
-	return value || "subagent";
+	const bare = task || instructions || source;
+	if (bare) return `subagent · ${bare}`;
+	return callLabel ? `${callLabel}${extra}` : "subagent";
 }
