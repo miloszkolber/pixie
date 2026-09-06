@@ -9,8 +9,8 @@ import {
 	UI_WIDGET_EVENT,
 	UI_WORKING_EVENT,
 	createUiBridge,
-} from "../../pi-host/src/extensions/ui-bridge.ts";
-import { Sessions } from "../../pi-host/src/sessions.ts";
+} from "../../../pi/host/src/extensions/ui-bridge.ts";
+import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { cleanups, echoProvider, fixture } from "./helpers.ts";
 
 afterEach(async () => {

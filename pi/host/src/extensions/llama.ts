@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { registerCapability } from "../capabilities.ts";
@@ -16,12 +17,12 @@ import { registerCapability } from "../capabilities.ts";
 // Loading detour: the SDK publishes the factory as `builtInExtensions` inside
 // `dist/extensions/index.js`, but that module is not re-exported from the
 // package index, so embedded hosts cannot import it through the public API.
-// This bridge therefore loads the file directly by URL. That path assumes the
-// dependency is installed next to the host (true for the Pixie checkout and
-// its containers); if the layout ever changes, the profile fails loudly at
-// startup instead of silently dropping the provider. Exporting
-// `builtInExtensions` from the SDK index would remove this detour and is a
-// candidate upstream contribution.
+// This bridge therefore resolves the installed package directory (via the
+// always-resolvable `package.json`, independent of install layout or working
+// directory) and loads the file directly by URL. If the SDK ever moves the
+// file, the profile fails loudly at startup instead of silently dropping the
+// provider. Exporting `builtInExtensions` from the SDK index would remove
+// this detour and is a candidate upstream contribution.
 //
 // Headless note: the extension's `/llama` management command renders through
 // Pi TUI components and needs an interactive terminal. Provider registration,
@@ -37,17 +38,11 @@ import { registerCapability } from "../capabilities.ts";
 // `LLAMA_API_KEY` environment or the dummy key `local`, which llama.cpp
 // ignores.
 
+const packageDir = dirname(
+	createRequire(import.meta.url).resolve("@earendil-works/pi-coding-agent/package.json"),
+);
 const factoryUrl = pathToFileURL(
-	join(
-		process.cwd(),
-		"node_modules",
-		"@earendil-works",
-		"pi-coding-agent",
-		"dist",
-		"extensions",
-		"llama",
-		"index.js",
-	),
+	join(packageDir, "dist", "extensions", "llama", "index.js"),
 ).href;
 const { default: upstreamLlama }: { default: ExtensionFactory } = await import(factoryUrl);
 

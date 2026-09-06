@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import rpivWeb from "../../pi-host/src/extensions/rpiv-web.ts";
-import web from "../../pi-host/src/extensions/web.ts";
+import rpivWeb from "../../../pi/host/src/extensions/rpiv-web.ts";
+import web from "../../../pi/host/src/extensions/web.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {

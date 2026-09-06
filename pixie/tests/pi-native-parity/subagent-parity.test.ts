@@ -3,8 +3,8 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
-import agents from "../../pi-host/src/extensions/agents.ts";
-import piSubagent from "../../pi-host/src/extensions/pi-subagent.ts";
+import agents from "../../../pi/host/src/extensions/agents.ts";
+import piSubagent from "../../../pi/host/src/extensions/pi-subagent.ts";
 import { cleanups, echoProvider, findTool, fixture, tempDir } from "./helpers.ts";
 
 // Structural view of the upstream discovery result. The upstream `agents`

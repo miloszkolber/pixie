@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import plans from "../../pi-host/src/extensions/plans.ts";
-import rpivTodo from "../../pi-host/src/extensions/rpiv-todo.ts";
-import { Sessions } from "../../pi-host/src/sessions.ts";
+import plans from "../../../pi/host/src/extensions/plans.ts";
+import rpivTodo from "../../../pi/host/src/extensions/rpiv-todo.ts";
+import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {

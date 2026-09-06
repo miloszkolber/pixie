@@ -1,16 +1,16 @@
 import { afterEach, expect, test } from "bun:test";
 import { PiConnector } from "@signetai/connector-pi";
-import agents from "../../pi-host/src/extensions/agents.ts";
-import llama from "../../pi-host/src/extensions/llama.ts";
-import piSubagent from "../../pi-host/src/extensions/pi-subagent.ts";
-import plans from "../../pi-host/src/extensions/plans.ts";
-import rpivAsk from "../../pi-host/src/extensions/rpiv-ask.ts";
-import rpivTodo from "../../pi-host/src/extensions/rpiv-todo.ts";
-import rpivWeb from "../../pi-host/src/extensions/rpiv-web.ts";
-import signet from "../../pi-host/src/extensions/signet.ts";
-import web from "../../pi-host/src/extensions/web.ts";
-import { startHost } from "../../pi-host/src/server.ts";
-import { Sessions } from "../../pi-host/src/sessions.ts";
+import agents from "../../../pi/host/src/extensions/agents.ts";
+import llama from "../../../pi/host/src/extensions/llama.ts";
+import piSubagent from "../../../pi/host/src/extensions/pi-subagent.ts";
+import plans from "../../../pi/host/src/extensions/plans.ts";
+import rpivAsk from "../../../pi/host/src/extensions/rpiv-ask.ts";
+import rpivTodo from "../../../pi/host/src/extensions/rpiv-todo.ts";
+import rpivWeb from "../../../pi/host/src/extensions/rpiv-web.ts";
+import signet from "../../../pi/host/src/extensions/signet.ts";
+import web from "../../../pi/host/src/extensions/web.ts";
+import { startHost } from "../../../pi/host/src/server.ts";
+import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { cleanups, echoProvider, findTool, fixture, tempDir, toolNames } from "./helpers.ts";
 
 afterEach(async () => {

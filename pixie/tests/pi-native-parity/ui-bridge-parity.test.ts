@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createUiBridge } from "../../pi-host/src/extensions/ui-bridge.ts";
-import { Sessions } from "../../pi-host/src/sessions.ts";
+import { createUiBridge } from "../../../pi/host/src/extensions/ui-bridge.ts";
+import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {

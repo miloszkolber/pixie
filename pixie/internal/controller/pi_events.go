@@ -181,8 +181,6 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 			}
 			return extension("status_message", map[string]any{"status": map[string]any{"type": status}})
 		}
-	case "compaction_start", "compaction_end", "auto_retry_start", "auto_retry_end", "summarization_retry_scheduled", "summarization_retry_finished", "thinking_level_changed":
-		return extension("native_lifecycle", map[string]any{"event": event})
 	case "configuration_changed":
 		return emit("config_option_update", map[string]any{"configOptions": event["configOptions"]})
 	case "session_info_changed":

@@ -3,8 +3,8 @@ import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
 } from "@juicesharp/rpiv-ask-user-question/events";
-import rpivAsk from "../../pi-host/src/extensions/rpiv-ask.ts";
-import { Sessions } from "../../pi-host/src/sessions.ts";
+import rpivAsk from "../../../pi/host/src/extensions/rpiv-ask.ts";
+import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {

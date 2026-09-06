@@ -14,6 +14,7 @@ import type {
 } from "@pixie/contracts";
 import type { ChatAttachment, ChatSubmission, ChatTurn } from "@/chat/runtime/types";
 import { randomId } from "@/lib";
+import { omitKey } from "@/store/record";
 import type { AppState } from "@/store/app-store";
 import type { StateCreator } from "@/store/external-store";
 import {

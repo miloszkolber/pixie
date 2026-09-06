@@ -3,14 +3,14 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, type Server } from "node:http";
-import customMcp from "../../pi-mcp/src/index.ts";
+import customMcp from "../../../pi/mcp/src/index.ts";
 import piMcpAdapter, {
 	PIXIE_BROWSER_RUNTIME_NAME,
 	piMcpAdapterWithConfig,
-} from "../../pi-host/src/extensions/pi-mcp-adapter.ts";
-import signet from "../../pi-host/src/extensions/signet.ts";
-import { startHost } from "../../pi-host/src/server.ts";
-import { Sessions } from "../../pi-host/src/sessions.ts";
+} from "../../../pi/host/src/extensions/pi-mcp-adapter.ts";
+import signet from "../../../pi/host/src/extensions/signet.ts";
+import { startHost } from "../../../pi/host/src/server.ts";
+import { Sessions } from "../../../pi/host/src/sessions.ts";
 import { cleanups, fixture } from "./helpers.ts";
 
 const savedEnv = new Map<string, string | undefined>();
