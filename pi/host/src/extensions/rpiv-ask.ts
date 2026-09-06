@@ -10,8 +10,9 @@ import { registerCapability } from "../capabilities.ts";
 // wait. This bridge only advertises an additive capability marker so
 // operators can verify the profile loaded. It adds no tools, prompts, or
 // interception. Enable with e.g. `--extensions mcp,agents,rpiv-ask`.
-// Deprecated-pending-parity: Pixie's application-level `ask_user_question`
-// remains the writer until the parity deletion gate in docs/roadmap.md is met.
+// This is the single model-facing question tool; Pixie's duplicate
+// application-level `ask_user_question` was removed after this profile's
+// parity gate passed.
 export default function rpivAskExtension(pi: ExtensionAPI): void {
 	upstreamAskUserQuestion(pi);
 	registerCapability(pi, { id: "rpiv-ask", version: 1, operations: {} });

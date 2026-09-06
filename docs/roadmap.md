@@ -2,6 +2,7 @@
 
 - Additional native Pi extension UI interfaces.
 - A dedicated schedules interface.
+- Rewire transcript question-card answers to the generic UI bridge (`session.uiReply`): the card submit path still targets the removed controller question tool and fails cleanly today, while the bridge dialog is the working answer path.
 - Deployment-host performance measurements on both supported Linux architectures.
 - Pi-native simplification parity gate (met): the custom `plans` (`update_plan`/`plans.read`) and `web` (`web_fetch`) host extensions are deleted after the `rpiv-todo`/`rpiv-web` profiles demonstrated equivalent plan display, search/fetch behavior, SSRF posture, session switching, and reload recovery; legacy `pixie-plan` transcript entries still render.
 - Pi-native question parity gate (met): Pixie's application-level `ask_user_question` tool is deleted; `rpiv-ask` demonstrated equivalent answers (including the exact-option answer contract), cancellation and error shapes, session-scoped single-use dialogs, timeout/abort handling, reload recovery, and question presentation. Upstream `ask_user_question` is the single question tool.

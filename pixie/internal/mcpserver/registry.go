@@ -164,11 +164,11 @@ type Registry struct {
 	engine  string
 }
 
-// NewRegistry loads persisted module enablement, falling back to the
-// deprecated-pending-parity PIXIE_MCP_MODULES/DISABLED environment default,
-// and starts the enabled modules. A Browser module that cannot start (for
-// example a missing agent-browser binary in the application image) degrades
-// the catalog instead of failing the publisher.
+// NewRegistry loads persisted module enablement (defaulting to enabled) and
+// starts the enabled modules. Retired PIXIE_MCP_MODULES/DISABLED variables
+// are ignored with a startup warning. A Browser module that cannot start
+// (for example a missing agent-browser binary in the application image)
+// degrades the catalog instead of failing the publisher.
 func NewRegistry(config Config, build diagnostics.BuildInfo, logger *slog.Logger) (*Registry, error) {
 	if logger == nil {
 		logger = diagnostics.NewLogger("mcpserver", build)

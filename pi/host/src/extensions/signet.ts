@@ -28,12 +28,9 @@ import { registerCapability } from "../capabilities.ts";
 // - The daemon endpoint and config stay operator-owned external service
 //   state: `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`),
 //   `~/.pi/agent/extensions/signet.json` (`{enabled}`) and per-session
-//   `SIGNET_ENABLED=false`. Pixie never reads or writes them.
-// Deprecated-pending-parity: the MCP `signet` connection configured in
-// Settings stays the writer until the parity deletion gate in
-// docs/roadmap.md is met. Until then both paths may be enabled for
-// evaluation; afterwards the MCP path is removed and the daemon remains an
-// external service (never a Pixie-managed MCP connection).
+//   `SIGNET_ENABLED=false`. Pixie never reads or writes them, and connects
+//   no MCP connection for Signet: the MCP `signet` connection was removed
+//   after this profile's parity gate passed.
 export default function signetExtension(pi: ExtensionAPI): void {
 	registerCapability(pi, { id: "signet", version: 1, operations: {} });
 }

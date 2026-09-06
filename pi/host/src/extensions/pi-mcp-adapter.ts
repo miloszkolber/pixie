@@ -124,10 +124,10 @@ export function piMcpAdapterWithConfig(options?: {
 			if (value && typeof value === "object") snapshot = value as RecordValue;
 		});
 
-		// Best-effort Browser registration for parity evaluation. The pi-host
-		// otherwise does not know the controller's publisher address, so this
-		// only runs when the operator sets it explicitly. Duplicates fail closed
-		// upstream (first registration wins); a stale registration is left alone.
+		// Best-effort Browser registration. The pi-host otherwise does not
+		// know the controller's publisher address, so this only runs when the
+		// operator sets it explicitly. Duplicates fail closed upstream (first
+		// registration wins); a stale registration is left alone.
 		pi.on("session_start", () => {
 			const endpoint = process.env.PIXIE_MCP_ADAPTER_BROWSER_URL;
 			if (!endpoint) return;

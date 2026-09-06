@@ -1,21 +1,18 @@
 # Pi extensions
 
-The host starts with normal Pi resources and no bundled factories enabled. Add `--extensions mcp,agents,rpiv-todo,web` to select optional factories. These are ordinary Pi extensions; Pixie checks their service contracts in the selected project or session before exposing related controls.
+The host starts with normal Pi resources and no bundled factories enabled. Add `--extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask` to select optional factories. These are ordinary Pi extensions; Pixie checks their service contracts in the selected project or session before exposing related controls.
 
 | Extension | Added capability |
 | --- | --- |
-| `mcp` | Configurable MCP tools, resources and App metadata; [standalone package](../pi/mcp/README.md) |
+| `mcp` | Upstream MCP adapter runtime (proxy tool, raw resource and App-tool host APIs); [standalone package](../pi/mcp/README.md) |
 | `agents` | Markdown agent definition CRUD (`pi.sources.*`) and `@agent` mentions |
-| `web` | Bounded HTTP(S) `web_fetch` tool |
-| `rpiv-todo` | Upstream `todo` tool and `/todos` command |
-| `rpiv-web` | Upstream `web_search` and `web_fetch`; Pi-native `web` replacement candidate |
-| `rpiv-ask` | Upstream `ask_user_question` tool; Pi-native question replacement candidate |
-| `signet` | Marker for the operator-installed Signet memory file extension; Pi-native memory candidate |
-| `pi-subagent` | Upstream `subagent` tool; Pi-native delegation candidate |
-| `pi-mcp-adapter` | Upstream `mcp` proxy tool; Pi-native MCP client candidate |
+| `rpiv-todo` | Upstream `todo` tool and `/todos` command; the single planning tool |
+| `rpiv-web` | Upstream `web_search` and `web_fetch`; the single web tool |
+| `rpiv-ask` | Upstream `ask_user_question` tool; the single question tool |
+| `signet` | Marker for the operator-installed Signet memory file extension; the single memory integration |
+| `pi-subagent` | Upstream `subagent` tool; the single delegation runtime |
+| `pi-mcp-adapter` | Alias selecting the same upstream MCP runtime as `mcp` |
 | `llama` | SDK built-in llama.cpp extension unchanged: local `llama.cpp` provider plus `/llama` command |
-
-Use `rpiv-todo` with either `web` or `rpiv-web`. Both web profiles register `web_fetch`, and the first listed factory wins; the pair is mutually exclusive. The custom `web` extension remains available pending the [parity gate](roadmap.md).
 
 Agent definitions live in `<agentDir>/agents/*.md` and `<project>/.pi/agents/*.md`. Frontmatter contains `name`, `description` and optional `model` (`provider/model` or a model ID within the inherited provider). The body supplies task instructions. Edits preserve unspecified frontmatter, including the model. Names use letters, numbers, spaces, underscores or hyphens (up to 80 UTF-8 bytes); each complete file is limited to 64 KiB. Invalid files produce diagnostics while valid definitions remain available. Delegation creates a separate native Pi session using the selected host extension profile.
 
@@ -27,7 +24,7 @@ Dialog state stays scoped to the originating Pi session: answers for another ses
 
 Stop unwinds blocked UI on every path (prompt cancel, archive, delete, shutdown): the controller dismisses the modal and the host settles the awaiting call, so no run hangs and no orphan modal survives. Extension-owned background work after prompt idle registers generic per-session liveness, which only delays inactive-projection eviction; explicit lifecycle operations still win. Child subagent sessions stay headless: their dialogs never open nested top-level modals in the parent, and progress arrives through normal tool events.
 
-The `rpiv-ask` profile answers through this bridge: in RPC mode the upstream tool walks its questionnaire with sequential `select`/`input` dialogs (previews fold into the prompt title, multi-select accepts comma-separated numbers) and returns the same answer envelope as its terminal UI. The upstream questionnaire allows 1–4 questions with 2–4 options each and headers up to 16 characters. Pixie's application-level `ask_user_question` remains the writer until the [parity gate](roadmap.md) passes; both tools must not reach the model together once parity passes.
+The `rpiv-ask` profile answers through this bridge: in RPC mode the upstream tool walks its questionnaire with sequential `select`/`input` dialogs (previews fold into the prompt title, multi-select accepts comma-separated numbers) and returns the same answer envelope as its terminal UI. The upstream questionnaire allows 1–4 questions with 2–4 options each and headers up to 16 characters. Upstream `ask_user_question` is the single model-facing question mechanism.
 
 Public upstream events, transported by the host for future subscribers:
 
@@ -36,7 +33,7 @@ Public upstream events, transported by the host for future subscribers:
 | `rpiv:ask-user:prompt` | `questions` with `question`, `header`, `multiSelect` and `options` (`label`, `description`, `hasPreview`) |
 | `rpiv:ask-user:blocked` | `active` while the questionnaire awaits input |
 
-The `pi-subagent` profile registers the upstream `subagent` tool unchanged and owns child execution. Discovery reads the same Markdown files with richer frontmatter (`model`, `thinking`, `tools`, `noTools`, `inactivityTimeout`, `sessionPreference`, `sessionHint`); project definitions apply only when the project is trusted and override user ones. Calls share one shape for single and parallel runs with per-call model override, `empty` (default) or exceptional `parent` initial context, and an optional `session` handle for named persistent sessions; depth and cycle guards bound delegation. Progress updates and the final details project through the generic tool path onto the shared child-run card, which also renders parallel calls. The custom `delegate`/`list_agents` execution was removed after the subagent parity gate passed (live child run verified on the local model); the `agents` profile keeps only Markdown CRUD.
+The `pi-subagent` profile registers the upstream `subagent` tool unchanged and owns child execution. Discovery reads the same Markdown files with richer frontmatter (`model`, `thinking`, `tools`, `noTools`, `inactivityTimeout`, `sessionPreference`, `sessionHint`); project definitions apply only when the project is trusted and override user ones. Calls share one shape for single and parallel runs with per-call model override, `empty` (default) or exceptional `parent` initial context, and an optional `session` handle for named persistent sessions; depth and cycle guards bound delegation. Progress updates and the final details project through the generic tool path onto the shared child-run card, which also renders parallel calls. The `agents` profile keeps only Markdown CRUD.
 
 Pixie capabilities register through `pixie:capability:v1`; their operations are defined in `pi/host/src/capabilities.ts`. The MCP compatibility entry delegates to the upstream adapter profile and assumes no Pixie addresses, Browser service or Docker layout.
 
@@ -56,4 +53,4 @@ The `llama` profile loads the Pi SDK's own built-in llama.cpp extension unchange
 
 ## Signet memory
 
-Signet loads through Pi's own `<agentDir>/extensions` discovery once the operator installs it (`signet setup` writes the managed `signet-pi.js` file). The `signet` profile only advertises an additive marker: importing the managed file as well would register its tools twice. The profile adds `signet_recall`, `signet_source_search`, `signet_session_search` and `signet_remember` with daemon lifecycle hooks (session start, prompt submit, session end, compaction) that stay fail-open while the daemon is unreachable, and auto-recall arrives as hidden context that never enters the transcript. The daemon endpoint (`SIGNET_DAEMON_URL`, default `http://127.0.0.1:3850`), `signet.json` (`{enabled}`) and per-session `SIGNET_ENABLED=false` are operator-owned external service state; Pixie never reads or writes them and connects no MCP for Signet. The MCP `signet` connection was removed after the parity gate passed (live recall through the managed extension verified against the running daemon); Pixie connects no MCP for Signet.
+Signet loads through Pi's own `<agentDir>/extensions` discovery once the operator installs it (`signet setup` writes the managed `signet-pi.js` file). The `signet` profile only advertises an additive marker: importing the managed file as well would register its tools twice. The profile adds `signet_recall`, `signet_source_search`, `signet_session_search` and `signet_remember` with daemon lifecycle hooks (session start, prompt submit, session end, compaction) that stay fail-open while the daemon is unreachable, and auto-recall arrives as hidden context that never enters the transcript. The daemon endpoint (`SIGNET_DAEMON_URL`, default `http://127.0.0.1:3850`), `signet.json` (`{enabled}`) and per-session `SIGNET_ENABLED=false` are operator-owned external service state; Pixie never reads or writes them and connects no MCP for Signet.

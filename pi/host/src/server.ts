@@ -56,9 +56,8 @@ async function startUnlockedHost(options: HostOptions) {
 		agents: (pi) => agents(pi, agentDir),
 		// Optional Pi-native replacements, enabled with e.g.
 		// `--extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask`.
-		// `rpiv-ask` answers through the generic UI bridge; the Pixie
-		// application-level question tool stays the writer until its own
-		// parity gate (docs/roadmap.md) is met.
+		// `rpiv-ask` answers through the generic UI bridge and is the single
+		// model-facing question tool.
 		"rpiv-todo": rpivTodo,
 		"rpiv-web": rpivWeb,
 		"rpiv-ask": rpivAsk,
