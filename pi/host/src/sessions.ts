@@ -58,6 +58,26 @@ export interface ManagedSession {
 	close: () => Promise<void>;
 	forgetMcp?: () => Promise<unknown>;
 }
+
+// Bound for AgentSession.abort(): a stalled provider stream must not wedge
+// Stop (or session teardown) forever. Observed against a throttled free-tier
+// stream where abort never settled: without a bound, session.cancel and
+// entry.close hang indefinitely. Callers always resolve; a late run_end from
+// the abandoned stream still carries its runId for reconciliation.
+const ABORT_TIMEOUT_MS = 10_000;
+async function abortBounded(session: AgentSession, ms = ABORT_TIMEOUT_MS): Promise<boolean> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			Promise.resolve(session.abort()).then(() => true),
+			new Promise<boolean>((resolve) => {
+				timer = setTimeout(() => resolve(false), ms);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
 interface SessionMetadata {
 	path: string;
 	cwd: string;
@@ -295,7 +315,7 @@ export class Sessions {
 				(closing ??= (async () => {
 					bridge.cancelAll("session closed");
 					this.bridges.delete(sessionId);
-					await session.abort();
+					await abortBounded(session);
 						try {
 							await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 						} finally {
@@ -801,10 +821,13 @@ export class Sessions {
 					await s.steer(content.text, content.images);
 					return { accepted: true };
 				}
-			case "session.cancel":
-				await s.abort();
+			case "session.cancel": {
+				const aborted = await abortBounded(s);
 				this.bridges.get(id)?.cancelAll("cancelled");
-				return { ok: true };
+				if (!aborted)
+					this.publish(id, { type: "run_abort_timeout", sessionId: id, runId: entry.runId });
+				return { ok: true, aborted };
+			}
 				case "session.configure": {
 					const key = text(p.configId),
 						value = required(p.value, "configuration value");

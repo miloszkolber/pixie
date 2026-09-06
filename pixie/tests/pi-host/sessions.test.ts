@@ -225,6 +225,78 @@ test("reattachment during a native stream retains the complete partial message",
 	).toHaveLength(1);
 });
 
+test(
+	"stop resolves within a bound when the provider stream never settles",
+	async () => {
+		// Reproduces the observed free-tier stall: the provider stream stops
+		// producing output and AgentSession.abort() never settles. Stop must
+		// still resolve (with a diagnostic event) instead of hanging forever.
+		let finish!: () => void;
+		const pause = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const { dir, sessions, events } = await fixture([makeProvider(pause)]);
+		const entry = await sessions.create(dir);
+		const id = entry.session.sessionId;
+		await entry.session.setModel(entry.modelRuntime.getModel("fixture", "echo")!);
+		const run = sessions.call("session.prompt", {
+			sessionId: id,
+			content: [{ type: "text", text: "Hang" }],
+		});
+		run.catch(() => {});
+		try {
+			for (let i = 0; i < 200 && !events.some((e: any) => e.type === "message_update"); i++)
+				await Bun.sleep(50);
+			const originalAbort = entry.session.abort.bind(entry.session);
+			entry.session.abort = (() => new Promise<void>(() => {})) as typeof entry.session.abort;
+			try {
+				const started = Date.now();
+				const result = await sessions.call("session.cancel", { sessionId: id });
+				expect(Date.now() - started).toBeLessThan(15_000);
+				expect(result).toMatchObject({ ok: true, aborted: false });
+				const timeout = events.find((e: any) => e.type === "run_abort_timeout");
+				expect(timeout).toMatchObject({ sessionId: id });
+				expect((timeout as any).runId).not.toBe("");
+			} finally {
+				entry.session.abort = originalAbort;
+			}
+		} finally {
+			// Let the fixture stream finish so the dangling turn settles and
+			// teardown stays fast; the Cancel path above is what the bound covers.
+			finish();
+			await run.catch(() => {});
+		}
+	},
+	30_000,
+);
+
+test(
+	"teardown stays bounded when abort never settles",
+	async () => {
+		const { dir, sessions } = await fixture();
+		const entry = await sessions.create(dir);
+		entry.session.abort = (() => new Promise<void>(() => {})) as typeof entry.session.abort;
+		const started = Date.now();
+		await sessions.close();
+		expect(Date.now() - started).toBeLessThan(15_000);
+	},
+	30_000,
+);
+
+test("stop reports a clean abort when the provider settles", async () => {
+	const { dir, sessions } = await fixture([provider]);
+	const entry = await sessions.create(dir);
+	const id = entry.session.sessionId;
+	await entry.session.setModel(entry.modelRuntime.getModel("fixture", "echo")!);
+	const run = sessions.call("session.prompt", {
+		sessionId: id,
+		content: [{ type: "text", text: "Hello" }],
+	});
+	const result = await sessions.call("session.cancel", { sessionId: id });
+	expect(result).toMatchObject({ ok: true, aborted: true });
+	await run.catch(() => {});
+});
+
 for (const finalOnly of [false, true])
 	test(`live text is complete exactly once with finalOnly=${finalOnly}`, async () => {
 		const { dir, sessions, events } = await fixture([makeProvider(undefined, finalOnly)]);
