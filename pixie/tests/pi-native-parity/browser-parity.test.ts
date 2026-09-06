@@ -67,14 +67,21 @@ describe("browser engine preference", () => {
 	test("session length guidance reflects the socket path limit", () => {
 		expect(mcpDoc).toMatch(/28 characters/);
 	});
+
+	test("obscura verdict is documented with upstream CDP evidence", () => {
+		expect(mcpDoc).toMatch(/no Accessibility domain/);
+		expect(mcpDoc).toMatch(/Chromium therefore stays both default and preferred/);
+	});
 });
 
 test.skipIf(Bun.which("obscura") == null)("obscura passes the Chromium compatibility suite", () => {
-	// Unevaluated: no obscura binary on this host. The concrete suite is
-	// tests/go/browser/chromium_parity_test.go TestLiveObscuraCompatibility:
-	// open, snapshot with refs, get title, screenshot, and close over
-	// `obscura serve --port 9222` with AGENT_BROWSER_CDP, compared against
-	// the Chromium latencies and success rates in docs/mcp.md. Prefer
-	// Obscura only when that suite passes; Chromium stays the fallback.
+	// Unevaluated live: no obscura binary on this host. The documented
+	// upstream interface (no Accessibility domain) already rejects Obscura
+	// as the preferred backend; the live suite
+	// tests/go/browser/chromium_parity_test.go TestLiveObscuraCompatibility
+	// (open, snapshot with refs, get title, screenshot, close over
+	// `obscura serve --port 9222` with AGENT_BROWSER_CDP) would demonstrate
+	// it empirically if a binary is present. Chromium stays default and
+	// preferred regardless.
 	expect(Bun.which("obscura")).not.toBeNull();
 });
