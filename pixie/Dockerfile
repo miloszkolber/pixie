@@ -95,7 +95,9 @@ RUN set -eu; \
         target="$(readlink /rootfs/usr/lib64 || true)"; \
         rm -rf /rootfs/usr/lib64; \
         mkdir -p /rootfs/usr/lib64; \
-        if [ -n "$target" ]; then cp -aL "/rootfs/${target#/}"/. /rootfs/usr/lib64/; fi; \
+        if [ -n "$target" ] && [ -e "/rootfs/${target#/}/ld-linux-x86-64.so.2" ]; then \
+            cp -aL "/rootfs/${target#/}/ld-linux-x86-64.so.2" /rootfs/usr/lib64/; \
+        fi; \
     fi \
     && rm -f \
         /rootfs/bin/sh /rootfs/usr/bin/sh \
