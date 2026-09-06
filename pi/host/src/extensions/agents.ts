@@ -209,7 +209,11 @@ export default function agentsExtension(
 								),
 							),
 						});
-						await session.bindExtensions({ mode: "rpc" });
+						// Intentionally headless: child sessions bind with no uiContext, so a
+					// blocked child ctx.ui call pends to timeout and surfaces as
+					// blocked/question state to the parent instead of owning a
+					// top-level browser modal (see docs/pi-extensions.md).
+					await session.bindExtensions({ mode: "rpc" });
 						return {
 							session,
 							prompt: (text: string) => session.prompt(text),
