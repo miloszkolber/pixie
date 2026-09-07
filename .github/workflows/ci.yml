@@ -134,7 +134,7 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
         working-directory: pixie
-      - run: bun test tests/pi-host
+      - run: bun test tests/pixie-assistant
         working-directory: pixie
       - name: Verify application against native Pi host
         run: go test -count=1 ./tests/go/controller -run TestApplicationThroughNativePiHost

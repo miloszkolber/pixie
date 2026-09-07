@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startHost } from "../../../pi/host/src/server.ts";
+import { startHost } from "../../../pi/pixie-assistant/src/server.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -108,7 +109,7 @@ test("host authenticates transport and routes native provider prompts to the own
 	const session = await a.call("session.create", { cwd: dir });
 	expect((await a.call("session.list")).sessions).toHaveLength(1);
 	await b.call("session.load", { sessionId: session.sessionId, cwd: dir });
-	await expect(a.call("pi.sources.list", {})).rejects.toThrow("Unsupported capability");
+	expect(await a.call("pi.sources.list", {})).toMatchObject({ sources: [] });
 	const entry = await host.sessions.get(session.sessionId);
 	const large = "x".repeat(9 * 1024 * 1024);
 	entry.session.sessionManager.appendMessage({
@@ -124,11 +125,7 @@ test("host authenticates transport and routes native provider prompts to the own
 	).toHaveLength(large.length);
 });
 
-test.each([
-	"mcp",
-	"pi-mcp-adapter",
-	"mcp,pi-mcp-adapter",
-])("host profile %s attaches MCP and preserves peer authorization after idle reload", async (profile) => {
+test("native MCP attaches and preserves peer authorization after idle reload", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/pixie-adapter-rpc-`);
 	cleanup.push(() => rm(dir, { recursive: true, force: true }));
 	const previous = process.env.PI_CODING_AGENT_DIR;
@@ -138,7 +135,13 @@ test.each([
 		else process.env.PI_CODING_AGENT_DIR = previous;
 	});
 	const secret = "adapter-rpc-fixture-secret";
-	const host = await startHost({ agentDir: dir, secret, port: 0, extensions: profile.split(",") });
+	await writeFile(
+		join(dir, "settings.json"),
+		JSON.stringify({
+			extensions: [createRequire(import.meta.url).resolve("pi-mcp-adapter")],
+		}),
+	);
+	const host = await startHost({ agentDir: dir, secret, port: 0 });
 	cleanup.push(() => host.close());
 	const url = `ws://127.0.0.1:${host.server.port}/pi`;
 	const owner = await rpc(url, secret);
@@ -177,4 +180,35 @@ test.each([
 	});
 	await owner.call("session.load", { sessionId: session.sessionId, cwd: dir, mcpServers });
 	await expect(owner.call("pi.tools.call", params)).rejects.toThrow("Unknown MCP connection");
+});
+
+test("native configuration and repeated deferred reload preserve the resident MCP runtime and listener", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/pixie-native-mcp-settings-`);
+	cleanup.push(() => rm(dir, { recursive: true, force: true }));
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	cleanup.push(async () => {
+		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previous;
+	});
+	const adapter = createRequire(import.meta.url).resolve("pi-mcp-adapter");
+	await writeFile(join(dir, "settings.json"), JSON.stringify({ extensions: [adapter] }));
+	const secret = "native-mcp-config-fixture";
+	const host = await startHost({ agentDir: dir, secret, port: 0 });
+	cleanup.push(() => host.close());
+	const client = await rpc(`ws://127.0.0.1:${host.server.port}/pi`, secret);
+	const created = await client.call("session.create", { cwd: dir });
+	const entry = await host.sessions.get(created.sessionId);
+	const inventory = await client.call("pi.extensions.list", { sessionId: created.sessionId, cwd: dir });
+	const resource = inventory.resources.find((item: {path: string}) => item.path === adapter);
+	expect(await client.call("pi.extensions.configure", {
+		sessionId: created.sessionId, cwd: dir, scope: "user", resourceKey: resource.resourceKey,
+		expectedRevision: inventory.configurationRevisions.user, enabled: false, confirmed: true,
+	})).toMatchObject({ saved: true, loaded: false, reload: "deferred" });
+	for (let i = 0; i < 3; i++) {
+		expect(await client.call("pi.extensions.reload", { sessionId: created.sessionId, cwd: dir })).toMatchObject({ loaded: false, reload: "deferred" });
+		expect(await host.sessions.get(created.sessionId)).toBe(entry);
+		expect(entry.session.getActiveToolNames().filter((name) => name === "mcp")).toHaveLength(1);
+		expect(entry.capabilities.snapshot().mcp).toBe(1);
+	}
 });

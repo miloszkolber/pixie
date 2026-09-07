@@ -1,17 +1,11 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
-import agents from "./extensions/agents.ts";
+import { extensionInventory } from "./extension-inventory.ts";
+import { configureExtension } from "./extension-configuration.ts";
 import llama from "./extensions/llama.ts";
-import { piMcpAdapterWithConfig } from "./extensions/pi-mcp-adapter.ts";
-import piSubagent from "./extensions/pi-subagent.ts";
-import rpivAsk from "./extensions/rpiv-ask.ts";
-import rpivTodo from "./extensions/rpiv-todo.ts";
-import rpivWeb from "./extensions/rpiv-web.ts";
-import signet from "./extensions/signet.ts";
 import { Providers } from "./providers.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
 import { HostError, object, type RecordValue, required, serviceStore, text } from "./storage.ts";
@@ -21,7 +15,7 @@ export interface HostOptions {
 	secret: string;
 	hostname?: string;
 	port?: number;
-	extensions?: string[];
+	llama?: boolean;
 }
 interface Peer {
 	sessions: Set<string>;
@@ -49,38 +43,6 @@ async function startUnlockedHost(options: HostOptions) {
 	await mkdir(agentDir, { recursive: true, mode: 0o700 });
 	if (options.secret.length < 16)
 		throw new Error("Pi host secret must contain at least 16 characters");
-	const profiles: Record<string, ExtensionFactory> = {
-		mcp: piMcpAdapterWithConfig({ agentDir }),
-		// Agent definition authoring (pi.sources.* + @agent mentions). Child
-		// execution belongs to the upstream `pi-subagent` profile.
-		agents: (pi) => agents(pi, agentDir),
-		// Optional Pi-native replacements, enabled with e.g.
-		// `--extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask`.
-		// `rpiv-ask` answers through the generic UI bridge and is the single
-		// model-facing question tool.
-		"rpiv-todo": rpivTodo,
-		"rpiv-web": rpivWeb,
-		"rpiv-ask": rpivAsk,
-		// Optional Pi-native memory and delegation. `signet` is a marker
-		// only: the operator-installed Signet managed file extension loads
-		// through Pi's own `<agentDir>/extensions` discovery, and importing
-		// it here as well would register its tools twice. `pi-subagent`
-		// registers the upstream `subagent` tool unchanged and owns child
-		// execution; the `agents` profile keeps only Markdown CRUD.
-		signet,
-		"pi-subagent": piSubagent,
-		// Alias of mcp. The pinned upstream runtime owns all transport/tool
-		// execution, with narrow patched host APIs for retained Apps.
-		"pi-mcp-adapter": piMcpAdapterWithConfig({ agentDir }),
-		// Optional local provider. Loads the SDK's own built-in llama.cpp
-		// extension unchanged (provider registration plus `/llama` command);
-		// see extensions/llama.ts for the loading detour and the headless
-		// caveat on the `/llama` management command itself.
-		llama,
-	};
-	const names = options.extensions ?? [];
-	if (new Set(names).size !== names.length || names.some((n) => !profiles[n]))
-		throw new Error("Unknown or duplicate bundled extension");
 	const identity = serviceStore<{ id: string }>(agentDir, "identity", () => ({ id: randomUUID() }));
 	const runtimeId = await identity.update((s) => s.id);
 	const peers = new Set<ServerWebSocket<Peer>>();
@@ -97,8 +59,7 @@ async function startUnlockedHost(options: HostOptions) {
 	};
 	const sessions = new Sessions(
 		agentDir,
-		// Both names are persisted profile spellings for the same runtime.
-		names.filter((n) => n !== "mcp" || !names.includes("pi-mcp-adapter")).map((n) => profiles[n]),
+		options.llama ? [llama] : [],
 		(sessionId, event, sequence) => {
 			for (const peer of peers) {
 				const message = { method: "session.event", params: { sessionId, event, sequence } };
@@ -131,7 +92,7 @@ async function startUnlockedHost(options: HostOptions) {
 	});
 	const attach = async (entry: ManagedSession, p: RecordValue) => {
 		const supported = entry.capabilities.snapshot();
-		if ((supported.mcp === 1 || supported["pi-mcp-adapter"] === 1) && Array.isArray(p.mcpServers))
+		if (supported.mcp === 1 && Array.isArray(p.mcpServers))
 			await entry.capabilities.call(
 				"mcp.attach",
 				{ servers: p.mcpServers },
@@ -150,6 +111,27 @@ async function startUnlockedHost(options: HostOptions) {
 				version: "0.85.1",
 				capabilities: capabilitySnapshot(),
 			};
+		if (["pi.extensions.list", "pi.extensions.configure", "pi.extensions.reload"].includes(method)) {
+			const id = text(p.sessionId);
+			const metadata = id ? await sessions.metadata(id) : undefined;
+			const cwd = await realpath(text(p.cwd) || metadata?.cwd || agentDir);
+			if (metadata && cwd !== await realpath(metadata.cwd)) throw new Error("Session project mismatch");
+			const entry = id ? sessions.entries.get(id) : !text(p.cwd) ? control : undefined;
+			if (method === "pi.extensions.reload") {
+				if (!id) throw new Error("Select a native session for a reload request");
+				return sessions.nativeReloadStatus(id);
+			}
+			if (method === "pi.extensions.configure") {
+				if (p.scope !== "user" && p.scope !== "project") throw new Error("Select a native settings scope");
+				if (typeof p.enabled !== "boolean" || p.confirmed !== true) throw new Error("Confirm the native configuration change");
+				return configureExtension(agentDir, cwd, {
+					scope: p.scope, resourceKey: required(p.resourceKey, "native resource"),
+					expectedRevision: required(p.expectedRevision, "configuration revision"), enabled: p.enabled, confirmed: true,
+				});
+			}
+			return extensionInventory(agentDir, cwd, entry?.session,
+				id ? entry ? "session" : "not-resident" : entry ? "service" : "configured-only", id || null);
+		}
 		if (method === "provider.loginStart") {
 			const result = (await providers.call(method, p)) as RecordValue;
 			peer.data.logins.add(text(result.loginId));

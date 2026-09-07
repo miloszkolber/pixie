@@ -5,6 +5,7 @@ export {
 	SESSION_TITLE_MAX_LENGTH,
 } from "./agent-protocol";
 export type * from "./domain";
+export type * from "./native-extensions";
 export {
 	ACCEPTED_IMAGE_TYPES,
 	ACCEPTED_TEXT_ATTACHMENT_EXTENSIONS,

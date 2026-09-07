@@ -9,28 +9,28 @@
         "typescript": "catalog:",
       },
     },
-    "pi/host": {
+    "pi/pixie-assistant": {
       "name": "@pixie_ai/pixie-assistant",
       "version": "0.1.0",
       "bin": {
-        "pixie-assistant": "./src/main.ts",
+        "pixie-assistant": "src/main.ts",
       },
       "dependencies": {
         "@earendil-works/pi-ai": "0.85.1",
         "@earendil-works/pi-coding-agent": "0.85.1",
+        "proper-lockfile": "4.1.2",
+        "yaml": "2.9.0",
+      },
+      "devDependencies": {
         "@juicesharp/rpiv-ask-user-question": "2.9.0",
         "@juicesharp/rpiv-todo": "2.9.0",
         "@juicesharp/rpiv-web-tools": "2.9.0",
         "@mjakl/pi-subagent": "3.0.1",
         "@signetai/connector-pi": "0.157.3",
-        "pi-mcp-adapter": "2.32.1",
-        "proper-lockfile": "4.1.2",
-        "typebox": "1.3.7",
-        "yaml": "2.9.0",
-      },
-      "devDependencies": {
         "@types/bun": "catalog:",
         "@types/proper-lockfile": "4.1.4",
+        "pi-mcp-adapter": "2.32.1",
+        "typebox": "1.3.7",
         "typescript": "catalog:",
       },
     },
@@ -334,7 +334,7 @@
 
     "@pixie/web": ["@pixie/web@workspace:pixie/webui"],
 
-    "@pixie_ai/pixie-assistant": ["@pixie_ai/pixie-assistant@workspace:pi/host"],
+    "@pixie_ai/pixie-assistant": ["@pixie_ai/pixie-assistant@workspace:pi/pixie-assistant"],
 
     "@pkgr/core": ["@pkgr/core@0.1.2", "", {}, "sha512-fdDH1LSGfZdTH2sxdpVMw31BanV28K/Gry0cVFxaNP77neJSkd82mM8ErPNYs9e+0O7SdHBLTDzDgwUuy18RnQ=="],
 

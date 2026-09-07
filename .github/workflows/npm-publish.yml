@@ -1,13 +1,13 @@
-name: Publish host package
+name: Publish pixie-assistant package
 
 # Publishes @pixie_ai/pixie-assistant to the npm registry so the Pi service runs
-# without a checkout: `bunx @pixie_ai/pixie-assistant@<version> --extensions <profiles>`.
-# Tags look like `pi-host-v1.2.3`; the tag version stamps package.json at
+# without a checkout: `bunx @pixie_ai/pixie-assistant@<version>`.
+# Tags look like `pixie-assistant-v1.2.3`; the tag version stamps package.json at
 # publish time and is never committed.
 
 on:
   push:
-    tags: ["pi-host-v*"]
+    tags: ["pixie-assistant-v*"]
   workflow_dispatch:
 
 concurrency:
@@ -44,8 +44,8 @@ jobs:
       - name: Derive package version
         id: source
         run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == pi-host-v* ]]; then
-            echo "version=${GITHUB_REF_NAME#pi-host-v}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == pixie-assistant-v* ]]; then
+            echo "version=${GITHUB_REF_NAME#pixie-assistant-v}" >> "$GITHUB_OUTPUT"
           else
             echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
           fi
@@ -66,18 +66,18 @@ jobs:
 
       - name: Stamp release version
         run: |
-          bun -e 'const fs = require("node:fs"); const p = "pi/host/package.json"; const manifest = JSON.parse(fs.readFileSync(p, "utf8")); manifest.version = process.env.PACKAGE_VERSION; fs.writeFileSync(p, JSON.stringify(manifest, null, "\t") + "\n");' 
+          bun -e 'const fs = require("node:fs"); const p = "pi/pixie-assistant/package.json"; const manifest = JSON.parse(fs.readFileSync(p, "utf8")); manifest.version = process.env.PACKAGE_VERSION; fs.writeFileSync(p, JSON.stringify(manifest, null, "\t") + "\n");'
         env:
           PACKAGE_VERSION: ${{ steps.source.outputs.version }}
 
       - name: Verify packed contents
-        working-directory: pi/host
+        working-directory: pi/pixie-assistant
         run: |
           bun pm pack --dry-run 2>&1 | tee pack.log
           grep -q '"bin"' pack.log || true
 
       - name: Publish to npm over OIDC trusted publishing
-        working-directory: pi/host
+        working-directory: pi/pixie-assistant
         # No token: authentication comes from the workflow identity via
         # id-token:write. Requires npm >= 11.5.1 (Node 24 ships npm 11) and a
         # one-time trusted-publisher setup on the package (see deployment.md).

@@ -4,19 +4,19 @@ import { join, resolve } from "node:path";
 import {
 	type AgentSession,
 	createAgentSession,
+	createAgentSessionServices,
 	createEventBus,
-	DefaultResourceLoader,
 	type ExtensionFactory,
+	hasTrustRequiringProjectResources,
 	ModelRuntime,
 	type SessionEntry,
 	SessionManager,
 	SettingsManager,
+	ProjectTrustStore,
 } from "@earendil-works/pi-coding-agent";
-import {
-	ASK_USER_BLOCKED_EVENT,
-	ASK_USER_PROMPT_EVENT,
-} from "@juicesharp/rpiv-ask-user-question/events";
+import agentAuthoring from "./agents.ts";
 import { CAPABILITY_EVENT, Capabilities, type CapabilityContext } from "./capabilities.ts";
+import { piMcpAdapterWithConfig } from "./extensions/pi-mcp-adapter.ts";
 import { createUiBridge, type UiBridge } from "./extensions/ui-bridge.ts";
 import {
 	atomicWrite,
@@ -100,6 +100,7 @@ export class Sessions {
 	private evicting = new Map<string, Promise<void>>();
 	private opening = new Map<string, Promise<ManagedSession>>();
 	private bridges = new Map<string, UiBridge>();
+	private readonly trust: ProjectTrustStore;
 	readonly catalog;
 	private sequences = new Map<string, number>();
 	private listing?: { expires: number; rows: Promise<RecordValue[]> };
@@ -111,8 +112,19 @@ export class Sessions {
 		readonly limits = { maxIdle: 32, idleMs: 300000 },
 	) {
 		this.catalog = serviceStore<Record<string, SessionMetadata>>(agentDir, "sessions", () => ({}));
+		this.trust = new ProjectTrustStore(agentDir);
 		this.timer = setInterval(() => void this.sweep().catch(() => {}), 5000);
 		this.timer.unref();
+	}
+	// Native project trust, mirroring Pi's own gate: project-local resources
+	// load only when the project has no trust-requiring resources or the
+	// trust store explicitly trusts it. There is no prompt at load time (the
+	// UI bridge binds after session creation), so undecided projects stay
+	// untrusted — the same default Pi applies without an interactive UI.
+	// Nothing is written here; trust changes go through ProjectTrustStore.
+	projectTrusted(cwd: string): boolean {
+		if (!hasTrustRequiringProjectResources(cwd)) return true;
+		return this.trust.get(cwd) === true;
 	}
 	private publish(id: string, event: unknown): void {
 		const sequence = (this.sequences.get(id) ?? 0) + 1;
@@ -224,6 +236,19 @@ export class Sessions {
 	async control(cwd: string): Promise<ManagedSession> {
 		return this.build(cwd, SessionManager.inMemory(cwd));
 	}
+	inventory(entry: ManagedSession) {
+		const { extensions, errors } = entry.session.resourceLoader.getExtensions();
+		return {
+			extensions: extensions.map((extension) => ({
+				path: extension.path,
+				resolvedPath: extension.resolvedPath,
+				source: extension.sourceInfo,
+				tools: [...extension.tools.keys()],
+				commands: [...extension.commands.keys()],
+			})),
+			errors: errors.map(({ path, error }) => ({ path, error })),
+		};
+	}
 	private build(cwd: string, manager: SessionManager): Promise<ManagedSession> {
 		if (this.closed) return Promise.reject(new Error("Pi host is stopping"));
 		const pending = this.construct(cwd, manager);
@@ -237,7 +262,8 @@ export class Sessions {
 			modelsPath: join(this.agentDir, "models.json"),
 			allowModelNetwork: false,
 		});
-		const settings = SettingsManager.create(cwd, this.agentDir);
+		const trusted = this.projectTrusted(cwd);
+		const settings = SettingsManager.create(cwd, this.agentDir, { projectTrusted: trusted });
 		const bus = createEventBus();
 		const extensionWork = new Set<string>();
 		const stopLiveness = bus.on(SESSION_LIVENESS_EVENT, (value) => {
@@ -247,39 +273,65 @@ export class Sessions {
 			else extensionWork.delete(event.key);
 		});
 		const capabilities = new Capabilities();
+		let uiBridge: UiBridge | undefined;
+		capabilities.register(agentAuthoring(this.agentDir));
 		bus.on(CAPABILITY_EVENT, (v) => capabilities.register(v));
 
-		const loader = new DefaultResourceLoader({
-			cwd,
-			agentDir: this.agentDir,
-			settingsManager: settings,
-			eventBus: bus,
-			extensionFactories: [...this.factories],
-		});
 		let built: AgentSession | undefined;
 		try {
-			await loader.reload();
+			// Native services register extension providers before initial model selection.
+			// Loading directly and binding only after createAgentSession loses native
+			// defaults and resumed extension models that are not built-in providers.
+		const services = await createAgentSessionServices({
+			cwd,
+			agentDir: this.agentDir,
+			modelRuntime,
+			settingsManager: settings,
+			// Resolve trust the way native Pi does without an interactive
+			// prompt: stored decisions and the global default apply, and an
+			// undecided "ask" project stays untrusted until the operator
+			// records trust. Reopening after a trust change picks it up.
+			resourceLoaderReloadOptions: {
+				resolveProjectTrust: async () => {
+					if (!hasTrustRequiringProjectResources(cwd)) return true;
+					const decision = this.trust.get(cwd);
+					if (decision !== null) return decision;
+					return settings.getDefaultProjectTrust() === "always";
+				},
+			},
+			resourceLoaderOptions: {
+					eventBus: bus,
+					extensionFactories: [
+						{
+							name: "pixie-assistant-ui-lifecycle",
+							factory: (pi) => {
+								// A native reload invalidates the old context too. Rebinding a new
+								// generation belongs to the coordinated reload operation, not to
+								// late callbacks from extensions that are shutting down.
+								pi.on("session_shutdown", () => uiBridge?.dispose());
+							},
+						},
+						...this.factories,
+						{
+							name: "pixie-assistant-mcp-bridge",
+							factory: piMcpAdapterWithConfig({ agentDir: this.agentDir }),
+						},
+					],
+				},
+			});
 			const { session, extensionsResult } = await createAgentSession({
 				cwd,
 				agentDir: this.agentDir,
 				modelRuntime,
 				settingsManager: settings,
 				sessionManager: manager,
-				resourceLoader: loader,
+				resourceLoader: services.resourceLoader,
 			});
 			built = session;
+			for (const diagnostic of services.diagnostics)
+				this.publish(session.sessionId, { type: "extension_error", error: diagnostic.message });
 			for (const error of extensionsResult.errors)
 				this.publish(session.sessionId, { type: "extension_error", error: error.error });
-			// Forward the public upstream questionnaire events. Their stability
-			// policy guarantees immutable channel names and JSON-safe payloads for
-			// cross-process listeners; the Pixie projection transports them, and
-			// richer browser questionnaires can subscribe later without host
-			// changes. Inert when the profile is not enabled.
-			for (const type of [ASK_USER_PROMPT_EVENT, ASK_USER_BLOCKED_EVENT] as const) {
-				bus.on(type, (payload) =>
-					this.publish(session.sessionId, { type, ...(payload as Record<string, unknown>) }),
-				);
-			}
 			let closing: Promise<void> | undefined;
 			const sessionId = session.sessionId;
 			// Generic extension UI bridge: forwards ctx.ui.* dialog calls to the
@@ -289,6 +341,7 @@ export class Sessions {
 				this.publish(sessionId, event as RecordValue),
 			);
 			this.bridges.set(sessionId, bridge);
+			uiBridge = bridge;
 			const entry: ManagedSession = {
 				session,
 				capabilities,
@@ -303,7 +356,7 @@ export class Sessions {
 					(closing ??= (async () => {
 						stopLiveness();
 						extensionWork.clear();
-						bridge.cancelAll("session closed");
+						bridge.dispose();
 						this.bridges.delete(sessionId);
 						try {
 							await abortBounded(session);
@@ -322,7 +375,7 @@ export class Sessions {
 					})()),
 			};
 			const forget =
-				capabilities.snapshot()["pi-mcp-adapter"] === 1
+				capabilities.snapshot().mcp === 1
 					? (ctx: CapabilityContext) => capabilities.call("adapter.session.forget", {}, ctx)
 					: undefined;
 			entry.forgetMcp = forget ? () => forget(this.context(entry)) : undefined;
@@ -468,6 +521,21 @@ export class Sessions {
 			!entry.hasExtensionWork?.() &&
 			!this.bridges.get(id)?.pendingCount()
 		);
+	}
+	nativeReloadStatus(id: string) {
+		// Pi 0.85.1 AgentSession.reload resets global API providers. Reopening
+		// avoids that reset, but the public missing-source callback belongs to
+		// DefaultPackageManager.resolve, not DefaultResourceLoader options/reload.
+		// Its private manager resolves again without a callback, so a preflight
+		// denial check cannot prevent a later install race. Do not clear UI or
+		// claim success until a supported race-free no-install load path exists.
+		const entry = this.entries.get(id);
+		return {
+			loaded: false,
+			reload: "deferred" as const,
+			reason: !entry ? "session-not-resident" : !this.isIdle(id, entry)
+				? "session-busy" : "sdk-loader-install-policy",
+		};
 	}
 	async release(id: string): Promise<void> {
 		const entry = this.entries.get(id);
@@ -800,6 +868,7 @@ export class Sessions {
 				case "session.prompt": {
 					if (entry.run || s.isStreaming) throw new Error("Session is already running");
 					const content = this.promptContent(p.content);
+					this.bridges.get(id)?.beginRun();
 					const previousAssistant = s.messages.filter((m) => m.role === "assistant").at(-1);
 					const runId = randomUUID();
 					entry.runId = runId;
@@ -842,7 +911,7 @@ export class Sessions {
 				case "session.cancel": {
 					// abort waits for native execution, which may itself await ctx.ui.
 					// Settle dialogs first even when abort rejects or never settles.
-					this.bridges.get(id)?.cancelAll("cancelled");
+					this.bridges.get(id)?.interrupt();
 					const aborted = await abortBounded(s);
 					if (!aborted)
 						this.publish(id, { type: "run_abort_timeout", sessionId: id, runId: entry.runId });
@@ -873,7 +942,7 @@ export class Sessions {
 				case "pi.session.archive":
 				case "pi.session.unarchive":
 					if (entry.run) throw new Error("Stop the running session first");
-					if (method.endsWith(".archive")) this.bridges.get(id)?.cancelAll("archived");
+					if (method.endsWith(".archive")) this.bridges.get(id)?.interrupt();
 					await this.catalog.update((c) => {
 						if (!c[id])
 							c[id] = {
@@ -938,7 +1007,7 @@ export class Sessions {
 	async close(): Promise<void> {
 		this.closed = true;
 		clearInterval(this.timer);
-		for (const bridge of this.bridges.values()) bridge.cancelAll("service stopping");
+		for (const bridge of this.bridges.values()) bridge.dispose();
 		this.bridges.clear();
 		await Promise.allSettled([
 			...this.creating,

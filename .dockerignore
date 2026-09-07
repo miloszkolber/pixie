@@ -19,8 +19,8 @@
 !pixie/tests/ui/
 !pixie/tests/ui/**
 !pi/
-!pi/host/
-!pi/host/package.json
+!pi/pixie-assistant/
+!pi/pixie-assistant/package.json
 !pixie/contracts/
 !pixie/contracts/**
 !pixie/webui/

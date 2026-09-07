@@ -42,20 +42,6 @@ const requiredOperations: Record<string, string[]> = {
 		"pi.session.extensions.remove",
 		"pi.tools.call",
 	],
-	"pi-mcp-adapter": [
-		"adapter.status",
-		"adapter.registerBrowser",
-		"adapter.session.forget",
-		"mcp.attach",
-		"pi.config.extensions.list",
-		"pi.config.extensions.add",
-		"pi.config.extensions.set-enabled",
-		"pi.config.extensions.remove",
-		"pi.session.extensions.list",
-		"pi.session.extensions.add",
-		"pi.session.extensions.remove",
-		"pi.tools.call",
-	],
 };
 export class Capabilities {
 	private conflicts = new Set<string>();

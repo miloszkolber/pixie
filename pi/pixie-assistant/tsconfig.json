@@ -10,5 +10,10 @@
 		"types": ["bun"],
 		"lib": ["ESNext"]
 	},
-	"include": ["src/**/*.ts", "scripts/**/*.ts", "../../pixie/tests/pi-host/**/*.ts", "../../pixie/tests/pi-native-parity/**/*.ts"]
+	"include": [
+		"src/**/*.ts",
+		"scripts/**/*.ts",
+		"../../pixie/tests/pixie-assistant/**/*.ts",
+		"../../pixie/tests/pi-native-parity/**/*.ts"
+	]
 }

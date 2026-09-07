@@ -40,13 +40,13 @@ import type {
 // `notify(message, type?)`, so no degradation shims are needed. Terminal-only
 // members (raw terminal input, working visibility/indicator chrome, hidden
 // thinking labels, custom footers/headers, editor components, autocomplete,
-// `custom` component factories, editor text) stay no-ops, matching the SDK's
-// headless behavior; `theme` returns unstyled text instead of the SDK's
+// `custom` component factories, editor text) stay unavailable. Custom factories
+// and composer APIs report that limitation. `theme` returns unstyled text instead of the SDK's
 // ANSI-styled singleton so extensions that format status strings (for
 // example Signet's `ui.theme.fg`) keep working without leaking terminal
 // escapes into RPC transcripts. `setWidget` component factories cannot render
 // without a TUI, so only string-array widgets project; factory content is
-// ignored.
+// reported as unsupported.
 
 export type UiPrimitive = "select" | "confirm" | "input" | "editor" | "notify";
 
@@ -61,6 +61,10 @@ export const UI_WORKING_EVENT = "pixie:ui:working";
 // Backstop so a lost controller never leaves a tool call waiting forever.
 // Matches the controller's pending-dialog timeout.
 export const DEFAULT_UI_TIMEOUT_MS = 30 * 60 * 1000;
+export const MAX_PENDING_UI_REQUESTS = 16;
+export const MAX_UI_KEYS = 16;
+export const MAX_WIDGET_LINES = 32;
+export const MAX_UI_TEXT = 2000;
 
 export interface UiBridgeRequest {
 	requestId: string;
@@ -108,6 +112,10 @@ export interface UiBridge {
 	readonly cancel: (requestId: string, reason?: string) => boolean;
 	/** Dismiss every pending request, e.g. on session abort or close. */
 	readonly cancelAll: (reason?: string) => void;
+	/** Close this context permanently. Old extension callbacks cannot publish again. */
+	readonly dispose: () => void;
+	readonly interrupt: () => void;
+	readonly beginRun: () => void;
 }
 
 // Headless RPC theme: every styling call returns its input unchanged. The
@@ -133,6 +141,42 @@ export function createUiBridge(
 	publish: (event: Record<string, unknown>) => void,
 ): UiBridge {
 	const pending = new Map<string, PendingDialog>();
+	let closed = false;
+	let interrupted = false;
+	const statuses = new Set<string>();
+	const widgets = new Set<string>();
+	const unsupported = new Set<string>();
+	let windowStart = Date.now();
+	let updates = 0;
+	const allowUpdate = () => {
+		if (closed) return false;
+		if (Date.now() - windowStart >= 1000) {
+			windowStart = Date.now();
+			updates = 0;
+		}
+		return ++updates <= 64;
+	};
+	const text = (value: string) => value.slice(0, MAX_UI_TEXT);
+	const unavailable = (method: string) => {
+		if (closed || unsupported.has(method)) return;
+		unsupported.add(method);
+		publish({
+			type: UI_NOTIFY_EVENT,
+			sessionId,
+			level: "warning",
+			message: `${method} is unsupported in the Web UI. No composer draft was changed.`,
+		});
+	};
+	const admitKey = (keys: Set<string>, key: string, removing: boolean) => {
+		if (closed || !key || key.length > 128) return false;
+		if (removing) {
+			keys.delete(key);
+			return true;
+		}
+		if ((!keys.has(key) && keys.size >= MAX_UI_KEYS) || !allowUpdate()) return false;
+		keys.add(key);
+		return true;
+	};
 
 	const remove = (requestId: string): PendingDialog | undefined => {
 		const found = pending.get(requestId);
@@ -169,9 +213,25 @@ export function createUiBridge(
 			typeof payload.timeout === "number" &&
 			Number.isSafeInteger(payload.timeout) &&
 			payload.timeout > 0
-				? payload.timeout
+				? Math.min(payload.timeout, DEFAULT_UI_TIMEOUT_MS)
 				: DEFAULT_UI_TIMEOUT_MS;
-		if (payload.signal?.aborted) return Promise.resolve(toResult(dismissedValue(primitive), true));
+		if (closed || interrupted || payload.signal?.aborted)
+			return Promise.resolve(toResult(dismissedValue(primitive), true));
+		if (pending.size >= MAX_PENDING_UI_REQUESTS)
+			return Promise.reject(new Error("Too many pending UI requests"));
+		if (
+			!payload.title ||
+			payload.title.length > 2000 ||
+			[payload.message, payload.placeholder, payload.prefill].some(
+				(value) => value !== undefined && value.length > 8000,
+			) ||
+			(primitive === "select" &&
+				(!payload.options?.length ||
+					payload.options.length > 24 ||
+					payload.options.some((value) => !value || value.length > 500)))
+		) {
+			return Promise.reject(new Error("UI request exceeds supported text or option limits"));
+		}
 		const done = new Promise<T>((resolvePromise) => {
 			const timer = setTimeout(() => cancelOne(requestId, "timeout"), timeout);
 			// Unref keeps a lingering dialog from holding the host process open.
@@ -214,9 +274,11 @@ export function createUiBridge(
 		...(opts?.timeout !== undefined ? { timeout: opts.timeout } : {}),
 	});
 
-	// `custom` has no Web UI renderer: resolving undefined routes upstream
-	// questionnaires to the select/input dialog walker (their RPC backstop).
-	const custom: ExtensionUIContext["custom"] = async () => undefined as never;
+	// Only extensions that explicitly handle undefined can provide a fallback.
+	const custom: ExtensionUIContext["custom"] = async () => {
+		unavailable("custom TUI components");
+		return undefined as never;
+	};
 
 	const ui: ExtensionUIContext = {
 		select: (title, options, opts) =>
@@ -238,45 +300,58 @@ export function createUiBridge(
 				cancelled || typeof value !== "string" ? undefined : value,
 			),
 		notify: (message, type) => {
-			publish({ type: UI_NOTIFY_EVENT, sessionId, message, level: type ?? "info" });
+			if (allowUpdate())
+				publish({
+					type: UI_NOTIFY_EVENT,
+					sessionId,
+					message: text(message),
+					level: type ?? "info",
+				});
 		},
 		// Ephemeral projections: emitted immediately, never pending. The
 		// controller fans them out to browsers; stale values die with the
 		// session and never block a tool call.
 		setStatus: (key, text) => {
-			if (typeof key !== "string" || key === "") return;
+			if (!admitKey(statuses, key, text === undefined)) return;
 			publish({
 				type: UI_STATUS_EVENT,
 				sessionId,
 				key,
-				...(text === undefined ? {} : { text }),
+				...(text === undefined ? {} : { text: text.slice(0, MAX_UI_TEXT) }),
 			});
 		},
 		setWorkingMessage: (message) => {
+			if (closed || (message !== undefined && !allowUpdate())) return;
 			publish({
 				type: UI_WORKING_EVENT,
 				sessionId,
-				...(message === undefined ? {} : { message }),
+				...(message === undefined ? {} : { message: text(message) }),
 			});
 		},
 		setWidget: (key, content, options) => {
-			if (typeof key !== "string" || key === "") return;
 			// Component factories need a TUI to render; without one there is
 			// no clean Web UI projection, so only string-array widgets travel.
-			if (typeof content === "function") return;
+			if (typeof content === "function") {
+				unavailable("Widget component factories");
+				return;
+			}
 			if (content !== undefined && !Array.isArray(content)) return;
+			if (!admitKey(widgets, key, content === undefined)) return;
 			publish({
 				type: UI_WIDGET_EVENT,
 				sessionId,
 				key,
 				...(content === undefined
 					? {}
-					: { lines: [...content], placement: options?.placement ?? "aboveEditor" }),
+					: {
+							lines: content.slice(0, MAX_WIDGET_LINES).map(text),
+							placement: options?.placement ?? "aboveEditor",
+						}),
 			});
 		},
 		setTitle: (title) => {
-			if (typeof title !== "string" || title === "") return;
-			publish({ type: UI_TITLE_EVENT, sessionId, title });
+			if (closed || (title !== "" && !allowUpdate())) return;
+			publish({ type: UI_TITLE_EVENT, sessionId, title: text(title) });
 		},
 		// Terminal-only members stay no-ops: the RPC host renders dialogs in
 		// the Web UI and has no terminal widgets, overlays, or editor chrome.
@@ -289,18 +364,21 @@ export function createUiBridge(
 		setFooter: () => {},
 		setHeader: () => {},
 		custom,
-		pasteToEditor: () => {},
-		setEditorText: () => {},
-		getEditorText: () => "",
+		pasteToEditor: () => unavailable("pasteToEditor"),
+		setEditorText: () => unavailable("setEditorText"),
+		getEditorText: () => {
+			unavailable("getEditorText");
+			return "";
+		},
 		addAutocompleteProvider: () => {},
 		setEditorComponent: () => {},
 		getEditorComponent: () => undefined,
 		get theme(): Theme {
-		// No terminal styling exists in RPC mode, but extensions format
-		// status strings through the theme (Signet's `ui.theme.fg`), so
-		// return unstyled text rather than undefined. Status output travels
-		// through the `setStatus` projection above, keeping terminal escapes
-		// out of transcripts.
+			// No terminal styling exists in RPC mode, but extensions format
+			// status strings through the theme (Signet's `ui.theme.fg`), so
+			// return unstyled text rather than undefined. Status output travels
+			// through the `setStatus` projection above, keeping terminal escapes
+			// out of transcripts.
 			return headlessTheme;
 		},
 		getAllThemes: () => [],
@@ -321,8 +399,25 @@ export function createUiBridge(
 		resolve: (response) => {
 			if (response.sessionId !== sessionId)
 				return { ok: false, error: "Dialog belongs to another session" };
+			const candidate = pending.get(response.requestId);
+			if (candidate && !response.error && !response.cancelled) {
+				const valid =
+					candidate.primitive === "confirm"
+						? typeof response.value === "boolean"
+						: typeof response.value === "string" &&
+							response.value.length <= 8000 &&
+							(candidate.primitive !== "select" ||
+								candidate.request.options?.includes(response.value));
+				if (!valid) return { ok: false, error: "Invalid dialog value" };
+			}
 			const found = remove(response.requestId);
 			if (!found) return { ok: false, error: "Unknown or settled dialog request" };
+			publish({
+				type: UI_CANCEL_EVENT,
+				sessionId,
+				requestId: response.requestId,
+				reason: "settled",
+			});
 			if (response.error || response.cancelled) {
 				found.settle(dismissedValue(found.primitive), true);
 				return { ok: true };
@@ -333,6 +428,24 @@ export function createUiBridge(
 		cancel: (requestId, reason) => cancelOne(requestId, reason ?? "cancelled"),
 		cancelAll: (reason) => {
 			for (const requestId of [...pending.keys()]) cancelOne(requestId, reason ?? "cancelled");
+		},
+		interrupt: () => {
+			interrupted = true;
+			for (const id of [...pending.keys()]) cancelOne(id, "cancelled");
+		},
+		beginRun: () => {
+			if (!closed) interrupted = false;
+		},
+		dispose: () => {
+			if (closed) return;
+			closed = true;
+			for (const id of [...pending.keys()]) cancelOne(id, "context closed");
+			for (const key of statuses) publish({ type: UI_STATUS_EVENT, sessionId, key });
+			for (const key of widgets) publish({ type: UI_WIDGET_EVENT, sessionId, key });
+			publish({ type: UI_TITLE_EVENT, sessionId, title: "" });
+			publish({ type: UI_WORKING_EVENT, sessionId });
+			statuses.clear();
+			widgets.clear();
 		},
 	};
 }

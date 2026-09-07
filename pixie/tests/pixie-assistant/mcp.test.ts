@@ -2,16 +2,15 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as joinPath } from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import {
-	CallToolRequestSchema,
-	ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
-import { piMcpAdapterWithConfig } from "../../../pi/host/src/extensions/pi-mcp-adapter.ts";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-const mcpExtension = (pi: ExtensionAPI, dir: string) => piMcpAdapterWithConfig({ agentDir: dir })(pi);
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
+import { piMcpAdapterWithConfig } from "../pi-native-parity/upstream.ts";
+
+const mcpExtension = (pi: ExtensionAPI, dir: string) =>
+	piMcpAdapterWithConfig({ agentDir: dir })(pi);
 
 const priorDir = process.env.PI_CODING_AGENT_DIR;
 const priorViewer = process.env.MCP_UI_VIEWER;
@@ -210,13 +209,14 @@ test("the MCP extension loads standalone in vanilla Pi and honors stdio cwd, env
 	await writeFile(
 		dir + "/mcp.json",
 		JSON.stringify({
-			"invalid:name": { type: "stdio", command: "unused" },
-			fixture: {
-				type: "stdio",
-				command: process.execPath,
-				args: [new URL("./mcp-stdio-fixture.ts", import.meta.url).pathname],
-				cwd: dir,
-				env: { MCP_FIXTURE: "standalone" },
+			mcpServers: {
+				fixture: {
+					type: "stdio",
+					command: process.execPath,
+					args: [new URL("./mcp-stdio-fixture.ts", import.meta.url).pathname],
+					cwd: dir,
+					env: { MCP_FIXTURE: "standalone" },
+				},
 			},
 		}),
 	);

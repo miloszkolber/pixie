@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { SESSION_LIVENESS_EVENT, Sessions } from "../../../pi/host/src/sessions.ts";
+import { SESSION_LIVENESS_EVENT, Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
 import { makeProvider } from "./provider-fixture.ts";
 
 const cleanups: (() => Promise<unknown>)[] = [];

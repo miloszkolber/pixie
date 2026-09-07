@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { registerCapability } from "../capabilities.ts";
 
-// Optional local provider profile (`--extensions ...,llama`).
+// Optional local provider bootstrap (`--llama`).
 //
 // Uses the Pi SDK's own built-in llama.cpp extension unchanged: it registers
 // the `llama.cpp` provider (OpenAI-completions against `LLAMA_BASE_URL`,
@@ -41,9 +41,7 @@ import { registerCapability } from "../capabilities.ts";
 const packageDir = dirname(
 	createRequire(import.meta.url).resolve("@earendil-works/pi-coding-agent/package.json"),
 );
-const factoryUrl = pathToFileURL(
-	join(packageDir, "dist", "extensions", "llama", "index.js"),
-).href;
+const factoryUrl = pathToFileURL(join(packageDir, "dist", "extensions", "llama", "index.js")).href;
 const { default: upstreamLlama }: { default: ExtensionFactory } = await import(factoryUrl);
 
 export default function llamaExtensionBridge(pi: ExtensionAPI): void {

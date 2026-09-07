@@ -1,9 +1,8 @@
 import { open, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parse, stringify } from "yaml";
-import { registerCapability } from "../capabilities.ts";
-import { atomicWrite, object, type RecordValue, required, text } from "../storage.ts";
+import type { Capability } from "./capabilities.ts";
+import { atomicWrite, object, type RecordValue, required, text } from "./storage.ts";
 
 interface Definition {
 	type: "agent";
@@ -13,17 +12,18 @@ interface Definition {
 	content: string;
 	global: boolean;
 	writable: boolean;
+	executionEligibility: "unknown";
 	properties: RecordValue;
 }
 
 // Agent definition authoring only. Delegation itself is owned by the upstream
-// `pi-subagent` profile (`subagent` tool): discovery at execution time, the
+// native subagent extension: discovery at execution time, the
 // child Pi process, model/thinking/tool handling, persistent child sessions,
-// parallel calls and recursion guards. This extension only manages the same
+// parallel calls and recursion guards. This application API only manages the same
 // native Markdown files (`~/.pi/agent/agents/*.md`, `<project>/.pi/agents/*.md`)
 // through `pi.sources.*` plus `@agent` mention discovery, so the web UI keeps
 // its agent editor without duplicating any execution engine.
-export default function agentsExtension(pi: ExtensionAPI, agentDir = getAgentDir()): void {
+export default function agentAuthoring(agentDir: string): Capability {
 	const directories = (cwd?: string) => [
 		{ path: join(agentDir, "agents"), global: true },
 		...(cwd ? [{ path: join(cwd, ".pi", "agents"), global: false }] : []),
@@ -68,6 +68,7 @@ export default function agentsExtension(pi: ExtensionAPI, agentDir = getAgentDir
 						content: match[2],
 						global: dir.global,
 						writable: true,
+						executionEligibility: "unknown",
 						properties: metadata,
 					});
 				} catch {
@@ -118,7 +119,7 @@ export default function agentsExtension(pi: ExtensionAPI, agentDir = getAgentDir
 		if (!source) throw new Error("Saved agent could not be loaded");
 		return { source };
 	};
-	registerCapability(pi, {
+	return {
 		id: "agents",
 		version: 1,
 		operations: {
@@ -145,5 +146,5 @@ export default function agentsExtension(pi: ExtensionAPI, agentDir = getAgentDir
 				})),
 			}),
 		},
-	});
+	};
 }

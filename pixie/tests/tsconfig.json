@@ -7,5 +7,5 @@
 		}
 	},
 	"include": ["**/*.ts"],
-	"exclude": ["pi-host", "pi-native-parity"]
+	"exclude": ["pixie-assistant", "pi-native-parity"]
 }

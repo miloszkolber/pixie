@@ -3,9 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import agents from "../../../pi/host/src/extensions/agents.ts";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
-import { JsonStore } from "../../../pi/host/src/storage.ts";
+import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
+import { JsonStore } from "../../../pi/pixie-assistant/src/storage.ts";
 import { makeProvider } from "./provider-fixture.ts";
 
 const cleanups: (() => Promise<unknown>)[] = [];
@@ -26,7 +25,7 @@ test("vanilla SDK creates, discovers, renames, archives and deletes sessions wit
 	const { dir, sessions } = await fixture();
 	const entry = await sessions.create(dir),
 		id = entry.session.sessionId;
-	expect(entry.capabilities.snapshot()).toEqual({});
+	expect(entry.capabilities.snapshot()).toEqual({ agents: 1 });
 	expect(entry.session.getActiveToolNames()).toContain("bash");
 	expect((await sessions.list("")).sessions).toHaveLength(1);
 	await sessions.call("pi.session.rename", { sessionId: id, title: "A Pi session" });
@@ -35,9 +34,7 @@ test("vanilla SDK creates, discovers, renames, archives and deletes sessions wit
 		((await sessions.call("pi.session.info", { sessionId: id })) as any).session.archived,
 	).toBe(true);
 	await sessions.call("pi.session.unarchive", { sessionId: id });
-	await expect(sessions.call("pi.sources.list", { sessionId: id })).rejects.toThrow(
-		"Unsupported capability",
-	);
+	expect(await sessions.call("pi.sources.list", { sessionId: id })).toMatchObject({ sources: [] });
 	await sessions.call("session.delete", { sessionId: id });
 	expect((await sessions.list("")).sessions).toHaveLength(0);
 });
@@ -81,7 +78,7 @@ test("native SDK streams and replays text attachments without losing display met
 });
 
 test("agent definitions add tools without replacing Pi core tools", async () => {
-	const { dir, sessions } = await fixture([(pi) => agents(pi, dir)]);
+	const { dir, sessions } = await fixture();
 	const entry = await sessions.create(dir);
 	expect(entry.capabilities.snapshot()).toEqual({ agents: 1 });
 	expect(entry.session.getActiveToolNames()).toEqual(
@@ -143,7 +140,7 @@ test("incompatible or incomplete optional registrations leave vanilla Pi usable"
 		},
 	]);
 	const entry = await sessions.create(dir);
-	expect(entry.capabilities.snapshot()).toEqual({});
+	expect(entry.capabilities.snapshot()).toEqual({ agents: 1 });
 	expect(entry.session.getActiveToolNames()).toEqual(
 		expect.arrayContaining(["read", "bash", "write", "edit"]),
 	);
@@ -299,7 +296,7 @@ test("native commands do not inherit an earlier turn's failure status", async ()
 });
 
 test("agent edits preserve metadata and reject oversized replacement beside malformed sources", async () => {
-	const { dir, sessions } = await fixture([(pi) => agents(pi, dir)]);
+	const { dir, sessions } = await fixture();
 	const entry = await sessions.create(dir);
 	const call = (method: string, params: Record<string, unknown>) =>
 		entry.capabilities.call(method, params, sessions.context(entry)) as Promise<{
