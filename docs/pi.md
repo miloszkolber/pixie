@@ -14,7 +14,7 @@ The source host service uses unmodified `@earendil-works/pi-coding-agent` and `@
 | Project grouping, file attachments, history search, durable follow-ups | Pixie records and transcript projection |
 | Defined agents and delegation | Pixie authoring API for native Markdown definitions, optional native subagent extension for execution |
 | Plans | Upstream `todo` tool via the `rpiv-todo` extension |
- | MCP tools, Browser | Upstream MCP adapter profile; Pixie supplies service connections |
+ | MCP tools, Browser | Operator-installed upstream MCP adapter; Pixie supplies service connections |
  | Signet | Operator-owned external service with a Pi-native file extension; no Pixie MCP connection |
 | Goals, tasks and questions | Pixie session-scoped MCP |
 | Schedules | Pixie storage and runner; ordinary Pi sessions, no Pi scheduling extension |

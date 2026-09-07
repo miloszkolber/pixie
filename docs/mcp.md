@@ -1,6 +1,6 @@
 # Pixie MCP publisher
 
-The Browser module for trusted MCP clients is published by the main Pixie process on the application listener. It is separate from the universal MCP client profile (`mcp`) above.
+The Browser module for trusted MCP clients is published by the main Pixie process on the application listener. It is separate from the universal MCP client: the operator-installed `pi-mcp-adapter` runtime behind the assistant's `mcp` capability.
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -20,7 +20,7 @@ Keep browser session IDs short: at most 28 characters with the default storage r
 
 A ready publisher has not necessarily launched Chromium. Verify browsing by opening a disposable panel, navigating, taking a screenshot and closing it. For failures check the application address, token, state ownership, container logs and catalog status. Keep tokens out of command-line arguments and never forward them through redirects.
 
-Browser is the only module. Signet, Web, Todo, Questions, and Subagents are never published through Pixie MCP. Browser storage stays isolated under the controller data directory (`browser/`). The model-facing Browser API (`pixie-browser`, same tools and resource surface) has no engine variants. The `mcpAdapter.status` projection surfaces the Pi-side adapter state (connected, cached, failed, needs-auth, not-connected, disabled) and stays fail-open when the adapter profile is not enabled.
+Browser is the only module. Signet, Web, Todo, Questions, and Subagents are never published through Pixie MCP. Browser storage stays isolated under the controller data directory (`browser/`). The model-facing Browser API (`pixie-browser`, same tools and resource surface) has no engine variants. The `mcpAdapter.status` projection surfaces the Pi-side adapter state (connected, cached, failed, needs-auth, not-connected, disabled) and stays fail-open when the adapter is not loaded.
 
 The Pi MCP client uses the pinned upstream `pi-mcp-adapter` runtime unchanged, with no custom transport.
 
