@@ -1,5 +1,4 @@
 import type {
-	AskUserQuestionResult,
 	ImageContent,
 	PendingToolPreview,
 	QueueLane,
@@ -50,7 +49,9 @@ import type {
 	TextResourceAttachment,
 } from "./domain";
 
-export const PROTOCOL_VERSION = 86;
+import type { NativeExtensionChange, NativeExtensionConfiguration, NativeExtensionInventory, NativeExtensionTarget } from "./native-extensions";
+
+export const PROTOCOL_VERSION = 88;
 
 /**
  * Maximum UTF-8 byte length for one serialized browser WebSocket request.
@@ -112,7 +113,6 @@ export const WS_METHODS = {
 	sessionGoalGet: "session.goalGet",
 	sessionGoalSet: "session.goalSet",
 	sessionGoalClear: "session.goalClear",
-	sessionQuestionReply: "session.questionReply",
 	sessionUiReply: "session.uiReply",
 	sessionUiCancel: "session.uiCancel",
 	sessionList: "session.list",
@@ -149,6 +149,9 @@ export const WS_METHODS = {
 	browserPanelCommand: "browser.panelCommand",
 	browserPanelClose: "browser.panelClose",
 	piExtensionList: "pi.extensionList",
+	piNativeExtensions: "pi.nativeExtensions",
+	piNativeExtensionConfigure: "pi.nativeExtensionConfigure",
+	piNativeExtensionReload: "pi.nativeExtensionReload",
 	piExtensionAdd: "pi.extensionAdd",
 	piExtensionSetEnabled: "pi.extensionSetEnabled",
 	piExtensionRemove: "pi.extensionRemove",
@@ -321,10 +324,6 @@ export interface WsMethodMap {
 		params: { projectId: string; sessionId: string };
 		result: SessionGoal;
 	};
-	"session.questionReply": {
-		params: { sessionId: string; toolCallId: string; result: AskUserQuestionResult };
-		result: Ack;
-	};
 	"session.uiReply": {
 		params: { sessionId: string; requestId: string; result: UiDialogResult };
 		result: Ack;
@@ -437,8 +436,14 @@ export interface WsMethodMap {
 		result: HistorySearchResult;
 	};
 	"schedule.list": { params: { projectId: string }; result: Schedule[] };
+	"schedule.preview": {
+		params: { projectId: string; root: string; cron: string; timezone?: string };
+		result: { timezone: string; nextRun: string };
+	};
+	"schedule.health": { params: { projectId: string }; result: { error: string } };
 	"schedule.create": {
 		params: {
+			mutationId?: string;
 			projectId: string;
 			root: string;
 			prompt: string;
@@ -450,6 +455,7 @@ export interface WsMethodMap {
 	};
 	"schedule.update": {
 		params: {
+			mutationId?: string;
 			projectId: string;
 			scheduleId: string;
 			cron?: string;
@@ -459,9 +465,18 @@ export interface WsMethodMap {
 		};
 		result: Schedule;
 	};
-	"schedule.delete": { params: { projectId: string; scheduleId: string }; result: Ack };
-	"schedule.runNow": { params: { projectId: string; scheduleId: string }; result: Ack };
-	"schedule.stop": { params: { projectId: string; scheduleId: string }; result: Ack };
+	"schedule.delete": {
+		params: { projectId: string; scheduleId: string; mutationId?: string };
+		result: Ack;
+	};
+	"schedule.runNow": {
+		params: { projectId: string; scheduleId: string; mutationId?: string };
+		result: Ack;
+	};
+	"schedule.stop": {
+		params: { projectId: string; scheduleId: string; mutationId?: string };
+		result: Ack;
+	};
 	"pi.status": {
 		params: Record<string, never>;
 		result: {
@@ -495,6 +510,9 @@ export interface WsMethodMap {
 	};
 	"browser.panelClose": { params: { panelId: string }; result: Ack };
 	"pi.extensionList": { params: Record<string, never>; result: PiExtensionCatalog };
+	"pi.nativeExtensions": { params: NativeExtensionTarget; result: NativeExtensionInventory };
+	"pi.nativeExtensionConfigure": { params: NativeExtensionConfiguration; result: NativeExtensionChange };
+	"pi.nativeExtensionReload": { params: NativeExtensionTarget & { sessionId: string }; result: NativeExtensionChange };
 	"pi.extensionAdd": {
 		params: { name: string; enabled: boolean };
 		result: PiExtensionCatalog;

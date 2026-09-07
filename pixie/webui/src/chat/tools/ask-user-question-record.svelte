@@ -18,7 +18,7 @@ let byIndex = $derived(
 {:else}
 	<div data-testid="ask-user-question" data-tone={result.cancelled ? "skipped" : "answered"} class="flex flex-col gap-md">
 		{#each questions as question, index (question.question)}
-			<Recap {question} answer={byIndex.get(index)} variant="resolved" />
+			<Recap {question} answer={byIndex.get(index)} />
 		{/each}
 		{#if questions.length === 0}<div class="text-text-muted tr-text-metadata">{rawText || "Answered."}</div>{/if}
 	</div>

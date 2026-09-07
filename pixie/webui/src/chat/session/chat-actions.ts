@@ -1,8 +1,6 @@
-import type { AskUserQuestionResult } from "@pixie/contracts";
 import { getContext, setContext } from "svelte";
 
 export interface ChatActions {
-	answerQuestion: (toolCallId: string, result: AskUserQuestionResult) => Promise<void>;
 	focusComposer: () => void;
 }
 

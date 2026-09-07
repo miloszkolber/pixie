@@ -439,7 +439,6 @@ func (m *SessionManager) Abort(ctx context.Context, sessionID string) error {
 	done := entry.promptDone
 	entry.state.Unlock()
 
-	m.cancelQuestions(sessionID)
 	// Stop unwinds blocked UI on the controller side as well: dismiss the
 	// browser modal immediately. The host settles its awaiting extension call
 	// through session.cancel, which fans back as ui_cancel (idempotent here).

@@ -286,16 +286,8 @@ func (m *SessionManager) shutdown(ctx context.Context) {
 		entry.promptGeneration++
 		entry.state.Unlock()
 	}
-	questions := m.questions
-	m.questions = make(map[questionKey]*pendingQuestion)
 	m.mu.Unlock()
 
-	for _, pending := range questions {
-		select {
-		case pending.result <- map[string]any{"answers": []any{}, "cancelled": true}:
-		default:
-		}
-	}
 	// Shutdown unwinds blocked UI on every session: dismiss browser modals.
 	// The host closes its own bridges on session close.
 	m.cancelDialogs("")

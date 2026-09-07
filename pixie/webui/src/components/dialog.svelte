@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
+import { onDestroy, type Snippet } from "svelte";
 import Button from "./button.svelte";
 import Icon from "./icon.svelte";
 
@@ -33,9 +33,22 @@ let {
 	onClosedAutoFocus,
 }: Props = $props();
 let element: HTMLDialogElement;
+let restoreTarget: HTMLElement | null = null;
 const componentId = $props.id();
 const titleId = `dialog-title-${componentId}`;
 const descriptionId = `dialog-description-${componentId}`;
+
+// Closing before removal lets the native dialog restore its saved focus target,
+// including when a remote client settles the request or a keyed dialog changes.
+onDestroy(() => {
+	element?.close();
+	const target = restoreTarget;
+	// Svelte can remove a keyed modal before native close restores focus.
+	// Wait for its replacement to mount, then restore only if nothing owns focus.
+	queueMicrotask(() => {
+		if (target?.isConnected && (document.activeElement === document.body || !document.activeElement)) target.focus();
+	});
+});
 
 function setOpen(next: boolean): void {
 	if (open === next) return;
@@ -45,7 +58,10 @@ function setOpen(next: boolean): void {
 
 $effect(() => {
 	if (!element) return;
-	if (open && !element.open) element.showModal();
+	if (open && !element.open) {
+		restoreTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		element.showModal();
+	}
 	if (!open && element.open) element.close();
 });
 </script>

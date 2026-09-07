@@ -2,15 +2,15 @@ import { afterEach, expect, test } from "bun:test";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
+	createUiBridge,
 	UI_CANCEL_EVENT,
 	UI_REQUEST_EVENT,
 	UI_STATUS_EVENT,
 	UI_TITLE_EVENT,
 	UI_WIDGET_EVENT,
 	UI_WORKING_EVENT,
-	createUiBridge,
-} from "../../../pi/host/src/extensions/ui-bridge.ts";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
+} from "../../../pi/pixie-assistant/src/extensions/ui-bridge.ts";
+import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
 import { cleanups, echoProvider, fixture } from "./helpers.ts";
 
 afterEach(async () => {
@@ -117,7 +117,7 @@ test("session.cancel dismisses input dialogs and archive clears pending state", 
 	expect(bridge.pendingCount()).toBe(0);
 });
 
-test("status, widget, title, and working-message project while terminal members stay silent", async () => {
+test("passive UI projects while unsupported composer and TUI factories report their limits", async () => {
 	const published: Record<string, unknown>[] = [];
 	const bridge = createUiBridge("session-project", (event) => published.push(event));
 	bridge.ui.setStatus("signet", "recall: 3 notes");
@@ -147,8 +147,8 @@ test("status, widget, title, and working-message project while terminal members 
 		{ type: UI_TITLE_EVENT, sessionId: "session-project", title: "Deep work" },
 	]);
 	const before = published.length;
-	// Terminal-only members and TUI component factories have no Web UI
-	// projection: they stay silent instead of growing the wire surface.
+	// Terminal chrome remains silent. Composer APIs and component factories
+	// report unsupported through the existing notification primitive.
 	bridge.ui.setWorkingVisible(false);
 	bridge.ui.setWorkingIndicator({ frames: [] });
 	bridge.ui.setHiddenThinkingLabel("hidden");
@@ -160,7 +160,15 @@ test("status, widget, title, and working-message project while terminal members 
 	bridge.ui.pasteToEditor("clobber?");
 	bridge.ui.setEditorText("clobber?");
 	expect(bridge.ui.getEditorText()).toBe("");
-	expect(published.length).toBe(before);
+	expect(published.slice(before)).toHaveLength(4);
+	expect(
+		published
+			.slice(before)
+			.every(
+				(event) =>
+					event.type === "pixie:ui:notify" && String(event.message).includes("unsupported"),
+			),
+	).toBe(true);
 	// `custom` has no Web UI renderer and never goes pending.
 	expect(await bridge.ui.custom(async () => undefined as never)).toBeUndefined();
 	expect(bridge.pendingCount()).toBe(0);

@@ -6,19 +6,17 @@ import { deriveRecapState, splitRecommended } from "./ask-user-question-state";
 interface Props {
 	question: AskUserQuestionItem;
 	answer: AskUserQuestionAnswer | undefined;
-	variant: "review" | "resolved";
 }
 
-let { question, answer, variant }: Props = $props();
-let reviewing = $derived(variant === "review");
-let recap = $derived(deriveRecapState(answer, variant));
+let { question, answer }: Props = $props();
+let recap = $derived(deriveRecapState(answer));
 let selected = $derived(new Set(recap.selectedLabels));
 </script>
 
 <div class="flex flex-col gap-xs">
 	<div class="flex items-start gap-sm">
 		<Icon name="message-circle-question" size={14} class="mt-0.5 shrink-0 text-text-muted" />
-		<p data-testid={reviewing ? "ask-review-question" : undefined} class={`tr-text-ui ${reviewing ? "text-text-default" : "text-text-muted"}`}>
+		<p class="tr-text-ui text-text-muted">
 			{question.question}
 		</p>
 	</div>
@@ -27,7 +25,7 @@ let selected = $derived(new Set(recap.selectedLabels));
 			{#each question.options as option (option.label)}
 				{@const isSelected = selected.has(option.label)}
 				<li
-					data-testid={reviewing ? "ask-review-option" : "ask-record-option"}
+					data-testid="ask-record-option"
 					data-selected={isSelected}
 					class={`flex items-center gap-xs tr-text-ui ${isSelected ? "text-text-default" : "text-text-muted"}`}
 				>
@@ -38,18 +36,13 @@ let selected = $derived(new Set(recap.selectedLabels));
 				</li>
 			{/each}
 			{#if recap.customAnswer}
-				<li data-testid={reviewing ? "ask-review-custom" : "ask-record-custom"} class="flex items-center gap-xs tr-text-ui text-text-default">
+				<li data-testid="ask-record-custom" class="flex items-center gap-xs tr-text-ui text-text-default">
 					<Icon name="check" size={14} class="shrink-0 text-feedback-success" />
 					<span data-testid="ask-selection-status" class="sr-only">Selected custom answer: </span>
 					<span>“{recap.customAnswer}”</span>
 				</li>
 			{/if}
 		</ul>
-		{#if !answer}
-			<div data-testid="ask-review-unanswered" class="flex items-center gap-xs pl-[calc(0.875rem+var(--spacing-sm))] text-text-muted tr-text-metadata italic">
-				<Icon name="skip-forward" size={12} /> Not answered
-			</div>
-		{/if}
 	{:else if !answer}
 		<div class="flex items-center gap-xs pl-[calc(0.875rem+var(--spacing-sm))] text-text-muted tr-text-metadata italic">
 			<Icon name="skip-forward" size={12} /> No answer (skipped).

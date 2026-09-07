@@ -1,6 +1,5 @@
 import type {
 	AgentEvent,
-	AskUserQuestionResult,
 	AssistantMessage,
 	SessionConfigOption,
 	SessionGoal,
@@ -27,7 +26,6 @@ export interface SessionRuntime {
 	turnIdByMessageIndex: Record<number, string | null>;
 	transcript: TranscriptPage | null;
 	toolResults: Record<string, ToolResultState>;
-	askAnswers: Record<string, AskUserQuestionResult>;
 	currentAssistantId: string | null;
 	attemptAssistantId: string | null;
 	isStreaming: boolean;
@@ -43,8 +41,11 @@ export interface SessionRuntime {
 	disclosures: FoldState;
 	submission: ChatSubmission | null;
 	activity: string | null;
-	/** Latest string-array extension widgets by key. No visual surface yet. */
-	extensionWidgets: Record<string, { lines: string[]; placement: string }>;
+	extensionStatuses: Record<string, string>;
+	extensionWorking: string;
+	extensionTitle: string;
+	/** Latest bounded string-array widgets, in native insertion order. */
+	extensionWidgets: Record<string, { lines: string[]; placement: string; order?: number }>;
 	goal: SessionGoalRuntime;
 	goalRevision: number;
 }
@@ -70,7 +71,6 @@ export function createSessionRuntime(
 		turnIdByMessageIndex: {},
 		transcript: null,
 		toolResults: {},
-		askAnswers: {},
 		currentAssistantId: null,
 		attemptAssistantId: null,
 		isStreaming: false,
@@ -87,6 +87,9 @@ export function createSessionRuntime(
 		submission: null,
 		activity: null,
 		extensionWidgets: {},
+		extensionStatuses: {},
+		extensionWorking: "",
+		extensionTitle: "",
 		goal: {
 			projectAreaId: null,
 			status: "idle",

@@ -79,6 +79,10 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 				result = initialize
 			case "session.load":
 				for _, loadUpdate := range loadUpdates {
+					if snapshot, ok := loadUpdate["__snapshot"]; ok {
+						result = snapshot
+						continue
+					}
 					method := "session.event"
 					if loadUpdate["__piOnly"] == true {
 						method = "pi.session.update"

@@ -8,13 +8,46 @@ import (
 	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 )
 
-// Pending extension dialogs are manager-level, like pending questions:
+// Pending extension dialogs are manager-level:
 // session-bound, single-use, and bounded by a timeout. The Pi host holds the
 // matching promise; the controller only validates the browser's answer and
 // relays it to the host, so neither side can satisfy another session's dialog.
 const dialogTimeout = 30 * time.Minute
 
 type dialogKey struct{ sessionID, requestID string }
+
+// UI bypasses transcript replay, but must not bypass connection ownership.
+func (m *SessionManager) acceptUiUpdate(ctx context.Context, sessionID string) bool {
+	m.mu.Lock()
+	closed, entry, creating, client := m.closed, m.sessions[sessionID], m.creating, m.client
+	m.mu.Unlock()
+	if closed {
+		return false
+	}
+	generation, tagged := ctx.Value(connectionGenerationKey{}).(uint64)
+	if !tagged {
+		return true
+	}
+	if client != nil {
+		client.mu.Lock()
+		current := !client.closed && client.generation == generation
+		client.mu.Unlock()
+		if !current {
+			return false
+		}
+	}
+	// Initial session_start requests may precede the create response.
+	if entry == nil {
+		return creating > 0
+	}
+	entry.state.Lock()
+	defer entry.state.Unlock()
+	target := entry
+	if entry.replay != nil {
+		target = entry.replay
+	}
+	return target.attached == generation
+}
 
 type pendingDialog struct {
 	sessionID   string
@@ -25,6 +58,8 @@ type pendingDialog struct {
 	placeholder string
 	prefill     string
 	timer       *time.Timer
+	resolving   bool
+	generation  uint64
 }
 
 func validDialogPrimitive(primitive string) bool {
@@ -65,9 +100,8 @@ func validateDialogRequest(value map[string]any) (sessionID, requestID, primitiv
 	}
 	timeout = dialogTimeout
 	if ms, ok := numeric(value["timeout"]); ok && ms > 0 {
-		timeout = time.Duration(ms) * time.Millisecond
-		if timeout > dialogTimeout {
-			timeout = dialogTimeout
+		if ms < dialogTimeout.Milliseconds() {
+			timeout = time.Duration(ms) * time.Millisecond
 		}
 	}
 	return sessionID, requestID, primitive, timeout, nil
@@ -91,6 +125,14 @@ func validateDialogResult(result, request map[string]any) error {
 		if value, ok := result["value"].(string); !ok || utf16Length(value) > 8000 {
 			return fmt.Errorf("malformed dialog response")
 		}
+		if textValue(request["primitive"]) == piwire.UiPrimitiveSelect {
+			for _, option := range arrayValue(request["options"]) {
+				if option == result["value"] {
+					return nil
+				}
+			}
+			return fmt.Errorf("dialog value was not offered")
+		}
 		return nil
 	}
 	return fmt.Errorf("malformed dialog response")
@@ -103,7 +145,7 @@ func validateDialogResult(result, request map[string]any) error {
 // session.load (deduplicated here by request ID), and late subscribers catch
 // up through the snapshot's pendingDialogs. A request vanishes only when it
 // is answered, cancelled, times out, or its session stops.
-func (m *SessionManager) registerDialog(update map[string]any) {
+func (m *SessionManager) registerDialog(ctx context.Context, update map[string]any) {
 	sessionID, requestID, primitive, timeout, err := validateDialogRequest(update)
 	if err != nil {
 		return
@@ -117,11 +159,24 @@ func (m *SessionManager) registerDialog(update map[string]any) {
 		m.dialogs = make(map[dialogKey]*pendingDialog)
 	}
 	key := dialogKey{sessionID, requestID}
-	if _, exists := m.dialogs[key]; exists {
+	generation, _ := ctx.Value(connectionGenerationKey{}).(uint64)
+	if existing, exists := m.dialogs[key]; exists {
+		existing.generation = generation
+		m.mu.Unlock()
+		return
+	}
+	count := 0
+	for existing, dialog := range m.dialogs {
+		if existing.sessionID == sessionID && dialog.generation == generation {
+			count++
+		}
+	}
+	if count >= 16 {
 		m.mu.Unlock()
 		return
 	}
 	pending := &pendingDialog{
+		generation:  generation,
 		sessionID:   sessionID,
 		primitive:   primitive,
 		title:       textValue(update["title"]),
@@ -134,6 +189,9 @@ func (m *SessionManager) registerDialog(update map[string]any) {
 		m.mu.Lock()
 		if m.dialogs[key] == pending {
 			delete(m.dialogs, key)
+		} else {
+			m.mu.Unlock()
+			return
 		}
 		m.mu.Unlock()
 		m.emit("agent.event", map[string]any{
@@ -170,20 +228,16 @@ func (m *SessionManager) ResolveDialog(ctx context.Context, sessionID, requestID
 	m.mu.Lock()
 	key := dialogKey{sessionID, requestID}
 	pending := m.dialogs[key]
-	if pending == nil || pending.sessionID != sessionID {
+	if pending == nil || pending.sessionID != sessionID || pending.resolving {
 		m.mu.Unlock()
 		return fmt.Errorf("dialog is no longer awaiting input")
 	}
-	if err := validateDialogResult(result, map[string]any{"primitive": pending.primitive}); err != nil {
+	if err := validateDialogResult(result, map[string]any{"primitive": pending.primitive, "options": pending.options}); err != nil {
 		m.mu.Unlock()
 		return err
 	}
-	delete(m.dialogs, key)
-	pending.timer.Stop()
+	pending.resolving = true
 	m.mu.Unlock()
-	if m.client == nil {
-		return nil
-	}
 	params := map[string]any{"sessionId": sessionID, "requestId": requestID}
 	if value, exists := result["value"]; exists {
 		params["value"] = value
@@ -191,28 +245,32 @@ func (m *SessionManager) ResolveDialog(ctx context.Context, sessionID, requestID
 	if cancelled, ok := result["cancelled"].(bool); ok && cancelled {
 		params["cancelled"] = true
 	}
-	_, err := m.client.CallPiUntilDone(ctx, piwire.UiResponseMethod, params)
+	var err error
+	if m.client != nil {
+		_, err = m.client.CallPiUntilDone(ctx, piwire.UiResponseMethod, params)
+	}
+	m.mu.Lock()
+	if m.dialogs[key] == pending {
+		if err == nil {
+			delete(m.dialogs, key)
+			pending.timer.Stop()
+		} else {
+			// Keep the original deadline and permit a retry only while the host
+			// has not cancelled/settled this request. Never resurrect removed state.
+			pending.resolving = false
+		}
+	}
+	m.mu.Unlock()
+	if err == nil {
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "ui_cancel", "requestId": requestID}})
+	}
 	return err
 }
 
 // CancelDialog dismisses one pending dialog as cancelled and tells the host
 // its extension call can stop waiting. Idempotent: settling twice is a no-op.
 func (m *SessionManager) CancelDialog(ctx context.Context, sessionID, requestID string) error {
-	m.mu.Lock()
-	key := dialogKey{sessionID, requestID}
-	pending := m.dialogs[key]
-	if pending == nil {
-		m.mu.Unlock()
-		return nil
-	}
-	delete(m.dialogs, key)
-	pending.timer.Stop()
-	m.mu.Unlock()
-	m.emit("agent.event", map[string]any{
-		"sessionId": sessionID,
-		"event":     map[string]any{"type": "ui_cancel", "requestId": requestID},
-	})
-	if m.client == nil {
+	if !m.dismissDialog(sessionID, requestID) || m.client == nil {
 		return nil
 	}
 	_, err := m.client.CallPiUntilDone(ctx, piwire.UiCancelMethod, map[string]any{
@@ -221,11 +279,29 @@ func (m *SessionManager) CancelDialog(ctx context.Context, sessionID, requestID 
 	return err
 }
 
+func (m *SessionManager) dismissDialog(sessionID, requestID string) bool {
+	m.mu.Lock()
+	key := dialogKey{sessionID, requestID}
+	pending := m.dialogs[key]
+	if pending == nil {
+		m.mu.Unlock()
+		return false
+	}
+	delete(m.dialogs, key)
+	pending.timer.Stop()
+	m.mu.Unlock()
+	m.emit("agent.event", map[string]any{
+		"sessionId": sessionID,
+		"event":     map[string]any{"type": "ui_cancel", "requestId": requestID},
+	})
+	return true
+}
+
 // applyUiUpdate routes projected UI bridge updates. Dialog requests register
 // pending state and reach browsers through registerDialog; notifications,
 // status/widget/title/working projections, and host-side cancellations only
 // fan out to browsers.
-func (m *SessionManager) applyUiUpdate(sessionID, kind string, update map[string]any) error {
+func (m *SessionManager) applyUiUpdate(ctx context.Context, sessionID, kind string, update map[string]any) error {
 	switch kind {
 	case "ui_request":
 		request := map[string]any{
@@ -239,7 +315,7 @@ func (m *SessionManager) applyUiUpdate(sessionID, kind string, update map[string
 				request[key] = value
 			}
 		}
-		m.registerDialog(request)
+		m.registerDialog(ctx, request)
 		return nil
 	case "ui_notify":
 		m.emit("agent.event", map[string]any{
@@ -252,7 +328,9 @@ func (m *SessionManager) applyUiUpdate(sessionID, kind string, update map[string
 		})
 		return nil
 	case "ui_cancel":
-		m.CancelDialog(context.Background(), sessionID, textValue(update["requestId"]))
+		// The host already settled this request. Do not echo an RPC from the
+		// synchronous receive loop, which must keep reading its response.
+		m.dismissDialog(sessionID, textValue(update["requestId"]))
 		return nil
 	case "ui_status":
 		m.emit("agent.event", map[string]any{
@@ -350,5 +428,23 @@ func (m *SessionManager) cancelDialogs(sessionID string) {
 			"sessionId": key.sessionID,
 			"event":     map[string]any{"type": "ui_cancel", "requestId": key.requestID},
 		})
+	}
+}
+
+// After a successful native load, only requests observed in that connection's
+// replay remain authoritative. Untagged local updates have no generation proof.
+func (m *SessionManager) reconcileDialogGeneration(sessionID string, generation uint64) {
+	m.mu.Lock()
+	var removed []string
+	for key, pending := range m.dialogs {
+		if key.sessionID == sessionID && pending.generation != 0 && pending.generation != generation {
+			pending.timer.Stop()
+			delete(m.dialogs, key)
+			removed = append(removed, key.requestID)
+		}
+	}
+	m.mu.Unlock()
+	for _, requestID := range removed {
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "ui_cancel", "requestId": requestID}})
 	}
 }

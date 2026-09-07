@@ -550,6 +550,14 @@ func (r *piRPC) read() {
 							return
 						}
 					}
+					// Register the authoritative pending set before releasing the load
+					// response. Live replay events may arrive after that response.
+					for _, request := range snapshot.PendingDialogs {
+						request["sessionUpdate"] = "ui_request"
+						if r.events.SessionUpdate(ctx, piwire.SessionNotification{SessionId: id, Update: request}) != nil {
+							return
+						}
+					}
 					for _, update := range []map[string]any{
 						{"sessionUpdate": "available_commands_update", "availableCommands": snapshot.Commands},
 						{"sessionUpdate": "session_info_update", "_meta": map[string]any{"pi": map[string]any{"activeRunId": snapshot.RunID}}},

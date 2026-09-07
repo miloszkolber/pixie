@@ -12,7 +12,6 @@ import type { ChatTurn, ToolResultState } from "./types";
 export interface HydratedRuntime {
 	turns: ChatTurn[];
 	toolResults: Record<string, ToolResultState>;
-	askAnswers: Record<string, never>;
 	turnIdByMessageIndex: Record<number, string | null>;
 	currentAssistantId: string | null;
 	transcript: TranscriptPage | null;
@@ -136,7 +135,6 @@ export function messagesToRuntime(
 	return {
 		turns,
 		toolResults,
-		askAnswers: {},
 		turnIdByMessageIndex,
 		currentAssistantId,
 		transcript: page ?? null,

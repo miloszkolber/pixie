@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { UiDialogRequest } from "@pixie/contracts";
+import { onDestroy } from "svelte";
 import Button from "../../components/button.svelte";
 import Dialog from "../../components/dialog.svelte";
 import { errorText, getTransport } from "../../connection";
@@ -18,6 +19,10 @@ let settled = $state(false);
 let draft = $state("");
 let seenRequestId = $state("");
 
+// Remote settlement, navigation and reconnect remove the presenter, not the
+// native request. Only explicit user dismissal may send cancellation.
+onDestroy(() => { settled = true; });
+
 function resetFor(requestId: string, prefill: string | undefined): void {
 	if (seenRequestId === requestId) return;
 	seenRequestId = requestId;
@@ -34,7 +39,7 @@ $effect(() => {
 
 function done(): void {
 	settled = true;
-	appStoreApi.getState().dismissUiDialog(request.requestId);
+	appStoreApi.getState().dismissUiDialog(request.sessionId, request.requestId);
 	open = false;
 }
 
@@ -57,12 +62,12 @@ async function reply(result: { value?: string | boolean; cancelled: boolean }): 
 }
 
 function cancel(): void {
-	if (settled) return;
+	if (settled || busy) return;
 	// A dismissed dialog is a cancelled answer. The controller rejects replays,
 	// so a lost race with a submitted answer is safe to ignore.
 	settled = true;
 	const { sessionId, requestId } = request;
-	appStoreApi.getState().dismissUiDialog(requestId);
+	appStoreApi.getState().dismissUiDialog(sessionId, requestId);
 	void getTransport()
 		.request("session.uiReply", { sessionId, requestId, result: { cancelled: true } })
 		.catch(() => {});
@@ -155,6 +160,7 @@ function submit(event: SubmitEvent): void {
 					<textarea
 						class="text-field-input"
 						rows={6}
+						maxlength={8000}
 						bind:value={draft}
 						placeholder={request.placeholder}
 						disabled={busy}
@@ -164,6 +170,7 @@ function submit(event: SubmitEvent): void {
 				{:else}
 					<!-- svelte-ignore a11y_autofocus (A newly opened dialog starts in its primary field.) -->
 					<input
+						maxlength={8000}
 						class="text-field-input"
 						bind:value={draft}
 						placeholder={request.placeholder}
@@ -197,4 +204,11 @@ function submit(event: SubmitEvent): void {
 		flex-direction: column;
 		gap: var(--space-xs);
 	}
+	:global(dialog[data-testid="ui-dialog"]) {
+		width: calc(100% - 2rem);
+		max-height: calc(100dvh - 2rem);
+		overflow-y: auto;
+		overflow-wrap: anywhere;
+	}
+	.option-list :global(button) { white-space: normal; overflow-wrap: anywhere; }
 </style>

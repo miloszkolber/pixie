@@ -68,7 +68,6 @@ type sessionEntry struct {
 	commands           []map[string]any
 	planState          *SessionPlanState
 	agentIdentity      string
-	consumedQuestions  map[string]bool
 	drainScheduled     bool
 	drainFailures      uint8
 	drainRetry         *time.Timer
@@ -81,12 +80,6 @@ type userEcho struct {
 	resources       []map[string]any
 	matched         []bool
 	resourceMatched []bool
-}
-
-type pendingQuestion struct {
-	sessionID string
-	args      map[string]any
-	result    chan map[string]any
 }
 
 type sessionLease struct {
@@ -116,7 +109,6 @@ type SessionManager struct {
 	leases       map[string]*clientSessionLeases
 	lifecycle    map[string]bool
 
-	questions       map[questionKey]*pendingQuestion
 	dialogs         map[dialogKey]*pendingDialog
 	liveness        map[string]map[uint64]sessionLivenessProvider
 	creating        int
@@ -137,7 +129,7 @@ func NewSessionManager(projects *workspace.Projects, policy *workspace.PathPolic
 	if records != nil {
 		deletions = NewSessionDeletions(records.store)
 	}
-	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), questions: make(map[questionKey]*pendingQuestion), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now}
+	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now}
 	manager.history = newHistoryIndex(manager)
 	return manager
 }
@@ -388,12 +380,10 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		m.scheduleFollowUp(sessionID, entry)
 		return nil
 	}
-	m.cancelQuestions(sessionID)
 	// Pending dialogs survive re-attachment on purpose: the host keeps the
 	// matching promise and re-publishes unresolved requests on session.load
-	// (deduplicated by request ID), while snapshots carry pendingDialogs for
-	// late subscribers. Cancelling here would orphan the host call until its
-	// timeout with no way for the browser to answer.
+	// (deduplicated by request ID). After a successful replay we remove requests
+	// the host no longer reports, without cancelling its surviving promises.
 	entry.state.Lock()
 	replay := newSessionEntry(sessionID, entry.projectID, entry.cwd, entry.parentSessionID, entry.objectiveToken)
 	replay.title = entry.title
@@ -422,6 +412,7 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		entry.state.Unlock()
 		return err
 	}
+	m.reconcileDialogGeneration(sessionID, generation)
 	entry.state.Lock()
 	replay.capabilities = response.Capabilities
 	replay.configOptions = jsonValues(response.ConfigOptions)
@@ -453,7 +444,6 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 	entry.pendingEcho = replay.pendingEcho
 	entry.userResourceBytes = replay.userResourceBytes
 	entry.pendingToolOutputs = replay.pendingToolOutputs
-	entry.consumedQuestions = replay.consumedQuestions
 	entry.commands = replay.commands
 	entry.capabilities = replay.capabilities
 	entry.planState = replay.planState
@@ -1108,7 +1098,7 @@ func (m *SessionManager) evictLocked() {
 }
 
 func newSessionEntry(sessionID, projectID, cwd, parent, token string) *sessionEntry {
-	return &sessionEntry{projectID: projectID, cwd: cwd, parentSessionID: parent, title: "Chat", thinkingLevel: "off", messages: []any{}, commands: []map[string]any{}, stats: SessionStats{SessionID: sessionID, Reported: map[string]bool{}}, queue: newSessionQueueState(), objectiveToken: token, consumedQuestions: make(map[string]bool), projectionID: identifier.New()}
+	return &sessionEntry{projectID: projectID, cwd: cwd, parentSessionID: parent, title: "Chat", thinkingLevel: "off", messages: []any{}, commands: []map[string]any{}, stats: SessionStats{SessionID: sessionID, Reported: map[string]bool{}}, queue: newSessionQueueState(), objectiveToken: token, projectionID: identifier.New()}
 }
 
 func agentProfileIdentity(profile AgentProfile, generation uint64) string {

@@ -37,7 +37,7 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		defer func() { h.Requests.End(started, err != nil) }()
 	}
 	switch method {
-	case "schedule.list", "schedule.create", "schedule.update", "schedule.delete", "schedule.runNow", "schedule.stop":
+	case "schedule.list", "schedule.preview", "schedule.health", "schedule.create", "schedule.update", "schedule.delete", "schedule.runNow", "schedule.stop":
 		var request map[string]any
 		if h.Schedules == nil || decodeParams(raw, &request) != nil {
 			return nil, fmt.Errorf("schedule service unavailable or invalid request")
@@ -464,16 +464,6 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, err
 		}
 		return map[string]any{"levels": levels}, nil
-	case "session.questionReply":
-		var request struct {
-			SessionID  string         `json:"sessionId"`
-			ToolCallID string         `json:"toolCallId"`
-			Result     map[string]any `json:"result"`
-		}
-		if h.Sessions == nil || decodeParams(raw, &request) != nil {
-			return nil, fmt.Errorf("malformed question response")
-		}
-		return ack(h.Sessions.ResolveQuestion(request.SessionID, request.ToolCallID, request.Result))
 	case "session.uiReply":
 		var request struct {
 			SessionID string         `json:"sessionId"`

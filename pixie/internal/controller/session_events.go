@@ -55,7 +55,10 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 	// title, and working-message projections fan out the same way.
 	if kind == "ui_request" || kind == "ui_notify" || kind == "ui_cancel" ||
 		kind == "ui_status" || kind == "ui_widget" || kind == "ui_title" || kind == "ui_working" {
-		return m.applyUiUpdate(sessionID, kind, update)
+		if !m.acceptUiUpdate(ctx, sessionID) {
+			return nil
+		}
+		return m.applyUiUpdate(ctx, sessionID, kind, update)
 	}
 	origin := agentPiUpdate
 	if piOnly {
@@ -144,10 +147,6 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 		return nil
 	}
 	events := applySessionUpdate(target, kind, update, origin)
-	if !publish && kind == "tool_call" {
-		// Replay is historical evidence, never authority for a new HTTP question.
-		target.consumedQuestions[textValue(update["toolCallId"])] = true
-	}
 	var persistedTitle string
 	if target.title != "" && target.title != previousTitle {
 		persistedTitle = target.title
@@ -293,7 +292,6 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 		// tools after reconnect, this tombstones a completed older invocation if
 		// an upstream reuses its call ID.
 		entry.pendingToolOutputs[toolID] = toolOutput{SubagentActivityTool: activityTool}
-		delete(entry.consumedQuestions, toolID)
 		if entry.toolChanged != nil {
 			close(entry.toolChanged)
 			entry.toolChanged = nil

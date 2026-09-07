@@ -1,8 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createUiBridge } from "../../../pi/host/src/extensions/ui-bridge.ts";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
+import { createUiBridge } from "../../../pi/pixie-assistant/src/extensions/ui-bridge.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {
@@ -183,6 +182,78 @@ test("host sessions bind the bridge as the rpc ui context", async () => {
 	expect(settled).toMatchObject({ ok: true });
 	const result = await pending;
 	expect(result.details).toMatchObject({ answer: "beta" });
+});
+
+test("an unfamiliar native extension sequences generic requests and clears its context on reload", async () => {
+	const extension: ExtensionFactory = (pi) => {
+		pi.registerTool({
+			name: "unfamiliar_interaction",
+			label: "Interaction",
+			description: "Exercise native UI",
+			parameters: Type.Object({}),
+			execute: async (_id, _params, _signal, _update, ctx) => {
+				ctx.ui.setWidget("progress", ["<unsafe> is text"], { placement: "belowEditor" });
+				ctx.ui.setStatus("phase", "input");
+				ctx.ui.setTitle("Not a saved chat name");
+				const values = [
+					await ctx.ui.select("Choose", ["alpha"]),
+					await ctx.ui.confirm("Continue", "Continue?"),
+					await ctx.ui.input("Name"),
+					await ctx.ui.editor("Notes", "prefill"),
+				];
+				ctx.ui.notify("Finished");
+				return { content: [{ type: "text", text: JSON.stringify(values) }], details: { values } };
+			},
+		});
+	};
+	const { dir, sessions, events } = await fixture([extension]);
+	const entry = await sessions.create(dir);
+	const pending = findTool(entry, "unfamiliar_interaction").execute(
+		"arbitrary-id",
+		{},
+		new AbortController().signal,
+	);
+	for (const [index, value] of ["alpha", true, " typed ", "line one\nline two"].entries()) {
+		for (
+			let attempt = 0;
+			publishedUiEvents(events).filter((event) => event.type === "pixie:ui:request").length <=
+			index;
+			attempt++
+		) {
+			if (attempt > 200) throw new Error("Sequential request did not arrive");
+			await Bun.sleep(10);
+		}
+		const request = publishedUiEvents(events).filter((event) => event.type === "pixie:ui:request")[
+			index
+		];
+		if (!request) throw new Error("Missing sequential request");
+		expect(request).not.toHaveProperty("toolCallId");
+		await sessions.call("session.uiResponse", {
+			sessionId: entry.session.sessionId,
+			requestId: request.requestId,
+			value,
+		});
+	}
+	expect((await pending).details).toEqual({
+		values: ["alpha", true, " typed ", "line one\nline two"],
+	});
+	await entry.session.reload();
+	const uiEvents = publishedUiEvents(events);
+	expect(uiEvents).toContainEqual({
+		type: "pixie:ui:widget",
+		sessionId: entry.session.sessionId,
+		key: "progress",
+	});
+	expect(uiEvents).toContainEqual({
+		type: "pixie:ui:status",
+		sessionId: entry.session.sessionId,
+		key: "phase",
+	});
+	expect(uiEvents).toContainEqual({
+		type: "pixie:ui:title",
+		sessionId: entry.session.sessionId,
+		title: "",
+	});
 });
 
 test("host resolves stay session-bound across tabs", async () => {

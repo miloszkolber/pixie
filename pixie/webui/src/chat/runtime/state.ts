@@ -1,6 +1,5 @@
 import type {
 	AgentEvent,
-	AskUserQuestionResult,
 	ImageContent,
 	SessionGoal,
 	SessionPlanState,
@@ -14,9 +13,11 @@ import type {
 } from "@pixie/contracts";
 import type { ChatAttachment, ChatSubmission, ChatTurn } from "@/chat/runtime/types";
 import { randomId } from "@/lib";
-import { omitKey } from "@/store/record";
 import type { AppState } from "@/store/app-store";
 import type { StateCreator } from "@/store/external-store";
+import { omitKey } from "@/store/record";
+import { uiDialogKey } from "../dialogs/ui-dialog-state";
+import { reduceExtensionUi } from "./extension-ui";
 import {
 	type HydratedRuntime,
 	prependTranscriptPage as prependHydratedTranscriptPage,
@@ -26,14 +27,13 @@ import { clearTurnStreaming, reduceSessionEvent, type SessionRuntime } from "./s
 export interface ChatState {
 	sessions: Record<string, SessionRuntime>;
 	uiDialogs: Record<string, UiDialogRequest>;
-	dismissUiDialog: (requestId: string) => void;
+	dismissUiDialog: (sessionId: string, requestId: string) => void;
 	/** Reconcile one session's dialogs with the snapshot's pending set (reconnect recovery). */
 	reconcileUiDialogs: (sessionId: string, requests: UiDialogRequest[]) => void;
 	appendUserMessage: (sessionId: string, text: string, attachments?: ChatAttachment[]) => void;
 	setSubmission: (sessionId: string, submission: ChatSubmission | null) => void;
 	appendErrorTurn: (sessionId: string, text: string) => void;
 	handleAgentEvent: (event: AgentEvent, sessionId: string) => void;
-	setAskAnswer: (sessionId: string, toolCallId: string, result: AskUserQuestionResult) => void;
 	setCurrentModel: (sessionId: string, model: WireModel, expectedRevision?: number) => void;
 	setThinkingLevel: (sessionId: string, level: ThinkingLevel, expectedRevision?: number) => void;
 	setStats: (sessionId: string, stats: SessionStats) => void;
@@ -135,10 +135,8 @@ function unmatchedOptimisticTurns(
 export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, get) => ({
 	sessions: {},
 	uiDialogs: {},
-	dismissUiDialog: (requestId) =>
-		set((state) =>
-			state.uiDialogs[requestId] ? { uiDialogs: omitKey(state.uiDialogs, requestId) } : {},
-		),
+	dismissUiDialog: (sessionId, requestId) =>
+		set((state) => ({ uiDialogs: omitKey(state.uiDialogs, uiDialogKey(sessionId, requestId)) })),
 	reconcileUiDialogs: (sessionId, requests) =>
 		set((state) => {
 			const next: Record<string, UiDialogRequest> = {};
@@ -146,7 +144,8 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 				if (dialog.sessionId !== sessionId) next[requestId] = dialog;
 			}
 			for (const request of requests) {
-				if (request?.requestId && request.sessionId === sessionId) next[request.requestId] = request;
+				if (request?.requestId && request.sessionId === sessionId)
+					next[uiDialogKey(sessionId, request.requestId)] = request;
 			}
 			return { uiDialogs: next };
 		}),
@@ -214,12 +213,14 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 		if (event.type === "ui_request") {
 			const request = event.request;
 			if (request?.requestId && request.sessionId === sessionId) {
-				set((state) => ({ uiDialogs: { ...state.uiDialogs, [request.requestId]: request } }));
+				set((state) => ({
+					uiDialogs: { ...state.uiDialogs, [uiDialogKey(sessionId, request.requestId)]: request },
+				}));
 			}
 			return;
 		}
 		if (event.type === "ui_cancel") {
-			const requestId = event.requestId;
+			const requestId = uiDialogKey(sessionId, event.requestId);
 			set((state) =>
 				state.uiDialogs[requestId] ? { uiDialogs: omitKey(state.uiDialogs, requestId) } : {},
 			);
@@ -230,48 +231,8 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 			else get().pushToast({ variant: "info", message: event.message });
 			return;
 		}
-		if (event.type === "ui_status" || event.type === "ui_working") {
-			// Ephemeral extension projections. A cleared status removes the
-			// line; anything else replaces it. They never touch the transcript.
-			const text =
-				event.type === "ui_status"
-					? (event.text ?? null)
-					: (event.message ?? null);
-			set((s) => withRuntime(s, sessionId, (rt) => ({ ...rt, activity: text })));
-			return;
-		}
-		if (event.type === "ui_widget") {
-			set((s) =>
-				withRuntime(s, sessionId, (rt) => ({
-					...rt,
-					extensionWidgets: event.lines
-						? { ...rt.extensionWidgets, [event.key]: { lines: event.lines, placement: event.placement ?? "aboveEditor" } }
-						: omitKey(rt.extensionWidgets, event.key),
-				})),
-			);
-			return;
-		}
-		if (event.type === "ui_title") {
-			if (!event.title) return;
-			const state = get();
-			for (const projectId of new Set([
-				...Object.keys(state.tabsByProjectArea),
-				...Object.keys(state.closedChatsByProjectArea),
-			])) {
-				if (
-					state.tabsByProjectArea[projectId]?.some(
-						(tab) => tab.kind === "chat" && tab.sessionId === sessionId,
-					) ||
-					state.closedChatsByProjectArea[projectId]?.some((chat) => chat.sessionId === sessionId)
-				) {
-					state.applySessionLifecycle({
-						projectId,
-						sessionId,
-						operation: "renamed",
-						title: event.title,
-					});
-				}
-			}
+		if (["ui_status", "ui_working", "ui_widget", "ui_title"].includes(event.type)) {
+			set((s) => withRuntime(s, sessionId, (rt) => reduceExtensionUi(rt, event)));
 			return;
 		}
 		if (event.type === "session-info" && event.title) {
@@ -401,18 +362,4 @@ export const createChatState: StateCreator<AppState, [], [], ChatState> = (set, 
 				goal: { ...rt.goal, projectAreaId, status: "error", error },
 			})),
 		),
-	setAskAnswer: (sessionId, toolCallId, result) =>
-		set((state) => {
-			const runtime = state.sessions[sessionId];
-			if (!runtime) return state;
-			return {
-				sessions: {
-					...state.sessions,
-					[sessionId]: {
-						...runtime,
-						askAnswers: { ...runtime.askAnswers, [toolCallId]: result },
-					},
-				},
-			};
-		}),
 });

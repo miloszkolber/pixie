@@ -550,7 +550,6 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 				configOptions: summary.configOptions ?? [],
 				turns: hydrated.turns,
 				toolResults: hydrated.toolResults,
-				askAnswers: hydrated.askAnswers,
 				turnIdByMessageIndex: hydrated.turnIdByMessageIndex,
 				transcript: hydrated.transcript,
 				currentAssistantId: hydrated.currentAssistantId,

@@ -1,4 +1,5 @@
 import type { AgentProfile } from "@pixie/contracts";
+import { clearExtensionUi } from "../chat/runtime/extension-ui";
 import type { AppState } from "../store/app-store";
 import type { StateCreator } from "../store/external-store";
 import type { ConnectionStatus } from "./transport";
@@ -34,6 +35,17 @@ export const createConnectionState: StateCreator<AppState, [], [], ConnectionSta
 	setStatus: (status) =>
 		set((state) => ({
 			status,
+			...(status !== "connected"
+				? {
+						uiDialogs: {},
+						sessions: Object.fromEntries(
+							Object.entries(state.sessions).map(([id, runtime]) => [
+								id,
+								clearExtensionUi(runtime),
+							]),
+						),
+					}
+				: {}),
 			...(status === "connecting" ? { agentProfile: null } : {}),
 			connectionGeneration:
 				status === "connected" ? state.connectionGeneration + 1 : state.connectionGeneration,

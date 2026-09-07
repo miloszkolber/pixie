@@ -3,8 +3,8 @@ import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
 } from "@juicesharp/rpiv-ask-user-question/events";
-import rpivAsk from "../../../pi/host/src/extensions/rpiv-ask.ts";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
+import rpivAsk from "@juicesharp/rpiv-ask-user-question";
+import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {
@@ -56,7 +56,7 @@ test("the profile registers exactly one ask_user_question tool", async () => {
 	const entry = await sessions.create(dir);
 	const matches = entry.session.getActiveToolNames().filter((name) => name === "ask_user_question");
 	expect(matches).toHaveLength(1);
-	expect(entry.capabilities.snapshot()).toMatchObject({ "rpiv-ask": 1 });
+	expect(entry.session.getActiveToolNames()).toContain("ask_user_question");
 });
 
 test("an option answer returns the answered envelope", async () => {
@@ -198,7 +198,12 @@ test("a headless tool call returns the no_ui error envelope", async () => {
 });
 
 test("the tool emits prompt and blocked events around the wait", async () => {
-	const { dir, sessions, events } = await fixture([rpivAsk]);
+	const upstreamEvents: unknown[] = [];
+	const { dir, sessions, events } = await fixture([rpivAsk, (pi) => {
+		for (const type of [ASK_USER_PROMPT_EVENT, ASK_USER_BLOCKED_EVENT]) {
+			pi.events.on(type, (payload) => upstreamEvents.push({ type, ...(payload as object) }));
+		}
+	}]);
 	const entry = await sessions.create(dir);
 	const pending = findTool(entry, "ask_user_question").execute(
 		"parity-ask-events",
@@ -206,7 +211,7 @@ test("the tool emits prompt and blocked events around the wait", async () => {
 		new AbortController().signal,
 	);
 	const request = await waitForUiRequest(events);
-	const prompts = sessionEvents(events, ASK_USER_PROMPT_EVENT);
+	const prompts = sessionEvents(upstreamEvents, ASK_USER_PROMPT_EVENT);
 	expect(prompts).toHaveLength(1);
 	expect(prompts[0].questions).toMatchObject([
 		{ question: "Which color?", header: "Color", multiSelect: false },
@@ -221,11 +226,12 @@ test("the tool emits prompt and blocked events around the wait", async () => {
 		ok: true,
 	});
 	await pending;
-	const blocked = sessionEvents(events, ASK_USER_BLOCKED_EVENT);
+	const blocked = sessionEvents(upstreamEvents, ASK_USER_BLOCKED_EVENT);
+	expect(sessionEvents(events, ASK_USER_PROMPT_EVENT)).toEqual([]);
 	expect(blocked.map((event) => event.active)).toEqual([true, false]);
 });
 
-test("the tool survives session reload with its capability marker", async () => {
+test("the native tool survives session reload without a capability marker", async () => {
 	const { dir, sessions, events } = await fixture([rpivAsk]);
 	const entry = await sessions.create(dir);
 	const id = entry.session.sessionId;
@@ -247,5 +253,5 @@ test("the tool survives session reload with its capability marker", async () => 
 	expect(
 		loaded.session.getActiveToolNames().filter((name) => name === "ask_user_question"),
 	).toHaveLength(1);
-	expect(loaded.capabilities.snapshot()).toMatchObject({ "rpiv-ask": 1 });
+	expect(loaded.session.getActiveToolNames()).toContain("ask_user_question");
 });

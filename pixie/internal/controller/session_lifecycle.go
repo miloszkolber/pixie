@@ -163,7 +163,6 @@ func (m *SessionManager) Archive(ctx context.Context, projectID, sessionID, cwd 
 		return err
 	}
 
-	m.cancelQuestions(sessionID)
 	// Archiving dismisses blocked UI like a stop: the host settles its
 	// awaiting call through pi.session.archive, and browsers drop the modal.
 	m.cancelDialogs(sessionID)
@@ -269,7 +268,6 @@ func (m *SessionManager) Delete(ctx context.Context, projectID, sessionID, cwd s
 		confirmErr = fmt.Errorf("confirm session deletion: %w", confirmErr)
 	}
 
-	m.cancelQuestions(sessionID)
 	// Deletion dismisses blocked UI like a stop: the host settles its
 	// awaiting call on close, and browsers drop the modal.
 	m.cancelDialogs(sessionID)

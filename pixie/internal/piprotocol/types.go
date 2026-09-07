@@ -41,13 +41,14 @@ type LoadSessionRequest struct {
 	Meta       map[string]any `json:"metadata,omitempty"`
 }
 type NewSessionResponse struct {
-	Capabilities  map[string]int   `json:"capabilities"`
-	SessionId     string           `json:"sessionId"`
-	ConfigOptions []map[string]any `json:"configOptions"`
-	Meta          map[string]any   `json:"metadata,omitempty"`
-	Messages      []map[string]any `json:"messages,omitempty"`
-	Commands      []map[string]any `json:"commands,omitempty"`
-	RunID         string           `json:"runId,omitempty"`
+	Capabilities   map[string]int   `json:"capabilities"`
+	SessionId      string           `json:"sessionId"`
+	ConfigOptions  []map[string]any `json:"configOptions"`
+	Meta           map[string]any   `json:"metadata,omitempty"`
+	Messages       []map[string]any `json:"messages,omitempty"`
+	Commands       []map[string]any `json:"commands,omitempty"`
+	PendingDialogs []map[string]any `json:"pendingDialogs,omitempty"`
+	RunID          string           `json:"runId,omitempty"`
 }
 type LoadSessionResponse = NewSessionResponse
 

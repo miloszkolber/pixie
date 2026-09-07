@@ -1,7 +1,6 @@
 <script lang="ts">
 import type {
 	AgentMentionInfo,
-	AskUserQuestionResult,
 	PromptHit,
 	QueueLane,
 	WsResult,
@@ -30,6 +29,7 @@ import Composer from "./composer/composer.svelte";
 import type { ComposerHandle, MentionCandidate, SubmitBehavior } from "./composer/composer-state";
 import { uiDialogForSession } from "./dialogs/ui-dialog-state";
 import UiDialogModal from "./dialogs/ui-dialog-modal.svelte";
+import ExtensionWidgets from "./dialogs/extension-widgets.svelte";
 import { loadTranscriptUntil, type TranscriptLoadOutcome } from "./history/history-loading";
 import HistoryOverlay from "./history/history-overlay.svelte";
 import {
@@ -37,7 +37,6 @@ import {
 	type HistorySearchState,
 	type ScopeKind,
 } from "./history/history-search";
-import { deriveAskStates, setAskStatesContext } from "./runtime/ask-state";
 import {
 	messagesToRuntime,
 	prependTranscriptPage as prependHydratedTranscriptPage,
@@ -160,7 +159,6 @@ let mentionCandidates = $derived(
 let queueEditStale = $derived(
 	queueEdit !== null && !queueEdit.saving && queueEdit.revision !== runtime.queue.revision,
 );
-let askStates = $derived(deriveAskStates(runtime.turns, runtime.askAnswers));
 let uiDialog = $derived(uiDialogForSession($appStore.uiDialogs, sessionId));
 function currentHistoryContext() {
 	return {
@@ -170,24 +168,13 @@ function currentHistoryContext() {
 	};
 }
 
-const focusScope = {};
 const history = createHistorySearch(untrack(currentHistoryContext));
 let historyState = $state<HistorySearchState>(history.getState());
 const unsubscribeHistory = history.subscribe((next) => (historyState = next));
 const commandSync = createSessionCommandSync(untrack(() => ({ sessionId, projectAreaId })));
 
 setFoldStateContext(() => runtime.disclosures);
-setAskStatesContext({ stateFor: (toolCallId) => askStates[toolCallId], focusScope });
 setChatActionsContext({
-	answerQuestion: async (toolCallId: string, result: AskUserQuestionResult) => {
-		try {
-			await getTransport().request("session.questionReply", { sessionId, toolCallId, result });
-			appStoreApi.getState().setAskAnswer(sessionId, toolCallId, result);
-		} catch (cause) {
-			toast.error(errorText(cause), "Couldn't send the answer");
-			throw cause;
-		}
-	},
 	focusComposer: () => composer?.refocus(),
 });
 
@@ -768,6 +755,11 @@ function openChanges(path: string): void {
 			{deleteUnavailableReason}
 		/>
 		{#if runtime.activity}<p role="status" class="px-md py-xs text-text-muted tr-text-ui">{runtime.activity}</p>{/if}
+		<div class="max-h-[15dvh] overflow-y-auto px-md text-text-muted tr-text-ui" role="status" aria-label="Extension status">
+			{#if runtime.extensionTitle}<p class="break-words">Extension: {runtime.extensionTitle}</p>{/if}
+			{#each Object.entries(runtime.extensionStatuses) as [key, text] (key)}<p class="break-words">{key}: {text}</p>{/each}
+			{#if runtime.extensionWorking}<p class="break-words">{runtime.extensionWorking}</p>{/if}
+		</div>
 		<QueueStrip
 			queue={runtime.queue}
 			onEdit={editQueuedMessage}
@@ -831,6 +823,7 @@ function openChanges(path: string): void {
     {/if}
    </div>
   {/if}
+		<ExtensionWidgets widgets={runtime.extensionWidgets} placement="aboveEditor" />
 		<Composer
 			bind:this={composer}
 			value={runtime.draft}
@@ -847,9 +840,12 @@ function openChanges(path: string): void {
 			supportsTextResources={canPromptEmbeddedContext}
 			supportsSteer={canSteer}
 		/>
+		<ExtensionWidgets widgets={runtime.extensionWidgets} placement="belowEditor" />
 		<ChatHeader stats={runtime.stats} left={HeaderLeft} />
 	</div>
 	{#if uiDialog}
+		{#key `${uiDialog.sessionId}:${uiDialog.requestId}`}
 		<UiDialogModal request={uiDialog} />
+		{/key}
 	{/if}
 </div>

@@ -111,6 +111,28 @@ describe("WsTransport channel replay", () => {
 });
 
 describe("WsTransport reconnect delivery", () => {
+	test("schedule mutation identity crosses browser transport unchanged on reconnect", async () => {
+		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
+		transport.connect();
+		const first = TestWebSocket.instances[0];
+		if (!first) throw new Error("socket was not created");
+		first.open();
+		const params = { projectId: "project", scheduleId: "schedule", mutationId: "manual-run-once" };
+		const result = transport.request("schedule.runNow", params);
+		const original = first.sent.find((frame) => parse(frame).method === "schedule.runNow");
+		if (!original) throw new Error("schedule request was not sent");
+		expect(JSON.parse(original).params).toEqual(params);
+		first.close();
+		await tick(520);
+		const replacement = TestWebSocket.instances[1];
+		if (!replacement) throw new Error("socket did not reconnect");
+		replacement.open();
+		expect(replacement.sent).toContain(original);
+		replacement.message(JSON.stringify({ id: parse(original).id, ok: true, result: { ok: true } }));
+		await result;
+		transport.stop();
+	});
+
 	test("keeps a long-lived request live across an outage for longer than controller cleanup", async () => {
 		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
 		transport.connect();

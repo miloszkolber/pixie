@@ -561,7 +561,6 @@ test("missed deletion reconciliation tombstones late hydration", () => {
 		{
 			turns: [],
 			toolResults: {},
-			askAnswers: {},
 			turnIdByMessageIndex: {},
 			currentAssistantId: null,
 			transcript: null,
@@ -723,7 +722,6 @@ test("config and plan events update live state while a replay replaces them auth
 		{
 			turns: [],
 			toolResults: {},
-			askAnswers: {},
 			turnIdByMessageIndex: {},
 			currentAssistantId: null,
 			transcript: null,
@@ -762,7 +760,6 @@ test("session hydration restores controller queues and question replies", () => 
 		{
 			turns: [],
 			toolResults: {},
-			askAnswers: {},
 			turnIdByMessageIndex: {},
 			currentAssistantId: null,
 			transcript: null,
@@ -770,8 +767,6 @@ test("session hydration restores controller queues and question replies", () => 
 		},
 		null,
 	);
-	const result = { answers: [], cancelled: true };
-	appStoreApi.getState().setAskAnswer("s1", "question-1", result);
 	expect(appStoreApi.getState().sessions.s1?.queue.followUp).toEqual(["continue after refresh"]);
 	expect(appStoreApi.getState().sessions.s1?.queue.revision).toBe("loaded");
 	expect(appStoreApi.getState().sessions.s1?.queue.blocked?.reason).toBe("delivery-uncertain");
@@ -787,7 +782,6 @@ test("session hydration restores controller queues and question replies", () => 
 	expect(appStoreApi.getState().sessions.s1?.queue.revision).toBe("changed");
 	expect(appStoreApi.getState().sessions.s1?.queue.blocked).toBeUndefined();
 	expect(appStoreApi.getState().sessions.s1?.parentSessionId).toBe("parent-session");
-	expect(appStoreApi.getState().sessions.s1?.askAnswers["question-1"]).toEqual(result);
 	appStoreApi.getState().reconcileProjectAreaSessions(
 		"p1",
 		["s1"],
