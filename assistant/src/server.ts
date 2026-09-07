@@ -7,6 +7,7 @@ import { configureExtension } from "./extension-configuration.ts";
 import { extensionInventory } from "./extension-inventory.ts";
 import llama, { llamaFactory } from "./extensions/llama.ts";
 import { Providers } from "./providers.ts";
+import { buildEventFrame, serializeFrame } from "./serialize.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
 import { HostError, object, type RecordValue, required, serviceStore, text } from "./storage.ts";
 
@@ -48,8 +49,7 @@ async function startUnlockedHost(options: HostOptions) {
 	const peers = new Set<ServerWebSocket<Peer>>();
 	let stopping = false;
 	const inflight = new Set<Promise<unknown>>();
-	const send = (peer: ServerWebSocket<Peer>, value: unknown) => {
-		const data = JSON.stringify(value);
+	const sendData = (peer: ServerWebSocket<Peer>, data: string) => {
 		if (Buffer.byteLength(data) > 32 * 1024 * 1024) {
 			peer.close(1009, "Response exceeds limit");
 			return;
@@ -57,6 +57,7 @@ async function startUnlockedHost(options: HostOptions) {
 		if (peer.send(data) === -1 && peer.getBufferedAmount() > 32 * 1024 * 1024)
 			peer.close(1013, "Consumer is too slow");
 	};
+	const send = (peer: ServerWebSocket<Peer>, value: unknown) => sendData(peer, serializeFrame(value));
 	// Fail loudly before the service starts when --llama is requested but the
 	// pinned SDK does not expose its built-in factory through the public export.
 	if (options.llama) llamaFactory();
@@ -64,16 +65,16 @@ async function startUnlockedHost(options: HostOptions) {
 		agentDir,
 		options.llama ? [llama] : [],
 		(sessionId, event, sequence) => {
+			const frame = buildEventFrame(sessionId, event, sequence);
 			for (const peer of peers) {
-				const message = { method: "session.event", params: { sessionId, event, sequence } };
 				const loading = peer.data.loading.get(sessionId);
 				if (loading) {
-					loading.bytes += Buffer.byteLength(JSON.stringify(message));
+					loading.bytes += Buffer.byteLength(frame.data);
 					if (loading.bytes > 32 * 1024 * 1024) {
 						peer.data.loading.delete(sessionId);
 						peer.close(1013, "Session attachment exceeds buffer limit");
-					} else loading.messages.push(message);
-				} else if (peer.data.sessions.has(sessionId)) send(peer, message);
+					} else loading.messages.push(frame.message);
+				} else if (peer.data.sessions.has(sessionId)) sendData(peer, frame.data);
 			}
 		},
 	);
@@ -286,8 +287,14 @@ async function startUnlockedHost(options: HostOptions) {
 						return;
 					}
 					const id = Number(request.id);
-					if (!Number.isSafeInteger(id) || id <= 0 || peer.data.active.has(id)) {
+					if (!Number.isSafeInteger(id) || id <= 0) {
 						peer.close(1008, "Invalid request ID");
+						return;
+					}
+					// A reused in-flight id is a protocol mistake, not broken
+					// framing: answer with an error frame and keep the connection.
+					if (peer.data.active.has(id)) {
+						send(peer, { id, error: { code: -32000, message: "Request id is already in flight" } });
 						return;
 					}
 					if (peer.data.active.size >= 128) {
