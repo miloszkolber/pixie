@@ -18,9 +18,9 @@
 !pixie/tests/deployment/git-runtime.test.sh
 !pixie/tests/ui/
 !pixie/tests/ui/**
-!pi/
-!pi/pixie-assistant/
-!pi/pixie-assistant/package.json
+!agent/
+!agent/pixie-assistant/
+!agent/pixie-assistant/package.json
 !pixie/contracts/
 !pixie/contracts/**
 !pixie/webui/
@@ -35,8 +35,6 @@
 **/*.log
 **/.env*
 
-!pi/mcp/
-!pi/mcp/package.json
-!pi/extensions/
-!pi/extensions/local-patches/
-!pi/extensions/local-patches/*.patch
+!agent/extensions/
+!agent/extensions/local-patches/
+!agent/extensions/local-patches/*.patch
