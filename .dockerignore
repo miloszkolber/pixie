@@ -21,6 +21,10 @@
 !agent/
 !assistant/
 !assistant/package.json
+!assistant/scripts/
+!assistant/scripts/*.mjs
+!assistant/patches/
+!assistant/patches/*.patch
 !package/contracts/
 !package/contracts/**
 !package/webui/
