@@ -13,7 +13,7 @@ Paths below are relative to `pixie/`.
 
 | Directory | Responsibility |
 | --- | --- |
-| `cmd/pixie`, `internal/controller` | Application HTTP/WebSocket/MCP, MCP publisher, native Pi projection and lifecycle |
+| `cmd`, `internal/controller` | Application HTTP/WebSocket/MCP, MCP publisher, native Pi projection and lifecycle |
 | `internal/mcpserver`, `internal/browser` | In-process Browser module publication and browser runtime |
 | `internal/workspace`, `internal/persist` | Bounded project access and durable state |
 | `webui`, `contracts` | Svelte 5 interface and shared wire contracts |

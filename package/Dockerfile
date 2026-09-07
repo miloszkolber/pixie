@@ -10,7 +10,7 @@ ARG SOURCE_URL=https://github.com/miloszkolber/pixie
 ARG CREATED=1970-01-01T00:00:00Z
 
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS web-build
-WORKDIR /work/pixie
+WORKDIR /work/package
 COPY package.json bun.lock bunfig.toml /work/
 COPY package/package.json ./
 COPY package/webui/package.json webui/package.json
@@ -144,7 +144,7 @@ RUN --mount=type=cache,id=ui-acceptance-apt,target=/var/cache/apt,sharing=locked
     && mkdir -p /app/web /artifacts \
     && chown -R 1000:1000 /artifacts
 COPY --from=ui-test-build /out/pixie-ui-fixture /app/pixie-ui-fixture
-COPY --from=web-build /work/pixie/webui/dist /app/web
+COPY --from=web-build /work/package/webui/dist /app/web
 COPY package/tests/ui/run.sh /app/run-ui-acceptance
 COPY package/tests/ui/pi.sh /app/run-pi-acceptance
 COPY package/tests/ui/faults.js /app/ui-faults.js
@@ -183,7 +183,7 @@ WORKDIR /app
 COPY LICENSE NOTICE.md /app/legal/
 COPY --from=go-build /out/pixie /app/pixie
 COPY --from=go-build /out/licenses/pixie /app/licenses
-COPY --from=web-build /work/pixie/webui/dist /app/web
+COPY --from=web-build /work/package/webui/dist /app/web
 COPY --from=web-build /out/licenses /app/licenses
 COPY package/internal/browser/config.json /app/config.json
 RUN test -x /app/pixie \

@@ -7,7 +7,7 @@
 	},
 	"scripts": {
 		"build": "bun run build:go && bun run build:web",
-		"build:go": "go build -trimpath -o dist/pixie ./cmd/pixie",
+		"build:go": "go build -trimpath -o dist/pixie ./cmd",
 		"dev:web": "bun --filter @pixie/web dev",
 		"build:web": "bun --filter @pixie/web build",
 		"mewa:check": "bun --filter @pixie/web mewa:check",
