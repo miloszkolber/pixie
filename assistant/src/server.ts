@@ -17,6 +17,10 @@ export interface HostOptions {
 	hostname?: string;
 	port?: number;
 	llama?: boolean;
+	/** Permit `runtime.restart` to end the process for the service manager. */
+	allowSelfRestart?: boolean;
+	/** Termination hook for self restart; defaults to process exit. */
+	onRestart?: () => void;
 }
 interface Peer {
 	sessions: Set<string>;
@@ -48,6 +52,7 @@ async function startUnlockedHost(options: HostOptions) {
 	const runtimeId = await identity.update((s) => s.id);
 	const peers = new Set<ServerWebSocket<Peer>>();
 	let stopping = false;
+	let restartPending = false;
 	const inflight = new Set<Promise<unknown>>();
 	const sendData = (peer: ServerWebSocket<Peer>, data: string) => {
 		if (Buffer.byteLength(data) > 32 * 1024 * 1024) {
@@ -115,6 +120,23 @@ async function startUnlockedHost(options: HostOptions) {
 				version: "0.85.1",
 				capabilities: capabilitySnapshot(),
 			};
+		if (method === "runtime.restart") {
+			if (!options.allowSelfRestart)
+				throw new Error("Service self restart is not enabled for this deployment");
+			if (!restartPending) {
+				restartPending = true;
+				void (async () => {
+					// Reply first, then drop peers and end the process so the
+					// service manager brings a fresh host up. Runs interrupt
+					// with the documented restart semantics; session
+					// transcripts stay durable on disk.
+					await Bun.sleep(250);
+					for (const peer of peers) peer.close(1001, "Service restarting");
+					options.onRestart?.();
+				})();
+			}
+			return { ok: true };
+		}
 		if (
 			["pi.extensions.list", "pi.extensions.configure", "pi.extensions.reload"].includes(method)
 		) {

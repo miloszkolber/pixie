@@ -157,6 +157,7 @@ export const WS_METHODS = {
 	piNativeExtensions: "pi.nativeExtensions",
 	piNativeExtensionConfigure: "pi.nativeExtensionConfigure",
 	piNativeExtensionReload: "pi.nativeExtensionReload",
+	piReload: "pi.reload",
 	piExtensionAdd: "pi.extensionAdd",
 	piExtensionSetEnabled: "pi.extensionSetEnabled",
 	piExtensionRemove: "pi.extensionRemove",
@@ -524,6 +525,7 @@ export interface WsMethodMap {
 		params: NativeExtensionTarget & { sessionId: string };
 		result: NativeExtensionChange;
 	};
+	"pi.reload": { params: Record<string, never>; result: { ok: boolean } };
 	"pi.extensionAdd": {
 		params: { name: string; enabled: boolean };
 		result: PiExtensionCatalog;

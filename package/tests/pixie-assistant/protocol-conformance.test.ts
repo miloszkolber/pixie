@@ -21,14 +21,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-	await Promise.race([
-		host.close(),
-		// Bun below 1.4.0 wedges server.stop after server-initiated WebSocket
-		// closes; the pinned runtime is clean and the process exit reaps the
-		// listener otherwise.
-		Bun.sleep(3000).then(() => console.warn("host close deferred on this Bun version")),
-	]);
-	await rm(dir, { recursive: true, force: true });
+	// Bun below 1.4.0 wedges server.stop after server-initiated WebSocket
+	// closes; a deferred close there leaks unhandled rejections into sibling
+	// tests, so the disposable host is left to the process exit instead.
+	if (Bun.version.localeCompare("1.4.0", undefined, { numeric: true }) >= 0) {
+		await host.close();
+		await rm(dir, { recursive: true, force: true });
+	} else {
+		console.warn(`bun ${Bun.version}: leaving the conformance host to process exit`);
+	}
 });
 
 function connect(secret = "protocol-conformance") {

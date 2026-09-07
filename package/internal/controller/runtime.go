@@ -274,8 +274,24 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	return r.server.Shutdown(ctx)
 }
 
-func runtimePiStatus(ctx context.Context, client *PiClient) map[string]any {
-	if client.scope.requireSecret && client.scope.secret == "" {
+// reloadHost asks the Pi host service to end itself so the service manager
+// brings a fresh process up. Configured native extensions then apply to every
+// session at once, with the documented restart semantics: in-flight runs
+// interrupt and session transcripts stay durable on disk.
+func (a *PiAdmin) reloadHost(ctx context.Context) (map[string]any, error) {
+	var response struct {
+		Ok bool `json:"ok"`
+	}
+	if err := a.call(ctx, "runtime.restart", nil, &response); err != nil {
+		return nil, err
+	}
+	if !response.Ok {
+		return nil, fmt.Errorf("Pi host did not accept the reload request")
+	}
+	return map[string]any{"ok": true}, nil
+}
+
+func runtimePiStatus(ctx context.Context, client *PiClient) map[string]any {	if client.scope.requireSecret && client.scope.secret == "" {
 		return map[string]any{"configured": false, "reachable": false, "error": "PIXIE_PI_SECRET_KEY is not configured"}
 	}
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)

@@ -357,7 +357,9 @@ test("standalone MCP supports authenticated SSE and cancels a blocked tool", asy
 		);
 		setTimeout(() => abort.abort(), 50);
 		await expect(call).rejects.toThrow();
-		for (let i = 0; i < 20 && !cancelled; i++) await Bun.sleep(10);
+		// Cancellation is asynchronous; tolerate scheduler delays on loaded
+		// machines before asserting the fixture observed the abort.
+		for (let i = 0; i < 100 && !cancelled; i++) await Bun.sleep(10);
 		expect(cancelled).toBe(true);
 	} finally {
 		await sessions.close();

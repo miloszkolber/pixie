@@ -27,11 +27,12 @@ const agentDir = resolve(values["agent-dir"] ?? getAgentDir());
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.MCP_UI_VIEWER ??= "none";
 const host = await startHost({
-	agentDir,
+	agentDir: process.env.PI_CODING_AGENT_DIR,
 	hostname: values.host ?? "127.0.0.1",
 	port: Number(values.port ?? 3284),
 	llama: values.llama,
 	secret: process.env.PIXIE_PI_SECRET_KEY ?? "",
+	allowSelfRestart: process.env.PIXIE_ALLOW_SELF_RESTART === "1",
 });
 console.log(`pixie-assistant listening on ${host.server.hostname}:${host.server.port}`);
 let closing = false;

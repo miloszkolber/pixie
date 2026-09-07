@@ -2,6 +2,10 @@
 
 Prepared upstream contribution for safe in-process extension reload, following the [local patches](../agent/extensions/local-patches/README.md) workflow. No submission has been made; the [publication signoff gate](roadmap.md) applies.
 
+## Interim
+
+A whole-host reload is available today: `pi.reload` ends the assistant process so the service manager brings a fresh one up, applying configured extensions to every session at once ([deployment](deployment.md)). In-flight runs interrupt and session transcripts stay durable. The upstream proposal below remains the path to non-disruptive per-session reload.
+
 ## Current behavior
 
 Saving native extension configuration reports `saved: true, loaded: false, reload: deferred`, and "check session reload" reports `session-busy`, `session-not-resident` or `sdk-loader-install-policy` instead of applying ([extensions](pi-extensions.md)). Configured changes reach sessions only when they are closed and reopened; idle resident sessions keep their previous load set.

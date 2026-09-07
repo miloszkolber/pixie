@@ -36,7 +36,7 @@ The pinned Pi SDK loads its built-in llama.cpp extension only inside the CLI (`-
 
 ### 5. Session reload upstream proposal
 
-In-process extension reload stays deferred because `AgentSession.reload()` resets providers process-globally and `DefaultResourceLoader.reload()` lacks an install-policy callback ([extensions](pi-extensions.md)). A prepared upstream contribution describes a per-session safe reload path and the verification plan ([session reload proposal](session-reload.md)). No submission has been made; the publication signoff gate applies. Until an upstream release lands it, configured extension changes reach sessions on reopen.
+In-process extension reload stays deferred because `AgentSession.reload()` resets providers process-globally and `DefaultResourceLoader.reload()` lacks an install-policy callback ([extensions](pi-extensions.md)). A whole-host reload control exists today (`pi.reload` plus `Restart=always`; the Web UI button rides the shell redesign stream), and a prepared upstream contribution describes the per-session safe reload path and verification plan ([session reload proposal](session-reload.md)). No submission has been made; the publication signoff gate applies. Until an upstream release lands it, configured extension changes reach sessions on reopen or through the whole-host reload.
 
 ### 6. Right-rail module tabs
 

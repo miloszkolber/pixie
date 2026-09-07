@@ -150,6 +150,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now pixie-assistant.service pixie.service
 ```
 
+Whole-host reload: `pi.reload` asks the assistant to end itself so the service manager brings a fresh process up, applying configured native extensions to every session at once. Enable it on the assistant unit with `Restart=always` and `PIXIE_ALLOW_SELF_RESTART=1`. In-flight runs interrupt ([Pi integration](pi.md)); session transcripts stay durable on disk.
+
 Upgrade by replacing the binary and reinstalling the assistant package, then restarting both units. Keep the previous binary (for example as `pixie.prev`) for instant rollback: the binary is self-contained, so rollback is just swapping the file back and restarting. Back up `PIXIE_DATA_DIR` and the private environment file after active work settles; both survive upgrades and rollbacks in place.
 
 Removal: stop and disable both units, delete the binary (`~/.local/bin/pixie`), remove the global package (`bun remove --global @pixie_ai/pixie-assistant`), and delete the environment file. Optionally delete `PIXIE_DATA_DIR`. Native Pi state (`PI_CODING_AGENT_DIR` or `~/.pi/agent`) is left intact.

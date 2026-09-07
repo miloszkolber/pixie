@@ -21,6 +21,8 @@ func (a *PiAdmin) Handle(ctx context.Context, method string, raw json.RawMessage
 		return nil, fmt.Errorf("malformed Pi request")
 	}
 	switch method {
+	case "pi.reload":
+		return a.reloadHost(ctx)
 	case "pi.nativeExtensions":
 		return a.nativeExtensions(ctx, request)
 	case "pi.nativeExtensionConfigure", "pi.nativeExtensionReload":
