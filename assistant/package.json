@@ -5,14 +5,16 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/miloszkolber/pixie.git",
-		"directory": "pi/pixie-assistant"
+		"directory": "assistant"
 	},
 	"type": "module",
 	"bin": {
 		"pixie-assistant": "src/main.ts"
 	},
 	"files": [
-		"src"
+		"src",
+		"scripts",
+		"patches"
 	],
 	"publishConfig": {
 		"access": "public"
@@ -24,7 +26,8 @@
 	"scripts": {
 		"start": "bun src/main.ts",
 		"typecheck": "tsc --noEmit",
-		"build": "bun build src/main.ts --target=bun --outdir=dist"
+		"build": "bun build src/main.ts --target=bun --outdir=dist",
+		"postinstall": "node scripts/apply-patches.mjs"
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "0.85.1",

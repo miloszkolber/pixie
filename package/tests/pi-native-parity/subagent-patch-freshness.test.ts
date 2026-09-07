@@ -21,6 +21,24 @@ async function run(args: string[], cwd: string) {
 // npm dependency tree. Without network access this test pins the dependency
 // version and proves the patch still applies cleanly to a pristine copy of
 // that exact installed version, in both directions.
+test("bundled npm postinstall patch carries the same runner fix as the workspace patch", async () => {
+	const assistant = JSON.parse(await readFile(join(root, "assistant/package.json"), "utf8"));
+	expect(assistant.scripts.postinstall).toBe("node scripts/apply-patches.mjs");
+	expect(assistant.files).toContain("scripts");
+	expect(assistant.files).toContain("patches");
+	const workspacePatch = await readFile(patchPath, "utf8");
+	const bundled = await readFile(
+		join(root, "assistant/patches/pi-subagent-3.0.1-bun-rpc-entry.patch"),
+		"utf8",
+	);
+	const marker = "diff --git a/runner.ts";
+	const workspaceHunk = workspacePatch.slice(workspacePatch.indexOf(marker)).trim();
+	expect(workspacePatch.indexOf(marker)).toBeGreaterThan(-1);
+	// The bundled copy drops only the .bun-tag install-artifact hunk, which
+	// carries repo-root-relative paths that cannot apply inside an installed
+	// package directory; the runner fix must stay byte-identical.
+	expect(bundled.trim()).toBe(workspaceHunk);
+});
 test("subagent child-launch patch applies cleanly to the pinned dependency version", async () => {
 	const workspace = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 	const assistant = JSON.parse(await readFile(join(root, "assistant/package.json"), "utf8"));
