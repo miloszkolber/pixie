@@ -16,6 +16,10 @@ Pi is the center of gravity. Pixie is a powerful web interface and a small appli
 - A Go pixie-assistant executable is also acceptable if it demonstrably simplifies installation or supervision. Go cannot directly execute Pi's JavaScript SDK: it would need the native Pi process or a JavaScript runtime. Count those dependencies and process boundaries honestly, and do not port Pi's runtime into Go merely to claim a single binary.
 - Powerful application features should remain progressive additions: basic chat must not require Browser, Signet, SearXNG, subagents, todo, schedules or an MCP adapter. Missing optional integrations produce clear unavailable states, not startup failures or silent installation.
 
+## Plug-and-play validation
+
+Verified live 2026-09-07 against an isolated agent dir: `settings.json` listing four upstream packages by path, no Pixie-side extension configuration. Session creation surfaced all nine tools (`read`, `bash`, `edit`, `write`, `todo`, `web_search`, `web_fetch`, `ask_user_question`, `subagent`) with zero extension errors, and a local-model turn executed the natively discovered `todo` tool end to end (`NATIVE-DONE`, ~32 s). Bare package names in settings hang session creation waiting on Pi's missing-source approval, so file paths or pre-installed packages are the supported headless form. A seeded model catalog entry (metadata only, no credentials) was required because the fresh dir had no stored models; provider auth itself still falls back to the dummy key llama.cpp ignores.
+
 ## Approval boundaries
 
 All remote publication requires explicit user signoff. Preparing code, workflow changes, packages and local dry runs does not authorize pushing branches or tags, opening an upstream pull request, publishing packages or images, or dispatching a release workflow. An approved branch push can itself trigger publication in the current container workflow, so its effects must be included in the approval request.
