@@ -17,22 +17,16 @@ export PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=false PIXIE_PUBLIC_ORIGIN=
 export PIXIE_MCP_TOKEN=ci-mcp-token-0123456789abcdef0123456789
 
 compose --env-file /dev/null -f "$repo_root/docker-compose.yaml" config --format json > "$fixture/compose.json"
-# Compose versions omit different boolean defaults; compare against the same parser's explicit false.
-jq '.services[].volumes[].bind.create_host_path = false' "$fixture/compose.json" |
-	compose --env-file /dev/null -f - config --format json > "$fixture/safe-binds.json"
-jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" --slurpfile safe "$fixture/safe-binds.json" '
+jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" '
   (.services | keys) == ["pixie"] and
   all(.services | to_entries[]; .key as $service | .value |
     .user == "1000:1000" and .read_only == true and .network_mode == "host" and
     .cap_drop == ["ALL"] and .security_opt == ["no-new-privileges:true"] and
     (.mem_limit | tonumber) > 0 and (.cpus | tonumber) > 0 and .pids_limit > 0 and
     .build.context == $root and .build.dockerfile == "pixie/Dockerfile" and
-    .logging.driver == "local" and .logging.options."max-size" == "10m" and
-    .logging.options."max-file" == "3" and
     (has("env_file") | not) and
-    (.volumes | length) == 3 and
-    (all(.volumes[]; .type == "bind" and (.bind | type) == "object")) and
-    (all(.volumes[]; .bind.create_host_path == $safe[0].services[$service].volumes[0].bind.create_host_path))
+    (.volumes | length) == 1 and
+    (all(.volumes[]; .type == "bind"))
   ) and
   .services.pixie.build.target == "pixie" and
   .services.pixie.image == "ghcr.io/miloszkolber/pixie:latest" and
@@ -40,12 +34,8 @@ jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" --slurpfile safe "$f
   (.services.pixie.mem_limit | tonumber) == 2147483648 and
   (.services.pixie.cpus | tonumber) == 2 and
   .services.pixie.pids_limit == 512 and
-  .services.pixie.volumes[0].source == ($data + "/app") and
+  .services.pixie.volumes[0].source == $data and
   .services.pixie.volumes[0].target == "/var/lib/pixie" and
-  .services.pixie.volumes[1].source == ($data + "/browser/artifacts") and
-  .services.pixie.volumes[1].target == "/var/lib/pixie/mcp-browser/artifacts" and
-  .services.pixie.volumes[2].source == ($data + "/browser/state") and
-  .services.pixie.volumes[2].target == "/var/lib/pixie/mcp-browser/state" and
   .services.pixie.environment.PIXIE_PI_SECRET_KEY == env.PIXIE_PI_SECRET_KEY and
   .services.pixie.environment.PIXIE_MCP_TOKEN == env.PIXIE_MCP_TOKEN and
   (.services.pixie.environment.PIXIE_MCP_URL == null) and

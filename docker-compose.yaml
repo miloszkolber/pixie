@@ -14,9 +14,9 @@ services:
             - ALL
         security_opt:
             - no-new-privileges:true
-        mem_limit: "${PIXIE_MEMORY_LIMIT:-2g}"
-        cpus: "${PIXIE_CPU_LIMIT:-2.0}"
-        pids_limit: "${PIXIE_PIDS_LIMIT:-512}"
+        mem_limit: 2g
+        cpus: 2.0
+        pids_limit: 512
         environment:
             PIXIE_PI_URL: "${PIXIE_PI_URL:-ws://127.0.0.1:3284/pi}"
             PIXIE_PI_SECRET_KEY: "${PIXIE_PI_SECRET_KEY:?set the Pi service secret in .pixie}"
@@ -28,31 +28,9 @@ services:
             # The in-process MCP publisher and Pi adapter registration share this token.
             PIXIE_MCP_TOKEN: "${PIXIE_MCP_TOKEN:?set a strong MCP token in .pixie}"
         volumes:
-            - type: bind
-              source: "${PIXIE_DATA_PATH:?set PIXIE_DATA_PATH in .pixie}/app"
-              target: /var/lib/pixie
-              bind:
-                  create_host_path: false
-            # Browser module sessions and artifacts mount into the app data dir, matching
-            # the module's DataDir/mcp-browser storage root.
-            - type: bind
-              source: "${PIXIE_DATA_PATH:?set PIXIE_DATA_PATH in .pixie}/browser/artifacts"
-              target: /var/lib/pixie/mcp-browser/artifacts
-              bind:
-                  create_host_path: false
-            - type: bind
-              source: "${PIXIE_DATA_PATH:?set PIXIE_DATA_PATH in .pixie}/browser/state"
-              target: /var/lib/pixie/mcp-browser/state
-              bind:
-                  create_host_path: false
+            - ${PIXIE_DATA_PATH}:/var/lib/pixie
             # Add each admitted project root here as a read-only bind at the same absolute path.
         tmpfs:
             - /tmp:size=128m,mode=1777,uid=1000,gid=1000
             - /run:size=16m,mode=700,uid=1000,gid=1000
             - /dev/shm:size=256m,mode=1777,uid=1000,gid=1000
-        logging:
-            driver: local
-            options:
-                max-size: "10m"
-                max-file: "3"
-        stop_grace_period: 20s

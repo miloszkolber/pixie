@@ -1,6 +1,6 @@
 # Existing host directories: app/ and browser/{artifacts,state}/, owned by UID/GID 1000.
 # The browser directory is the embedded Browser module's state, mounted into the
-# Pixie container at /var/lib/pixie/mcp-browser.
+# Pixie container at /var/lib/pixie/browser.
 PIXIE_DATA_PATH=/absolute/path/to/pixie-data
 
 # Shared with the Pi host service. Pi runs on the host, outside the containers.

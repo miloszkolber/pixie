@@ -399,8 +399,8 @@ func (r *Registry) browserConfig() browser.Config {
 	config.PublicOrigin = r.config.PublicOrigin
 	// Storage isolation: this publisher stores Browser state under the
 	// controller data directory instead of the image-level browser roots.
-	config.ArtifactRoot = filepath.Join(r.config.DataDir, "mcp-browser", "artifacts")
-	config.StateRoot = filepath.Join(r.config.DataDir, "mcp-browser", "state")
+	config.ArtifactRoot = filepath.Join(r.config.DataDir, "browser", "artifacts")
+	config.StateRoot = filepath.Join(r.config.DataDir, "browser", "state")
 	if binaries := r.config.Binaries; binaries != nil {
 		if binaries.AgentBrowser != "" {
 			config.AgentBrowser = binaries.AgentBrowser
