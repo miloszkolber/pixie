@@ -7,16 +7,6 @@ afterEach(async () => {
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function localServer(body: string, contentType = "text/plain") {
-	const server = Bun.serve({
-		port: 0,
-		hostname: "127.0.0.1",
-		fetch: () => new Response(body, { headers: { "content-type": contentType } }),
-	});
-	cleanups.push(async () => server.stop(true));
-	return `http://127.0.0.1:${server.port}/fixture`;
-}
-
 test("upstream web profiles register web_search, web_fetch, and the config command", async () => {
 	const { dir, sessions } = await fixture([rpivWeb]);
 	const entry = await sessions.create(dir);
