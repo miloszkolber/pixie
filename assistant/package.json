@@ -21,7 +21,7 @@
 	},
 	"exports": {
 		"./capabilities": "./src/capabilities.ts",
-		"./mcp": "./src/extensions/pi-mcp-adapter.ts"
+		"./mcp-admin-bridge": "./src/extensions/mcp-admin-bridge.ts"
 	},
 	"scripts": {
 		"start": "bun src/main.ts",

@@ -17,7 +17,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import agentAuthoring from "./agents.ts";
 import { CAPABILITY_EVENT, Capabilities, type CapabilityContext } from "./capabilities.ts";
-import { piMcpAdapterWithConfig } from "./extensions/pi-mcp-adapter.ts";
+import { mcpAdminBridgeWithConfig } from "./extensions/mcp-admin-bridge.ts";
 import { createUiBridge, type UiBridge } from "./extensions/ui-bridge.ts";
 import {
 	atomicWrite,
@@ -315,7 +315,7 @@ export class Sessions {
 						...this.factories,
 						{
 							name: "pixie-assistant-mcp-bridge",
-							factory: piMcpAdapterWithConfig({ agentDir: this.agentDir }),
+							factory: mcpAdminBridgeWithConfig({ agentDir: this.agentDir }),
 						},
 					],
 				},

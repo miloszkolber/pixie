@@ -14,7 +14,7 @@ import {
 	ListToolsRequestSchema,
 	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { PIXIE_BROWSER_RUNTIME_NAME } from "../../../assistant/src/extensions/pi-mcp-adapter.ts";
+import { PIXIE_BROWSER_RUNTIME_NAME } from "../../../assistant/src/extensions/mcp-admin-bridge.ts";
 import { piMcpAdapterWithConfig } from "./upstream.ts";
 
 const piMcpAdapter = piMcpAdapterWithConfig();
