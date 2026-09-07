@@ -121,6 +121,29 @@ test("passive UI is bounded, session-scoped, cleared on reconnect and cannot ren
 	expect(appStoreApi.getState().sessions.missing).toBeUndefined();
 });
 
+test("an extension title equal to an existing chat name never renames tabs or drafts", () => {
+	const tab = {
+		kind: "chat" as const,
+		id: "chat-tab",
+		projectAreaId: "area-1",
+		name: "Deep work",
+		sessionId: "a",
+	};
+	appStoreApi.setState({
+		sessions: { a: { ...createSessionRuntime(null, "off"), draft: "unsent" } },
+		tabsByProjectArea: { "area-1": [tab] },
+	});
+	const before = appStoreApi.getState().tabsByProjectArea;
+	appStoreApi.getState().handleAgentEvent({ type: "ui_title", title: "Deep work" }, "a");
+	expect(appStoreApi.getState().sessions.a?.extensionTitle).toBe("Deep work");
+	expect(appStoreApi.getState().tabsByProjectArea).toEqual(before);
+	expect(appStoreApi.getState().tabsByProjectArea["area-1"]?.[0]).toMatchObject({
+		name: "Deep work",
+		sessionId: "a",
+	});
+	expect(appStoreApi.getState().sessions.a?.draft).toBe("unsent");
+});
+
 const select: UiDialogRequest = {
 	requestId: "request-1",
 	sessionId: "session-a",

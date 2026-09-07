@@ -117,6 +117,32 @@ test("session.cancel dismisses input dialogs and archive clears pending state", 
 	expect(bridge.pendingCount()).toBe(0);
 });
 
+test("session.delete disposes the bridge and rejects late resolves", async () => {
+	const { dir, sessions, events } = await fixture([dialogExtension("input")]);
+	const entry = await sessions.create(dir);
+	const sessionId = entry.session.sessionId;
+	const tool = (entry.session.agent.state.tools as any[]).find((t) => t.name === "probe_input");
+	const pending = tool.execute("probe-delete", {}, new AbortController().signal);
+	const first = await waitFor(events, UI_REQUEST_EVENT);
+	await sessions.call("session.delete", { sessionId });
+	// Deletion closes the context: the awaiting call settles with the native
+	// cancellation value and the modal is dismissed through the cancel event.
+	expect(((await pending) as any).details).toMatchObject({ answer: null });
+	expect(uiEvents(events, UI_CANCEL_EVENT).length).toBeGreaterThan(0);
+	expect((sessions as any).bridges.get(sessionId)).toBeUndefined();
+	// The deleted session is gone entirely, so the late answer cannot reach
+	// the disposed bridge and is rejected before settling anything.
+	await expect(
+		sessions.call("session.uiResponse", {
+			sessionId,
+			requestId: first.requestId,
+			value: "late",
+		}),
+	).rejects.toThrow(
+		/unknown pi session|unknown or ambiguous|no longer awaiting|unknown or settled/i,
+	);
+});
+
 test("passive UI projects while unsupported composer and TUI factories report their limits", async () => {
 	const published: Record<string, unknown>[] = [];
 	const bridge = createUiBridge("session-project", (event) => published.push(event));
@@ -214,6 +240,41 @@ test("fork creates an independent session and both sides resume", async () => {
 	const secondFork = await sessions.create(dir, parent.session.sessionId);
 	expect(secondFork.session.sessionId).not.toBe(child.session.sessionId);
 	expect(secondFork.session.sessionId).not.toBe(parent.session.sessionId);
+});
+
+test("pending dialogs do not cross session.fork", async () => {
+	const { dir, sessions, events } = await fixture([dialogExtension("select")]);
+	const parent = await sessions.create(dir);
+	const tool = (parent.session.agent.state.tools as any[]).find((t) => t.name === "probe_select");
+	const pending = tool.execute("probe-fork", {}, new AbortController().signal);
+	const first = await waitFor(events, UI_REQUEST_EVENT);
+	// A fork copies history into a fresh session file: the child starts with
+	// no pending dialogs and the parent's request stays scoped to the parent.
+	const child = await sessions.create(dir, parent.session.sessionId);
+	expect((sessions.snapshot(child) as Record<string, any>).pendingDialogs).toEqual([]);
+	expect(
+		(
+			(sessions as any).bridges.get(child.session.sessionId) as { pendingCount(): number }
+		).pendingCount(),
+	).toBe(0);
+	expect(
+		(
+			(sessions as any).bridges.get(parent.session.sessionId) as { pendingCount(): number }
+		).pendingCount(),
+	).toBe(1);
+	await expect(
+		sessions.call("session.uiResponse", {
+			sessionId: child.session.sessionId,
+			requestId: first.requestId,
+			value: "alpha",
+		}),
+	).rejects.toThrow(/another session|no longer awaiting|unknown or settled/i);
+	await sessions.call("session.uiResponse", {
+		sessionId: parent.session.sessionId,
+		requestId: first.requestId,
+		value: "alpha",
+	});
+	expect(((await pending) as any).details).toMatchObject({ answer: "alpha" });
 });
 
 test("settled runs do not resurrect streaming state on reload", async () => {

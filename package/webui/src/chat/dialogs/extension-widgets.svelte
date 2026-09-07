@@ -24,8 +24,9 @@ let entries = $derived(
 {/if}
 
 <style>
-	.extension-widgets { padding: var(--space-xs) var(--space-md); min-width: 0; }
-	summary { cursor: pointer; }
-	.widget-content { max-height: min(25dvh, 12rem); overflow: auto; }
-	pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--space-xs) 0; }
+	.extension-widgets { padding: var(--space-xs) var(--space-md); min-width: 0; max-width: 100%; overflow-x: clip; }
+	summary { cursor: pointer; overflow-wrap: anywhere; }
+	.widget-content { max-height: min(25dvh, 12rem); overflow: auto; min-width: 0; }
+	section { min-width: 0; }
+	pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--space-xs) 0; max-width: 100%; }
 </style>

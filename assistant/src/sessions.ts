@@ -608,7 +608,10 @@ export class Sessions {
 		};
 	}
 	// Settle a bridged UI dialog from the controller's answer. Session-bound
-	// and single-use: foreign or replayed responses are rejected.
+	// and single-use: foreign or replayed responses are rejected. No run-ID
+	// check is needed here: Stop/interrupt clears every pending dialog, so a
+	// stale answer finds nothing to settle, and steer carries expectedRunId
+	// for the active-run check instead.
 	async resolveUiResponse(p: RecordValue): Promise<unknown> {
 		const sessionId = required(p.sessionId, "session");
 		const bridge = this.bridges.get(sessionId);

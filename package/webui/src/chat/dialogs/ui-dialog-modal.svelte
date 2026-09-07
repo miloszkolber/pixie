@@ -10,6 +10,12 @@ interface Props {
 	request: UiDialogRequest;
 }
 
+// Focus ownership lives in the shared Dialog: it captures document.activeElement
+// when the modal opens and restores it on dismissal/close (isConnected-guarded,
+// falling back gracefully when the target is gone). This presenter keeps
+// autofocus on the primary field; confirm keeps role="alertdialog" while the
+// other primitives use the default dialog role, and the only icon-only button
+// (Dialog's close) carries an aria-label.
 let { request }: Props = $props();
 
 let open = $state(true);
@@ -208,9 +214,14 @@ function submit(event: SubmitEvent): void {
 	}
 	:global(dialog[data-testid="ui-dialog"]) {
 		width: calc(100% - 2rem);
+		max-width: calc(100vw - 2rem);
 		max-height: calc(100dvh - 2rem);
+		box-sizing: border-box;
 		overflow-y: auto;
+		overflow-x: clip;
 		overflow-wrap: anywhere;
 	}
+	.form, .text-field { min-width: 0; max-width: 100%; }
+	.text-field-input { max-width: 100%; overflow-wrap: anywhere; }
 	.option-list :global(button) { white-space: normal; overflow-wrap: anywhere; }
 </style>

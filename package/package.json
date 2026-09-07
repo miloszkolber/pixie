@@ -14,8 +14,8 @@
 		"typecheck": "bun --filter @pixie/contracts typecheck && bun --filter @pixie/web typecheck && tsc --noEmit -p tests/tsconfig.json && bun --filter @pixie_ai/pixie-assistant typecheck",
 		"test": "bun test tests && go test ./...",
 		"check:filenames": "bun scripts/check-filenames.ts",
-		"lint": "bun run check:filenames && biome check . ../pi ../package.json ../biome.json",
-		"format": "biome check --write . ../pi ../package.json ../biome.json",
+		"lint": "bun run check:filenames && biome check . ../assistant ../package.json ../biome.json",
+		"format": "biome check --write . ../assistant ../package.json ../biome.json",
 		"check:deps": "bun scripts/check-catalog.ts"
 	}
 }

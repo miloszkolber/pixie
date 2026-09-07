@@ -104,6 +104,30 @@ func TestArchiveDismissesPendingDialogs(t *testing.T) {
 	}
 }
 
+func TestDeleteDismissesPendingDialogs(t *testing.T) {
+	events := make(chan publishedEvent, 32)
+	manager, _, project, _ := newSessionManagerWithPublisher(t, func(channel string, data any) {
+		events <- publishedEvent{channel: channel, data: data}
+	})
+	ctx := t.Context()
+	if err := manager.SessionUpdate(ctx, dialogUpdate(selectRequest("dialog-delete", nil))); err != nil {
+		t.Fatal(err)
+	}
+	publishedUiEvents(t, events, "agent.event", 1)
+	// Deletion dismisses blocked UI like a stop: the host settles its
+	// awaiting call on close, and browsers drop the modal.
+	if err := manager.Delete(ctx, project.ID, "chat", project.Roots[0]); err != nil {
+		t.Fatal(err)
+	}
+	cancelled := nextAgentEventOfType(t, events, "ui_cancel")
+	if cancelled["requestId"] != "dialog-delete" {
+		t.Fatalf("delete did not dismiss the dialog: %#v", cancelled)
+	}
+	if err := manager.ResolveDialog(ctx, "chat", "dialog-delete", map[string]any{"cancelled": true}); err == nil {
+		t.Fatal("deleted dialog still accepts answers")
+	}
+}
+
 func TestAgentEndForwardsWhileStaleStartIsDropped(t *testing.T) {
 	events := make(chan publishedEvent, 32)
 	manager, _, project, _ := newSessionManagerWithPublisher(t, func(channel string, data any) {
