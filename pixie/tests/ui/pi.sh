@@ -45,7 +45,7 @@ for theme in light dark; do
  for width in 320 390 768 1024 1440; do
   browser set viewport "$width" 900 >/dev/null
   browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
-  for tab in Providers Models Pi Tools Signet System; do
+  for tab in Providers Models Pi Tools System; do
    browser find role tab click --name "$tab" >/dev/null
    browser wait --fn 'document.querySelector("[role=tabpanel]:not([hidden])") !== null && !document.querySelector("[role=tabpanel]:not([hidden])")?.textContent?.includes("Loading settings")' >/dev/null
    browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
