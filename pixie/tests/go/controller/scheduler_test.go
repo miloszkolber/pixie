@@ -159,11 +159,20 @@ func TestScheduleRunsThroughTheApplicationSessionLifecycle(t *testing.T) {
 	defer runtime.Shutdown(context.Background())
 	connection := dialRuntimeSocket(t, context.Background(), host, "schedule-owner")
 	project := callBrowser(t, connection, "project", "project.open", map[string]any{"path": root})["result"].(map[string]any)
-	created := callBrowser(t, connection, "create-schedule", "schedule.create", map[string]any{"projectId": project["id"], "root": root, "prompt": "Review this project", "cron": "0 9 * * *"})
+	createParams := map[string]any{"projectId": project["id"], "root": root, "prompt": "Review this project", "cron": "0 9 * * *", "mutationId": "browser-create-once"}
+	preview := callBrowser(t, connection, "preview-schedule", "schedule.preview", createParams)
+	if preview["ok"] != true || preview["result"].(map[string]any)["timezone"] != "UTC" {
+		t.Fatalf("preview: %#v", preview)
+	}
+	created := callBrowser(t, connection, "create-schedule", "schedule.create", createParams)
 	if created["ok"] != true {
 		t.Fatalf("create: %#v", created)
 	}
 	job := created["result"].(map[string]any)
+	retry := callBrowser(t, connection, "create-schedule-new-request-id", "schedule.create", createParams)
+	if retry["ok"] != true || retry["result"].(map[string]any)["id"] != job["id"] {
+		t.Fatalf("browser mutation identity lost: %#v", retry)
+	}
 	started := callBrowser(t, connection, "run-schedule", "schedule.runNow", map[string]any{"projectId": project["id"], "scheduleId": job["id"]})
 	if started["ok"] != true {
 		t.Fatalf("run: %#v", started)

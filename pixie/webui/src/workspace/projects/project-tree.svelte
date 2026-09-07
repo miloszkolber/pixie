@@ -10,6 +10,8 @@ import OpenProjectDialogs from "./open-project-dialogs.svelte";
 import ProjectCustomizationDialog from "./project-customization-dialog.svelte";
 import ProjectIcon from "./project-icon.svelte";
 import ProjectSessions from "./project-sessions.svelte";
+import { openSettingsFrom } from "../../settings/open-settings";
+import { SettingsSection } from "../../settings/state";
 
 interface ProjectOpener {
 	openProject: (path: string) => Promise<void>;
@@ -103,6 +105,7 @@ function closeProject(project: Project): void {
 				</div>
 				{#if selected}
 					<ul class="tree-group flex w-full flex-col gap-2xs py-2xs pl-lg">
+						<li class="tree-item"><button type="button" class="tree-leaf tr-text-metadata" onclick={(event) => openSettingsFrom(event.currentTarget, SettingsSection.Schedules)}>Schedules</button></li>
 						<ProjectSessions {project} />
 					</ul>
 				{/if}

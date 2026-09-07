@@ -410,6 +410,25 @@ func (s *Schedules) Handle(ctx context.Context, method string, p map[string]any)
 	if s.closed {
 		return nil, fmt.Errorf("scheduler is closed")
 	}
+	if method == "schedule.health" {
+		return map[string]string{"error": s.lastError}, nil
+	}
+	if method == "schedule.preview" {
+		if s.validateRoot != nil {
+			if _, err := s.validateRoot(projectID, textValue(p["root"])); err != nil {
+				return nil, err
+			}
+		}
+		job := Schedule{Cron: textValue(p["cron"]), Timezone: textValue(p["timezone"])}
+		if job.Timezone == "" {
+			job.Timezone = "UTC"
+		}
+		next, err := scheduleNext(job, time.Now())
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"timezone": job.Timezone, "nextRun": next}, nil
+	}
 	if method == "schedule.list" {
 		jobs := []Schedule{}
 		for _, j := range s.jobs {

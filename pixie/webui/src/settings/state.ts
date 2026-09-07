@@ -25,6 +25,8 @@ export const SettingsSection = {
 	Providers: "providers",
 	Models: "models",
 	Tools: "tools",
+	Extensions: "extensions",
+	Schedules: "schedules",
 	System: "system",
 } as const;
 export type SettingsSection = (typeof SettingsSection)[keyof typeof SettingsSection];
