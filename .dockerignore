@@ -25,6 +25,7 @@
 !package/contracts/**
 !package/webui/
 !package/webui/**
+!package/webui/dist/.gitkeep
 **/node_modules
 **/dist
 **/.build

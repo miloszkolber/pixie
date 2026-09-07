@@ -45,6 +45,8 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     go mod download
 COPY package/cmd/ cmd/
 COPY package/internal/ internal/
+COPY package/webui/*.go webui/
+COPY package/webui/dist/.gitkeep webui/dist/.gitkeep
 
 FROM go-source AS go-build
 ARG TARGETOS
