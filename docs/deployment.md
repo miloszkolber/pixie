@@ -10,27 +10,27 @@ cd pixie
 bun install --frozen-lockfile --production --filter @pixie_ai/pixie-assistant
 ```
 
-This installs the host and MCP extension runtime dependencies without the web development toolchain.
+This installs the assistant's runtime dependencies without optional packages or the web development toolchain. Install and configure optional extensions through Pi's native mechanisms.
 
 Generate separate random values for `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file. The optional Browser connection expands its token from the host environment.
 
 ```sh
-bun pi/host/src/main.ts --extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
+bun pi/pixie-assistant/src/main.ts
 ```
 
-Omit `--extensions` for baseline Pi. `--agent-dir /absolute/path` selects Pi state; the default is `~/.pi/agent`. The service listens at `127.0.0.1:3284`; `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration.
+`--agent-dir /absolute/path` selects Pi state, defaulting to `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The service listens at `127.0.0.1:3284`. `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration. Existing native user and project resources load without a prescribed extension bundle.
 
-Published artifacts remove the checkout from the critical path. Each `pi-host-v*` tag publishes `@pixie_ai/pixie-assistant` to npm via OIDC trusted publishing (no stored token); the container workflow already publishes `ghcr.io/<owner>/pixie` on every `v*` tag. One-time npm setup, in order: publish the package once under the existing `pixie_ai` organization so it exists (any short-lived granular token with publish access to the scope works, then discard it); open the package Settings → Trusted publisher and add this repository with the `npm-publish.yml` workflow; afterwards every `pi-host-v*` tag publishes unattended with provenance attestation. Prefer the published artifacts for clean machines:
+The npm workflow uses `pixie-assistant-v*` tags for `@pixie_ai/pixie-assistant`, with OIDC trusted publishing and provenance. Publication is a separate approval gate. Published `0.1.0` is immutable and does not contain the current source changes. For an approved release containing this loading path:
 
 ```sh
-bunx @pixie_ai/pixie-assistant@<version> --extensions mcp,agents,rpiv-todo,rpiv-web,rpiv-ask
+bunx @pixie_ai/pixie-assistant@<version>
 ```
 
-One `bunx` caveat: the upstream subagent child-runner patch does not travel through npm (root `patchedDependencies` apply to workspace installs only), so `subagent` child runs fail under `bunx` until upstream accepts the entrypoint fix. Everything else, including local `llama.cpp` inference, works unchanged from the published package (verified: tarball install, `--version`, host boot with five profiles, capability snapshot).
+The optional subagent child-runner patch applies only to workspace installs, not native independently installed packages. Child-launch compatibility and the final packaging form remain separate release gates.
 
 ## Optional local models
 
-Append `,llama` to the host `--extensions` list to register Pi's built-in llama.cpp provider inside Pixie sessions (embedded hosts do not auto-load it; without this profile the provider is absent from `pi.providers.list`). The endpoint comes from `LLAMA_BASE_URL` in the host service environment (for example `http://127.0.0.1:4667/v1`); authentication falls back to the dummy key `local`, which llama.cpp ignores. This stays opt-in: the universal profile list above omits it, and host-specific setup (such as a systemd unit) adds both the profile and the variable only where a local endpoint actually runs.
+Use `--llama` to load Pi's built-in llama.cpp provider inside assistant sessions. The embedded SDK does not automatically supply this CLI built-in. The endpoint comes from `LLAMA_BASE_URL` in the service environment, and authentication falls back to the dummy key `local`. This stays opt-in and uses Pi's existing provider implementation, not a Pixie model database.
 
 ## Containers
 

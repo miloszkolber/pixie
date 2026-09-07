@@ -19,7 +19,7 @@ Paths below are relative to `pixie/`.
 | `webui`, `contracts` | Svelte 5 interface and shared wire contracts |
 | `tests` | Unit, integration, deployment and browser checks |
 
-Pi sources live separately in top-level `pi/`: `host/` contains the SDK service and upstream extension profiles, and `extensions/local-patches/` contains the pinned upstreamable subagent patch. The repository root holds the shared Bun workspace and lockfile.
+Pi sources live separately in top-level `pi/`: `pixie-assistant/` contains the SDK service and thin application bridges, and `extensions/local-patches/` contains the pinned upstreamable subagent patch used by workspace tests. The repository root holds the shared Bun workspace and lockfile.
 
 Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets, Git and the Browser runtime. It runs non-root with a read-only root filesystem.
 
