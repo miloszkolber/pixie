@@ -9,17 +9,17 @@ Host networking lets the container reach host services over loopback. Only the a
 
 ## Source
 
-Paths below are relative to `pixie/`.
+Paths below are relative to `pixie/`, which holds the shared Bun workspace and lockfile.
 
 | Directory | Responsibility |
 | --- | --- |
-| `cmd`, `internal/controller` | Application HTTP/WebSocket/MCP, MCP publisher, native Pi projection and lifecycle |
-| `internal/mcpserver`, `internal/browser` | In-process Browser module publication and browser runtime |
-| `internal/workspace`, `internal/persist` | Bounded project access and durable state |
-| `webui`, `contracts` | Svelte 5 interface and shared wire contracts |
-| `tests` | Unit, integration, deployment and browser checks |
-
-Pi sources live separately in top-level `pi/`: `pixie-assistant/` contains the SDK service and thin application bridges, and `extensions/local-patches/` contains the pinned upstreamable subagent patch used by workspace tests. The repository root holds the shared Bun workspace and lockfile.
+| `assistant/` | Pi SDK service and thin application bridges (native sessions, providers, UI bridge) |
+| `package/cmd`, `package/internal/controller` | Application HTTP/WebSocket/MCP, MCP publisher, native Pi projection and lifecycle |
+| `package/internal/mcpserver`, `package/internal/browser` | In-process Browser module publication and browser runtime |
+| `package/internal/workspace`, `package/internal/persist` | Bounded project access and durable state |
+| `package/webui`, `package/contracts` | Svelte 5 interface and shared wire contracts |
+| `package/tests` | Unit, integration, deployment and browser checks |
+| `agent/` | Agent examples and `extensions/local-patches/` with the pinned upstreamable subagent patch used by workspace tests |
 
 Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets, Git and the Browser runtime. It runs non-root with a read-only root filesystem.
 

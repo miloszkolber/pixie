@@ -22,7 +22,7 @@ Preserve the focused current baseline. Keep features, dependencies, tests, proto
 
 ## Pi boundary
 
-- Use the unmodified pinned Pi SDK through the host service. Keep the application and MCP host in separate containers.
+- Use the unmodified pinned Pi SDK through the host service. The application and embedded Browser module ship in one merged container image.
 - Keep Pi authoritative for transcripts, providers, credentials, models, core tools and native settings.
 - Run the unmodified SDK from source with Bun. Do not add standalone Pi binary packaging.
 - Optional extensions add capabilities. Do not introduce permission management, tool interception, replacement system prompts or restrictive execution modes.
@@ -78,7 +78,7 @@ Preserve the focused current baseline. Keep features, dependencies, tests, proto
 
 ## Current stack
 
-The controller and embedded Browser module share one Go module, with separate application and MCP-host executables and images. The frontend uses TypeScript and Svelte 5, a small framework-neutral external store, Mewa UI foundations pinned from GitHub Releases, and Bun for compilation, development, and tests. The controller uses a small native Pi event adapter and the pinned Coder WebSocket library. The host service uses the pinned Pi SDK and Bun. Treat these as current implementation choices, not permanent product scope.
+The controller and embedded Browser module share one Go module and one merged container image with a single application executable. The frontend uses TypeScript and Svelte 5, a small framework-neutral external store, Mewa UI foundations pinned from GitHub Releases, and Bun for compilation, development, and tests. The controller uses a small native Pi event adapter and the pinned Coder WebSocket library. The host service uses the pinned Pi SDK and Bun. Treat these as current implementation choices, not permanent product scope.
 
 ## Pi source ownership
 

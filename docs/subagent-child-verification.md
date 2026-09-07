@@ -8,7 +8,7 @@ Bun applies [`@mjakl%2Fpi-subagent@3.0.1.patch`](../agent/extensions/local-patch
 
 ## Verification
 
-Run from the repository root with Bun 1.4.0:
+Run from `pixie/` with Bun 1.4.0:
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts

@@ -18,7 +18,7 @@ Generate separate random values for `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`.
 bun assistant/src/main.ts --llama
 ```
 
-`--agent-dir /absolute/path` selects Pi state, defaulting to `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The service listens at `127.0.0.1:3284`. `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration. Existing native user and project resources load without a prescribed extension bundle.
+`--agent-dir /absolute/path` selects Pi state, defaulting to `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The service listens at `127.0.0.1:3284`. `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration. Existing native user and project resources load without a prescribed extension bundle. List optional packages by file path or preinstall them: bare package names wait on Pi's missing-source approval in headless use.
 
 The npm workflow uses `pixie-assistant-v*` tags for `@pixie_ai/pixie-assistant`, with OIDC trusted publishing and provenance. Publication is a separate approval gate. Published `0.1.0` is immutable and does not contain the current source changes. For an approved release containing this loading path:
 
@@ -26,7 +26,7 @@ The npm workflow uses `pixie-assistant-v*` tags for `@pixie_ai/pixie-assistant`,
 bunx @pixie_ai/pixie-assistant@<version>
 ```
 
-The optional subagent child-runner patch applies only to workspace installs, not native independently installed packages. Packaged subagent children remain a separate release gate.
+Subagents stay optional: the production install ships no subagent package. To enable them standalone, install the exact pinned version alongside (`bun add @mjakl/pi-subagent@3.0.1` or `npm install -S @mjakl/pi-subagent@3.0.1`) and re-run the assistant postinstall so the bundled Bun child-launch patch applies (`bun pm untrusted` aside, `npm rebuild @pixie_ai/pixie-assistant` replays it); without the package, Pi simply offers no subagent extension.
 
 ## Optional local models
 

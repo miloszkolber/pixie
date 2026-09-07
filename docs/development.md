@@ -2,7 +2,7 @@
 
 Use the pinned Bun and Go versions in `package.json` and `package/go.mod`. Go filesystem checks require Linux; use disposable containers on macOS.
 
-The repository root holds the Bun workspace, lockfile and shared tooling. Pi source lives in `pi/`; application source and tests live in `pixie/`.
+The `pixie/` directory holds the Bun workspace, lockfile and shared tooling. The Pi SDK service lives in `assistant/`; application source and tests live in `package/`; agent examples and local patches live in `agent/`.
 
 From `pixie/`:
 
@@ -21,7 +21,7 @@ Native SDK tests use temporary Pi state, local fixture providers, authenticated 
 
 Host fixture measurements (`bun x bun@1.4.0 package/tests/pi-native-parity/host-benchmark.ts`, Linux x86-64, fresh process per sample): baseline session creation ~55 ms with ~8 MB RSS growth and 4 tools (1.1 KB definitions); the optional extension set (todo, web, ask, subagent) adds ~5 ms, ~1 MB and 5 tools (6.6 KB definitions). Cold/warm MCP transport timings live in `package/tests/pi-native-parity/mcp-benchmark.ts`. These are fixture numbers, not provider token counts or production timings; arm64 stays unmeasured here.
 
-From the repository root:
+Container and acceptance checks, also from `pixie/`:
 
 ```sh
 sh package/tests/deployment/compose.test.sh
