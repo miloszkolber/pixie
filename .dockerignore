@@ -25,9 +25,11 @@
 !package/contracts/**
 !package/webui/
 !package/webui/**
-!package/webui/dist/.gitkeep
 **/node_modules
 **/dist
+!package/webui/dist/
+package/webui/dist/*
+!package/webui/dist/.gitkeep
 **/.build
 **/*_test.go
 **/*.test.ts
