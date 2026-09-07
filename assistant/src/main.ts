@@ -2,6 +2,7 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import manifest from "../package.json" with { type: "json" };
 import { startHost } from "./server.ts";
 
 const { values } = parseArgs({
@@ -13,8 +14,11 @@ const { values } = parseArgs({
 		version: { type: "boolean" },
 	},
 });
+const assistantVersion: string = manifest.version ?? "0.0.0-dev";
+const piSdkVersion: string =
+	manifest.dependencies?.["@earendil-works/pi-coding-agent"] ?? "unknown";
 if (values.version) {
-	console.log("pixie-assistant 0.1.0 (Pi SDK 0.85.1)");
+	console.log(`pixie-assistant ${assistantVersion} (Pi SDK ${piSdkVersion})`);
 	process.exit(0);
 }
 const agentDir = resolve(values["agent-dir"] ?? getAgentDir());

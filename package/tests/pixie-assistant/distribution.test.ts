@@ -35,8 +35,12 @@ test("packed source starts with production dependencies and no optional packages
 		);
 		await run([process.execPath, "install", "--production", "--ignore-scripts"], root);
 		const entry = join(root, "node_modules", "@pixie_ai", "pixie-assistant", "src", "main.ts");
+		const manifest = JSON.parse(
+			await Bun.file(new URL("../../../assistant/package.json", import.meta.url).pathname).text(),
+		);
+		const sdk = manifest.dependencies["@earendil-works/pi-coding-agent"];
 		expect(await run([process.execPath, entry, "--version"], root)).toContain(
-			"pixie-assistant 0.1.0 (Pi SDK 0.85.1)",
+			`pixie-assistant ${manifest.version} (Pi SDK ${sdk})`,
 		);
 		const probe = `
 			import { createRequire } from "node:module";
