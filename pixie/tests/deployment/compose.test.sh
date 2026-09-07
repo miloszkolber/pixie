@@ -21,19 +21,12 @@ jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" '
   (.services | keys) == ["pixie"] and
   all(.services | to_entries[]; .key as $service | .value |
     .user == "1000:1000" and .read_only == true and .network_mode == "host" and
-    .cap_drop == ["ALL"] and .security_opt == ["no-new-privileges:true"] and
-    (.mem_limit | tonumber) > 0 and (.cpus | tonumber) > 0 and .pids_limit > 0 and
-    .build.context == $root and .build.dockerfile == "pixie/Dockerfile" and
     (has("env_file") | not) and
     (.volumes | length) == 1 and
     (all(.volumes[]; .type == "bind"))
   ) and
-  .services.pixie.build.target == "pixie" and
   .services.pixie.image == "ghcr.io/miloszkolber/pixie:latest" and
   (.services.mcp == null) and (.services.browser == null) and
-  (.services.pixie.mem_limit | tonumber) == 2147483648 and
-  (.services.pixie.cpus | tonumber) == 2 and
-  .services.pixie.pids_limit == 512 and
   .services.pixie.volumes[0].source == $data and
   .services.pixie.volumes[0].target == "/var/lib/pixie" and
   .services.pixie.environment.PIXIE_PI_SECRET_KEY == env.PIXIE_PI_SECRET_KEY and

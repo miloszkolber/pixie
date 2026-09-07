@@ -1,22 +1,11 @@
 services:
     pixie:
-        build:
-            context: .
-            dockerfile: pixie/Dockerfile
-            target: pixie
         image: "${PIXIE_IMAGE:-ghcr.io/miloszkolber/pixie:latest}"
         container_name: pixie
         restart: unless-stopped
         network_mode: host
         user: "1000:1000"
         read_only: true
-        cap_drop:
-            - ALL
-        security_opt:
-            - no-new-privileges:true
-        mem_limit: 2g
-        cpus: 2.0
-        pids_limit: 512
         environment:
             PIXIE_PI_URL: "${PIXIE_PI_URL:-ws://127.0.0.1:3284/pi}"
             PIXIE_PI_SECRET_KEY: "${PIXIE_PI_SECRET_KEY:?set the Pi service secret in .pixie}"
