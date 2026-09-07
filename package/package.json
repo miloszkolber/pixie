@@ -16,6 +16,7 @@
 		"check:filenames": "bun scripts/check-filenames.ts",
 		"lint": "bun run check:filenames && biome check . ../assistant ../package.json ../biome.json",
 		"format": "biome check --write . ../assistant ../package.json ../biome.json",
-		"check:deps": "bun scripts/check-catalog.ts"
+		"check:deps": "bun scripts/check-catalog.ts",
+		"check:parity": "bun test tests/pi-native-parity"
 	}
 }

@@ -39,7 +39,8 @@
 		"check:filenames": "bun run --cwd package check:filenames",
 		"lint": "bun run --cwd package lint",
 		"format": "bun run --cwd package format",
-		"check:deps": "bun run --cwd package check:deps"
+		"check:deps": "bun run --cwd package check:deps",
+		"check:parity": "bun run --cwd package check:parity"
 	},
 	"patchedDependencies": {
 		"@mjakl/pi-subagent@3.0.1": "agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch",

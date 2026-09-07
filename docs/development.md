@@ -19,6 +19,10 @@ bun run build
 
 Native SDK tests use temporary Pi state, local fixture providers, authenticated WebSockets and real local MCP transports. They cover vanilla fallback, credentials, sessions, streaming/replay, agents and MCP. The Go controller suite also launches the real Bun/Pi host and verifies vanilla and optional-extension sessions through the application WebSocket. This requires Bun; CI runs it on amd64 and arm64. Go tests cover application persistence, queues, schedules, project ownership and Browser boundaries. No real provider credentials are required.
 
+## SDK upgrade gate
+
+Bumping the pinned `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai` versions is gated by `bun run check:parity` (`tests/pi-native-parity`): native loading, extension matrix, MCP parity, lifecycle and patch-freshness suites must pass before the protocol and projection claims stay true. The gate requires the pinned Bun toolchain — older runtimes fail loudly (child launches need Bun 1.4+ for the SDK's network stack, and Bun below 1.4.0 wedges `server.stop()` after server-initiated WebSocket closes). Transport conformance for the assistant wire contract lives in `tests/pixie-assistant/protocol-conformance.test.ts` ([protocol](pi-protocol.md)).
+
 Host fixture measurements (`bun x bun@1.4.0 package/tests/pi-native-parity/host-benchmark.ts`, Linux x86-64, fresh process per sample): baseline session creation ~55 ms with ~8 MB RSS growth and 4 tools (1.1 KB definitions); the optional extension set (todo, web, ask, subagent) adds ~5 ms, ~1 MB and 5 tools (6.6 KB definitions). Cold/warm MCP transport timings live in `package/tests/pi-native-parity/mcp-benchmark.ts`. These are fixture numbers, not provider token counts or production timings; arm64 stays unmeasured here.
 
 Container and acceptance checks, also from `pixie/`:
