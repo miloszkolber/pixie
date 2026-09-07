@@ -11,6 +11,7 @@ compose() {
 
 export PIXIE_DATA_PATH="$fixture/data"
 export PIXIE_PI_SECRET_KEY=ci-pi-secret-0123456789abcdef0123456789
+export PIXIE_PI_PORT=3284 PIXIE_PI_URL=
 export PIXIE_TOKEN=ci-controller-token-0123456789abcdef0123456789
 export PIXIE_AUTH_ENABLED=false PIXIE_CONTROLLER_HOST=127.0.0.1
 export PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=false PIXIE_PUBLIC_ORIGIN=
@@ -35,6 +36,7 @@ jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" '
   .services.pixie.volumes[0].source == $data and
   .services.pixie.volumes[0].target == "/var/lib/pixie" and
   .services.pixie.environment.PIXIE_PI_SECRET_KEY == env.PIXIE_PI_SECRET_KEY and
+  .services.pixie.environment.PIXIE_PI_PORT == env.PIXIE_PI_PORT and
   .services.pixie.environment.PIXIE_MCP_TOKEN == env.PIXIE_MCP_TOKEN and
   (.services.pixie.environment.PIXIE_MCP_URL == null) and
   (.services.pixie.environment.PIXIE_MCP_PUBLIC_ORIGIN == null) and

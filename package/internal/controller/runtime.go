@@ -124,7 +124,11 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	settings := NewSettings(store, func(value AppConfig) { publish("settings.changed", value) })
 	sessions := NewSessionManager(projects, config.Policy, records, queues, objectives, publish)
 	if config.PiURL == "" {
-		config.PiURL = strings.TrimSpace(config.Getenv("PIXIE_PI_URL"))
+		resolved, err := resolvePiURL(config.Getenv)
+		if err != nil {
+			return nil, err
+		}
+		config.PiURL = resolved
 	}
 	client := NewPiClient(config.PiURL, strings.TrimSpace(config.Getenv("PIXIE_PI_SECRET_KEY")), config.AppVersion, sessions)
 	client.profileChanged = func(profile AgentProfile) { publish("agent.profileChanged", profile) }

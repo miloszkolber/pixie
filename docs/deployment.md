@@ -58,7 +58,7 @@ Add project roots to the `pixie` service's mounts, preserving host absolute path
 docker compose --env-file .pixie up -d --build
 ```
 
-Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. For remote access configure authentication, HTTPS and an exact public origin.
+Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. For remote access either enable authentication with HTTPS and an exact public origin, or run on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`. Pi stays on loopback; set only `PIXIE_PI_PORT`.
 
 ## MCP and Signet
 
@@ -81,7 +81,7 @@ Run with the same environment as the Compose service, plus two directory overrid
 ```sh
 PIXIE_DATA_DIR=/var/lib/pixie \
 PIXIE_STATIC_DIR=/path/to/pixie/webui/dist \
-PIXIE_PI_URL=ws://127.0.0.1:3284/pi \
+PIXIE_PI_PORT=3284 \
 PIXIE_PI_SECRET_KEY=<secret> PIXIE_MCP_TOKEN=<token> \
 pixie
 ```

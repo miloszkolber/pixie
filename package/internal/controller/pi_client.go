@@ -5,7 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,11 +19,39 @@ import (
 
 const (
 	defaultPiURL     = "ws://127.0.0.1:3284/pi"
+	defaultPiPort    = 3284
 	defaultPiTimeout = 30 * time.Second
 	// Matches the Web UI socket ceiling and accommodates a maximally escaped
 	// App resource plus its bounded JSON-RPC envelope.
 	piReadLimit = 32 * 1024 * 1024
 )
+
+// resolvePiURL keeps Pi on loopback and exposes only the port.
+// PIXIE_PI_PORT is the normal knob. PIXIE_PI_URL stays as a deprecated
+// override and must still be a loopback ws(s) URL; anything else fails
+// closed so a remote Pi can never be set by accident. Firewalling stays
+// outside Pixie.
+func resolvePiURL(getenv func(string) string) (string, error) {
+	if portRaw := strings.TrimSpace(getenv("PIXIE_PI_PORT")); portRaw != "" {
+		port, err := strconv.Atoi(portRaw)
+		if err != nil || port < 1 || port > 65535 {
+			return "", fmt.Errorf("PIXIE_PI_PORT must be a port 1-65535, got %q", portRaw)
+		}
+		return fmt.Sprintf("ws://127.0.0.1:%d/pi", port), nil
+	}
+	if urlRaw := strings.TrimSpace(getenv("PIXIE_PI_URL")); urlRaw != "" {
+		parsed, err := url.Parse(urlRaw)
+		if err != nil || (parsed.Scheme != "ws" && parsed.Scheme != "wss") {
+			return "", fmt.Errorf("PIXIE_PI_URL must be a loopback ws(s) URL like ws://127.0.0.1:3284/pi")
+		}
+		host := strings.ToLower(parsed.Hostname())
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" && net.ParseIP(strings.Trim(host, "[]")).IsLoopback() == false {
+			return "", fmt.Errorf("PIXIE_PI_URL must be a loopback URL; use PIXIE_PI_PORT to change the port")
+		}
+		return urlRaw, nil
+	}
+	return fmt.Sprintf("ws://127.0.0.1:%d/pi", defaultPiPort), nil
+}
 
 type PiEvents interface {
 	SessionUpdate(context.Context, piwire.SessionNotification) error

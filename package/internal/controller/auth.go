@@ -123,9 +123,6 @@ func ReadAuthConfig(getenv func(string) string) (AuthConfig, error) {
 	if enabled && browserEnabled && constantTimeStringEqual(controllerToken, browserToken) {
 		return AuthConfig{}, fmt.Errorf("PIXIE_TOKEN and PIXIE_BROWSER_TOKEN must be different")
 	}
-	if strings.TrimSpace(getenv("PIXIE_ALLOWED_ORIGINS")) != "" {
-		return AuthConfig{}, fmt.Errorf("PIXIE_ALLOWED_ORIGINS is unsupported with cookie authentication. Use PIXIE_PUBLIC_ORIGIN")
-	}
 	host := strings.TrimSpace(getenv("PIXIE_CONTROLLER_HOST"))
 	if host == "" {
 		host = "127.0.0.1"

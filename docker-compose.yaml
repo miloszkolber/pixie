@@ -10,7 +10,8 @@ services:
             - path: .pixie
               required: false
         environment:
-            PIXIE_PI_URL: "${PIXIE_PI_URL:-ws://127.0.0.1:3284/pi}"
+            PIXIE_PI_PORT: "${PIXIE_PI_PORT:-}"
+            PIXIE_PI_URL: "${PIXIE_PI_URL:-}"
             PIXIE_PI_SECRET_KEY: "${PIXIE_PI_SECRET_KEY:?set the Pi service secret in .pixie}"
             PIXIE_AUTH_ENABLED: "${PIXIE_AUTH_ENABLED:-false}"
             PIXIE_TOKEN: "${PIXIE_TOKEN:-}"

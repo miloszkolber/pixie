@@ -7,8 +7,10 @@
 # directly inside.
 PIXIE_DATA_PATH=/absolute/path/to/pixie-data
 
-# Shared with the Pi host service. Pi runs on the host, outside the container.
-PIXIE_PI_URL=ws://127.0.0.1:3284/pi
+# Shared with the Pi host service. Pi always runs on loopback on the host,
+# outside the container. Set only the port; Pixie dials ws://127.0.0.1:<port>/pi.
+# Deprecated override: PIXIE_PI_URL must still be a loopback ws(s) URL.
+PIXIE_PI_PORT=3284
 PIXIE_PI_SECRET_KEY=replace-with-a-random-pi-secret
 
 # Required: a strong private token authenticating the in-process MCP publisher
@@ -20,12 +22,13 @@ PIXIE_MCP_TOKEN=replace-with-a-random-mcp-token
 PIXIE_CONTROLLER_PORT=7312
 
 # Optional controller login; required for remote binding unless explicitly acknowledged.
+# Trusted LAN without app auth relies on the firewall (UFW Core Shared TCP).
+# Only origins matching PIXIE_PUBLIC_ORIGIN are accepted for mutations.
 PIXIE_AUTH_ENABLED=false
 # PIXIE_TOKEN=replace-with-a-random-controller-token
 # PIXIE_CONTROLLER_HOST=127.0.0.1
 # PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=false
 # PIXIE_PUBLIC_ORIGIN=https://pixie.example.com
-# Setting PIXIE_ALLOWED_ORIGINS is rejected with cookie authentication; use PIXIE_PUBLIC_ORIGIN.
 
 # Retired and ignored (warning at startup): PIXIE_MCP_MODULES,
 # PIXIE_MCP_DISABLED_MODULES. Toggle modules in Tools instead.

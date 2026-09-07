@@ -163,7 +163,6 @@ async function main(): Promise<void> {
 			cwd: projectRoot,
 			env: {
 				...process.env,
-				PIXIE_ALLOWED_ORIGINS: "",
 				PIXIE_ALLOW_UNAUTHENTICATED_REMOTE: "false",
 				PIXIE_AUTH_ENABLED: "false",
 				PIXIE_BROWSER_AUTH: "false",

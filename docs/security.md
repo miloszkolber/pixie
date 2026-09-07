@@ -16,7 +16,7 @@ Chromium runs with `--no-sandbox`. The merged deployment shares one container an
 
 Use distinct tokens and private environment/configuration files. Provider credentials pass to Pi and are excluded from replay and snapshots. MCP connection summaries omit commands, environment values and secret headers.
 
-Remote Web UI access requires authentication unless explicitly overridden. Use HTTPS and an exact `PIXIE_PUBLIC_ORIGIN`.
+Remote Web UI access requires authentication unless explicitly overridden for a trusted network with firewall protection. Use HTTPS and an exact `PIXIE_PUBLIC_ORIGIN`. Pi always stays on loopback; only its port is configurable.
 
 Interactive App HTML runs in a nested iframe on the Browser origin with bounded CSP and browser permissions. It receives no service credentials. Tool and resource requests return to Pixie for same-session checks. These iframe policies are separate from Pi tool behavior.
 
