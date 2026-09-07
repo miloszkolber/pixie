@@ -66,18 +66,18 @@ jobs:
 
       - name: Stamp release version
         run: |
-          bun -e 'const fs = require("node:fs"); const p = "pi/pixie-assistant/package.json"; const manifest = JSON.parse(fs.readFileSync(p, "utf8")); manifest.version = process.env.PACKAGE_VERSION; fs.writeFileSync(p, JSON.stringify(manifest, null, "\t") + "\n");'
+          bun -e 'const fs = require("node:fs"); const p = "agent/pixie-assistant/package.json"; const manifest = JSON.parse(fs.readFileSync(p, "utf8")); manifest.version = process.env.PACKAGE_VERSION; fs.writeFileSync(p, JSON.stringify(manifest, null, "\t") + "\n");'
         env:
           PACKAGE_VERSION: ${{ steps.source.outputs.version }}
 
       - name: Verify packed contents
-        working-directory: pi/pixie-assistant
+        working-directory: agent/pixie-assistant
         run: |
           bun pm pack --dry-run 2>&1 | tee pack.log
           grep -q '"bin"' pack.log || true
 
       - name: Publish to npm over OIDC trusted publishing
-        working-directory: pi/pixie-assistant
+        working-directory: agent/pixie-assistant
         # No token: authentication comes from the workflow identity via
         # id-token:write. Requires npm >= 11.5.1 (Node 24 ships npm 11) and a
         # one-time trusted-publisher setup on the package (see deployment.md).

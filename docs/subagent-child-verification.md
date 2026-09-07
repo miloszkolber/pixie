@@ -4,7 +4,7 @@
 
 The seven-line local addition in `runner.ts` resolves `@earendil-works/pi-coding-agent/rpc-entry` through the installed SDK's public export and converts its file URL to a filesystem path. Pi 0.85.1 exposes `/rpc-entry`, not `/rpc`. The existing Node and native-executable branches, argument construction, inherited environment, settings discovery, RPC handling and process cancellation stay unchanged. No SDK modification, Pixie entry-point reuse or custom child runtime is involved.
 
-Bun applies [`@mjakl%2Fpi-subagent@3.0.1.patch`](../pi/extensions/local-patches/@mjakl%252Fpi-subagent@3.0.1.patch) through the root `patchedDependencies` and `bun.lock`. The existing MCP adapter patch remains registered separately.
+Bun applies [`@mjakl%2Fpi-subagent@3.0.1.patch`](../agent/extensions/local-patches/@mjakl%252Fpi-subagent@3.0.1.patch) through the root `patchedDependencies` and `bun.lock`.
 
 ## Verification
 

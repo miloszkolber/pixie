@@ -3,7 +3,7 @@ import {
 	createUiBridge,
 	DEFAULT_UI_TIMEOUT_MS,
 	MAX_PENDING_UI_REQUESTS,
-} from "../../../pi/pixie-assistant/src/extensions/ui-bridge";
+} from "../../../agent/pixie-assistant/src/extensions/ui-bridge";
 
 test("unknown callers can sequence every primitive without a tool identity or answer adapter", async () => {
 	const events: Record<string, unknown>[] = [];

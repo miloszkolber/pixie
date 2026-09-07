@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { type AssistantMessage, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { PiConnector } from "@signetai/connector-pi";
-import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
+import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
 import { cleanups, echoProvider, findTool, fixture, tempDir } from "./helpers.ts";
 
 const savedEnv = new Map<string, string | undefined>();

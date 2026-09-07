@@ -5,7 +5,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
+import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
 import { piMcpAdapterWithConfig } from "./upstream.ts";
 
 const engine = process.argv[2];

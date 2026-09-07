@@ -15,7 +15,7 @@ bun install --frozen-lockfile
 Start the assistant with the chosen Pi state directory:
 
 ```sh
-bun pi/pixie-assistant/src/main.ts --agent-dir /absolute/path/to/pi-agent
+bun agent/pixie-assistant/src/main.ts --agent-dir /absolute/path/to/pi-agent
 ```
 
 Before starting, supply `PIXIE_PI_SECRET_KEY` through your private environment, as described in [deployment](../docs/deployment.md#host-service). Provider authentication and model selection remain native Pi operations. Use separate sessions for simultaneous vanilla Pi CLI and host work.

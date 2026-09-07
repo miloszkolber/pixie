@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectTrustStore, SessionManager } from "@earendil-works/pi-coding-agent";
-import { type ManagedSession, Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
+import { type ManagedSession, Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
 
 const require = createRequire(import.meta.url);
 const { runAgent } = require("@mjakl/pi-subagent/runner");

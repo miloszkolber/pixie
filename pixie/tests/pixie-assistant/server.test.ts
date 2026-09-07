@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startHost } from "../../../pi/pixie-assistant/src/server.ts";
+import { startHost } from "../../../agent/pixie-assistant/src/server.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {

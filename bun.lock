@@ -9,7 +9,7 @@
         "typescript": "catalog:",
       },
     },
-    "pi/pixie-assistant": {
+    "agent/pixie-assistant": {
       "name": "@pixie_ai/pixie-assistant",
       "version": "0.1.0",
       "bin": {
@@ -75,7 +75,7 @@
     "@biomejs/biome",
   ],
   "patchedDependencies": {
-    "@mjakl/pi-subagent@3.0.1": "pi/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch",
+    "@mjakl/pi-subagent@3.0.1": "agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch",
   },
   "catalog": {
     "@tailwindcss/cli": "4.3.3",
@@ -334,7 +334,7 @@
 
     "@pixie/web": ["@pixie/web@workspace:pixie/webui"],
 
-    "@pixie_ai/pixie-assistant": ["@pixie_ai/pixie-assistant@workspace:pi/pixie-assistant"],
+    "@pixie_ai/pixie-assistant": ["@pixie_ai/pixie-assistant@workspace:agent/pixie-assistant"],
 
     "@pkgr/core": ["@pkgr/core@0.1.2", "", {}, "sha512-fdDH1LSGfZdTH2sxdpVMw31BanV28K/Gry0cVFxaNP77neJSkd82mM8ErPNYs9e+0O7SdHBLTDzDgwUuy18RnQ=="],
 

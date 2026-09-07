@@ -23,7 +23,7 @@ test("packed source starts with production dependencies and no optional packages
 	try {
 		await run(
 			[process.execPath, "pm", "pack", "--destination", root],
-			new URL("../../../pi/pixie-assistant", import.meta.url).pathname,
+			new URL("../../../agent/pixie-assistant", import.meta.url).pathname,
 		);
 		const archive = (await readdir(root)).find((name) => name.endsWith(".tgz"))!;
 		await writeFile(

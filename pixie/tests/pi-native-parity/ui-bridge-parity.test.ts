@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createUiBridge } from "../../../pi/pixie-assistant/src/extensions/ui-bridge.ts";
+import { createUiBridge } from "../../../agent/pixie-assistant/src/extensions/ui-bridge.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {

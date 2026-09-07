@@ -5,9 +5,9 @@ import { join } from "node:path";
 import {
 	extensionInventory,
 	inventoryReference,
-} from "../../../pi/pixie-assistant/src/extension-inventory.ts";
-import { startHost } from "../../../pi/pixie-assistant/src/server.ts";
-import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
+} from "../../../agent/pixie-assistant/src/extension-inventory.ts";
+import { startHost } from "../../../agent/pixie-assistant/src/server.ts";
+import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {

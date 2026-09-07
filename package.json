@@ -7,7 +7,7 @@
 			"pixie",
 			"pixie/contracts",
 			"pixie/webui",
-			"pi/pixie-assistant"
+			"agent/pixie-assistant"
 		],
 		"catalog": {
 			"@tailwindcss/cli": "4.3.3",
@@ -42,6 +42,6 @@
 		"check:deps": "bun run --cwd pixie check:deps"
 	},
 	"patchedDependencies": {
-		"@mjakl/pi-subagent@3.0.1": "pi/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch"
+		"@mjakl/pi-subagent@3.0.1": "agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch"
 	}
 }

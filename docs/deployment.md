@@ -15,7 +15,7 @@ This installs the assistant's runtime dependencies without optional packages or 
 Generate separate random values for `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file. The optional Browser connection expands its token from the host environment.
 
 ```sh
-bun pi/pixie-assistant/src/main.ts
+bun agent/pixie-assistant/src/main.ts
 ```
 
 `--agent-dir /absolute/path` selects Pi state, defaulting to `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The service listens at `127.0.0.1:3284`. `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration. Existing native user and project resources load without a prescribed extension bundle.

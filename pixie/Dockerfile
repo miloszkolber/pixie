@@ -15,8 +15,8 @@ COPY package.json bun.lock bunfig.toml /work/
 COPY pixie/package.json ./
 COPY pixie/webui/package.json webui/package.json
 COPY pixie/contracts/package.json contracts/package.json
-COPY pi/pixie-assistant/package.json /work/pi/pixie-assistant/package.json
-COPY pi/extensions/local-patches/*.patch /work/pi/extensions/local-patches/
+COPY agent/pixie-assistant/package.json /work/agent/pixie-assistant/package.json
+COPY agent/extensions/local-patches/*.patch /work/agent/extensions/local-patches/
 RUN --mount=type=cache,id=bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
     bun install --frozen-lockfile
 COPY pixie/webui/ webui/

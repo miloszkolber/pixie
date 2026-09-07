@@ -9,8 +9,8 @@ import {
 	UI_TITLE_EVENT,
 	UI_WIDGET_EVENT,
 	UI_WORKING_EVENT,
-} from "../../../pi/pixie-assistant/src/extensions/ui-bridge.ts";
-import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
+} from "../../../agent/pixie-assistant/src/extensions/ui-bridge.ts";
+import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
 import { cleanups, echoProvider, fixture } from "./helpers.ts";
 
 afterEach(async () => {
