@@ -19,6 +19,8 @@ bun run build
 
 Native SDK tests use temporary Pi state, local fixture providers, authenticated WebSockets and real local MCP transports. They cover vanilla fallback, credentials, sessions, streaming/replay, agents and MCP. The Go controller suite also launches the real Bun/Pi host and verifies vanilla and optional-extension sessions through the application WebSocket. This requires Bun; CI runs it on amd64 and arm64. Go tests cover application persistence, queues, schedules, project ownership and Browser boundaries. No real provider credentials are required.
 
+Host fixture measurements (`bun x bun@1.4.0 pixie/tests/pi-native-parity/host-benchmark.ts`, Linux x86-64, fresh process per sample): baseline session creation ~55 ms with ~8 MB RSS growth and 4 tools (1.1 KB definitions); the overlay set (todo, web, ask, subagent) adds ~5 ms, ~1 MB and 5 tools (6.6 KB definitions). Cold/warm MCP transport timings live in `pixie/tests/pi-native-parity/mcp-benchmark.ts`. These are fixture numbers, not provider token counts or production timings; arm64 stays unmeasured here.
+
 From the repository root:
 
 ```sh
