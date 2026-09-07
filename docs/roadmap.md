@@ -62,7 +62,7 @@ Exit evidence: a short architecture decision, supported-operation matrix, smalle
 
 Native discovery contracts are defined here before the Extensions screen uses them. Independent frontend work can proceed concurrently once those contracts are stable.
 
-- Rename the internal `pi/host` source directory to `pi/pixie-assistant`, updating imports, workspace paths, test paths, package metadata, workflow staging paths and documentation. Preserve native Pi terminology such as `PI_CODING_AGENT_DIR`; it is not an obsolete product name.
+- Rename the internal `pi/host` source directory to `pi/pixie-assistant` (done), updating imports, workspace paths, test paths, package metadata, workflow staging paths and documentation. Preserve native Pi terminology such as `PI_CODING_AGENT_DIR`; it is not an obsolete product name.
 - Use one canonical MCP integration identity. Remove `adapter-evaluation` and redundant profile-name machinery rather than building an Extensions screen around them.
 - No `pixie-overlay.json` reader exists in the inspected implementation. Do not invent compatibility for it. Check host-local files before deleting any actual user data.
 - Classify each wrapper: native optional package, Pixie-owned authoring/API function, provider bootstrap or unnecessary marker. Remove marker-only package wrappers as native discovery and generic inventory replace them. Remove imports and required dependencies for optional packages when the native loading path is proven.
