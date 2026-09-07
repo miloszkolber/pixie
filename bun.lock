@@ -75,6 +75,7 @@
     "@biomejs/biome",
   ],
   "patchedDependencies": {
+    "@earendil-works/pi-coding-agent@0.85.1": "agent/extensions/local-patches/@earendil-works%2Fpi-coding-agent@0.85.1.patch",
     "@mjakl/pi-subagent@3.0.1": "agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch",
   },
   "catalog": {

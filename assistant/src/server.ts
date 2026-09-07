@@ -5,7 +5,7 @@ import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
 import { configureExtension } from "./extension-configuration.ts";
 import { extensionInventory } from "./extension-inventory.ts";
-import llama from "./extensions/llama.ts";
+import llama, { llamaFactory } from "./extensions/llama.ts";
 import { Providers } from "./providers.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
 import { HostError, object, type RecordValue, required, serviceStore, text } from "./storage.ts";
@@ -57,6 +57,9 @@ async function startUnlockedHost(options: HostOptions) {
 		if (peer.send(data) === -1 && peer.getBufferedAmount() > 32 * 1024 * 1024)
 			peer.close(1013, "Consumer is too slow");
 	};
+	// Fail loudly before the service starts when --llama is requested but the
+	// pinned SDK does not expose its built-in factory through the public export.
+	if (options.llama) llamaFactory();
 	const sessions = new Sessions(
 		agentDir,
 		options.llama ? [llama] : [],

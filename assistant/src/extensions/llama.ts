@@ -1,6 +1,3 @@
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { registerCapability } from "../capabilities.ts";
 
@@ -14,15 +11,17 @@ import { registerCapability } from "../capabilities.ts";
 // tools, prompts, or interception; model selection keeps flowing through the
 // existing `pi.providers.*` and `session.configure` operations.
 //
-// Loading detour: the SDK publishes the factory as `builtInExtensions` inside
-// `dist/extensions/index.js`, but that module is not re-exported from the
-// package index, so embedded hosts cannot import it through the public API.
-// This bridge therefore resolves the installed package directory (via the
-// always-resolvable `package.json`, independent of install layout or working
-// directory) and loads the file directly by URL. If the SDK ever moves the
-// file, the profile fails loudly at startup instead of silently dropping the
-// provider. Exporting `builtInExtensions` from the SDK index would remove
-// this detour and is a candidate upstream contribution.
+// Loading: the SDK publishes the factory as `builtInExtensions` in its
+// extensions barrel, but the pinned 0.85.1 package does not export that
+// barrel from its public index. An additive upstreamable export patch
+// (`agent/extensions/local-patches/`, applied by Bun patchedDependencies and
+// by the assistant postinstall for standalone installs) publishes the
+// `./extensions` subpath, and this bridge imports the factory through it.
+// The import degrades to "unavailable" when the patch is absent so installs
+// never break, while a requested `--llama` profile fails loudly at startup
+// instead of silently dropping the provider. Exporting the barrel from the
+// SDK index itself is the upstream contribution tracked in docs/roadmap.md;
+// once upstream exports it, this file needs no local patch.
 //
 // Headless note: the extension's `/llama` management command renders through
 // Pi TUI components and needs an interactive terminal. Provider registration,
@@ -38,13 +37,28 @@ import { registerCapability } from "../capabilities.ts";
 // `LLAMA_API_KEY` environment or the dummy key `local`, which llama.cpp
 // ignores.
 
-const packageDir = dirname(
-	createRequire(import.meta.url).resolve("@earendil-works/pi-coding-agent/package.json"),
-);
-const factoryUrl = pathToFileURL(join(packageDir, "dist", "extensions", "llama", "index.js")).href;
-const { default: upstreamLlama }: { default: ExtensionFactory } = await import(factoryUrl);
+const upstreamLlama: ExtensionFactory | undefined = await import(
+	"@earendil-works/pi-coding-agent/extensions"
+)
+	.then(({ builtInExtensions }) => {
+		const entry = builtInExtensions.find(
+			(extension) => "name" in extension && extension.name === "llama.cpp",
+		);
+		return entry && "factory" in entry ? entry.factory : undefined;
+	})
+	.catch(() => undefined);
+
+// Loud failure at host startup when --llama is requested but the pinned SDK
+// does not expose its built-in factory through the public export.
+export function llamaFactory(): ExtensionFactory {
+	if (!upstreamLlama)
+		throw new Error(
+			"--llama requested, but the pinned Pi SDK does not expose its built-in llama.cpp extension. Reinstall with the SDK export patch applied (bun install re-applies it through patchedDependencies).",
+		);
+	return upstreamLlama;
+}
 
 export default function llamaExtensionBridge(pi: ExtensionAPI): void {
-	upstreamLlama(pi);
+	llamaFactory()(pi);
 	registerCapability(pi, { id: "llama", version: 1, operations: {} });
 }
