@@ -263,9 +263,9 @@ test("manual compaction summarizes an adequate transcript and the session stays 
 
 test("native in-session branches do not corrupt Pixie snapshot, load or fork", async () => {
 	const { dir, sessions, entry, id, prompt } = await fixture((pi) => {
-		pi.registerTool({ name: "branch_probe", description: "Branch fixture",
+		pi.registerTool({ name: "branch_probe", label: "Branch probe", description: "Branch fixture",
 			parameters: { type: "object", properties: {} },
-			execute: async () => ({ content: [{ type: "text", text: "probe" }] }) });
+			execute: async () => ({ content: [{ type: "text", text: "probe" }], details: {} }) });
 	});
 	await prompt("First turn");
 	const manager = entry.session.sessionManager;
