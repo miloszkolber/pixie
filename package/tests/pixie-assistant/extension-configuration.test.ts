@@ -327,3 +327,48 @@ test("saving an enabled extension does not claim it loaded or roll back configur
 		state: "failed",
 	});
 });
+
+test("repeated idle reloads keep a single tool registration and listener generation", async () => {
+	const { agentDir, cwd } = await fixture();
+	let starts = 0,
+		shutdowns = 0;
+	const sessions = new Sessions(
+		agentDir,
+		[
+			(pi) => {
+				pi.on("session_start", () => {
+					starts++;
+				});
+				pi.on("session_shutdown", () => {
+					shutdowns++;
+				});
+			},
+		],
+		() => {},
+	);
+	cleanup.push(() => sessions.close());
+	const idle = await sessions.create(cwd);
+	const active = await sessions.create(cwd);
+	const idleId = idle.session.sessionId;
+	const before = [...active.session.getActiveToolNames()].sort();
+	for (let round = 0; round < 3; round++) {
+		expect(await sessions.nativeReloadStatus(idleId)).toMatchObject({
+			loaded: true,
+			reload: "reloaded",
+		});
+	}
+	const reopened = sessions.entries.get(idleId);
+	if (!reopened) throw new Error("Reloaded session missing");
+	expect(reopened).not.toBe(idle);
+	// One probe registration and one listener generation per reload: no
+	// duplicated tools and no leaked shutdown listeners.
+	expect(
+		reopened.session.getActiveToolNames().filter((name) => name === "native_configuration_probe"),
+	).toHaveLength(1);
+	expect(starts).toBe(2 + 3);
+	expect(shutdowns).toBe(3);
+	expect(sessions.snapshot(reopened).pendingDialogs).toEqual([]);
+	// The unrelated session keeps its runner, tools and dialogs untouched.
+	expect(sessions.entries.get(active.session.sessionId)).toBe(active);
+	expect([...active.session.getActiveToolNames()].sort()).toEqual(before);
+});

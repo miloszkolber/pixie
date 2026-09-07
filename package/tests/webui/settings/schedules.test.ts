@@ -74,6 +74,9 @@ function fixture(projectId = "p") {
 		failRead: () => {
 			failRead = true;
 		},
+		healRead: () => {
+			failRead = false;
+		},
 		loseReply: () => {
 			loseMutationReply = true;
 		},
@@ -169,6 +172,24 @@ test("refresh failure preserves the ledger and an acknowledged write is not retr
 	expect(f.model.state.getState().error).toContain("Last known results");
 	expect(f.model.state.getState().pending).toBeNull();
 	expect(f.model.state.getState().notice).toBe("paused");
+});
+
+test("reconnect after a read failure refreshes the ledger and clears the retained error", async () => {
+	const f = fixture("reconnect");
+	await f.model.load();
+	f.failRead();
+	await f.model.load();
+	expect(f.model.state.getState().error).toContain("Last known results");
+	expect(f.model.state.getState().jobs).toHaveLength(2);
+	f.healRead();
+	f.jobs().push(job("created-while-away", "reconnect"));
+	await f.model.load();
+	expect(f.model.state.getState().error).toBeNull();
+	expect(f.model.state.getState().jobs.map((item) => item.id)).toEqual([
+		"first",
+		"second",
+		"created-while-away",
+	]);
 });
 
 test("concurrent refresh calls share one read and missing native sessions do not produce invented links", async () => {

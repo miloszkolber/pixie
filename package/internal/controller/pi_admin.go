@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -337,9 +338,9 @@ func (a *PiAdmin) ProviderStatus(ctx context.Context) (map[string]any, error) {
 		if configured && available {
 			item["availableModelCount"] = len(provider.Models)
 		}
-		if provider.LastRefreshError != "" {
-			item["detail"] = provider.LastRefreshError
-		} else if provider.Available != nil && !available {
+	if provider.LastRefreshError != "" {
+		item["detail"] = sanitizeProviderDetail(provider.LastRefreshError)
+	} else if provider.Available != nil && !available {
 			item["detail"] = "Provider runtime is unavailable"
 		}
 		result = append(result, item)
@@ -349,6 +350,21 @@ func (a *PiAdmin) ProviderStatus(ctx context.Context) (map[string]any, error) {
 
 func providerRuntimeAvailable(provider piProvider) bool {
 	return boolDefault(provider.Available, false)
+}
+
+// Provider refresh failures come from Pi's own adapters and can echo the
+// rejected credential. Report the failure while redacting secret-bearing
+// values; benign messages pass through unchanged.
+var providerDetailSecrets = regexp.MustCompile(`(?i)(api[_-]?key|token|secret|passwd|password|authorization)(\s*["']?\s*[:=]\s*["']?)\S+`)
+var providerDetailBearer = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+`)
+var providerDetailKey = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{8,}\b`)
+
+func sanitizeProviderDetail(value string) string {
+	value = nativeReference(value)
+	value = providerDetailSecrets.ReplaceAllString(value, "${1}${2}[redacted]")
+	value = providerDetailBearer.ReplaceAllString(value, "Bearer [redacted]")
+	value = providerDetailKey.ReplaceAllString(value, "[redacted]")
+	return value
 }
 
 func (a *PiAdmin) ProviderReadiness(ctx context.Context, providerID string) (map[string]any, error) {

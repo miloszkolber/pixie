@@ -549,6 +549,10 @@ func (s *Schedules) Handle(ctx context.Context, method string, p map[string]any)
 		}
 		return ack(nil)
 	case "schedule.runNow":
+		// Pause gates automatic dispatch only: a paused schedule still
+		// accepts an explicit manual run, which records one execution like
+		// any other. Stopping settles the active execution without clearing
+		// the paused flag, so future automatic dispatch stays held.
 		return ack(s.startLocked(id, time.Now()))
 	case "schedule.stop":
 		if err := s.write(nil); err != nil {

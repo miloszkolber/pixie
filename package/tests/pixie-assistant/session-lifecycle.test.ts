@@ -311,3 +311,39 @@ test("native in-session branches do not corrupt Pixie snapshot, load or fork", a
 	const forkLoaded = (await sessions.call("session.load", { sessionId: forked.sessionId })) as any;
 	expect((forkLoaded.messages as unknown[]).length).toBeGreaterThan(0);
 });
+
+test("a pending dialog defers native reload and stays answerable without stranding", async () => {
+	let answer: Promise<string | undefined> | undefined;
+	const { sessions, entry, id, prompt } = await fixture((pi) => {
+		pi.registerCommand("dialog", {
+			description: "Leave an extension-owned dialog pending",
+			handler: async (_args, ctx) => {
+				answer = ctx.ui.input("Background input");
+			},
+		});
+	});
+	await prompt("/dialog");
+	// The session is prompt-idle but not reload-idle: the busy policy
+	// defers instead of destroying the awaiting dialog.
+	expect(await sessions.nativeReloadStatus(id)).toMatchObject({
+		loaded: false,
+		reload: "deferred",
+		reason: "session-busy",
+	});
+	const [request] = sessions.snapshot(entry).pendingDialogs as { requestId: string }[];
+	await sessions.resolveUiResponse({ sessionId: id, requestId: request.requestId, value: "done" });
+	expect(await answer).toBe("done");
+	expect(await sessions.nativeReloadStatus(id)).toMatchObject({
+		loaded: true,
+		reload: "reloaded",
+	});
+	const reopened = sessions.entries.get(id);
+	if (!reopened) throw new Error("Reloaded session missing");
+	expect(reopened).not.toBe(entry);
+	expect(sessions.snapshot(reopened).pendingDialogs).toEqual([]);
+	// The answered request belongs to the closed generation: it cannot be
+	// answered twice and no dialog is left stranded on the reopened session.
+	await expect(
+		sessions.resolveUiResponse({ sessionId: id, requestId: request.requestId, value: "late" }),
+	).rejects.toThrow();
+});
