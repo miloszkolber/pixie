@@ -1,18 +1,14 @@
 # Session reload upstream proposal
 
-Prepared upstream contribution for safe in-process extension reload, following the [local patches](../agent/extensions/local-patches/README.md) workflow. No submission has been made; the [publication signoff gate](roadmap.md) applies.
+A prepared upstream contribution for safe in-process extension reload, following the [local patches](../agent/extensions/local-patches/README.md) workflow. Status: **shelved** — the whole-host reload covers the current need ([deployment](deployment.md)), and the per-session reload flow was retired from the assistant. Revisit only if non-disruptive per-session reload becomes a requirement; submission still requires the [publication signoff](roadmap.md).
 
-## Interim
+## How reload works today
 
-A whole-host reload is available today: `pi.reload` ends the assistant process so the service manager brings a fresh one up, applying configured extensions to every session at once ([deployment](deployment.md)). In-flight runs interrupt and session transcripts stay durable. The upstream proposal below remains the path to non-disruptive per-session reload.
+Saving native extension configuration reports `saved: true, loaded: false, reload: deferred`. Configured changes apply when a session reopens, or everywhere at once through the whole-host reload ([extensions](pi-extensions.md)). In-flight runs interrupt on a host reload; session transcripts stay durable on disk.
 
-## Current behavior
+## Why in-process reload was deferred
 
-Saving native extension configuration reports `saved: true, loaded: false, reload: deferred`, and "check session reload" reports `session-busy`, `session-not-resident` or `sdk-loader-install-policy` instead of applying ([extensions](pi-extensions.md)). Configured changes reach sessions only when they are closed and reopened; idle resident sessions keep their previous load set.
-
-## Upstream blocker
-
-Two pinned-SDK mechanics force the deferral:
+Two pinned-SDK mechanics made a safe per-session reload impossible:
 
 - `AgentSession.reload()` calls the process-global `resetApiProviders()`, which cannot reset one session's providers safely while other sessions hold theirs.
 - `DefaultResourceLoader.reload()` resolves packages without the install-policy callback the initial load accepts, so a preflight check cannot exclude a concurrent configuration or filesystem change that starts an installation during reopening.
@@ -28,4 +24,4 @@ Both changes are small, additive and match the SDK's existing loading model; nei
 
 ## Verification plan
 
-Local today: repeated deferred-reload checks neither add listeners nor replace capabilities or MCP runtimes (`tests/pixie-assistant/server.test.ts`), and idle sessions stay unchanged. After an upstream release: `bun run check:parity` passes, then a reload integration test flips an idle session's `reload: deferred` to an applied reload with preserved MCP membership and capability set.
+If the proposal is ever revived: `bun run check:parity` passes on an upstream release carrying both changes, then a reload integration test applies a saved configuration to one idle session without disturbing a sibling session's run, listeners or MCP membership.

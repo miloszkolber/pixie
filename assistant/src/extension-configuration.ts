@@ -195,7 +195,6 @@ export async function configureExtension(
 		saved: true,
 		loaded: false,
 		reload: "deferred" as const,
-		reason: "sdk-loader-install-policy" as const,
 		warning: errors.length ? "settings-cleanup-failed" : null,
 	};
 }

@@ -6,7 +6,6 @@ import {
 	createAgentSession,
 	createAgentSessionServices,
 	createEventBus,
-	DefaultPackageManager,
 	type ExtensionFactory,
 	hasTrustRequiringProjectResources,
 	ModelRuntime,
@@ -522,58 +521,6 @@ export class Sessions {
 			!entry.hasExtensionWork?.() &&
 			!this.bridges.get(id)?.pendingCount()
 		);
-	}
-	async nativeReloadStatus(id: string) {
-		// Pi 0.85.1 AgentSession.reload resets global API providers, so
-		// activation reopens the idle session instead: close, then rebuild
-		// from the same native session file. Reopening touches only this
-		// session's objects — other resident sessions keep their runners,
-		// providers, tools and dialogs. A read-only preflight refuses when a
-		// configured package has no installed path, so reopening cannot
-		// silently install missing code (a residual filesystem race remains,
-		// identical to native Pi's own reload path).
-		const entry = this.entries.get(id);
-		if (!entry)
-			return {
-				loaded: false,
-				reload: "deferred" as const,
-				reason: "session-not-resident" as const,
-			};
-		if (!this.isIdle(id, entry))
-			return { loaded: false, reload: "deferred" as const, reason: "session-busy" as const };
-		const metadata = await this.metadata(id);
-		const trusted = this.projectTrusted(metadata.cwd);
-		const probeSettings = SettingsManager.create(metadata.cwd, this.agentDir, {
-			projectTrusted: trusted,
-		});
-		const probe = new DefaultPackageManager({
-			cwd: metadata.cwd,
-			agentDir: this.agentDir,
-			settingsManager: probeSettings,
-		});
-		let configured: ReturnType<DefaultPackageManager["listConfiguredPackages"]> = [];
-		try {
-			configured = probe.listConfiguredPackages();
-		} catch {
-			return {
-				loaded: false,
-				reload: "deferred" as const,
-				reason: "sdk-loader-install-policy" as const,
-			};
-		}
-		if (configured.some((pkg) => !pkg.installedPath))
-			return {
-				loaded: false,
-				reload: "deferred" as const,
-				reason: "sdk-loader-install-policy" as const,
-			};
-		await this.release(id);
-		const reopened = await this.get(id);
-		return {
-			loaded: true,
-			reload: "reloaded" as const,
-			tools: reopened.session.getActiveToolNames().length,
-		};
 	}
 	async release(id: string): Promise<void> {
 		const entry = this.entries.get(id);

@@ -182,7 +182,7 @@ test("native MCP attaches and preserves peer authorization after idle reload", a
 	await expect(owner.call("pi.tools.call", params)).rejects.toThrow("Unknown MCP connection");
 });
 
-test("native configuration and repeated deferred reload preserve the resident MCP runtime and listener", async () => {
+test("native configuration defers application until reopen and preserves the resident runtime", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/pixie-native-mcp-settings-`);
 	cleanup.push(() => rm(dir, { recursive: true, force: true }));
 	const previous = process.env.PI_CODING_AGENT_DIR;
@@ -215,12 +215,12 @@ test("native configuration and repeated deferred reload preserve the resident MC
 			confirmed: true,
 		}),
 	).toMatchObject({ saved: true, loaded: false, reload: "deferred" });
-	for (let i = 0; i < 3; i++) {
-		expect(
-			await client.call("pi.extensions.reload", { sessionId: created.sessionId, cwd: dir }),
-		).toMatchObject({ loaded: true, reload: "reloaded" });
-		const current = await host.sessions.get(created.sessionId);
-		if (i === 0) expect(current).not.toBe(entry);
-		expect(current.session.getActiveToolNames()).not.toContain("mcp");
-	}
+	// The resident session keeps the runtime until it reopens; the saved
+	// change applies through the ordinary reopen path.
+	expect(await host.sessions.get(created.sessionId)).toBe(entry);
+	expect(entry.session.getActiveToolNames()).toContain("mcp");
+	await host.sessions.release(created.sessionId);
+	const reopened = await host.sessions.get(created.sessionId);
+	expect(reopened).not.toBe(entry);
+	expect(reopened.session.getActiveToolNames()).not.toContain("mcp");
 });

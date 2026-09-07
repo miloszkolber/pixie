@@ -239,28 +239,31 @@ func (a *PiAdmin) nativeExtensions(ctx context.Context, request map[string]any) 
 var nativeConfigurationToken = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func (a *PiAdmin) nativeExtensionChange(ctx context.Context, method string, request map[string]any) (any, error) {
+	if method == "pi.nativeExtensionReload" {
+		// Per-session in-process reload is retired: configured changes apply
+		// when the session reopens or through the whole-host reload
+		// (pi.reload). The response keeps the historical shape so the
+		// deployed settings screen stays coherent until the shell stream
+		// replaces the flow.
+		return map[string]any{"saved": false, "loaded": false, "reload": "deferred"}, nil
+	}
 	params, err := a.nativeExtensionParams(request)
 	if err != nil {
 		return nil, err
 	}
-	hostMethod := "pi.extensions.reload"
-	if method == "pi.nativeExtensionConfigure" {
-		scope := textValue(request["scope"])
-		enabled, validEnabled := request["enabled"].(bool)
-		if (scope != "user" && scope != "project") || !validEnabled || request["confirmed"] != true ||
-			!nativeConfigurationToken.MatchString(textValue(request["resourceKey"])) ||
-			!nativeConfigurationToken.MatchString(textValue(request["expectedRevision"])) {
-			return nil, fmt.Errorf("confirm a current scoped native configuration change")
-		}
-		if scope == "project" && params["cwd"] == nil {
-			return nil, fmt.Errorf("select a project root")
-		}
-		params["scope"], params["enabled"], params["confirmed"] = scope, enabled, true
-		params["resourceKey"], params["expectedRevision"] = request["resourceKey"], request["expectedRevision"]
-		hostMethod = "pi.extensions.configure"
-	} else if params["sessionId"] == nil {
-		return nil, fmt.Errorf("select a native session")
+	hostMethod := "pi.extensions.configure"
+	scope := textValue(request["scope"])
+	enabled, validEnabled := request["enabled"].(bool)
+	if (scope != "user" && scope != "project") || !validEnabled || request["confirmed"] != true ||
+		!nativeConfigurationToken.MatchString(textValue(request["resourceKey"])) ||
+		!nativeConfigurationToken.MatchString(textValue(request["expectedRevision"])) {
+		return nil, fmt.Errorf("confirm a current scoped native configuration change")
 	}
+	if scope == "project" && params["cwd"] == nil {
+		return nil, fmt.Errorf("select a project root")
+	}
+	params["scope"], params["enabled"], params["confirmed"] = scope, enabled, true
+	params["resourceKey"], params["expectedRevision"] = request["resourceKey"], request["expectedRevision"]
 	var response struct {
 		Saved   *bool   `json:"saved,omitempty"`
 		Loaded  bool    `json:"loaded"`
@@ -271,11 +274,7 @@ func (a *PiAdmin) nativeExtensionChange(ctx context.Context, method string, requ
 	if err := a.call(ctx, hostMethod, params, &response); err != nil {
 		return nil, fmt.Errorf("native configuration outcome not confirmed. Refresh inventory before retrying")
 	}
-	reloaded := response.Loaded && response.Reload == "reloaded"
-	deferred := !response.Loaded && response.Reload == "deferred" &&
-		(response.Reason == "session-busy" || response.Reason == "session-not-resident" || response.Reason == "sdk-loader-install-policy")
-	if (!reloaded && !deferred) ||
-		(method == "pi.nativeExtensionConfigure" && (response.Saved == nil || !*response.Saved)) {
+	if response.Loaded || response.Reload != "deferred" || response.Saved == nil || !*response.Saved {
 		return nil, fmt.Errorf("unexpected native configuration outcome. Refresh inventory")
 	}
 	if response.Warning != nil {

@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, realpath } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
@@ -22,6 +23,15 @@ export interface HostOptions {
 	/** Termination hook for self restart; defaults to process exit. */
 	onRestart?: () => void;
 }
+
+// The host reports the SDK it actually embeds; the protocol contract defines
+// this as the host SDK version.
+const sdkVersion = (
+	createRequire(import.meta.url)("@earendil-works/pi-coding-agent/package.json") as {
+		version: string;
+	}
+).version;
+
 interface Peer {
 	sessions: Set<string>;
 	attachments: Map<string, { params: RecordValue; entry: WeakRef<ManagedSession> }>;
@@ -117,7 +127,7 @@ async function startUnlockedHost(options: HostOptions) {
 			return {
 				protocolVersion: 1,
 				runtimeId,
-				version: "0.85.1",
+				version: sdkVersion,
 				capabilities: capabilitySnapshot(),
 			};
 		if (method === "runtime.restart") {
@@ -138,7 +148,7 @@ async function startUnlockedHost(options: HostOptions) {
 			return { ok: true };
 		}
 		if (
-			["pi.extensions.list", "pi.extensions.configure", "pi.extensions.reload"].includes(method)
+			["pi.extensions.list", "pi.extensions.configure"].includes(method)
 		) {
 			const id = text(p.sessionId);
 			const metadata = id ? await sessions.metadata(id) : undefined;
@@ -146,10 +156,6 @@ async function startUnlockedHost(options: HostOptions) {
 			if (metadata && cwd !== (await realpath(metadata.cwd)))
 				throw new Error("Session project mismatch");
 			const entry = id ? sessions.entries.get(id) : !text(p.cwd) ? control : undefined;
-			if (method === "pi.extensions.reload") {
-				if (!id) throw new Error("Select a native session for a reload request");
-				return sessions.nativeReloadStatus(id);
-			}
 			if (method === "pi.extensions.configure") {
 				if (p.scope !== "user" && p.scope !== "project")
 					throw new Error("Select a native settings scope");

@@ -34,11 +34,7 @@ Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](http
 
 The pinned Pi SDK loads its built-in llama.cpp extension only inside the CLI (`--llama`) and does not export the factory from its package index. The local additive export patch (`agent/extensions/local-patches/`) already publishes the `./extensions` subpath, and the assistant loads the factory through that public path ([extensions](pi-extensions.md)). Propose the same export upstream. No submission has been made; the publication signoff gate applies. Once an upstream release exports the barrel, drop the local patch.
 
-### 5. Session reload upstream proposal
-
-In-process extension reload stays deferred because `AgentSession.reload()` resets providers process-globally and `DefaultResourceLoader.reload()` lacks an install-policy callback ([extensions](pi-extensions.md)). A whole-host reload control exists today (`pi.reload` plus `Restart=always`; the Web UI button rides the shell redesign stream), and a prepared upstream contribution describes the per-session safe reload path and verification plan ([session reload proposal](session-reload.md)). No submission has been made; the publication signoff gate applies. Until an upstream release lands it, configured extension changes reach sessions on reopen or through the whole-host reload.
-
-### 6. Right-rail module tabs
+### 5. Right-rail module tabs
 
 Surface each in-process MCP module as a tab on the right rail of the Web UI shell, with the Browser icon opening the Browser module panel (design reference: the operator's shell mockup). The MCP module catalog and registry surfaces already exist ([MCP publisher](mcp.md)); this is a Web UI presentation item on the shell redesign stream, not a new protocol surface. Keep the focused tab set; do not turn the rail into a generic plugin marketplace.
 
@@ -51,7 +47,7 @@ This host runs `/home/core/.pi` directly via `PI_CODING_AGENT_DIR=/home/core/.pi
 - One `pixie-assistant` identity (`assistant/`, `@pixie_ai/pixie-assistant`, `pixie-assistant.service`): one MCP runtime, native baseline without optional packages, no remnants of the old host identity.
 - Generic UI bridge for questions, dialogs, status and widgets; history cards are read-only recaps; unsupported TUI components are reported honestly ([extensions](pi-extensions.md)).
 - Project-scoped schedules with CRUD, run-now/stop and a durable execution ledger on the existing APIs ([deployment](deployment.md), [architecture](architecture.md)).
-- Read-only native Extensions inventory, distinct from MCP connections; configuration saves are explicit and deferred, and in-process reload stays gated on a supported no-install loading path ([extensions](pi-extensions.md)).
+- Read-only native Extensions inventory, distinct from MCP connections; configuration saves are explicit and deferred, applying on session reopen or through the whole-host reload, with the per-session reload flow retired ([extensions](pi-extensions.md)).
 - Lifecycle and trust parity (compaction, forks, retries, default-deny project trust) covered by native-SDK tests and fixtures ([development](development.md)).
 - Assistant hardening: the wire protocol documented as the integration contract with transport conformance tests ([protocol](pi-protocol.md)), defensive frame serialization, duplicate in-flight request ids answered with error frames, and the parity suite formalized as the SDK upgrade gate ([development](development.md)).
 - Documented packaging and first automated release: `0.1.1` published from tag `pixie-assistant-v0.1.1` via OIDC with signed provenance and strict pack checks; Docker-primary deployment with a supported self-contained binary plus published package path and systemd units ([deployment](deployment.md)).

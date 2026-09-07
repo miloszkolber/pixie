@@ -51,7 +51,11 @@ test("runtime.restart stays disabled unless the deployment opts in", async () =>
 
 test("an enabled self restart schedules one termination after replying", async () => {
 	const dir = await mkdtemp(tmpdir() + "/pixie-restart-on-");
-	cleanup.push(() => rm(dir, { recursive: true, force: true }));
+	// Bun below 1.4.0 wedges a host close after the restart hook closed
+	// peers, so on that runtime the disposable host and its directory are
+	// left to the process exit instead of being torn down mid-run.
+	const staleBun = Bun.version.localeCompare("1.4.0", undefined, { numeric: true }) < 0;
+	if (!staleBun) cleanup.push(() => rm(dir, { recursive: true, force: true }));
 	let restarts = 0;
 	const host = await startHost({
 		agentDir: dir,
@@ -69,7 +73,9 @@ test("an enabled self restart schedules one termination after replying", async (
 		await Bun.sleep(400);
 		expect(restarts).toBe(1);
 	} finally {
-		// The restart hook already ended host usefulness; close defensively.
-		await Promise.race([host.close(), Bun.sleep(2000)]);
+		// The restart hook already closed peers; on Bun below 1.4.0 a host
+		// close after that wedges and leaks rejections into sibling tests,
+		// so the disposable host is left to the process exit instead.
+		if (Bun.version.localeCompare("1.4.0", undefined, { numeric: true }) >= 0) await host.close();
 	}
 });

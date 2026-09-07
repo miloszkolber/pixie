@@ -34,7 +34,7 @@ Client requests are `{ "id": <positive safe integer>, "method": string, "params"
 | --- | --- |
 | `runtime.hello`, `runtime.capabilities` | Service identity, protocol version and capability versions |
 | `runtime.restart` | End the process for the service manager; enabled per deployment with `PIXIE_ALLOW_SELF_RESTART=1` and rejected otherwise. Replies `ok`, then closes peers and exits ([deployment](deployment.md)) |
-| `pi.extensions.list` / `configure` / `reload` | Native resource inventory, deferred configuration and reload status |
+| `pi.extensions.list` / `configure` | Native resource inventory and deferred configuration |
 | `pi.providers.*`, `pi.defaults.*`, `pi.preferences.*`, `provider.login*` | Provider catalog, credentials and OAuth flows; secrets never leave the host |
 | `session.create` / `fork` / `load` / `list` / `prompt` / `steer` / `abort` / `queue*` / `delete` / `rename` / `archive` / `setModel` / `setThinkingLevel` and related | Session lifecycle, runs and configuration |
 | `session.goal*`, `session.plan*`, `session.stats`, `session.commands`, `session.agentMentions` | Application projections on top of native sessions |

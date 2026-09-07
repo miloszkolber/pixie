@@ -312,7 +312,7 @@ test("native in-session branches do not corrupt Pixie snapshot, load or fork", a
 	expect((forkLoaded.messages as unknown[]).length).toBeGreaterThan(0);
 });
 
-test("a pending dialog defers native reload and stays answerable without stranding", async () => {
+test("an answered pending dialog does not strand across reopen", async () => {
 	let answer: Promise<string | undefined> | undefined;
 	const { sessions, entry, id, prompt } = await fixture((pi) => {
 		pi.registerCommand("dialog", {
@@ -323,22 +323,15 @@ test("a pending dialog defers native reload and stays answerable without strandi
 		});
 	});
 	await prompt("/dialog");
-	// The session is prompt-idle but not reload-idle: the busy policy
-	// defers instead of destroying the awaiting dialog.
-	expect(await sessions.nativeReloadStatus(id)).toMatchObject({
-		loaded: false,
-		reload: "deferred",
-		reason: "session-busy",
-	});
+	// The session is prompt-idle but pinned by the awaiting dialog: release
+	// refuses instead of destroying it.
+	await sessions.release(id);
+	expect(sessions.entries.get(id)).toBe(entry);
 	const [request] = sessions.snapshot(entry).pendingDialogs as { requestId: string }[];
 	await sessions.resolveUiResponse({ sessionId: id, requestId: request.requestId, value: "done" });
 	expect(await answer).toBe("done");
-	expect(await sessions.nativeReloadStatus(id)).toMatchObject({
-		loaded: true,
-		reload: "reloaded",
-	});
-	const reopened = sessions.entries.get(id);
-	if (!reopened) throw new Error("Reloaded session missing");
+	await sessions.release(id);
+	const reopened = await sessions.get(id);
 	expect(reopened).not.toBe(entry);
 	expect(sessions.snapshot(reopened).pendingDialogs).toEqual([]);
 	// The answered request belongs to the closed generation: it cannot be

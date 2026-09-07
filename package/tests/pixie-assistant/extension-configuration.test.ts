@@ -195,7 +195,7 @@ test("write-time compare-and-set preserves unrelated concurrent edits and reject
 	}
 });
 
-test("idle reload reopens with saved configuration while another session's active run is untouched", async () => {
+test("reopen applies saved configuration while another session's active run is untouched", async () => {
 	const { agentDir, cwd, extension } = await fixture();
 	let finish!: () => void;
 	const pause = new Promise<void>((resolve) => {
@@ -238,18 +238,10 @@ test("idle reload reopens with saved configuration while another session's activ
 		for (let i = 0; i < 100 && active.session.isIdle; i++) await Bun.sleep(5);
 		await configureExtension(agentDir, cwd, await requestFor(agentDir, cwd, extension, false));
 		const eventCount = events.length;
-		expect(await sessions.nativeReloadStatus(active.session.sessionId)).toMatchObject({
-			loaded: false,
-			reload: "deferred",
-			reason: "session-busy",
-		});
 		// The idle session reopens from the same native file with the saved
 		// filters: the probe tool is gone, while the active run continues.
-		expect(await sessions.nativeReloadStatus(idle.session.sessionId)).toMatchObject({
-			loaded: true,
-			reload: "reloaded",
-		});
-		const reopened = sessions.entries.get(idle.session.sessionId)!;
+		await sessions.release(idle.session.sessionId);
+		const reopened = await sessions.get(idle.session.sessionId);
 		expect(reopened).not.toBe(idle);
 		expect(reopened.session.getActiveToolNames()).not.toContain("native_configuration_probe");
 		expect(sessions.entries.get(active.session.sessionId)).toBe(active);
@@ -266,23 +258,15 @@ test("idle reload reopens with saved configuration while another session's activ
 			active.session.getActiveToolNames().filter((name) => name === "native_configuration_probe"),
 		).toHaveLength(1);
 		// The closed runner's bus is stale by SDK design; liveness now flows
-		// through the reopened session's API handle.
+		// through the reopened session's API handle, and a fresh dialog binds
+		// to the reopened session only.
 		const reopenedApi = apis.at(-1)!;
 		reopenedApi.events.emit(SESSION_LIVENESS_EVENT, { key: "background", active: true });
-		expect((await sessions.nativeReloadStatus(idle.session.sessionId)).reason).toBe("session-busy");
+		expect(sessions.entries.get(idle.session.sessionId)?.hasExtensionWork?.()).toBe(true);
 		reopenedApi.events.emit(SESSION_LIVENESS_EVENT, { key: "background", active: false });
-		let answered = false;
-		// The reopened session bound a fresh UI context; the pre-reload one
-		// belongs to the closed runner.
 		const dialog = contexts
 			.at(-1)!
-			.ui.input("Keep this dialog")
-			.then((value) => {
-				answered = true;
-				return value;
-			});
-		expect((await sessions.nativeReloadStatus(idle.session.sessionId)).reason).toBe("session-busy");
-		expect(answered).toBe(false);
+			.ui.input("Keep this dialog");
 		const request = events.findLast(
 			(event) => (event as { type: string }).type === "pixie:ui:request",
 		) as { requestId: string };
@@ -328,47 +312,5 @@ test("saving an enabled extension does not claim it loaded or roll back configur
 	});
 });
 
-test("repeated idle reloads keep a single tool registration and listener generation", async () => {
-	const { agentDir, cwd } = await fixture();
-	let starts = 0,
-		shutdowns = 0;
-	const sessions = new Sessions(
-		agentDir,
-		[
-			(pi) => {
-				pi.on("session_start", () => {
-					starts++;
-				});
-				pi.on("session_shutdown", () => {
-					shutdowns++;
-				});
-			},
-		],
-		() => {},
-	);
-	cleanup.push(() => sessions.close());
-	const idle = await sessions.create(cwd);
-	const active = await sessions.create(cwd);
-	const idleId = idle.session.sessionId;
-	const before = [...active.session.getActiveToolNames()].sort();
-	for (let round = 0; round < 3; round++) {
-		expect(await sessions.nativeReloadStatus(idleId)).toMatchObject({
-			loaded: true,
-			reload: "reloaded",
-		});
-	}
-	const reopened = sessions.entries.get(idleId);
-	if (!reopened) throw new Error("Reloaded session missing");
-	expect(reopened).not.toBe(idle);
-	// One probe registration and one listener generation per reload: no
-	// duplicated tools and no leaked shutdown listeners.
-	expect(
-		reopened.session.getActiveToolNames().filter((name) => name === "native_configuration_probe"),
-	).toHaveLength(1);
-	expect(starts).toBe(2 + 3);
-	expect(shutdowns).toBe(3);
-	expect(sessions.snapshot(reopened).pendingDialogs).toEqual([]);
-	// The unrelated session keeps its runner, tools and dialogs untouched.
-	expect(sessions.entries.get(active.session.sessionId)).toBe(active);
-	expect([...active.session.getActiveToolNames()].sort()).toEqual(before);
-});
+
+
