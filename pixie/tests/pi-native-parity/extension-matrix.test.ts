@@ -1,14 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { PiConnector } from "@signetai/connector-pi";
-import agents from "../../../pi/host/src/extensions/agents.ts";
-import llama from "../../../pi/host/src/extensions/llama.ts";
-import piSubagent from "../../../pi/host/src/extensions/pi-subagent.ts";
-import rpivAsk from "../../../pi/host/src/extensions/rpiv-ask.ts";
-import rpivTodo from "../../../pi/host/src/extensions/rpiv-todo.ts";
-import rpivWeb from "../../../pi/host/src/extensions/rpiv-web.ts";
-import signet from "../../../pi/host/src/extensions/signet.ts";
-import { startHost } from "../../../pi/host/src/server.ts";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
+import llama from "../../../pi/pixie-assistant/src/extensions/llama.ts";
+import { startHost } from "../../../pi/pixie-assistant/src/server.ts";
+import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
 import { cleanups, echoProvider, fixture, tempDir, toolNames } from "./helpers.ts";
 
 afterEach(async () => {
@@ -29,14 +27,39 @@ function restoreEnv(): void {
 	savedEnv.clear();
 }
 
-test("host reports Pi SDK version and advertises each optional profile", async () => {
+const optionalPackages = [
+	"pi-mcp-adapter",
+	"@juicesharp/rpiv-todo",
+	"@juicesharp/rpiv-web-tools",
+	"@juicesharp/rpiv-ask-user-question",
+	"@mjakl/pi-subagent",
+];
+async function configurePackages(dir: string) {
+	const require = createRequire(import.meta.url);
+	await writeFile(
+		join(dir, "settings.json"),
+		JSON.stringify({
+			packages: optionalPackages.map((name) => {
+				let path = dirname(require.resolve(name));
+				// Native local package sources resolve their pi manifest themselves.
+				while (!existsSync(join(path, "package.json"))) {
+					const parent = dirname(path);
+					if (parent === path) throw new Error(`Package manifest not found: ${name}`);
+					path = parent;
+				}
+				return path;
+			}),
+		}),
+	);
+}
+
+test("host loads native configured optional packages once without package markers", async () => {
 	const dir = await tempDir("pixie-pi-parity-host-");
 	const secret = "parity-matrix-secret";
-	for (const extensions of [
-		["mcp", "agents", "rpiv-todo", "rpiv-web", "rpiv-ask"],
-		["mcp", "agents", "rpiv-todo", "rpiv-web", "rpiv-ask", "signet", "pi-subagent", "llama"],
-	]) {
-		const host = await startHost({ agentDir: dir, secret, port: 0, extensions });
+	await configurePackages(dir);
+	setEnv("PI_CODING_AGENT_DIR", dir);
+	try {
+		const host = await startHost({ agentDir: dir, secret, port: 0 });
 		try {
 			const base = `http://127.0.0.1:${host.server.port}`;
 			const ready = (await (
@@ -48,20 +71,36 @@ test("host reports Pi SDK version and advertises each optional profile", async (
 			};
 			expect(ready.protocolVersion).toBe(1);
 			expect(ready.runtimeId).toBeString();
-			expect(ready.capabilities["rpiv-todo"]).toBe(1);
-			expect(ready.capabilities["rpiv-web"]).toBe(1);
-			expect(ready.capabilities["rpiv-ask"]).toBe(1);
+			expect(ready.capabilities).toEqual({ sessions: 1, providers: 1, agents: 1, mcp: 1 });
+			const inventory = host.sessions.inventory(host.control);
+			expect(inventory.errors).toEqual([]);
+			for (const name of [
+				"mcp",
+				"todo",
+				"web_fetch",
+				"web_search",
+				"ask_user_question",
+				"subagent",
+			]) {
+				expect(
+					inventory.extensions
+						.flatMap((extension) => extension.tools)
+						.filter((tool) => tool === name),
+				).toHaveLength(1);
+			}
 			expect(ready.capabilities.plans).toBeUndefined();
 		} finally {
 			await host.close();
 		}
+	} finally {
+		restoreEnv();
 	}
 });
 
 test("llama profile loads the SDK built-in and registers the provider", async () => {
 	const dir = await tempDir("pixie-pi-parity-llama-");
 	const secret = "parity-llama-secret";
-	const host = await startHost({ agentDir: dir, secret, port: 0, extensions: ["llama"] });
+	const host = await startHost({ agentDir: dir, secret, port: 0, llama: true });
 	try {
 		const base = `http://127.0.0.1:${host.server.port}`;
 		const ready = (await (
@@ -77,54 +116,32 @@ test("llama profile loads the SDK built-in and registers the provider", async ()
 	expect(entry.capabilities.snapshot()).toMatchObject({ llama: 1 });
 });
 
-test("unknown or duplicate extension profiles are rejected", async () => {
-	const dir = await tempDir("pixie-pi-parity-reject-");
-	const secret = "parity-matrix-secret";
-	await expect(startHost({ agentDir: dir, secret, port: 0, extensions: ["nope"] })).rejects.toThrow(
-		"Unknown or duplicate",
-	);
-	await expect(
-		startHost({ agentDir: dir, secret, port: 0, extensions: ["rpiv-todo", "rpiv-todo"] }),
-	).rejects.toThrow("Unknown or duplicate");
-	await expect(
-		startHost({ agentDir: dir, secret, port: 0, extensions: ["signet", "signet"] }),
-	).rejects.toThrow("Unknown or duplicate");
-});
-
-test("signet and pi-subagent profiles advertise additive markers", async () => {
+test("baseline has no optional markers or model tools", async () => {
 	const dir = await tempDir("pixie-pi-parity-markers-");
 	const secret = "parity-matrix-secret";
 	const host = await startHost({
 		agentDir: dir,
 		secret,
 		port: 0,
-		extensions: ["mcp", "agents", "signet", "pi-subagent"],
 	});
 	try {
 		const base = `http://127.0.0.1:${host.server.port}`;
 		const ready = (await (
 			await fetch(`${base}/readyz`, { headers: { Authorization: `Bearer ${secret}` } })
 		).json()) as { capabilities: Record<string, number> };
-		expect(ready.capabilities).toMatchObject({
-			agents: 1,
-			signet: 1,
-			"pi-subagent": 1,
-		});
+		expect(ready.capabilities).toEqual({ sessions: 1, providers: 1, agents: 1 });
+		expect(host.control.session.getActiveToolNames()).toEqual(["read", "bash", "edit", "write"]);
+		expect(host.control.modelRuntime.getProviders().map((provider) => provider.id)).toContain(
+			"openai",
+		);
 	} finally {
 		await host.close();
 	}
 });
 
-test("each profile adds tools without replacing Pi core tools", async () => {
-	const { dir, sessions } = await fixture([
-		(pi) => agents(pi, dir),
-		rpivTodo,
-		rpivWeb,
-		rpivAsk,
-		signet,
-		piSubagent,
-		echoProvider(),
-	]);
+test("native optional packages and managed Signet preserve core tools", async () => {
+	const { dir, sessions } = await fixture([echoProvider()]);
+	await configurePackages(dir);
 	// Contain the upstream install and discovery side effects (managed file,
 	// Pi config, starter agent) to the fixture directory.
 	const configHome = await tempDir("pixie-pi-parity-signet-config-");
@@ -153,23 +170,16 @@ test("each profile adds tools without replacing Pi core tools", async () => {
 				"signet_remember",
 			]),
 		);
-		expect(entry.capabilities.snapshot()).toMatchObject({
-			agents: 1,
-			"rpiv-todo": 1,
-			"rpiv-web": 1,
-			"rpiv-ask": 1,
-			signet: 1,
-			"pi-subagent": 1,
-		});
+		expect(entry.capabilities.snapshot()).toEqual({ agents: 1, mcp: 1 });
+		expect(new Set(names).size).toBe(names.length);
 	} finally {
 		console.warn = warn;
 		restoreEnv();
 	}
 });
 
-
 test("agent definitions survive CRUD through pi.sources operations", async () => {
-	const { dir, sessions } = await fixture([(pi) => agents(pi, dir), echoProvider()]);
+	const { dir, sessions } = await fixture([echoProvider()]);
 	const entry = await sessions.create(dir);
 	const ctx = sessions.context(entry);
 	await entry.capabilities.call(
@@ -181,7 +191,7 @@ test("agent definitions survive CRUD through pi.sources operations", async () =>
 		sources: [{ name: "Reviewer" }],
 	});
 	expect(
-		(await entry.capabilities.call("pi.agent-mentions.list", {}, ctx) as any).agents,
+		((await entry.capabilities.call("pi.agent-mentions.list", {}, ctx)) as any).agents,
 	).toMatchObject([{ mention: "@Reviewer" }]);
 	await entry.capabilities.call(
 		"pi.sources.update",

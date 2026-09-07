@@ -51,7 +51,11 @@ test("generic agent settings expose agent identity and System", () => {
 	appStoreApi.setState({ agentProfile: profile, settingsOpen: false });
 	appStoreApi.getState().openSettings();
 	expect(appStoreApi.getState().settingsSection).toBe(SettingsSection.Agent);
-	expect(settingsTabs(true, false).map(({ label }) => label)).toEqual(["Agent", "System"]);
+	expect(settingsTabs(true, false).map(({ label }) => label)).toEqual([
+		"Schedules",
+		"Agent",
+		"System",
+	]);
 	expect(settingsTabs(true, false).map(({ label }) => label)).not.toContain("Pi");
 	expect(agentOperationRows(profile)).toContainEqual({
 		operation: "httpMcp",
@@ -63,7 +67,10 @@ test("generic agent settings expose agent identity and System", () => {
 
 test("System remains reachable while agent capabilities are unavailable", () => {
 	expect(resolveSettingsSection(SettingsSection.Tools, null)).toBe(SettingsSection.System);
-	expect(settingsTabs(false, true)).toEqual([{ section: SettingsSection.System, label: "System" }]);
+	expect(settingsTabs(false, true)).toEqual([
+		{ section: SettingsSection.Schedules, label: "Schedules" },
+		{ section: SettingsSection.System, label: "System" },
+	]);
 });
 
 test("settings tabs wrap without a native horizontal scroll container", async () => {
@@ -124,6 +131,8 @@ test("vanilla Pi exposes core settings and hides unavailable extension surfaces"
 		"Providers",
 		"Models",
 		"Tools",
+		"Extensions",
+		"Schedules",
 		"System",
 	]);
 	const extended = { ...profile, capabilities: { ...profile.capabilities, mcp: 1 } };

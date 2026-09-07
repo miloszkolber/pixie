@@ -21,6 +21,10 @@ func (a *PiAdmin) Handle(ctx context.Context, method string, raw json.RawMessage
 		return nil, fmt.Errorf("malformed Pi request")
 	}
 	switch method {
+	case "pi.nativeExtensions":
+		return a.nativeExtensions(ctx, request)
+	case "pi.nativeExtensionConfigure", "pi.nativeExtensionReload":
+		return a.nativeExtensionChange(ctx, method, request)
 	case "provider.loginStart":
 		provider, err := requiredIdentifier(request["providerId"], "Provider identifier")
 		if err != nil {
