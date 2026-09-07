@@ -1,0 +1,628 @@
+{
+  "name": "mewa-ui",
+  "version": "0.1.2",
+  "private": true,
+  "description": "Framework-neutral, accessible, monochrome component library for utility applications.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "**/*"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./runtime/core.js": {
+      "types": "./runtime/core.d.ts",
+      "import": "./runtime/core.js"
+    },
+    "./runtime/enhancer.js": {
+      "types": "./runtime/enhancer.d.ts",
+      "import": "./runtime/enhancer.js"
+    },
+    "./auto.js": {
+      "types": "./auto.d.ts",
+      "import": "./auto.js"
+    },
+    "./css/base.css": "./css/base.css",
+    "./css/tokens.css": "./css/tokens.css",
+    "./css/all.css": "./css/all.css",
+    "./fonts/geist-sans.css": "./fonts/geist-sans.css",
+    "./fonts/geist-mono.css": "./fonts/geist-mono.css",
+    "./fonts/geist.woff2": "./fonts/geist.woff2",
+    "./fonts/geistmono.woff2": "./fonts/geistmono.woff2",
+    "./licenses/GEIST-OFL.txt": "./licenses/GEIST-OFL.txt",
+    "./licenses/LUCIDE-LICENSE.txt": "./licenses/LUCIDE-LICENSE.txt",
+    "./LICENSE": "./LICENSE",
+    "./manifest.json": "./manifest.json",
+    "./checksums.json": "./checksums.json",
+    "./css/typography.css": "./css/typography.css",
+    "./css/layout.css": "./css/layout.css",
+    "./css/separator.css": "./css/separator.css",
+    "./css/icon.css": "./css/icon.css",
+    "./css/button.css": "./css/button.css",
+    "./css/toggle.css": "./css/toggle.css",
+    "./controllers/toggle.js": {
+      "types": "./controllers/toggle.d.ts",
+      "import": "./controllers/toggle.js"
+    },
+    "./components/toggle.js": {
+      "types": "./components/toggle.d.ts",
+      "import": "./components/toggle.js"
+    },
+    "./auto/toggle.js": {
+      "types": "./auto/toggle.d.ts",
+      "import": "./auto/toggle.js"
+    },
+    "./css/toggle-group.css": "./css/toggle-group.css",
+    "./controllers/toggle-group.js": {
+      "types": "./controllers/toggle-group.d.ts",
+      "import": "./controllers/toggle-group.js"
+    },
+    "./components/toggle-group.js": {
+      "types": "./components/toggle-group.d.ts",
+      "import": "./components/toggle-group.js"
+    },
+    "./auto/toggle-group.js": {
+      "types": "./auto/toggle-group.d.ts",
+      "import": "./auto/toggle-group.js"
+    },
+    "./css/button-group.css": "./css/button-group.css",
+    "./css/toolbar.css": "./css/toolbar.css",
+    "./controllers/toolbar.js": {
+      "types": "./controllers/toolbar.d.ts",
+      "import": "./controllers/toolbar.js"
+    },
+    "./components/toolbar.js": {
+      "types": "./components/toolbar.d.ts",
+      "import": "./components/toolbar.js"
+    },
+    "./auto/toolbar.js": {
+      "types": "./auto/toolbar.d.ts",
+      "import": "./auto/toolbar.js"
+    },
+    "./css/label.css": "./css/label.css",
+    "./css/field.css": "./css/field.css",
+    "./css/text-field.css": "./css/text-field.css",
+    "./css/textarea.css": "./css/textarea.css",
+    "./css/checkbox.css": "./css/checkbox.css",
+    "./controllers/checkbox.js": {
+      "types": "./controllers/checkbox.d.ts",
+      "import": "./controllers/checkbox.js"
+    },
+    "./components/checkbox.js": {
+      "types": "./components/checkbox.d.ts",
+      "import": "./components/checkbox.js"
+    },
+    "./auto/checkbox.js": {
+      "types": "./auto/checkbox.d.ts",
+      "import": "./auto/checkbox.js"
+    },
+    "./css/radio-group.css": "./css/radio-group.css",
+    "./css/switch.css": "./css/switch.css",
+    "./css/slider.css": "./css/slider.css",
+    "./controllers/slider.js": {
+      "types": "./controllers/slider.d.ts",
+      "import": "./controllers/slider.js"
+    },
+    "./components/slider.js": {
+      "types": "./components/slider.d.ts",
+      "import": "./components/slider.js"
+    },
+    "./auto/slider.js": {
+      "types": "./auto/slider.d.ts",
+      "import": "./auto/slider.js"
+    },
+    "./css/select.css": "./css/select.css",
+    "./css/number-field.css": "./css/number-field.css",
+    "./controllers/number-field.js": {
+      "types": "./controllers/number-field.d.ts",
+      "import": "./controllers/number-field.js"
+    },
+    "./components/number-field.js": {
+      "types": "./components/number-field.d.ts",
+      "import": "./components/number-field.js"
+    },
+    "./auto/number-field.js": {
+      "types": "./auto/number-field.d.ts",
+      "import": "./auto/number-field.js"
+    },
+    "./css/file-input.css": "./css/file-input.css",
+    "./css/date-field.css": "./css/date-field.css",
+    "./css/date-picker.css": "./css/date-picker.css",
+    "./controllers/date-picker.js": {
+      "types": "./controllers/date-picker.d.ts",
+      "import": "./controllers/date-picker.js"
+    },
+    "./components/date-picker.js": {
+      "types": "./components/date-picker.d.ts",
+      "import": "./components/date-picker.js"
+    },
+    "./auto/date-picker.js": {
+      "types": "./auto/date-picker.d.ts",
+      "import": "./auto/date-picker.js"
+    },
+    "./css/date-range-picker.css": "./css/date-range-picker.css",
+    "./controllers/date-range-picker.js": {
+      "types": "./controllers/date-range-picker.d.ts",
+      "import": "./controllers/date-range-picker.js"
+    },
+    "./components/date-range-picker.js": {
+      "types": "./components/date-range-picker.d.ts",
+      "import": "./components/date-range-picker.js"
+    },
+    "./auto/date-range-picker.js": {
+      "types": "./auto/date-range-picker.d.ts",
+      "import": "./auto/date-range-picker.js"
+    },
+    "./css/combobox.css": "./css/combobox.css",
+    "./controllers/combobox.js": {
+      "types": "./controllers/combobox.d.ts",
+      "import": "./controllers/combobox.js"
+    },
+    "./components/combobox.js": {
+      "types": "./components/combobox.d.ts",
+      "import": "./components/combobox.js"
+    },
+    "./auto/combobox.js": {
+      "types": "./auto/combobox.d.ts",
+      "import": "./auto/combobox.js"
+    },
+    "./css/time-field.css": "./css/time-field.css",
+    "./controllers/time-field.js": {
+      "types": "./controllers/time-field.d.ts",
+      "import": "./controllers/time-field.js"
+    },
+    "./components/time-field.js": {
+      "types": "./components/time-field.d.ts",
+      "import": "./components/time-field.js"
+    },
+    "./auto/time-field.js": {
+      "types": "./auto/time-field.d.ts",
+      "import": "./auto/time-field.js"
+    },
+    "./css/form.css": "./css/form.css",
+    "./css/badge.css": "./css/badge.css",
+    "./css/avatar.css": "./css/avatar.css",
+    "./controllers/avatar.js": {
+      "types": "./controllers/avatar.d.ts",
+      "import": "./controllers/avatar.js"
+    },
+    "./components/avatar.js": {
+      "types": "./components/avatar.d.ts",
+      "import": "./components/avatar.js"
+    },
+    "./auto/avatar.js": {
+      "types": "./auto/avatar.d.ts",
+      "import": "./auto/avatar.js"
+    },
+    "./css/card.css": "./css/card.css",
+    "./css/image.css": "./css/image.css",
+    "./controllers/image.js": {
+      "types": "./controllers/image.d.ts",
+      "import": "./controllers/image.js"
+    },
+    "./components/image.js": {
+      "types": "./components/image.d.ts",
+      "import": "./components/image.js"
+    },
+    "./auto/image.js": {
+      "types": "./auto/image.d.ts",
+      "import": "./auto/image.js"
+    },
+    "./css/statistic.css": "./css/statistic.css",
+    "./css/table.css": "./css/table.css",
+    "./css/data-table.css": "./css/data-table.css",
+    "./controllers/data-table.js": {
+      "types": "./controllers/data-table.d.ts",
+      "import": "./controllers/data-table.js"
+    },
+    "./components/data-table.js": {
+      "types": "./components/data-table.d.ts",
+      "import": "./components/data-table.js"
+    },
+    "./auto/data-table.js": {
+      "types": "./auto/data-table.d.ts",
+      "import": "./auto/data-table.js"
+    },
+    "./css/collapsible.css": "./css/collapsible.css",
+    "./css/timeline.css": "./css/timeline.css",
+    "./css/tree-view.css": "./css/tree-view.css",
+    "./controllers/tree-view.js": {
+      "types": "./controllers/tree-view.d.ts",
+      "import": "./controllers/tree-view.js"
+    },
+    "./components/tree-view.js": {
+      "types": "./components/tree-view.d.ts",
+      "import": "./components/tree-view.js"
+    },
+    "./auto/tree-view.js": {
+      "types": "./auto/tree-view.d.ts",
+      "import": "./auto/tree-view.js"
+    },
+    "./css/carousel.css": "./css/carousel.css",
+    "./controllers/carousel.js": {
+      "types": "./controllers/carousel.d.ts",
+      "import": "./controllers/carousel.js"
+    },
+    "./components/carousel.js": {
+      "types": "./components/carousel.d.ts",
+      "import": "./components/carousel.js"
+    },
+    "./auto/carousel.js": {
+      "types": "./auto/carousel.d.ts",
+      "import": "./auto/carousel.js"
+    },
+    "./css/scroll-area.css": "./css/scroll-area.css",
+    "./css/sortable.css": "./css/sortable.css",
+    "./controllers/sortable.js": {
+      "types": "./controllers/sortable.d.ts",
+      "import": "./controllers/sortable.js"
+    },
+    "./components/sortable.js": {
+      "types": "./components/sortable.d.ts",
+      "import": "./components/sortable.js"
+    },
+    "./auto/sortable.js": {
+      "types": "./auto/sortable.d.ts",
+      "import": "./auto/sortable.js"
+    },
+    "./css/spinner.css": "./css/spinner.css",
+    "./css/skeleton.css": "./css/skeleton.css",
+    "./css/progress.css": "./css/progress.css",
+    "./css/callout.css": "./css/callout.css",
+    "./css/alert-dialog.css": "./css/alert-dialog.css",
+    "./controllers/alert-dialog.js": {
+      "types": "./controllers/alert-dialog.d.ts",
+      "import": "./controllers/alert-dialog.js"
+    },
+    "./components/alert-dialog.js": {
+      "types": "./components/alert-dialog.d.ts",
+      "import": "./components/alert-dialog.js"
+    },
+    "./auto/alert-dialog.js": {
+      "types": "./auto/alert-dialog.d.ts",
+      "import": "./auto/alert-dialog.js"
+    },
+    "./css/toast.css": "./css/toast.css",
+    "./controllers/toast.js": {
+      "types": "./controllers/toast.d.ts",
+      "import": "./controllers/toast.js"
+    },
+    "./components/toast.js": {
+      "types": "./components/toast.d.ts",
+      "import": "./components/toast.js"
+    },
+    "./auto/toast.js": {
+      "types": "./auto/toast.d.ts",
+      "import": "./auto/toast.js"
+    },
+    "./css/popover.css": "./css/popover.css",
+    "./controllers/popover.js": {
+      "types": "./controllers/popover.d.ts",
+      "import": "./controllers/popover.js"
+    },
+    "./components/popover.js": {
+      "types": "./components/popover.d.ts",
+      "import": "./components/popover.js"
+    },
+    "./auto/popover.js": {
+      "types": "./auto/popover.d.ts",
+      "import": "./auto/popover.js"
+    },
+    "./css/tooltip.css": "./css/tooltip.css",
+    "./controllers/tooltip.js": {
+      "types": "./controllers/tooltip.d.ts",
+      "import": "./controllers/tooltip.js"
+    },
+    "./components/tooltip.js": {
+      "types": "./components/tooltip.d.ts",
+      "import": "./components/tooltip.js"
+    },
+    "./auto/tooltip.js": {
+      "types": "./auto/tooltip.d.ts",
+      "import": "./auto/tooltip.js"
+    },
+    "./css/dialog.css": "./css/dialog.css",
+    "./controllers/dialog.js": {
+      "types": "./controllers/dialog.d.ts",
+      "import": "./controllers/dialog.js"
+    },
+    "./components/dialog.js": {
+      "types": "./components/dialog.d.ts",
+      "import": "./components/dialog.js"
+    },
+    "./auto/dialog.js": {
+      "types": "./auto/dialog.d.ts",
+      "import": "./auto/dialog.js"
+    },
+    "./css/sheet.css": "./css/sheet.css",
+    "./controllers/sheet.js": {
+      "types": "./controllers/sheet.d.ts",
+      "import": "./controllers/sheet.js"
+    },
+    "./components/sheet.js": {
+      "types": "./components/sheet.d.ts",
+      "import": "./components/sheet.js"
+    },
+    "./auto/sheet.js": {
+      "types": "./auto/sheet.d.ts",
+      "import": "./auto/sheet.js"
+    },
+    "./css/accordion.css": "./css/accordion.css",
+    "./controllers/accordion.js": {
+      "types": "./controllers/accordion.d.ts",
+      "import": "./controllers/accordion.js"
+    },
+    "./components/accordion.js": {
+      "types": "./components/accordion.d.ts",
+      "import": "./components/accordion.js"
+    },
+    "./auto/accordion.js": {
+      "types": "./auto/accordion.d.ts",
+      "import": "./auto/accordion.js"
+    },
+    "./css/command-palette.css": "./css/command-palette.css",
+    "./controllers/command-palette.js": {
+      "types": "./controllers/command-palette.d.ts",
+      "import": "./controllers/command-palette.js"
+    },
+    "./components/command-palette.js": {
+      "types": "./components/command-palette.d.ts",
+      "import": "./components/command-palette.js"
+    },
+    "./auto/command-palette.js": {
+      "types": "./auto/command-palette.d.ts",
+      "import": "./auto/command-palette.js"
+    },
+    "./css/breadcrumbs.css": "./css/breadcrumbs.css",
+    "./css/pagination.css": "./css/pagination.css",
+    "./css/tabs.css": "./css/tabs.css",
+    "./controllers/tabs.js": {
+      "types": "./controllers/tabs.d.ts",
+      "import": "./controllers/tabs.js"
+    },
+    "./components/tabs.js": {
+      "types": "./components/tabs.d.ts",
+      "import": "./components/tabs.js"
+    },
+    "./auto/tabs.js": {
+      "types": "./auto/tabs.d.ts",
+      "import": "./auto/tabs.js"
+    },
+    "./css/dropdown-menu.css": "./css/dropdown-menu.css",
+    "./controllers/dropdown-menu.js": {
+      "types": "./controllers/dropdown-menu.d.ts",
+      "import": "./controllers/dropdown-menu.js"
+    },
+    "./components/dropdown-menu.js": {
+      "types": "./components/dropdown-menu.d.ts",
+      "import": "./components/dropdown-menu.js"
+    },
+    "./auto/dropdown-menu.js": {
+      "types": "./auto/dropdown-menu.d.ts",
+      "import": "./auto/dropdown-menu.js"
+    },
+    "./css/navigation-menu.css": "./css/navigation-menu.css",
+    "./controllers/navigation-menu.js": {
+      "types": "./controllers/navigation-menu.d.ts",
+      "import": "./controllers/navigation-menu.js"
+    },
+    "./components/navigation-menu.js": {
+      "types": "./components/navigation-menu.d.ts",
+      "import": "./components/navigation-menu.js"
+    },
+    "./auto/navigation-menu.js": {
+      "types": "./auto/navigation-menu.d.ts",
+      "import": "./auto/navigation-menu.js"
+    },
+    "./css/app-shell.css": "./css/app-shell.css",
+    "./controllers/app-shell.js": {
+      "types": "./controllers/app-shell.d.ts",
+      "import": "./controllers/app-shell.js"
+    },
+    "./components/app-shell.js": {
+      "types": "./components/app-shell.d.ts",
+      "import": "./components/app-shell.js"
+    },
+    "./auto/app-shell.js": {
+      "types": "./auto/app-shell.d.ts",
+      "import": "./auto/app-shell.js"
+    },
+    "./css/sidebar.css": "./css/sidebar.css",
+    "./controllers/sidebar.js": {
+      "types": "./controllers/sidebar.d.ts",
+      "import": "./controllers/sidebar.js"
+    },
+    "./components/sidebar.js": {
+      "types": "./components/sidebar.d.ts",
+      "import": "./components/sidebar.js"
+    },
+    "./auto/sidebar.js": {
+      "types": "./auto/sidebar.d.ts",
+      "import": "./auto/sidebar.js"
+    },
+    "./css/resizable.css": "./css/resizable.css",
+    "./controllers/resizable.js": {
+      "types": "./controllers/resizable.d.ts",
+      "import": "./controllers/resizable.js"
+    },
+    "./components/resizable.js": {
+      "types": "./components/resizable.d.ts",
+      "import": "./components/resizable.js"
+    },
+    "./auto/resizable.js": {
+      "types": "./auto/resizable.d.ts",
+      "import": "./auto/resizable.js"
+    },
+    "./css/color-picker.css": "./css/color-picker.css",
+    "./controllers/color-picker.js": {
+      "types": "./controllers/color-picker.d.ts",
+      "import": "./controllers/color-picker.js"
+    },
+    "./components/color-picker.js": {
+      "types": "./components/color-picker.d.ts",
+      "import": "./components/color-picker.js"
+    },
+    "./auto/color-picker.js": {
+      "types": "./auto/color-picker.d.ts",
+      "import": "./auto/color-picker.js"
+    },
+    "./css/file-upload.css": "./css/file-upload.css",
+    "./controllers/file-upload.js": {
+      "types": "./controllers/file-upload.d.ts",
+      "import": "./controllers/file-upload.js"
+    },
+    "./components/file-upload.js": {
+      "types": "./components/file-upload.d.ts",
+      "import": "./components/file-upload.js"
+    },
+    "./auto/file-upload.js": {
+      "types": "./auto/file-upload.d.ts",
+      "import": "./auto/file-upload.js"
+    },
+    "./css/input-otp.css": "./css/input-otp.css",
+    "./controllers/input-otp.js": {
+      "types": "./controllers/input-otp.d.ts",
+      "import": "./controllers/input-otp.js"
+    },
+    "./components/input-otp.js": {
+      "types": "./components/input-otp.d.ts",
+      "import": "./components/input-otp.js"
+    },
+    "./auto/input-otp.js": {
+      "types": "./auto/input-otp.d.ts",
+      "import": "./auto/input-otp.js"
+    },
+    "./css/tag-input.css": "./css/tag-input.css",
+    "./controllers/tag-input.js": {
+      "types": "./controllers/tag-input.d.ts",
+      "import": "./controllers/tag-input.js"
+    },
+    "./components/tag-input.js": {
+      "types": "./components/tag-input.d.ts",
+      "import": "./components/tag-input.js"
+    },
+    "./auto/tag-input.js": {
+      "types": "./auto/tag-input.d.ts",
+      "import": "./auto/tag-input.js"
+    },
+    "./css/header.css": "./css/header.css",
+    "./css/nav.css": "./css/nav.css",
+    "./css/footer.css": "./css/footer.css",
+    "./css/context-menu.css": "./css/context-menu.css",
+    "./controllers/context-menu.js": {
+      "types": "./controllers/context-menu.d.ts",
+      "import": "./controllers/context-menu.js"
+    },
+    "./components/context-menu.js": {
+      "types": "./components/context-menu.d.ts",
+      "import": "./components/context-menu.js"
+    },
+    "./auto/context-menu.js": {
+      "types": "./auto/context-menu.d.ts",
+      "import": "./auto/context-menu.js"
+    },
+    "./css/hover-card.css": "./css/hover-card.css",
+    "./controllers/hover-card.js": {
+      "types": "./controllers/hover-card.d.ts",
+      "import": "./controllers/hover-card.js"
+    },
+    "./components/hover-card.js": {
+      "types": "./components/hover-card.d.ts",
+      "import": "./components/hover-card.js"
+    },
+    "./auto/hover-card.js": {
+      "types": "./auto/hover-card.d.ts",
+      "import": "./auto/hover-card.js"
+    },
+    "./css/agent-activity.css": "./css/agent-activity.css",
+    "./css/code-block.css": "./css/code-block.css",
+    "./controllers/code-block.js": {
+      "types": "./controllers/code-block.d.ts",
+      "import": "./controllers/code-block.js"
+    },
+    "./components/code-block.js": {
+      "types": "./components/code-block.d.ts",
+      "import": "./components/code-block.js"
+    },
+    "./auto/code-block.js": {
+      "types": "./auto/code-block.d.ts",
+      "import": "./auto/code-block.js"
+    },
+    "./css/composer.css": "./css/composer.css",
+    "./controllers/composer.js": {
+      "types": "./controllers/composer.d.ts",
+      "import": "./controllers/composer.js"
+    },
+    "./components/composer.js": {
+      "types": "./components/composer.d.ts",
+      "import": "./components/composer.js"
+    },
+    "./auto/composer.js": {
+      "types": "./auto/composer.d.ts",
+      "import": "./auto/composer.js"
+    },
+    "./css/file-diff.css": "./css/file-diff.css",
+    "./css/message.css": "./css/message.css",
+    "./css/message-scroller.css": "./css/message-scroller.css",
+    "./controllers/message-scroller.js": {
+      "types": "./controllers/message-scroller.d.ts",
+      "import": "./controllers/message-scroller.js"
+    },
+    "./components/message-scroller.js": {
+      "types": "./components/message-scroller.d.ts",
+      "import": "./components/message-scroller.js"
+    },
+    "./auto/message-scroller.js": {
+      "types": "./auto/message-scroller.d.ts",
+      "import": "./auto/message-scroller.js"
+    },
+    "./css/reasoning.css": "./css/reasoning.css",
+    "./controllers/reasoning.js": {
+      "types": "./controllers/reasoning.d.ts",
+      "import": "./controllers/reasoning.js"
+    },
+    "./components/reasoning.js": {
+      "types": "./components/reasoning.d.ts",
+      "import": "./components/reasoning.js"
+    },
+    "./auto/reasoning.js": {
+      "types": "./auto/reasoning.d.ts",
+      "import": "./auto/reasoning.js"
+    },
+    "./css/sources.css": "./css/sources.css",
+    "./css/suggestion.css": "./css/suggestion.css",
+    "./css/thinking-indicator.css": "./css/thinking-indicator.css",
+    "./css/todo-list.css": "./css/todo-list.css",
+    "./controllers/todo-list.js": {
+      "types": "./controllers/todo-list.d.ts",
+      "import": "./controllers/todo-list.js"
+    },
+    "./components/todo-list.js": {
+      "types": "./components/todo-list.d.ts",
+      "import": "./components/todo-list.js"
+    },
+    "./auto/todo-list.js": {
+      "types": "./auto/todo-list.d.ts",
+      "import": "./auto/todo-list.js"
+    },
+    "./css/tool-call.css": "./css/tool-call.css"
+  },
+  "sideEffects": [
+    "./auto.js",
+    "./auto/*.js",
+    "./css/**/*.css",
+    "./fonts/*.css"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miloszkolber/mewa_ui.git"
+  },
+  "homepage": "https://github.com/miloszkolber/mewa_ui#readme",
+  "bugs": {
+    "url": "https://github.com/miloszkolber/mewa_ui/issues"
+  }
+}

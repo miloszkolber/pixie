@@ -1,0 +1,19 @@
+@layer components {
+  .scroll-area {
+    overflow: auto;
+    position: relative;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+
+    &::-webkit-scrollbar { width: var(--space-200); height: var(--space-200); }
+    &::-webkit-scrollbar-track { background: transparent; }
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--border-primary);
+
+      &:hover { background-color: var(--text-muted); }
+    }
+
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-primary) transparent;
+  }
+}

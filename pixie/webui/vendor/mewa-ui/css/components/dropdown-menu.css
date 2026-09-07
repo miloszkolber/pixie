@@ -1,0 +1,140 @@
+/* -- Dropdown Menu component ------------------------------------ */
+
+@layer components {
+  .dropdown-menu-content {
+     background-color: var(--surface-primary);
+    color: var(--text-primary);
+    border: var(--border-width-025) solid var(--border-primary);
+
+    padding: var(--space-100);
+    min-width: var(--size-3200);
+
+    /* -- Anchor positioning ------------------------------------ */
+    position: fixed;
+    inset: auto;
+    top: anchor(bottom);
+    left: anchor(left);
+    margin: 0;
+    margin-top: var(--space-100);
+    position-try-fallbacks: flip-block;
+
+  }
+
+  .dropdown-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+    width: 100%;
+    min-block-size: var(--size-1000);
+    padding: var(--space-200) var(--space-200);
+
+    font-size: var(--font-size-350);
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    outline: none;
+    text-align: left;
+
+    &:hover, &[data-highlighted] {
+      background-color: var(--surface-secondary);
+      color: var(--text-primary);
+    }
+
+    &[data-variant="destructive"] {
+      &:hover, &[data-highlighted] {
+        background-color: var(--surface-negative);
+        color: var(--text-negative);
+      }
+    }
+
+    &:disabled {
+      pointer-events: none;
+      opacity: var(--opacity-05);
+    }
+  }
+
+  /* -- Checkbox / Radio indicators: pinned to the inline end so they never
+         shift the label, and they inherit the item color. --------------- */
+  .dropdown-menu-check,
+  .dropdown-menu-radio {
+    padding-inline-end: var(--space-600);
+    position: relative;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset-inline-end: var(--space-200);
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0.875rem;
+      height: 0.875rem;
+    }
+  }
+
+  .dropdown-menu-check[aria-checked="true"]::before,
+  .dropdown-menu-radio[aria-checked="true"]::before {
+    content: '';
+    /* Mask so the glyph inherits the item's current color. */
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+  }
+
+  .dropdown-menu-check[aria-checked="true"]::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    background-color: currentColor;
+  }
+
+  .dropdown-menu-radio[aria-checked="true"]::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3C/svg%3E");
+    background-color: currentColor;
+  }
+
+  .dropdown-menu-separator {
+    height: 1px;
+    background: var(--border-primary);
+    margin: var(--space-100) -0.25rem;
+  }
+
+  .dropdown-menu-label {
+    padding: var(--space-100) var(--space-200);
+    font-size: var(--font-size-300);
+    font-weight: var(--font-weight-550);
+    color: var(--text-muted);
+  }
+
+  .dropdown-menu-shortcut {
+    margin-inline-start: auto;
+    font-size: var(--font-size-300);
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+  }
+
+  .dropdown-menu-item:hover .dropdown-menu-shortcut,
+  .dropdown-menu-item[data-highlighted] .dropdown-menu-shortcut,
+  .dropdown-menu-item:hover .dropdown-menu-check[aria-checked="true"]::before,
+  .dropdown-menu-item[data-highlighted] .dropdown-menu-check[aria-checked="true"]::before,
+  .dropdown-menu-item:hover .dropdown-menu-radio[aria-checked="true"]::before,
+  .dropdown-menu-item[data-highlighted] .dropdown-menu-radio[aria-checked="true"]::before {
+    color: inherit;
+  }
+
+  @media (forced-colors: active) {
+    .dropdown-menu-content {
+      border-color: ButtonText;
+    }
+    .dropdown-menu-item {
+      &:hover, &[data-highlighted] {
+        forced-color-adjust: none;
+        background: Highlight;
+        color: HighlightText;
+      }
+    }
+  }
+}

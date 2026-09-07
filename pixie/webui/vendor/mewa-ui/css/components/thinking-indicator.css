@@ -1,0 +1,45 @@
+@layer components {
+  .thinking-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-200);
+    min-height: var(--size-800);
+    color: var(--text-secondary);
+    font-size: var(--font-size-350);
+  }
+
+  .thinking-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-100);
+  }
+
+  .thinking-dot {
+    width: var(--size-200);
+    height: var(--size-200);
+    border-radius: var(--border-radius-6400);
+    background-color: currentcolor;
+  }
+
+  .thinking-dot:nth-child(2) {
+    opacity: var(--opacity-07);
+  }
+
+  .thinking-dot:nth-child(3) {
+    opacity: var(--opacity-04);
+  }
+
+  .thinking-label {
+    color: var(--text-primary);
+  }
+
+  @media (forced-colors: active) {
+    .thinking-indicator {
+      color: CanvasText;
+    }
+
+    .thinking-dot {
+      background: currentColor;
+    }
+  }
+}

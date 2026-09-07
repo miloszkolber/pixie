@@ -1,0 +1,86 @@
+@layer components {
+  .callout {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-200);
+    border: var(--border-width-025) solid var(--border-primary);
+
+    padding: var(--space-400) var(--space-500);
+    font-size: var(--font-size-350);
+    color: var(--text-primary);
+    background-color: var(--background);
+
+    &[data-variant="destructive"] {
+      border-color: var(--text-negative);
+      background-color: var(--surface-negative);
+      color: var(--text-negative);
+
+      & .callout-title {
+        color: var(--text-negative);
+      }
+
+      & .callout-description {
+        color: var(--text-negative);
+        opacity: var(--opacity-09);
+      }
+
+      & .callout-icon {
+        color: var(--text-negative);
+      }
+    }
+  }
+
+  .callout-icon {
+    width: var(--size-400);
+    height: var(--size-400);
+    flex-shrink: 0;
+    margin-top: var(--space-100);
+    color: var(--text-primary);
+  }
+
+  .callout-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .callout-title {
+    margin: 0;
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-regular);
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+  }
+
+  .callout-description {
+    margin: 0;
+    font-size: var(--font-size-350);
+    line-height: var(--font-height-regular);
+    color: var(--text-muted);
+  }
+
+  .callout-action {
+    flex-shrink: 0;
+    margin-left: auto;
+    align-self: center;
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (prefers-contrast: more) {
+    .callout { border-width: var(--border-width-050); }
+  }
+
+  @media (forced-colors: active) {
+    .callout {
+      background: Canvas;
+      color: CanvasText;
+      border-color: CanvasText;
+    }
+
+    .callout[data-variant="destructive"] {
+      border-color: Mark;
+      color: CanvasText;
+    }
+  }
+}

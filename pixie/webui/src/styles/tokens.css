@@ -1,0 +1,53 @@
+:root {
+	/*
+	 * Structure only — spacing, shape and motion. COLOUR IS NOT HERE: the semantic roles are generated
+	 * into `generated/colors.css` from `colors.json`, which is the single place a colour derivation is
+	 * written. Adding a `--color-*` or a `color-mix()` to this file would be a second source, and the
+	 * one that can drift; `colorUsage.test.ts` fails on a colour literal here.
+	 */
+
+	/*
+	 * The spacing basis. NOT typography: it carries no family, weight or line-height, and it is
+	 * deliberately independent of `typography.json` — a change to the type scale must never move layout.
+	 */
+	--space-base: 13px;
+
+	/* Shape + motion. A four-step primitive scale, `sm` (4px) is the DEFAULT corner for ordinary
+	   standalone controls (buttons, inputs, rows, tabs, tool cards). `xs` (2px) is the text-run tier:
+	   a corner on a tint that sits BEHIND running text (a `<mark>` search hit, a composer slot
+	   placeholder), where `sm` would read as a chip. `md` (6px) is the OUTER corner when a surface
+	   nests `sm` (4px) children and needs the extra step to read correctly — chosen by design, not a
+	   runtime `child + 2px`. `lg` (8px) is reserved for large, visually independent elevated surfaces
+	   (dialogs, user-message bubbles, the AskUserQuestion outer card); it is the exception, never the
+	   default for a card. Nothing above 8px. `rounded-full` (a pill/circle) is not on this scale. */
+	--radius-xs: 2px;
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 8px;
+	--transition-fast: 120ms ease;
+	--transition-normal: 200ms ease;
+
+	/* General spacing (one calc family — tracks --space-base) */
+	/* 2xs: hairline insets — chip padding, icon baseline nudges */
+	--space-2xs: calc(var(--space-base) * 0.15);
+	--space-xs: calc(var(--space-base) * 0.31);
+	--space-sm: calc(var(--space-base) * 0.62);
+	--space-md: calc(var(--space-base) * 0.92);
+	--space-lg: calc(var(--space-base) * 1.23);
+	--space-xl: calc(var(--space-base) * 1.85);
+
+	/* Shared chrome geometry stays independent from typography. */
+	--panel-header-row-height: 28px;
+}
+
+/*
+ * NO typography here — not a family, size, weight, line-height or tracking, and not an alias onto one.
+ * `styles/typography.json` is the single source; `generated/typography.css` publishes it as the
+ * `--tr-*` custom properties, the `<body>` base and the semantic classes. The three consumers that
+ * cannot use a class read the `--tr-*` tokens directly, so there is exactly
+ * one name for each value. Self-hosted variable faces are imported by `styles/generated/fonts.css`.
+ *
+ * Palette-specific values are intentionally absent too. `styles/palette.css` owns the fixed system
+ * light/dark palette and writes its CSS custom properties before Svelte mounts.
+ * block here.
+ */

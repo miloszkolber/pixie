@@ -1,0 +1,39 @@
+# Existing host directories: app/ and browser/{artifacts,state}/, owned by UID/GID 1000.
+# The browser directory is the embedded Browser module's state in the MCP host.
+PIXIE_DATA_PATH=/absolute/path/to/pixie-data
+
+# Shared with the Pi host service. Pi runs on the host, outside the containers.
+PIXIE_PI_URL=ws://127.0.0.1:3284/pi
+PIXIE_PI_SECRET_KEY=replace-with-a-random-pi-secret
+
+# The MCP host and the application share one strong private token. It authenticates
+# the catalog, the embedded Browser module and the application's artifact proxy.
+PIXIE_MCP_TOKEN=replace-with-a-random-mcp-token
+
+# The MCP host publishes the embedded Browser module and future modules from one
+# authenticated origin. Keep this token in Pi's private service environment too.
+# PIXIE_MCP_URL=http://127.0.0.1:8787
+# PIXIE_MCP_HOST=127.0.0.1
+# PIXIE_MCP_PORT=8787
+# PIXIE_MCP_PUBLIC_ORIGIN=
+# PIXIE_MCP_MODULES=browser
+# PIXIE_MCP_DISABLED_MODULES=
+
+# Optional controller login; required for remote binding unless explicitly acknowledged.
+PIXIE_AUTH_ENABLED=false
+# PIXIE_TOKEN=replace-with-a-random-controller-token
+# PIXIE_CONTROLLER_HOST=0.0.0.0
+# PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=false
+# PIXIE_PUBLIC_ORIGIN=https://pixie.example.com
+
+# Optional container ceilings. Defaults: app 1 GiB/2 CPUs/256 PIDs; MCP 2 GiB/2 CPUs/512 PIDs.
+# PIXIE_MEMORY_LIMIT=1g
+# PIXIE_CPU_LIMIT=2.0
+# PIXIE_PIDS_LIMIT=256
+# PIXIE_MCP_MEMORY_LIMIT=2g
+# PIXIE_MCP_CPU_LIMIT=2.0
+# PIXIE_MCP_PIDS_LIMIT=512
+
+# Pin these to a release or sha-<revision> tag when using published images.
+# PIXIE_IMAGE=ghcr.io/miloszkolber/pixie:sha-revision
+# PIXIE_MCP_IMAGE=ghcr.io/miloszkolber/pixie-mcp:sha-revision

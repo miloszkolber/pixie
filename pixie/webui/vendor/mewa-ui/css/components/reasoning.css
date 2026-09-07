@@ -1,0 +1,120 @@
+@layer components {
+  .reasoning {
+    inline-size: 100%;
+    border-block: var(--border-width-025) solid var(--border-primary);
+    color: var(--text-primary);
+  }
+
+  .reasoning-trigger {
+    display: flex;
+    min-block-size: var(--size-1000);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-300);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .reasoning-trigger::-webkit-details-marker {
+    display: none;
+  }
+
+  .reasoning-trigger::marker {
+    content: '';
+  }
+
+  .reasoning-trigger:hover {
+    background: var(--surface-hover);
+  }
+
+  .reasoning-summary {
+    display: flex;
+    min-inline-size: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-200);
+    padding-inline: var(--space-300);
+  }
+
+  .reasoning-marker {
+    inline-size: var(--size-200);
+    block-size: var(--size-200);
+    flex: none;
+    background: var(--border-secondary);
+  }
+
+  .reasoning[data-streaming] .reasoning-marker {
+    background: var(--border-selected);
+  }
+
+  .reasoning-label {
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+  }
+
+  .reasoning-status {
+    color: var(--text-muted);
+    font-size: var(--font-size-300);
+  }
+
+  .reasoning[data-streaming] .reasoning-status {
+    color: var(--text-primary);
+  }
+
+  .reasoning-chevron {
+    inline-size: var(--size-400);
+    block-size: var(--size-400);
+    flex: none;
+    margin-inline-end: var(--space-300);
+    color: var(--text-muted);
+  }
+
+  .reasoning[open] > .reasoning-trigger .reasoning-chevron {
+    transform: rotate(180deg);
+  }
+
+  .reasoning-content {
+    padding: 0 var(--space-300) var(--space-300);
+    color: var(--text-muted);
+    font-size: var(--font-size-350);
+    line-height: var(--font-height-regular);
+  }
+
+  @media (prefers-contrast: more) {
+    .reasoning {
+      border-block-width: var(--border-width-050);
+    }
+
+    .reasoning-marker {
+      inline-size: var(--size-300);
+      block-size: var(--size-300);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .reasoning {
+      border-color: CanvasText;
+      color: CanvasText;
+    }
+
+    .reasoning-marker,
+    .reasoning[data-streaming] .reasoning-marker {
+      background: CanvasText;
+    }
+
+    .reasoning[data-streaming] .reasoning-marker {
+      background: Highlight;
+    }
+
+    .reasoning-status,
+    .reasoning[data-streaming] .reasoning-status,
+    .reasoning-chevron,
+    .reasoning-content {
+      color: CanvasText;
+    }
+
+    .reasoning-trigger:focus-visible {
+      outline-color: Highlight;
+    }
+  }
+}

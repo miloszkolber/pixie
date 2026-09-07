@@ -1,0 +1,332 @@
+{
+	"$schema": "./typography.schema.json",
+	"metadata": {
+		"version": "3.1.0",
+		"cssVarPrefix": "tr",
+		"classPrefix": "tr"
+	},
+	"fontFamilies": {
+		"code": {
+			"stack": ["geist-mono", "monospace"],
+			"kind": "monospace"
+		}
+	},
+	"fontWeights": {
+		"light": 400,
+		"regular": 400,
+		"medium": 500,
+		"semibold": 550,
+		"brand": 400
+	},
+	"fontSizes": {
+		"s10": 10,
+		"s11": 11,
+		"s12": 12,
+		"s13": 13,
+		"s14": 14,
+		"s16": 16,
+		"s18": 18,
+		"s20": 20,
+		"s24": 24,
+		"s44": 44
+	},
+	"lineHeights": {
+		"compact": 1.25,
+		"metadata": 1.3333333,
+		"ui": 1.4285714,
+		"code": 1.5,
+		"relaxed": 1.5384615,
+		"default": 1.6
+	},
+	"letterSpacings": {
+		"normal": "normal",
+		"loose": "0.02em",
+		"wide": "0.05em",
+		"widest": "0.1em",
+		"brand": "0.5px"
+	},
+	"rootStyle": {
+		"$ref": "ui.default"
+	},
+	"textStyles": {
+		"brand": {
+			"hero": {
+				"fontFamily": "code",
+				"fontSize": "s44",
+				"fontWeight": "brand",
+				"lineHeight": "compact",
+				"letterSpacing": "brand",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			}
+		},
+		"heading": {
+			"xl": {
+				"fontFamily": "code",
+				"fontSize": "s24",
+				"fontWeight": "semibold",
+				"lineHeight": "compact",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"lg": {
+				"fontFamily": "code",
+				"fontSize": "s20",
+				"fontWeight": "semibold",
+				"lineHeight": "compact",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"md": {
+				"fontFamily": "code",
+				"fontSize": "s18",
+				"fontWeight": "semibold",
+				"lineHeight": "compact",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"sm": {
+				"fontFamily": "code",
+				"fontSize": "s16",
+				"fontWeight": "semibold",
+				"lineHeight": "compact",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			}
+		},
+		"title": {
+			"dialog": {
+				"fontFamily": "code",
+				"fontSize": "s14",
+				"fontWeight": "semibold",
+				"lineHeight": "compact",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"card": {
+				"$ref": "title.dialog"
+			},
+			"section": {
+				"fontFamily": "code",
+				"fontSize": "s14",
+				"fontWeight": "medium",
+				"lineHeight": "default",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"compact": {
+				"fontFamily": "code",
+				"fontSize": "s12",
+				"fontWeight": "medium",
+				"lineHeight": "default",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"entity": {
+				"$ref": "body.reading"
+			}
+		},
+		"ui": {
+			"default": {
+				"fontFamily": "code",
+				"fontSize": "s14",
+				"fontWeight": "light",
+				"lineHeight": "ui",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"metadata": {
+				"fontFamily": "code",
+				"fontSize": "s12",
+				"fontWeight": "light",
+				"lineHeight": "metadata",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"eyebrow": {
+				"fontFamily": "code",
+				"fontSize": "s12",
+				"fontWeight": "medium",
+				"lineHeight": "relaxed",
+				"letterSpacing": "loose",
+				"textTransform": "uppercase",
+				"fontStyle": "normal"
+			},
+			"labelPill": {
+				"$ref": "ui.eyebrow"
+			},
+			"action": {
+				"$ref": "title.compact"
+			},
+			"emphasis": {
+				"$ref": "title.compact"
+			}
+		},
+		"body": {
+			"reading": {
+				"fontFamily": "code",
+				"fontSize": "s14",
+				"fontWeight": "light",
+				"lineHeight": "default",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			}
+		},
+		"code": {
+			"text": {
+				"fontFamily": "code",
+				"fontSize": "s13",
+				"fontWeight": "regular",
+				"lineHeight": "relaxed",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"document": {
+				"fontFamily": "code",
+				"fontSize": "s13",
+				"fontWeight": "regular",
+				"lineHeight": "code",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"otp": {
+				"fontFamily": "code",
+				"fontSize": "s18",
+				"fontWeight": "regular",
+				"lineHeight": "metadata",
+				"letterSpacing": "widest",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"textSmall": {
+				"fontFamily": "code",
+				"fontSize": "s11",
+				"fontWeight": "regular",
+				"lineHeight": "code",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			}
+		}
+	},
+	"proseSystems": {
+		"chat": {
+			"body": {
+				"$ref": "body.reading"
+			},
+			"h1": {
+				"$ref": "heading.md"
+			},
+			"h2": {
+				"$ref": "title.dialog"
+			},
+			"h3": {
+				"fontFamily": "code",
+				"fontSize": "s12",
+				"fontWeight": "semibold",
+				"lineHeight": "default",
+				"letterSpacing": "normal",
+				"textTransform": "none",
+				"fontStyle": "normal"
+			},
+			"h4": {
+				"$ref": "title.compact"
+			},
+			"h5": {
+				"$ref": "title.compact"
+			},
+			"h6": {
+				"fontFamily": "code",
+				"fontSize": "s10",
+				"fontWeight": "medium",
+				"lineHeight": "default",
+				"letterSpacing": "wide",
+				"textTransform": "uppercase",
+				"fontStyle": "normal"
+			},
+			"inlineCode": {
+				"$ref": "code.text"
+			},
+			"codeBlock": {
+				"$ref": "code.text"
+			},
+			"blockquote": {
+				"$ref": "body.reading"
+			},
+			"list": {
+				"$ref": "body.reading"
+			},
+			"tableBody": {
+				"$ref": "ui.metadata"
+			},
+			"tableHeader": {
+				"$ref": "chat.h3"
+			},
+			"tableInlineCode": {
+				"$ref": "code.textSmall"
+			}
+		},
+		"doc": {
+			"body": {
+				"$ref": "body.reading"
+			},
+			"h1": {
+				"$ref": "heading.xl"
+			},
+			"h2": {
+				"$ref": "heading.lg"
+			},
+			"h3": {
+				"$ref": "heading.md"
+			},
+			"h4": {
+				"$ref": "heading.sm"
+			},
+			"h5": {
+				"$ref": "title.dialog"
+			},
+			"h6": {
+				"fontFamily": "code",
+				"fontSize": "s12",
+				"fontWeight": "semibold",
+				"lineHeight": "compact",
+				"letterSpacing": "wide",
+				"textTransform": "uppercase",
+				"fontStyle": "normal"
+			},
+			"inlineCode": {
+				"$ref": "code.text"
+			},
+			"codeBlock": {
+				"$ref": "code.document"
+			},
+			"blockquote": {
+				"$ref": "body.reading"
+			},
+			"list": {
+				"$ref": "body.reading"
+			},
+			"tableBody": {
+				"$ref": "body.reading"
+			},
+			"tableHeader": {
+				"$ref": "title.dialog"
+			},
+			"tableInlineCode": {
+				"$ref": "code.text"
+			}
+		}
+	}
+}

@@ -1,0 +1,149 @@
+/* -- Toast component ------------------------------------------- */
+
+@layer components {
+  /* -- Container ------------------------------------------------ */
+  .toast-container {
+    position: fixed;
+    z-index: var(--z-toast);
+    display: flex;
+    flex-direction: column-reverse;
+    gap: var(--space-200);
+    padding: var(--space-400);
+    max-height: 100vh;
+    pointer-events: none;
+    bottom: 0;
+    right: 0;
+
+    &[data-position="bottom-right"] { top: auto; bottom: 0; left: auto; right: 0; }
+    &[data-position="bottom-left"]  { top: auto; bottom: 0; left: 0; right: auto; }
+    &[data-position="top-right"]    { top: 0; bottom: auto; left: auto; right: 0; flex-direction: column; }
+    &[data-position="top-left"]     { top: 0; bottom: auto; left: 0; right: auto; flex-direction: column; }
+    &[data-position="top-center"]   { top: 0; bottom: auto; left: 50%; right: auto; transform: translateX(-50%); flex-direction: column; align-items: center; }
+    &[data-position="bottom-center"]{ top: auto; bottom: 0; left: 50%; right: auto; transform: translateX(-50%); align-items: center; }
+  }
+
+  /* -- Toast ---------------------------------------------------- */
+  .toast {
+    background-color: var(--surface-primary);
+    color: var(--text-primary);
+    border: var(--border-width-025) solid var(--border-secondary);
+
+    padding: var(--space-400);
+    min-width: min(20rem, calc(100vw - var(--space-1000)));
+    max-width: min(26rem, calc(100vw - var(--space-1000)));
+    pointer-events: auto;
+
+    /* -- Variants: translucent status surfaces pair with 600 text in
+           light mode and 400 text in dark mode. The colored title and
+           description inherit the variant text color. ----------------- */
+    &[data-variant="destructive"] {
+      background-color: var(--surface-negative);
+      color: var(--text-negative);
+      border-color: var(--text-negative);
+
+      & .toast-description {
+        color: var(--text-negative);
+        opacity: var(--opacity-09);
+      }
+    }
+
+    &[data-variant="success"] {
+      background-color: var(--surface-positive);
+      color: var(--text-positive);
+      border-color: var(--text-positive);
+    }
+
+    &[data-variant="warning"] {
+      background-color: var(--surface-caution);
+      color: var(--text-caution);
+      border-color: var(--text-caution);
+    }
+
+    &[data-variant="info"] {
+      background-color: var(--surface-secondary);
+      color: var(--text-secondary);
+      border-color: var(--border-secondary);
+    }
+  }
+
+  /* -- Inner elements ------------------------------------------- */
+  .toast svg {
+    width: var(--size-400);
+    height: var(--size-400);
+    flex-shrink: 0;
+  }
+
+  .toast-content {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-300);
+  }
+
+  .toast-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .toast-title {
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    margin: 0;
+    line-height: var(--font-height-regular);
+  }
+
+  .toast-description {
+    font-size: var(--font-size-350);
+    color: var(--text-muted);
+    margin: 0;
+    line-height: var(--font-height-regular);
+  }
+
+  .toast-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-500);
+    height: var(--size-500);
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+
+    &:hover {
+      color: var(--text-primary);
+      background: var(--surface-secondary);
+    }
+  }
+
+  .toast-icon {
+    flex-shrink: 0;
+    margin-top: var(--space-100);
+  }
+
+  .toast-actions {
+    display: flex;
+    gap: var(--space-200);
+    margin-top: var(--space-300);
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (prefers-contrast: more) {
+    .toast { border-width: var(--border-width-050); }
+  }
+
+  @media (forced-colors: active) {
+    .toast {
+      background: Canvas;
+      color: CanvasText;
+      border: var(--border-width-050) solid CanvasText;
+      backdrop-filter: none;
+    }
+
+    .toast[data-variant="destructive"] {
+      background: Canvas;
+      color: CanvasText;
+      border-color: Mark;
+    }
+  }
+}

@@ -1,0 +1,91 @@
+@layer components {
+  .timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: relative;
+  }
+
+  .timeline-item {
+    display: flex;
+    gap: var(--space-400);
+    padding-bottom: var(--space-600);
+    position: relative;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: var(--space-100);
+      top: var(--space-400);
+      bottom: 0;
+      width: 1px;
+      background-color: var(--border-primary);
+    }
+
+    &:last-child::before {
+      display: none;
+    }
+
+    &:last-child {
+      padding-bottom: 0;
+    }
+  }
+
+  .timeline-dot {
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 0;
+    background-color: var(--border-primary);
+    flex-shrink: 0;
+    margin-top: var(--space-200);
+    position: relative;
+    z-index: var(--z-raised);
+
+    &[data-variant="active"] {
+      background-color: var(--surface-inverted);
+    }
+  }
+
+  .timeline-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-100);
+    min-width: 0;
+    flex: 1;
+  }
+
+  .timeline-title {
+    margin: 0;
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    color: var(--text-primary);
+    line-height: var(--font-height-regular);
+  }
+
+  .timeline-description {
+    margin: 0;
+    font-size: var(--font-size-350);
+    color: var(--text-muted);
+    line-height: var(--font-height-regular);
+  }
+
+  .timeline-time {
+    font-size: var(--font-size-300);
+    color: var(--text-muted);
+    margin-top: var(--space-100);
+  }
+
+  @media (prefers-contrast: more) {
+    .timeline-item::before { width: 2px; }
+    .timeline-dot { width: 0.875rem; height: 0.875rem; }
+  }
+
+  @media (forced-colors: active) {
+    .timeline-item::before { background: CanvasText; }
+    .timeline-dot { background: CanvasText; }
+    .timeline-dot[data-variant="active"] { background: Highlight; }
+    .timeline-title { color: CanvasText; }
+    .timeline-description,
+    .timeline-time { color: CanvasText; }
+  }
+}

@@ -1,0 +1,37 @@
+{
+	"name": "@pixie/web",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun run mewa:check && bun scripts/dev.ts",
+		"build": "bun run mewa:check && bun run typography:check && bun run colors:check && bun run typecheck && bun scripts/build.ts && bun scripts/check-bundle.ts && bun scripts/check-artifacts.ts",
+		"typecheck": "tsc --noEmit && bun --bun svelte-check --tsconfig ./tsconfig.json",
+		"test": "bun test ../tests/webui",
+		"mewa:check": "bun scripts/check-mewa.ts",
+		"mewa:sync": "bun scripts/sync-mewa.ts",
+		"typography:generate": "bun scripts/generate-typography.ts",
+		"typography:validate": "bun scripts/validate-typography.ts",
+		"typography:check": "bun scripts/generate-typography.ts --check",
+		"colors:generate": "bun scripts/generate-colors.ts",
+		"colors:check": "bun scripts/generate-colors.ts --check && bun scripts/check-color-utilities.ts"
+	},
+	"dependencies": {
+		"@pixie/contracts": "workspace:*",
+		"@modelcontextprotocol/ext-apps": "1.7.5",
+		"@modelcontextprotocol/sdk": "1.30.0",
+		"@shikijs/langs": "4.2.0",
+		"micromark": "catalog:",
+		"micromark-extension-gfm": "catalog:",
+		"shiki": "4.2.0",
+		"svelte": "catalog:",
+		"zod": "4.5.4"
+	},
+	"devDependencies": {
+		"@tailwindcss/cli": "catalog:",
+		"@types/bun": "catalog:",
+		"svelte-check": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:"
+	}
+}

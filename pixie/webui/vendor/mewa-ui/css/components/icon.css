@@ -1,0 +1,32 @@
+/* -- Icon component ---------------------------------------- */
+
+@layer components {
+  [data-lucide] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    vertical-align: middle;
+    width: var(--size-400);
+    height: var(--size-400);
+    pointer-events: none;
+
+    /* -- Sizes via data-size --------------------------------- */
+    &[data-size="md"] { width: var(--size-500); height: var(--size-500); }
+    &[data-size="lg"] { width: var(--size-600); height: var(--size-600); }
+    &[data-size="xl"] { width: var(--size-800); height: var(--size-800); }
+
+  }
+
+  @media (prefers-contrast: more) {
+    [data-lucide] {
+      stroke-width: 2;
+    }
+  }
+
+  @media (forced-colors: active) {
+    [data-lucide] {
+      color: CanvasText;
+    }
+  }
+}

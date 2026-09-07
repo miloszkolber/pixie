@@ -1,0 +1,200 @@
+/* -- Tag Input component --------------------------------------- */
+
+@layer components {
+  .tag-input {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-100);
+    min-inline-size: 0;
+  }
+
+  .tag-input-field {
+    min-inline-size: 0;
+  }
+
+  .tag-input-fallback {
+    inline-size: 100%;
+    min-inline-size: 0;
+    block-size: var(--size-1000);
+    border: var(--border-width-025) solid var(--border-secondary);
+    background: var(--background);
+    padding-inline: var(--space-300);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-350);
+    outline: none;
+  }
+
+  .tag-input-fallback::placeholder,
+  .tag-input-control::placeholder {
+    color: var(--text-muted);
+  }
+
+  .tag-input-fallback:hover:not(:disabled),
+  .tag-input[data-enhanced] .tag-input-field:hover {
+    border-color: var(--border-hover);
+  }
+
+  .tag-input-fallback:focus-visible {
+    border-color: var(--border-focus);
+    outline: var(--border-width-025) solid var(--border-focus);
+    outline-offset: 0;
+  }
+
+  .tag-input[data-enhanced] .tag-input-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-200);
+    min-block-size: var(--size-1000);
+    border: var(--border-width-025) solid var(--border-secondary);
+    background: var(--background);
+    padding: var(--space-100) var(--space-200);
+    cursor: text;
+  }
+
+  .tag-input[data-enhanced] .tag-input-field:has(.tag-input-control:focus-visible) {
+    border-color: var(--border-focus);
+    outline: var(--border-width-025) solid var(--border-focus);
+    outline-offset: 0;
+  }
+
+  .tag-input-list {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-200);
+    min-inline-size: 0;
+  }
+
+  .tag-input-entry {
+    display: flex;
+    flex: 1 1 var(--size-3200);
+    min-inline-size: var(--size-1600);
+  }
+
+  .tag-input-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-100);
+    min-block-size: var(--size-800);
+    border: var(--border-width-025) solid var(--border-primary);
+    background: var(--surface-secondary);
+    padding-inline-start: var(--space-200);
+    color: var(--text-primary);
+    font-size: var(--font-size-350);
+    line-height: var(--font-height-flat);
+  }
+
+  .tag-input-tag-label {
+    max-inline-size: var(--size-3200);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tag-input-remove {
+    inline-size: var(--size-800);
+    block-size: var(--size-800);
+    border: 0;
+    border-inline-start: var(--border-width-025) solid var(--border-primary);
+    background: transparent;
+    padding: 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-300);
+  }
+
+  .tag-input-remove:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .tag-input-control {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    block-size: var(--size-800);
+    border: 0;
+    background: transparent;
+    padding: 0 var(--space-100);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-350);
+    outline: none;
+  }
+
+  .tag-input[data-invalid] .tag-input-field,
+  .tag-input:has(.tag-input-fallback:is([aria-invalid="true"], :user-invalid)) .tag-input-field {
+    border-color: var(--border-negative);
+  }
+
+  .tag-input[data-invalid] .tag-input-field:has(.tag-input-control:focus-visible) {
+    outline-color: var(--border-negative);
+  }
+
+  .tag-input:has(.tag-input-fallback:disabled) .tag-input-field {
+    border-color: var(--border-disabled);
+    background: var(--surface-disabled);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  .tag-input:has(.tag-input-fallback:disabled) :is(.tag-input-control, .tag-input-remove) {
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  .tag-input-status {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-300);
+    line-height: var(--font-height-regular);
+  }
+
+  .tag-input-status:empty {
+    display: none;
+  }
+
+  .tag-input[data-state="error"] .tag-input-status {
+    color: var(--text-negative);
+  }
+
+  @media (prefers-contrast: more) {
+    .tag-input-fallback,
+    .tag-input[data-enhanced] .tag-input-field,
+    .tag-input-tag {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .tag-input-fallback,
+    .tag-input[data-enhanced] .tag-input-field,
+    .tag-input-tag {
+      border-color: ButtonBorder;
+      background: Field;
+      color: FieldText;
+    }
+
+    .tag-input[data-enhanced] .tag-input-field:has(.tag-input-control:focus-visible),
+    .tag-input-fallback:focus-visible {
+      outline: var(--border-width-050) solid Highlight;
+      outline-offset: 1px;
+    }
+
+    .tag-input-remove {
+      border-color: ButtonText;
+      color: ButtonText;
+    }
+
+    .tag-input[data-state="error"] .tag-input-status {
+      color: LinkText;
+    }
+
+    .tag-input:has(.tag-input-fallback:disabled) .tag-input-field,
+    .tag-input:has(.tag-input-fallback:disabled) :is(.tag-input-control, .tag-input-remove) {
+      border-color: GrayText;
+      color: GrayText;
+    }
+  }
+}

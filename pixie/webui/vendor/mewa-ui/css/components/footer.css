@@ -1,0 +1,91 @@
+/* -- Footer component -------------------------------------- */
+
+@layer components {
+  .footer {
+    inline-size: 100%;
+    border-block-start: var(--border-width-025) solid var(--border-primary);
+    background-color: var(--surface-primary);
+    color: var(--text-primary);
+  }
+
+  .footer-layout {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-400) var(--space-600);
+    padding: var(--space-600) var(--space-400);
+  }
+
+  .footer-meta {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-350);
+  }
+
+  .footer-navigation {
+    min-inline-size: 0;
+  }
+
+  .footer-list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-100) var(--space-300);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .footer-link {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--size-800);
+    padding-inline: var(--space-200);
+    color: var(--text-secondary);
+    font-size: var(--font-size-350);
+    text-decoration: none;
+    outline: none;
+
+    &:hover {
+      background-color: var(--surface-hover);
+      color: var(--text-primary);
+    }
+
+    &[aria-current="page"] {
+      background-color: var(--surface-selected);
+      color: var(--text-primary);
+      font-weight: var(--font-weight-550);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .footer {
+      border-block-start-width: var(--border-width-050);
+    }
+
+    .footer-link {
+      text-decoration: underline;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .footer {
+      background: Canvas;
+      color: CanvasText;
+      border-color: CanvasText;
+    }
+
+    .footer-link:hover,
+    .footer-link[aria-current="page"] {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+}

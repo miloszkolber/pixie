@@ -1,0 +1,142 @@
+/* -- Input OTP component --------------------------------------- */
+
+@layer components {
+  .input-otp {
+    min-inline-size: 0;
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .input-otp > legend {
+    margin-block-end: var(--space-100);
+    padding: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-regular);
+  }
+
+  .input-otp-cells {
+    display: flex;
+    gap: var(--space-200);
+    max-inline-size: 100%;
+    overflow-x: auto;
+    padding-block: var(--border-width-025);
+  }
+
+  .input-otp-cell {
+    flex: 0 1 var(--size-1000);
+    min-inline-size: var(--size-800);
+    inline-size: var(--size-1000);
+    block-size: var(--size-1000);
+    border: var(--border-width-025) solid var(--border-secondary);
+    border-radius: var(--border-radius-000);
+    background: var(--background);
+    padding: 0;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-400);
+    line-height: var(--font-height-flat);
+    text-align: center;
+    outline: none;
+  }
+
+  .input-otp-cell:hover:not(:disabled) {
+    border-color: var(--border-hover);
+  }
+
+  .input-otp-cell[data-filled] {
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
+  }
+
+  .input-otp-cell:focus-visible {
+    border-color: var(--border-focus);
+    outline: var(--border-width-025) solid var(--border-focus);
+    outline-offset: 0;
+  }
+
+  .input-otp-cell:is([aria-invalid="true"], :user-invalid) {
+    border-color: var(--border-negative);
+  }
+
+  .input-otp-cell:is([aria-invalid="true"], :user-invalid):focus-visible {
+    outline-color: var(--border-negative);
+  }
+
+  .input-otp-cell:disabled {
+    border-color: var(--border-disabled);
+    background: var(--surface-disabled);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+    opacity: 1;
+  }
+
+  .input-otp:disabled > legend {
+    color: var(--text-disabled);
+  }
+
+  .input-otp-description,
+  .input-otp-error {
+    margin: var(--space-100) 0 0;
+    font-size: var(--font-size-300);
+    line-height: var(--font-height-regular);
+  }
+
+  .input-otp-description {
+    color: var(--text-muted);
+  }
+
+  .input-otp-error {
+    color: var(--text-negative);
+  }
+
+  @media (max-width: 37.5rem) {
+    .input-otp-cell {
+      inline-size: var(--size-800);
+      block-size: var(--size-800);
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .input-otp-cell {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .input-otp > legend {
+      color: LinkText;
+    }
+
+    .input-otp-cell {
+      border-color: ButtonBorder;
+      background: Field;
+      color: FieldText;
+    }
+
+    .input-otp-cell[data-filled] {
+      border-color: Highlight;
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    .input-otp-cell:focus-visible {
+      outline: var(--border-width-050) solid Highlight;
+      outline-offset: 1px;
+    }
+
+    .input-otp-cell:is([aria-invalid="true"], :user-invalid),
+    .input-otp-error {
+      border-color: LinkText;
+      color: LinkText;
+    }
+
+    .input-otp-cell:disabled,
+    .input-otp:disabled > legend {
+      border-color: GrayText;
+      color: GrayText;
+    }
+  }
+}

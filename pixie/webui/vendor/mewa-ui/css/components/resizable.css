@@ -1,0 +1,271 @@
+/* -- Resizable component ----------------------------------------- */
+
+@layer components {
+  .resizable {
+    display: grid;
+    gap: var(--space-300);
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  .resizable-group {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    min-block-size: 12rem;
+    min-inline-size: 0;
+    overflow: hidden;
+    border: var(--border-width-025) solid var(--border-primary);
+    background: var(--surface-primary);
+
+    &[data-orientation="horizontal"] {
+      flex-direction: column;
+    }
+  }
+
+  .resizable[data-orientation="horizontal"] .resizable-group {
+    flex-direction: column;
+  }
+
+  .resizable-panel {
+    min-block-size: 0;
+    min-inline-size: 0;
+    overflow: auto;
+    padding: var(--space-400);
+    background: var(--surface-primary);
+    color: var(--text-primary);
+
+    &:first-child {
+      flex: 0 1 35%;
+    }
+
+    &:last-child {
+      flex: 1 1 auto;
+    }
+  }
+
+  .resizable-handle {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 var(--size-600);
+    inline-size: var(--size-600);
+    min-block-size: var(--size-600);
+    align-self: stretch;
+    margin: 0 calc(-1 * var(--size-300));
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: linear-gradient(
+      to right,
+      transparent calc(50% - (var(--border-width-025) / 2)),
+      var(--border-primary) calc(50% - (var(--border-width-025) / 2)),
+      var(--border-primary) calc(50% + (var(--border-width-025) / 2)),
+      transparent calc(50% + (var(--border-width-025) / 2))
+    );
+    color: var(--text-muted);
+
+    &::after {
+      position: absolute;
+      inset-block-start: 50%;
+      inset-inline-start: 50%;
+      inline-size: var(--size-100);
+      block-size: var(--size-1000);
+      border-inline: var(--border-width-025) solid currentColor;
+      content: "";
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+    }
+
+    .resizable[data-init] & {
+      cursor: col-resize;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .resizable[data-init] &:hover,
+    .resizable[data-init] &:focus-visible {
+      background: linear-gradient(
+        to right,
+        transparent calc(50% - (var(--border-width-025) / 2)),
+        var(--border-secondary) calc(50% - (var(--border-width-025) / 2)),
+        var(--border-secondary) calc(50% + (var(--border-width-025) / 2)),
+        transparent calc(50% + (var(--border-width-025) / 2))
+      );
+      color: var(--text-muted);
+    }
+
+    .resizable[data-init] &[data-resizing] {
+      background: linear-gradient(
+        to right,
+        transparent calc(50% - (var(--border-width-050) / 2)),
+        var(--border-focus) calc(50% - (var(--border-width-050) / 2)),
+        var(--border-focus) calc(50% + (var(--border-width-050) / 2)),
+        transparent calc(50% + (var(--border-width-050) / 2))
+      );
+      color: var(--text-primary);
+    }
+
+    .resizable[data-init] &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    .resizable[data-init] &:disabled,
+    .resizable[data-init] &[aria-disabled="true"] {
+      cursor: not-allowed;
+      opacity: var(--opacity-05);
+    }
+  }
+
+  .resizable-group[data-orientation="horizontal"] .resizable-handle,
+  .resizable[data-orientation="horizontal"] .resizable-handle {
+    flex-basis: var(--size-600);
+    inline-size: auto;
+    min-inline-size: var(--size-600);
+    block-size: var(--size-600);
+    min-block-size: var(--size-600);
+    margin: calc(-1 * var(--size-300)) 0;
+    background: linear-gradient(
+      to bottom,
+      transparent calc(50% - (var(--border-width-025) / 2)),
+      var(--border-primary) calc(50% - (var(--border-width-025) / 2)),
+      var(--border-primary) calc(50% + (var(--border-width-025) / 2)),
+      transparent calc(50% + (var(--border-width-025) / 2))
+    );
+
+    .resizable[data-init] & {
+      cursor: row-resize;
+    }
+
+    &::after {
+      inline-size: var(--size-1000);
+      block-size: var(--size-100);
+      border-inline: 0;
+      border-block: var(--border-width-025) solid currentColor;
+    }
+
+    .resizable[data-init] &:hover,
+    .resizable[data-init] &:focus-visible {
+      background: linear-gradient(
+        to bottom,
+        transparent calc(50% - (var(--border-width-025) / 2)),
+        var(--border-secondary) calc(50% - (var(--border-width-025) / 2)),
+        var(--border-secondary) calc(50% + (var(--border-width-025) / 2)),
+        transparent calc(50% + (var(--border-width-025) / 2))
+      );
+      color: var(--text-muted);
+    }
+
+    .resizable[data-init] &[data-resizing] {
+      background: linear-gradient(
+        to bottom,
+        transparent calc(50% - (var(--border-width-050) / 2)),
+        var(--border-focus) calc(50% - (var(--border-width-050) / 2)),
+        var(--border-focus) calc(50% + (var(--border-width-050) / 2)),
+        transparent calc(50% + (var(--border-width-050) / 2))
+      );
+      color: var(--text-primary);
+    }
+  }
+
+  .resizable-controls {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-100);
+  }
+
+  .resizable-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--size-800);
+    block-size: var(--size-800);
+    padding: 0;
+    border: var(--border-width-025) solid var(--border-primary);
+    border-radius: 0;
+    background: var(--surface-primary);
+    color: var(--text-primary);
+    font: inherit;
+    font-family: var(--font-mono);
+    cursor: pointer;
+  }
+
+  .resizable-step:hover {
+    background: var(--surface-secondary);
+  }
+
+  .resizable-step:focus-visible {
+    outline: var(--focus-ring-width) solid var(--border-focus);
+    outline-offset: var(--border-width-025);
+  }
+
+  .resizable-step:disabled {
+    background: var(--surface-secondary);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  .resizable-output {
+    display: block;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+  }
+
+  @media (prefers-contrast: more) {
+    .resizable-group,
+    .resizable-step {
+      border-width: var(--border-width-050);
+    }
+
+    .resizable-handle::after {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .resizable-group {
+      border-color: ButtonBorder;
+      background: Canvas;
+    }
+
+    .resizable-panel {
+      background: Canvas;
+      color: CanvasText;
+    }
+
+    .resizable-handle {
+      background: ButtonFace;
+      border-inline: var(--border-width-025) solid ButtonBorder;
+      color: ButtonText;
+    }
+
+    .resizable[data-init] .resizable-handle:hover,
+    .resizable[data-init] .resizable-handle:focus-visible,
+    .resizable[data-init] .resizable-handle[data-resizing] {
+      background: Highlight;
+      border-color: Highlight;
+      color: HighlightText;
+    }
+
+    .resizable-step {
+      border-color: ButtonBorder;
+      background: ButtonFace;
+      color: ButtonText;
+    }
+
+    .resizable-step:hover,
+    .resizable-step:focus-visible {
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    .resizable-step:disabled {
+      color: GrayText;
+    }
+
+    .resizable-output {
+      color: CanvasText;
+    }
+  }
+}

@@ -1,0 +1,131 @@
+@layer components {
+  .composer {
+    display: flex;
+    inline-size: 100%;
+    min-inline-size: 0;
+    flex-direction: column;
+    gap: var(--space-200);
+    padding: var(--space-300);
+    border: var(--border-width-025) solid var(--border-secondary);
+    background: var(--surface-primary);
+  }
+
+  .composer:focus-within {
+    border-color: var(--border-focus);
+    outline: var(--border-width-025) solid var(--border-focus);
+    outline-offset: 0;
+  }
+
+  .composer[data-state="thinking"] {
+    border-color: var(--border-selected);
+    background: var(--surface-secondary);
+  }
+
+  .composer-label {
+    position: absolute;
+    inline-size: var(--border-width-025);
+    block-size: var(--border-width-025);
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .composer-input {
+    field-sizing: content;
+    inline-size: 100%;
+    min-block-size: var(--size-1200);
+    max-block-size: calc(var(--size-3200) * 2);
+    resize: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-400);
+    line-height: var(--font-height-regular);
+  }
+
+  @supports not (field-sizing: content) {
+    .composer-input {
+      resize: vertical;
+    }
+  }
+
+  .composer-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .composer-input:disabled,
+  .composer-input:read-only {
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  .composer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-300);
+  }
+
+  .composer-actions-leading,
+  .composer-actions-trailing {
+    display: flex;
+    min-inline-size: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-200);
+  }
+
+  .composer-actions-trailing {
+    margin-inline-start: auto;
+  }
+
+  .composer-hint,
+  .composer-status {
+    color: var(--text-muted);
+    font-size: var(--font-size-300);
+  }
+
+  .composer[data-state="thinking"] .composer-status {
+    color: var(--text-primary);
+  }
+
+  @media (max-width: 37.5rem) {
+    .composer-actions,
+    .composer-actions-trailing {
+      align-items: stretch;
+    }
+
+    .composer-actions-trailing {
+      inline-size: 100%;
+      justify-content: flex-end;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .composer {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .composer,
+    .composer[data-state="thinking"] {
+      border-color: ButtonText;
+      background: Field;
+      color: ButtonText;
+    }
+
+    .composer:focus-within {
+      outline-color: Highlight;
+    }
+
+    .composer-input,
+    .composer-hint,
+    .composer-status {
+      color: ButtonText;
+    }
+  }
+}

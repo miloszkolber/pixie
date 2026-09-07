@@ -1,0 +1,27 @@
+/* -- Spinner component ---------------------------------------- */
+/* The spinner is deliberately the one animated primitive in the
+   library: a loading indicator is meaningless without motion.
+   The rotation is a CSS transform and powers no layout change. */
+
+@layer components {
+  .spinner {
+    width: var(--size-400);
+    height: var(--size-400);
+    color: var(--text-muted);
+    flex-shrink: 0;
+    animation: spinner-rotate 0.8s linear infinite;
+
+    /* Same data-size scale as the Icon component. */
+    &[data-size="md"] { width: var(--size-500); height: var(--size-500); }
+    &[data-size="lg"] { width: var(--size-600); height: var(--size-600); }
+    &[data-size="xl"] { width: var(--size-800); height: var(--size-800); }
+  }
+
+  @keyframes spinner-rotate {
+    to { rotate: 1turn; }
+  }
+
+  @media (forced-colors: active) {
+    .spinner { color: Highlight; }
+  }
+}

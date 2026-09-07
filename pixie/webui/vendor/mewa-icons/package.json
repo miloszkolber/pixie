@@ -1,0 +1,28 @@
+{
+  "name": "mewa-icons",
+  "version": "0.1.2",
+  "private": true,
+  "description": "SVG icon assets for mewa_ui.",
+  "license": "SEE LICENSE IN licenses/LUCIDE-LICENSE.txt",
+  "files": [
+    "icons",
+    "licenses",
+    "manifest.json",
+    "checksums.json"
+  ],
+  "exports": {
+    "./*.svg": "./icons/*.svg",
+    "./licenses/LUCIDE-LICENSE.txt": "./licenses/LUCIDE-LICENSE.txt",
+    "./LICENSE": "./LICENSE",
+    "./manifest.json": "./manifest.json",
+    "./checksums.json": "./checksums.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miloszkolber/mewa_ui.git"
+  },
+  "homepage": "https://github.com/miloszkolber/mewa_ui#readme",
+  "bugs": {
+    "url": "https://github.com/miloszkolber/mewa_ui/issues"
+  }
+}

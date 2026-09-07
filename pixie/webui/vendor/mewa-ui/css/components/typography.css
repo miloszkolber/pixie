@@ -1,0 +1,181 @@
+/* -- Typography component --------------------------------------- */
+
+/* -- Base text ---------------------------------------------- */
+@layer base {
+  body {
+    font-size: var(--font-size-400);
+    line-height: var(--font-height-regular);
+  }
+
+  /* -- Lists ------------------------------------------------- */
+  /* Scoped to classless lists so component lists (steps,
+     pagination, navigation-menu, ...) keep their own layout. */
+  :where(ul:not([class]), ol:not([class])) {
+    margin-block: 0;
+    padding-inline-start: var(--space-500);
+  }
+
+  :where(ul:not([class]), ol:not([class])) > li {
+    margin-block: var(--space-100);
+  }
+
+  :where(ul:not([class]), ol:not([class])) > li > :where(ul, ol) {
+    margin-top: var(--space-100);
+  }
+}
+
+@layer components {
+  /* -- Headings ---------------------------------------------- */
+  .h1 {
+    scroll-margin-top: var(--space-2000);
+    font-size: var(--font-size-1000);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-tight);
+    text-wrap: balance;
+    color: var(--text-primary);
+  }
+
+  .h2 {
+    scroll-margin-top: var(--space-2000);
+    font-size: var(--font-size-800);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-tight);
+    text-wrap: balance;
+    color: var(--text-primary);
+
+    &:not(:first-child) { margin-top: var(--space-600);}
+  }
+
+  .h3 {
+    scroll-margin-top: var(--space-2000);
+    font-size: var(--font-size-600);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-tight);
+    text-wrap: balance;
+    color: var(--text-primary);
+
+    &:not(:first-child) { margin-top: var(--space-500);}
+  }
+
+  .h4 {
+    scroll-margin-top: var(--space-2000);
+    font-size: var(--font-size-400);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-tight);
+    text-wrap: balance;
+    color: var(--text-primary);
+
+    &:not(:first-child) { margin-top: var(--space-400);}
+  }
+
+  /* -- Paragraph --------------------------------------------- */
+  .p {
+    font-size: var(--font-size-400);
+    line-height: var(--font-height-regular);
+    text-wrap: pretty;
+    color: var(--text-primary);
+
+    &:not(:first-child) { margin-top: var(--space-400); }
+  }
+
+  /* -- Lead --------------------------------------------------- */
+  .lead {
+    font-size: var(--font-size-400);
+    line-height: var(--font-height-regular);
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  /* -- Large -------------------------------------------------- */
+  .large {
+    font-size: var(--font-size-400);
+    font-weight: var(--font-weight-550);
+    color: var(--text-primary);
+  }
+
+  /* -- Small -------------------------------------------------- */
+  .small {
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-tight);
+    color: var(--text-primary);
+  }
+
+  /* -- Muted -------------------------------------------------- */
+  .muted {
+    color: var(--text-muted);
+  }
+
+  /* -- Blockquote --------------------------------------------- */
+  .blockquote {
+    margin-top: var(--space-600);
+    border-inline-start: var(--border-width-100) solid var(--border-primary);
+    padding-inline-start: var(--space-600);
+    font-style: italic;
+    hanging-punctuation: first last;
+    color: var(--text-primary);
+
+    & p { margin: 0; }
+  }
+
+  /* -- Inline code -------------------------------------------- */
+  .code {
+    position: relative;
+    background: var(--surface-secondary);
+    padding: var(--space-100);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    color: var(--text-primary);
+  }
+
+  /* -- Keyboard input ----------------------------------------- */
+  .kbd {
+    display: inline-block;
+    padding: var(--space-100) var(--space-200);
+    background: var(--surface-secondary);
+    border: var(--border-width-025) solid var(--border-primary);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+    line-height: var(--font-height-tight);
+  }
+
+  /* -- Accessibility ------------------------------------------ */
+
+  @media (prefers-contrast: more) {
+    .h1, .h2, .h3, .h4 {
+      letter-spacing: 0;
+    }
+
+    .blockquote {
+      border-inline-start-width: var(--border-width-100);
+    }
+
+    .code {
+      outline: var(--border-width-025) solid var(--border-primary);
+    }
+
+    .muted {
+      color: var(--text-primary);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .blockquote {
+      border-inline-start-color: CanvasText;
+    }
+
+    .code {
+      background: Canvas;
+      outline: var(--border-width-025) solid CanvasText;
+      color: CanvasText;
+    }
+
+    .kbd {
+      background: ButtonFace;
+      border-color: ButtonText;
+      color: ButtonText;
+    }
+  }
+}

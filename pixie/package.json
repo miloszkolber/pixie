@@ -1,0 +1,44 @@
+{
+	"name": "pixie",
+	"private": true,
+	"packageManager": "bun@1.4.0",
+	"workspaces": {
+		"packages": [
+			"contracts",
+			"webui",
+			"pi-host",
+			"pi-mcp"
+		],
+		"catalog": {
+			"@tailwindcss/cli": "4.3.3",
+			"@types/bun": "1.4.0",
+			"micromark": "4.0.2",
+			"micromark-extension-gfm": "3.0.0",
+			"svelte": "5.57.0",
+			"svelte-check": "4.7.6",
+			"tailwindcss": "4.3.3",
+			"typescript": "6.0.3"
+		}
+	},
+	"type": "module",
+	"scripts": {
+		"build": "bun run build:go && bun run build:web",
+		"build:go": "go build -trimpath -o dist/pixie ./cmd/pixie && go build -trimpath -o dist/pixie-mcp ./cmd/pixie-mcp",
+		"dev:web": "bun --filter @pixie/web dev",
+		"build:web": "bun --filter @pixie/web build",
+		"mewa:check": "bun --filter @pixie/web mewa:check",
+		"typecheck": "bun --filter @pixie/contracts typecheck && bun --filter @pixie/web typecheck && tsc --noEmit -p tests/tsconfig.json && bun --filter @pixie/pi-host typecheck && bun --filter @pixie/pi-mcp typecheck",
+		"test": "bun test tests && go test ./...",
+		"check:filenames": "bun scripts/check-filenames.ts",
+		"lint": "bun run check:filenames && biome check .",
+		"format": "biome check --write .",
+		"check:deps": "bun scripts/check-catalog.ts"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.0",
+		"typescript": "catalog:"
+	},
+	"trustedDependencies": [
+		"@biomejs/biome"
+	]
+}

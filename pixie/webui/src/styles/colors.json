@@ -1,0 +1,271 @@
+{
+	"$schema": "./colors.schema.json",
+	"metadata": {
+		"version": "1.1.0",
+		"note": "The semantic colour layer. The fixed palette lives in styles/palette.css; this file maps semantic roles to palette entries and generated CSS variables."
+	},
+	"scale": {
+		"subtle": 10,
+		"wash": 12,
+		"soft": 20,
+		"muted": 40,
+		"strong": 60
+	},
+	"roles": {
+		"text-default": {
+			"from": "text",
+			"publish": true
+		},
+		"text-muted": {
+			"from": "muted",
+			"publish": true
+		},
+		"text-subtle": {
+			"from": "hint",
+			"publish": true
+		},
+		"text-disabled": {
+			"from": "text",
+			"alpha": "strong",
+			"publish": true,
+			"note": "disabled non-control text = the default text colour at the `strong` (60%) alpha step — a disabled element inherits its enabled semantic colour, dimmed at the token level, never a dedicated disabled palette value"
+		},
+		"text-on-primary": {
+			"from": "onAccent",
+			"publish": true
+		},
+		"text-on-danger": {
+			"from": "onDanger",
+			"publish": true
+		},
+		"text-link": {
+			"from": "info",
+			"publish": false,
+			"note": "global.css `a {}` is the only consumer; no component styles a bare link"
+		},
+		"container-project-bg": {
+			"from": "background",
+			"publish": true,
+			"note": "the focused session surface shared by chat, read-only previews, and project context"
+		},
+		"container-sidebar-bg": {
+			"from": "sidebar",
+			"publish": true
+		},
+		"container-header-bg": {
+			"from": "header",
+			"publish": true
+		},
+		"container-content-bg": {
+			"from": "content",
+			"publish": true,
+			"note": "the recessed read-only code and diff canvas used by Shiki previews and changed-file inspection"
+		},
+		"container-elevated-bg": {
+			"from": "elevated",
+			"publish": true,
+			"note": "every raised surface: dialogs, popovers, menus, toasts, cards, code blocks"
+		},
+		"control-bg": {
+			"from": "input",
+			"publish": true
+		},
+		"control-bg-hovered": {
+			"from": "hover",
+			"publish": true
+		},
+		"control-bg-selected": {
+			"from": "hover",
+			"publish": true
+		},
+		"control-primary-bg": {
+			"from": "accentSolid",
+			"publish": true,
+			"note": "the SOLID primary button fill — its own palette source (`accentSolid`), decoupled from `accent` so a theme can brighten the opaque fill without moving the alpha-derived primary tints (primary-subtle/soft/muted) or the accent used for text/ring/border; every theme maps accentSolid to its accent except regular Light, which uses the brighter dark-theme green"
+		},
+		"control-primary-bg-hovered": {
+			"from": "accentHover",
+			"publish": true,
+			"note": "the primary button's hover fill — its own manifest key so a theme owns the hover step instead of the button fading with an opacity utility"
+		},
+		"control-primary-text": {
+			"from": "onAccent",
+			"publish": true
+		},
+		"control-border-default": {
+			"from": "border",
+			"publish": true
+		},
+		"control-border-active": {
+			"from": "borderStrong",
+			"publish": true
+		},
+		"control-disabled-bg": {
+			"from": "input",
+			"alpha": "strong",
+			"publish": true,
+			"note": "disabled control fill = the default control fill (`input`, i.e. control-bg) at the `strong` (60%) alpha step"
+		},
+		"control-disabled-text": {
+			"from": "text",
+			"alpha": "strong",
+			"publish": true,
+			"note": "disabled control label/icon = the default control text colour (`text`, i.e. text-default) at the `strong` (60%) alpha step"
+		},
+		"control-disabled-border": {
+			"from": "border",
+			"alpha": "strong",
+			"publish": true,
+			"note": "disabled control border = the default control border (`border`, i.e. control-border-default) at the `strong` (60%) alpha step"
+		},
+		"control-primary-disabled-bg": {
+			"from": "accent",
+			"alpha": "strong",
+			"publish": true,
+			"note": "disabled primary button fill = the accent hue at the `strong` (60%) alpha step — kept on `accent` (the alpha-tint base), not the brightened solid `accentSolid`, so the disabled fill stays with the primary tint family"
+		},
+		"control-primary-disabled-text": {
+			"from": "onAccent",
+			"alpha": "strong",
+			"publish": true,
+			"note": "disabled primary button label/icon = the normal primary text (`onAccent`, i.e. control-primary-text) at the `strong` (60%) alpha step"
+		},
+		"border-default": {
+			"from": "borderStrong",
+			"publish": true
+		},
+		"border-muted": {
+			"from": "border",
+			"publish": true
+		},
+		"primary": {
+			"from": "accent",
+			"publish": true
+		},
+		"primary-subtle": {
+			"from": "accent",
+			"alpha": "subtle",
+			"publish": true
+		},
+		"primary-soft": {
+			"from": "accent",
+			"alpha": "soft",
+			"publish": true
+		},
+		"primary-muted": {
+			"from": "accent",
+			"alpha": "muted",
+			"publish": true
+		},
+		"on-primary-soft": {
+			"from": "onAccent",
+			"alpha": "soft",
+			"publish": true
+		},
+		"feedback-info": {
+			"from": "info",
+			"publish": true
+		},
+		"feedback-info-subtle": {
+			"from": "info",
+			"alpha": "wash",
+			"publish": true
+		},
+		"feedback-success": {
+			"from": "success",
+			"publish": true
+		},
+		"feedback-success-subtle": {
+			"from": "success",
+			"alpha": "wash",
+			"publish": true
+		},
+		"feedback-success-muted": {
+			"from": "success",
+			"alpha": "muted",
+			"publish": true
+		},
+		"feedback-error": {
+			"from": "danger",
+			"publish": true
+		},
+		"feedback-error-subtle": {
+			"from": "danger",
+			"alpha": "wash",
+			"publish": true
+		},
+		"feedback-error-muted": {
+			"from": "danger",
+			"alpha": "muted",
+			"publish": true
+		},
+		"feedback-warning": {
+			"from": "warning",
+			"publish": true
+		},
+		"feedback-warning-subtle": {
+			"from": "warning",
+			"alpha": "wash",
+			"publish": true
+		},
+		"bubble-user-bg": {
+			"from": "bubbleAccent",
+			"alpha": "subtle",
+			"publish": true
+		},
+		"bubble-user-border": {
+			"from": "bubbleAccent",
+			"alpha": "muted",
+			"publish": true
+		},
+		"selection-text": {
+			"from": "selectionForeground",
+			"fallback": "inherit",
+			"publish": false,
+			"note": "nullable in the manifest (high contrast keeps the native foreground)"
+		},
+		"selection-bg": {
+			"from": "selection",
+			"publish": false,
+			"note": "native ::selection in global.css; not a utility"
+		},
+		"editor-selection-bg": {
+			"from": "editorSelection",
+			"publish": false
+		},
+		"editor-selection-text": {
+			"from": "editorSelectionForeground",
+			"publish": false,
+			"note": "read directly by Shiki and selection CSS; a utility would be dead weight"
+		}
+	},
+	"effects": {
+		"sunken": {
+			"note": "a recessed row or track",
+			"dark": "rgba(0, 0, 0, 0.12)",
+			"light": "rgba(0, 0, 0, 0.05)",
+			"publish": true
+		},
+		"overlay": {
+			"note": "the scrim behind a modal",
+			"dark": "rgba(0, 0, 0, 0.5)",
+			"light": "rgba(0, 0, 0, 0.5)",
+			"publish": true
+		},
+		"shadow-sm": {
+			"dark": "0 2px 8px rgba(0, 0, 0, 0.3)",
+			"light": "0 2px 8px rgba(0, 0, 0, 0.1)",
+			"publish": false
+		},
+		"shadow-md": {
+			"dark": "0 4px 16px rgba(0, 0, 0, 0.35)",
+			"light": "0 4px 16px rgba(0, 0, 0, 0.12)",
+			"publish": false
+		},
+		"shadow-lg": {
+			"dark": "0 8px 28px rgba(0, 0, 0, 0.4)",
+			"light": "0 8px 28px rgba(0, 0, 0, 0.14)",
+			"publish": false
+		}
+	}
+}

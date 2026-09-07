@@ -1,0 +1,141 @@
+/* -- Form component --------------------------------------------- */
+
+@layer components {
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-600);
+  }
+
+  /* -- Form field -------------------------------------------- */
+  .form-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-100);
+
+    /* Keep label and description metrics identical to Text Field. */
+    & > .label {
+      margin-bottom: 0;
+      line-height: var(--font-height-regular);
+    }
+
+    /* -- Horizontal orientation (label beside control) ------- */
+    &[data-orientation="horizontal"] {
+      flex-direction: row;
+      align-items: start;
+      gap: var(--space-400);
+
+      & > .label {
+        margin-bottom: 0;
+        padding-top: var(--space-200);
+        min-width: var(--size-3200);
+        flex-shrink: 0;
+      }
+    }
+
+    /* -- Invalid state -------------------------------------- */
+    &[data-invalid] {
+      & > .field-description {
+        color: var(--text-negative);
+      }
+    }
+  }
+
+  /* -- Inline field (checkbox, switch, radio inline) -------- */
+  .form-field-inline {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+
+    & > .label {
+      margin-bottom: 0;
+    }
+  }
+
+  /* -- Notification / switch row layout --------------------- */
+  .form-field-row {
+    display: flex;
+    flex-direction: row;
+    align-items: start;
+    justify-content: space-between;
+    gap: var(--space-400);
+    border: var(--border-width-025) solid var(--border-primary);
+
+    padding: var(--space-400);
+
+
+    & > div {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-100);
+    }
+
+    & > div > .label {
+      margin-bottom: 0;
+      line-height: var(--font-height-regular);
+    }
+
+    & > div > .field-description {
+      margin: 0;
+    }
+
+    &[data-disabled] {
+      opacity: var(--opacity-06);
+    }
+  }
+
+  /* -- Button actions row ----------------------------------- */
+  .form-actions {
+    display: flex;
+    gap: var(--space-200);
+    align-items: center;
+    padding-top: var(--space-200);
+  }
+
+  /* -- Fieldset --------------------------------------------- */
+  .form-fieldset {
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-400);
+
+    & > legend {
+      font-size: var(--font-size-350);
+      font-weight: var(--font-weight-550);
+      font-family: var(--font-sans);
+      color: var(--text-primary);
+      padding: 0;
+      margin-bottom: 0;
+    }
+
+    & > .field-description {
+      margin: 0 0 var(--space-100);
+    }
+  }
+
+  /* -- Form group (vertical stack of fields) ---------------- */
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-300);
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (prefers-contrast: more) {
+    .form-field-row {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .form-field-row {
+      border-color: ButtonBorder;
+    }
+
+    .form-fieldset > legend {
+      color: LinkText;
+    }
+  }
+}

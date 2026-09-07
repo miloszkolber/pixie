@@ -1,0 +1,31 @@
+{
+	"name": "@pixie/pi-mcp",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "1.27.1",
+		"proper-lockfile": "4.1.2",
+		"typebox": "1.3.7"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "0.85.1",
+		"@earendil-works/pi-ai": "0.85.1"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:",
+		"@types/proper-lockfile": "4.1.4"
+	}
+}

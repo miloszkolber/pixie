@@ -1,0 +1,240 @@
+@layer components {
+  .data-table {
+    display: grid;
+    gap: var(--space-400);
+    width: 100%;
+    min-width: 0;
+  }
+
+  .data-table-toolbar {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: var(--space-400);
+    flex-wrap: wrap;
+  }
+
+  .data-table-filter-group {
+    display: flex;
+    align-items: end;
+    gap: var(--space-200);
+    flex: 1 1 20rem;
+    flex-wrap: wrap;
+    min-width: min(100%, 20rem);
+  }
+
+  .data-table-filter-field {
+    flex: 1 1 20rem;
+    min-width: min(100%, 20rem);
+  }
+
+  .data-table-filter-label {
+    display: block;
+    flex-basis: 100%;
+    color: var(--text-primary);
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+  }
+
+  .data-table-filter {
+    min-width: min(100%, 20rem);
+    width: 100%;
+    height: var(--size-1000);
+    padding: 0 var(--space-300);
+    border: var(--border-width-025) solid var(--border-secondary);
+    background: var(--background);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-350);
+    outline: none;
+
+    &:focus-visible {
+      border-color: var(--border-focus);
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    &::placeholder { color: var(--text-muted); }
+
+    &:disabled {
+      opacity: var(--opacity-05);
+      cursor: not-allowed;
+    }
+
+    &:is([aria-invalid="true"], :user-invalid) {
+      border-color: var(--text-negative);
+
+      &:focus-visible {
+        outline-color: var(--text-negative);
+      }
+    }
+  }
+
+  .data-table-filter-group > .data-table-filter { flex: 1 1 20rem; }
+
+  .data-table-summary,
+  .data-table-range {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-350);
+  }
+
+  .data-table-summary { flex: 1 1 auto; text-align: end; }
+
+  .table-head:has(.data-table-sort) { padding: 0; }
+
+  .data-table-sort {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-200);
+    width: 100%;
+    min-height: var(--size-1000);
+    padding: var(--space-300) var(--space-400);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    outline: none;
+
+    &:hover { color: var(--text-primary); }
+
+    &:focus-visible {
+      position: relative;
+      z-index: 1;
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: calc(-1 * var(--focus-ring-width));
+    }
+  }
+
+  /* Fixed-width slot keeps column geometry identical in every sort state.
+     No glyph is shown while the column is unsorted; only the sorted column
+     carries a plain up or down arrow. */
+  .data-table-sort::after {
+    content: "";
+    flex: 0 0 auto;
+    inline-size: var(--size-400);
+    display: inline-flex;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-400);
+    line-height: var(--font-height-flat);
+  }
+
+  .table-head[aria-sort="ascending"] .data-table-sort::after { content: "↑"; color: var(--text-primary); }
+  .table-head[aria-sort="descending"] .data-table-sort::after { content: "↓"; color: var(--text-primary); }
+
+  .data-table-empty {
+    margin: 0;
+    padding: var(--space-600) var(--space-400);
+    border: var(--border-width-025) solid var(--border-primary);
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .data-table-pagination {
+    display: flex;
+    justify-content: end;
+  }
+
+  .pagination.data-table-pagination { justify-content: end; }
+
+  .data-table-pagination-list {
+    display: flex;
+    align-items: center;
+    gap: var(--space-100);
+    flex-wrap: wrap;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .data-table-pagination-link,
+  .data-table-pagination-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--size-1000);
+    min-height: var(--size-1000);
+    padding: 0 var(--space-300);
+    border: var(--border-width-025) solid transparent;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-350);
+    text-decoration: none;
+    cursor: pointer;
+    outline: none;
+
+    &:hover { background: var(--surface-secondary); }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    &[aria-current="page"] {
+      border-color: var(--border-primary);
+      background: var(--surface-secondary);
+      font-weight: var(--font-weight-550);
+    }
+
+    &[aria-disabled="true"],
+    &:disabled {
+      opacity: var(--opacity-05);
+      cursor: not-allowed;
+    }
+
+    &[aria-disabled="true"] { pointer-events: none; }
+  }
+
+  .data-table-pagination-button:disabled { pointer-events: none; }
+
+  @container (max-width: 480px) {
+    .data-table-sort { min-height: var(--size-800); padding: var(--space-200) var(--space-300); }
+  }
+
+  @media (prefers-contrast: more) {
+    .data-table-empty,
+    .data-table-filter,
+    .data-table-pagination-link,
+    .data-table-pagination-button { border-width: var(--border-width-050); }
+
+    .data-table-sort:focus-visible,
+    .data-table-filter:focus-visible,
+    .data-table-pagination-link:focus-visible,
+    .data-table-pagination-button:focus-visible { outline-width: var(--border-width-050); }
+  }
+
+  @media (forced-colors: active) {
+    .data-table-empty { border-color: ButtonText; }
+
+    .data-table-filter {
+      border-color: ButtonBorder;
+      background: Field;
+      color: FieldText;
+    }
+
+    .data-table-filter:disabled,
+    .data-table-pagination-link[aria-disabled="true"],
+    .data-table-pagination-button:disabled {
+      border-color: GrayText;
+      color: GrayText;
+    }
+
+    .data-table-sort:focus-visible,
+    .data-table-filter:focus-visible,
+    .data-table-pagination-link:focus-visible,
+    .data-table-pagination-button:focus-visible { outline-color: Highlight; }
+
+    .data-table-pagination-link[aria-current="page"],
+    .data-table-pagination-button[aria-current="page"] {
+      border-color: Highlight;
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+}

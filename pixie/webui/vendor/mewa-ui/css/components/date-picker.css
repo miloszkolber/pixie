@@ -1,0 +1,145 @@
+/* -- Date Picker component --------------------------------------- */
+
+@layer components {
+  .date-picker {
+    display: inline-flex;
+    flex-direction: column;
+    padding: var(--space-300);
+    border: var(--border-width-025) solid var(--border-primary);
+
+    background-color: var(--surface-primary);
+    user-select: none;
+  }
+
+  .date-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--space-100) var(--space-200);
+  }
+
+  .date-picker-heading {
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    color: var(--text-primary);
+  }
+
+  .date-picker-nav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-1000);
+    height: var(--size-1000);
+    padding: 0;
+    border: var(--border-width-025) solid transparent;
+
+    background-color: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    &:hover {
+      background-color: var(--surface-secondary);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    & svg {
+      width: var(--size-400);
+      height: var(--size-400);
+    }
+  }
+
+  .date-picker-grid {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+
+  .date-picker-day-label {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: var(--font-size-300);
+    font-weight: var(--font-weight-400);
+    color: var(--text-muted);
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .date-picker-day {
+    width: 2.25rem;
+    height: 2.25rem;
+    text-align: center;
+    vertical-align: middle;
+    padding: 0;
+
+    & button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--size-800);
+      height: var(--size-800);
+      font-size: var(--font-size-350);
+      border: none;
+
+      background-color: transparent;
+      color: var(--text-primary);
+      cursor: pointer;
+      &:hover {
+        background-color: var(--surface-secondary);
+      }
+
+      &:focus-visible {
+        outline: var(--focus-ring-width) solid var(--border-focus);
+        outline-offset: var(--border-width-025);
+      }
+    }
+
+    &[data-today] button {
+      background-color: var(--surface-secondary);
+      font-weight: var(--font-weight-550);
+    }
+
+    &[data-selected] button {
+      background-color: var(--surface-inverted);
+      color: var(--text-inverted);
+
+      &:hover {
+        opacity: var(--opacity-09);
+      }
+    }
+
+    &[data-outside] button {
+      color: var(--text-muted);
+    }
+
+    &[data-disabled] button {
+      color: var(--text-muted);
+      opacity: var(--opacity-04);
+      cursor: not-allowed;
+    }
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (prefers-contrast: more) {
+    .date-picker { border-width: var(--border-width-050); }
+  }
+
+  @media (forced-colors: active) {
+    .date-picker {
+      background: Canvas;
+      color: CanvasText;
+      border-color: CanvasText;
+    }
+
+    .date-picker-day[data-selected] button {
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    .date-picker-day button:focus-visible {
+      outline: var(--border-width-050) solid Highlight;
+      outline-offset: var(--border-width-025);
+    }
+  }
+}

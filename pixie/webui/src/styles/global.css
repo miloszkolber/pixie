@@ -1,0 +1,51 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: Reduced-motion preferences must override component animation utilities. */
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	height: 100%;
+	margin: 0;
+}
+
+/* Colour + rendering only. The body's family/size/weight/line-height are the `rootStyle` from
+   `typography.json`, emitted into `@layer base` by `generated/typography.css` — never restated here. */
+body {
+	background: var(--container-project-bg);
+	color: var(--text-default);
+	/* macOS-only effect (both properties are no-ops elsewhere); no `optimizeLegibility` — document,
+	   don't hack other platforms. */
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		scroll-behavior: auto !important;
+		transition-duration: 0.01ms !important;
+	}
+}
+
+::selection {
+	background: var(--selection-bg);
+	color: var(--selection-text);
+}
+
+a {
+	color: var(--text-link);
+}
+
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+::-webkit-scrollbar-thumb {
+	background: var(--border-default);
+	border-radius: var(--radius-sm);
+}

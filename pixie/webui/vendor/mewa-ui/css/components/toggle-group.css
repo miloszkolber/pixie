@@ -1,0 +1,72 @@
+/* -- Toggle Group component ------------------------------------- */
+
+@layer components {
+  .toggle-group {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-000);
+
+    /* -- Outline variant: propagate border to children ---------- */
+    &[data-variant="outline"] > .toggle {
+      border: var(--border-width-025) solid var(--border-secondary);
+      background: transparent;
+
+      &:not([aria-pressed="true"]):hover {
+        background-color: var(--surface-secondary);
+        color: var(--text-primary);
+      }
+
+      &[aria-pressed="true"] {
+        background-color: var(--surface-secondary);
+        color: var(--text-primary);
+      }
+    }
+
+    &[data-variant="outline"]:not([data-spacing]) > .toggle:not(:first-child) {
+      margin-inline-start: -1px;
+    }
+
+    &[data-variant="outline"]:not([data-spacing])[data-orientation="vertical"] > .toggle:not(:first-child) {
+      margin-inline-start: 0;
+      margin-block-start: -1px;
+    }
+
+    /* -- Sizes: propagate to child toggles ---------------------- */
+            /* -- Vertical orientation ----------------------------------- */
+    &[data-orientation="vertical"] {
+      flex-direction: column;
+    }
+
+    /* -- Spacing: adds gap between individual toggles ----------- */
+    &[data-spacing] {
+      gap: var(--space-100);
+    }
+
+    /* -- Disabled group ----------------------------------------- */
+    &[data-disabled] {
+      pointer-events: none;
+
+      & > .toggle {
+        pointer-events: none;
+        opacity: var(--opacity-05);
+      }
+    }
+  }
+
+  /* -- Accessibility -------------------------------------------- */
+  @media (forced-colors: active) {
+    .toggle-group > .toggle {
+      border-color: ButtonBorder;
+
+      &[aria-pressed="true"] {
+        background-color: Highlight;
+        color: HighlightText;
+        border-color: Highlight;
+      }
+
+      &:focus-visible {
+        outline-color: Highlight;
+      }
+    }
+  }
+}

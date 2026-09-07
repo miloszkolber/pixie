@@ -1,0 +1,9 @@
+{
+	"args": "--no-sandbox",
+	"contentBoundaries": true,
+	"debug": false,
+	"executablePath": "/usr/bin/chromium",
+	"hideScrollbars": true,
+	"idleTimeout": "2m",
+	"maxOutput": 20000
+}

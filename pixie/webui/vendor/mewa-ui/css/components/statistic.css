@@ -1,0 +1,61 @@
+@layer components {
+  .statistic {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-100);
+  }
+
+  .statistic-title {
+    margin: 0;
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+  }
+
+  .statistic-value {
+    margin: 0;
+    font-size: var(--font-size-800);
+    font-weight: var(--font-weight-550);
+    letter-spacing: -0.025em;
+    line-height: var(--font-height-tight);
+    color: var(--text-primary);
+  }
+
+  .statistic-description {
+    margin: 0;
+    font-size: var(--font-size-300);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: var(--space-100);
+  }
+
+  .statistic-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-100);
+    font-weight: var(--font-weight-550);
+
+    & svg {
+      width: var(--size-300);
+      height: var(--size-300);
+    }
+
+    &[data-trend="up"] {
+      color: var(--text-positive);
+    }
+
+    &[data-trend="down"] {
+      color: var(--text-negative);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .statistic-title,
+    .statistic-description { color: CanvasText; }
+    .statistic-value { color: CanvasText; }
+    .statistic-trend[data-trend="up"] { color: Highlight; }
+    .statistic-trend[data-trend="down"] { color: Mark; }
+  }
+}

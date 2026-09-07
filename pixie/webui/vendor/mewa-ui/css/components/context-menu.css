@@ -1,0 +1,150 @@
+/* -- Context Menu component -------------------------------- */
+
+@layer components {
+  .context-menu-trigger {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-100);
+    min-block-size: var(--size-1000);
+    padding: var(--space-400);
+    border: var(--border-width-025) dashed var(--border-muted);
+    background-color: var(--surface-secondary);
+    color: var(--text-primary);
+    cursor: context-menu;
+    outline: none;
+
+    & > span {
+      color: var(--text-muted);
+      font-size: var(--font-size-300);
+    }
+
+    &:hover {
+      border-color: var(--border-hover);
+      background-color: var(--surface-hover);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+  }
+
+  .context-menu-content {
+    position: fixed;
+    inset: auto;
+    min-inline-size: 12rem;
+    max-inline-size: calc(100vw - var(--space-400));
+    margin: 0;
+    padding: var(--space-100);
+    border: var(--border-width-025) solid var(--border-secondary);
+    background-color: var(--surface-primary);
+    color: var(--text-primary);
+  }
+
+  .context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+    inline-size: 100%;
+    min-block-size: var(--size-1000);
+    padding: var(--space-200);
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--font-size-350);
+    text-align: start;
+    cursor: pointer;
+    outline: none;
+
+    &:hover,
+    &[data-highlighted] {
+      background-color: var(--surface-hover);
+      color: var(--text-primary);
+    }
+
+    &[data-variant="destructive"]:hover,
+    &[data-variant="destructive"][data-highlighted] {
+      background-color: var(--surface-negative);
+      color: var(--text-negative);
+    }
+
+    &:disabled,
+    &[aria-disabled="true"] {
+      color: var(--text-disabled);
+      cursor: not-allowed;
+    }
+  }
+
+  .context-menu-check,
+  .context-menu-radio {
+    position: relative;
+    padding-inline-end: var(--space-600);
+
+    &::after {
+      position: absolute;
+      inset-inline-end: var(--space-200);
+      inline-size: var(--size-400);
+      color: currentColor;
+      font-family: var(--font-mono);
+      text-align: center;
+    }
+  }
+
+  .context-menu-check[aria-checked="true"]::after {
+    content: "✓";
+  }
+
+  .context-menu-radio[aria-checked="true"]::after {
+    content: "●";
+  }
+
+  .context-menu-label {
+    margin: 0;
+    padding: var(--space-100) var(--space-200);
+    color: var(--text-muted);
+    font-size: var(--font-size-300);
+    font-weight: var(--font-weight-550);
+  }
+
+  .context-menu-separator {
+    block-size: var(--border-width-025);
+    margin: var(--space-100) calc(-1 * var(--space-100));
+    background-color: var(--border-primary);
+  }
+
+  .context-menu-shortcut {
+    margin-inline-start: auto;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+  }
+
+  @media (prefers-contrast: more) {
+    .context-menu-trigger,
+    .context-menu-content {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .context-menu-trigger,
+    .context-menu-content {
+      background: Canvas;
+      color: CanvasText;
+      border-color: CanvasText;
+    }
+
+    .context-menu-item:hover,
+    .context-menu-item[data-highlighted] {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    .context-menu-item:disabled,
+    .context-menu-item[aria-disabled="true"] {
+      color: GrayText;
+    }
+  }
+}

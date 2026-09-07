@@ -1,0 +1,217 @@
+@layer components {
+  .file-diff {
+    inline-size: 100%;
+    overflow: hidden;
+    border: var(--border-width-025) solid var(--border-primary);
+    background: var(--surface-primary);
+    color: var(--text-primary);
+  }
+
+  .file-diff-trigger {
+    display: flex;
+    min-block-size: var(--size-1000);
+    align-items: center;
+    gap: var(--space-200);
+    padding-inline: var(--space-300);
+    background: var(--surface-secondary);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .file-diff-trigger::-webkit-details-marker {
+    display: none;
+  }
+
+  .file-diff-trigger::marker {
+    content: '';
+  }
+
+  .file-diff-trigger:hover {
+    background: var(--surface-hover);
+  }
+
+  .file-diff-trigger:focus-visible {
+    outline-offset: calc(-1 * var(--focus-ring-width));
+  }
+
+  .file-diff-path {
+    min-inline-size: 0;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-diff-counts {
+    display: inline-flex;
+    flex: none;
+    gap: var(--space-100);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .file-diff-additions {
+    color: var(--text-positive);
+  }
+
+  .file-diff-deletions {
+    color: var(--text-negative);
+  }
+
+  .file-diff-state {
+    color: var(--text-muted);
+    font-size: var(--font-size-300);
+  }
+
+  .file-diff[data-streaming] .file-diff-state {
+    color: var(--text-primary);
+  }
+
+  .file-diff-chevron {
+    inline-size: var(--size-400);
+    block-size: var(--size-400);
+    flex: none;
+    margin-inline-start: auto;
+    color: var(--text-muted);
+  }
+
+  .file-diff[open] > .file-diff-trigger .file-diff-chevron {
+    transform: rotate(180deg);
+  }
+
+  .file-diff-viewport {
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-primary) transparent;
+  }
+
+  .file-diff-viewport::-webkit-scrollbar {
+    inline-size: var(--space-200);
+    block-size: var(--space-200);
+  }
+
+  .file-diff-viewport::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .file-diff-viewport::-webkit-scrollbar-thumb {
+    background: var(--border-primary);
+  }
+
+  .file-diff-table {
+    inline-size: 100%;
+    min-inline-size: max-content;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-350);
+    line-height: var(--font-height-regular);
+    tab-size: 2;
+  }
+
+  .file-diff-caption,
+  .file-diff-head {
+    position: absolute;
+    inline-size: var(--border-width-025);
+    block-size: var(--border-width-025);
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .file-diff-row {
+    border-block-end: var(--border-width-025) solid var(--border-subtle);
+  }
+
+  .file-diff-row:last-child {
+    border-block-end: 0;
+  }
+
+  .file-diff-row[data-kind="add"] {
+    background: var(--surface-positive);
+  }
+
+  .file-diff-row[data-kind="remove"] {
+    background: var(--surface-negative);
+  }
+
+  .file-diff-row[data-kind="hunk"] {
+    background: var(--surface-secondary);
+    color: var(--text-muted);
+  }
+
+  .file-diff-number,
+  .file-diff-marker,
+  .file-diff-code {
+    block-size: var(--size-600);
+    padding-block: var(--space-100);
+    vertical-align: top;
+  }
+
+  .file-diff-number {
+    inline-size: var(--size-1000);
+    padding-inline: var(--space-200);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    user-select: none;
+  }
+
+  .file-diff-marker {
+    inline-size: var(--size-600);
+    padding-inline: var(--space-100);
+    text-align: center;
+    user-select: none;
+    white-space: pre;
+  }
+
+  .file-diff-row[data-kind="add"] .file-diff-marker {
+    color: var(--text-positive);
+  }
+
+  .file-diff-row[data-kind="remove"] .file-diff-marker {
+    color: var(--text-negative);
+  }
+
+  .file-diff-code {
+    padding-inline: var(--space-200) var(--space-400);
+    white-space: pre;
+  }
+
+  @media (prefers-contrast: more) {
+    .file-diff {
+      border-width: var(--border-width-050);
+    }
+
+    .file-diff-row {
+      border-block-end-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .file-diff,
+    .file-diff-trigger,
+    .file-diff-row,
+    .file-diff-row[data-kind] {
+      border-color: CanvasText;
+      background: Canvas;
+      color: CanvasText;
+    }
+
+    .file-diff-additions,
+    .file-diff-deletions,
+    .file-diff-state,
+    .file-diff-row[data-kind] .file-diff-marker,
+    .file-diff-number {
+      color: CanvasText;
+    }
+
+    .file-diff-trigger:focus-visible {
+      outline-color: Highlight;
+    }
+  }
+}

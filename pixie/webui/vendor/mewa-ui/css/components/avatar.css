@@ -1,0 +1,70 @@
+@layer components {
+  .avatar {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-1000);
+    height: var(--size-1000);
+    border-radius: var(--border-radius-000);
+    overflow: visible;
+    flex-shrink: 0;
+    background-color: var(--surface-secondary);
+
+    /* Same shorthand as other primitives: sm 32, default 40, lg 48. */
+    &[data-size="sm"] { width: var(--size-800); height: var(--size-800); }
+    &[data-size="lg"] { width: var(--size-1200); height: var(--size-1200); }
+
+  }
+
+  .avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+    overflow: hidden;
+  }
+
+  .avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: var(--font-size-300);
+    font-weight: var(--font-weight-550);
+    color: var(--text-primary);
+    background-color: var(--surface-secondary);
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+  }
+
+  .avatar:has(.avatar-image:not([data-error])) .avatar-fallback {
+    display: none;
+  }
+
+  .avatar-badge {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: var(--border-radius-000);
+    background-color: var(--surface-positive);
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (forced-colors: active) {
+    .avatar {
+      background: Canvas;
+      color: CanvasText;
+    }
+
+    .avatar-badge {
+      background: Highlight;
+      border-color: Canvas;
+    }
+  }
+}

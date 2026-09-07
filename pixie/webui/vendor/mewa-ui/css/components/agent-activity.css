@@ -1,0 +1,152 @@
+@layer components {
+  .agent-activity {
+    display: flex;
+    inline-size: 100%;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    border: var(--border-width-025) solid var(--border-primary);
+    list-style: none;
+  }
+
+  .agent-activity-item {
+    display: grid;
+    grid-template-columns: var(--size-400) minmax(0, 1fr);
+    gap: var(--space-300);
+    padding: var(--space-400);
+    border-block-end: var(--border-width-025) solid var(--border-primary);
+    background: var(--surface-primary);
+  }
+
+  .agent-activity-item:last-child {
+    border-block-end: 0;
+  }
+
+  .agent-activity-marker {
+    inline-size: var(--size-200);
+    block-size: var(--size-200);
+    margin-block-start: var(--space-200);
+    background: var(--border-secondary);
+  }
+
+  .agent-activity-item[data-status="pending"] .agent-activity-marker {
+    background: var(--border-muted);
+  }
+
+  .agent-activity-item[data-status="running"] .agent-activity-marker {
+    background: var(--border-selected);
+  }
+
+  .agent-activity-item[data-status="complete"] .agent-activity-marker {
+    background: var(--border-positive);
+  }
+
+  .agent-activity-item[data-status="error"] .agent-activity-marker {
+    background: var(--border-negative);
+  }
+
+  .agent-activity-content {
+    display: flex;
+    min-inline-size: 0;
+    flex-direction: column;
+    gap: var(--space-100);
+  }
+
+  .agent-activity-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-200);
+  }
+
+  .agent-activity-kind {
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+    font-weight: var(--font-weight-550);
+    text-transform: uppercase;
+  }
+
+  .agent-activity-status {
+    color: var(--text-muted);
+    font-size: var(--font-size-300);
+  }
+
+  .agent-activity-item[data-status="complete"] .agent-activity-status {
+    color: var(--text-positive);
+  }
+
+  .agent-activity-item[data-status="error"] .agent-activity-status {
+    color: var(--text-negative);
+  }
+
+  .agent-activity-label {
+    color: var(--text-primary);
+    font-size: var(--font-size-350);
+    line-height: var(--font-height-regular);
+  }
+
+  .agent-activity-disclosure {
+    margin-block-start: var(--space-100);
+  }
+
+  .agent-activity-trigger {
+    inline-size: max-content;
+    max-inline-size: 100%;
+    color: var(--text-secondary);
+    font-size: var(--font-size-350);
+    cursor: pointer;
+  }
+
+  .agent-activity-trigger:hover {
+    color: var(--text-primary);
+  }
+
+  .agent-activity-body {
+    padding-block-start: var(--space-200);
+    color: var(--text-muted);
+    font-size: var(--font-size-350);
+    line-height: var(--font-height-regular);
+  }
+
+  @media (prefers-contrast: more) {
+    .agent-activity {
+      border-width: var(--border-width-050);
+    }
+
+    .agent-activity-item {
+      border-block-end-width: var(--border-width-050);
+    }
+
+    .agent-activity-marker {
+      inline-size: var(--size-300);
+      block-size: var(--size-300);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .agent-activity,
+    .agent-activity-item {
+      border-color: CanvasText;
+      background: Canvas;
+    }
+
+    .agent-activity-marker,
+    .agent-activity-item[data-status] .agent-activity-marker {
+      background: CanvasText;
+    }
+
+    .agent-activity-item[data-status="running"] .agent-activity-marker {
+      background: Highlight;
+    }
+
+    .agent-activity-kind,
+    .agent-activity-status,
+    .agent-activity-label,
+    .agent-activity-trigger,
+    .agent-activity-body {
+      color: CanvasText;
+    }
+  }
+}

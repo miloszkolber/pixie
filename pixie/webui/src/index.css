@@ -1,0 +1,64 @@
+@import "tailwindcss" source(".");
+@import "./styles/palette.css";
+@import "./styles/generated/typography.css";
+@import "./styles/generated/colors.css";
+@import "./styles/tokens.css";
+@import "./styles/global.css";
+
+/*
+ * Map the pixie design tokens (tokens.css) onto Tailwind's theme namespaces. `inline` makes the
+ * utilities resolve to the live `var(--token)` (not a baked value). The fixed system palette is
+ * defined in `styles/palette.css`. Colors and spacing do not collide with token names; the
+ * `--radius-*` tokens DO collide with a Tailwind namespace, so they are referenced as token arbitrary
+ * values (e.g. `rounded-[var(--radius-md)]`) instead.
+ *
+ * NO typography namespace is mapped here on purpose — not `--text-*`, not a font family. Type comes
+ * from the generated semantic classes (`tr-text-ui`, `tr-title-dialog`, `tr-code-text`, `tr-prose-*`)
+ * whose only source is `styles/typography.json`; a `text-<size>` or `font-<family>` utility would be a
+ * second way to say the same thing, and the one that can drift. `styles/typographyUsage.test.ts` fails
+ * on any such utility at a call site, and `styles/fontClasses.test.ts` additionally fails on the
+ * `font-[var(--…)]` form, which Tailwind silently compiles to an invalid `font-weight`.
+ */
+@theme inline {
+	/*
+	 * COLOUR IS NOT HERE. The `--color-*` namespace is generated into `styles/generated/colors.css`
+	 * from `styles/colors.json`, which also carries its own `@theme inline` block — Tailwind flattens
+	 * imports before resolving the theme, so an imported block registers exactly like an inline one.
+	 * Declaring a colour here would be the second source of truth this whole layer exists to remove.
+	 *
+	 * What remains is everything that is NOT a colour and NOT typography.
+	 */
+
+	/*
+	 * Tailwind's PREFLIGHT defaults, pointed at the generated tokens. Preflight sets a family on `html`
+	 * (from `--font-sans`) and on `code` / `pre` / `kbd` / `samp` (from `--font-mono`); left at
+	 * Tailwind's built-in system stacks, an element the system has not reached yet would render in a face
+	 * the system never chose — a bare `<pre>` in the OS monospace, sitting next to a `tr-code-text`
+	 * sibling in Geist Mono. These two lines exist for that reason only. The `font-sans` /
+	 * `font-mono` UTILITIES they also enable are banned at call sites, where a semantic class is the
+	 * only way to name type (`styles/typographyUsage.test.ts`).
+	 */
+	--font-sans: var(--tr-font-family-interface);
+	--font-mono: var(--tr-font-family-code);
+
+	--spacing-2xs: var(--space-2xs);
+	--spacing-xs: var(--space-xs);
+	--spacing-sm: var(--space-sm);
+	--spacing-md: var(--space-md);
+	--spacing-lg: var(--space-lg);
+	--spacing-xl: var(--space-xl);
+	--spacing-panel-header-row: var(--panel-header-row-height);
+
+	/* A block appearing in place (e.g. the ask-question card's atomic reveal once its args are final). */
+	--animate-reveal: reveal 150ms ease-out;
+	@keyframes reveal {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+}

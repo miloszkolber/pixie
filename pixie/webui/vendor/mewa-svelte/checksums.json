@@ -1,0 +1,14 @@
+{
+  "algorithm": "sha256",
+  "files": {
+    "LICENSE": "52af9942add48997c0365303a1ba68315626e7c75e1b2fcae4f064da833e0d27",
+    "README.md": "bd39669b6d6200825f1642c312fbcc93c3bb5ea411759b8c1d344f9d17fa4c59",
+    "behavior.d.ts": "b5bfc3203e5e48eaf7a29f49972657c04d292b34531de8550b543ee698fd5a84",
+    "bun-plugin.d.ts": "3c91b231930f5d869670302b0418dba0b5b3492be8f4472b17a5ea0e0975016a",
+    "bun-plugin.js": "b0a82f5d66d2cfa6a3a9e9f66d0b91edbdc1580c4027b45b0db2931f4c299c47",
+    "index.d.ts": "129d60e0d12ea8ea5eed4882c77a6693c3a3744210d3f5f354d5ed3a7834a9e6",
+    "index.js": "6c7402c061d1081147d2a353637c61aec2ab61a50d78ceab57c8c9591ff8e22b",
+    "manifest.json": "20dda0b6f20982b4f48a74c06d619764888a6c67508b47ed1ec721a7a75429a5",
+    "package.json": "1bb1c91d068fb26f4dff2828e26813c858ef67809583d8d73618aa12bfba80e1"
+  }
+}

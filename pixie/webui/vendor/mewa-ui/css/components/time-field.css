@@ -1,0 +1,223 @@
+/* -- Time Field component ---------------------------------------- */
+
+@layer components {
+  .time-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-300);
+    min-inline-size: 0;
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .time-field > legend,
+  .time-field-legend {
+    padding: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-flat);
+  }
+
+  .time-field-controls {
+    display: grid;
+    grid-template-columns: minmax(3rem, 4rem) max-content minmax(3rem, 4rem) minmax(5rem, 7rem);
+    justify-content: start;
+    align-items: end;
+    gap: var(--space-300);
+    min-inline-size: 0;
+  }
+
+  .time-field-segment {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-200);
+    min-inline-size: 0;
+  }
+
+  .time-field-label {
+    display: block;
+    color: var(--text-primary);
+    font-size: var(--font-size-300);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-flat);
+  }
+
+  .time-field-input,
+  .time-field-select {
+    inline-size: 100%;
+    min-block-size: var(--size-1000);
+    border: var(--border-width-025) solid var(--border-secondary);
+    background: var(--background);
+    padding-inline: var(--space-300);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-350);
+    outline: none;
+  }
+
+  .time-field-input {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    position: relative;
+  }
+
+  .time-field-select {
+    cursor: pointer;
+  }
+
+  .time-field-input:focus-visible,
+  .time-field-select:focus-visible {
+    border-color: var(--border-focus);
+    outline: var(--border-width-025) solid var(--border-focus);
+    outline-offset: 0;
+  }
+
+  /* Native time picker glyph: square, input-height hit area with a sized icon. */
+  .time-field-input::-webkit-calendar-picker-indicator {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    inline-size: var(--size-1000);
+    block-size: auto;
+    margin: 0;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230a0a0a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolyline points='12 6 12 12 16 14'/%3E%3C/svg%3E");
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 1rem 1rem;
+    opacity: var(--opacity-07);
+  }
+
+  .dark .time-field-input::-webkit-calendar-picker-indicator {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fafafa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolyline points='12 6 12 12 16 14'/%3E%3C/svg%3E");
+  }
+
+  .time-field-input:disabled,
+  .time-field-select:disabled {
+    cursor: not-allowed;
+    background: var(--surface-secondary);
+    color: var(--text-disabled);
+    border-color: var(--border-muted);
+    opacity: 1;
+  }
+
+  .time-field-input:read-only:not(:disabled) {
+    background: var(--surface-secondary);
+    cursor: default;
+    opacity: var(--opacity-07);
+  }
+
+  .time-field-input:is([aria-invalid="true"], :user-invalid),
+  .time-field-select:is([aria-invalid="true"], :user-invalid),
+  .time-field[data-invalid] .time-field-input,
+  .time-field[data-invalid] .time-field-select {
+    border-color: var(--text-negative);
+  }
+
+  .time-field-input:is([aria-invalid="true"], :user-invalid):focus-visible,
+  .time-field-select:is([aria-invalid="true"], :user-invalid):focus-visible,
+  .time-field[data-invalid] .time-field-input:focus-visible,
+  .time-field[data-invalid] .time-field-select:focus-visible {
+    border-color: var(--text-negative);
+    outline: var(--border-width-025) solid var(--text-negative);
+    outline-offset: 0;
+  }
+
+  .time-field-separator {
+    align-self: end;
+    padding-block: var(--space-300);
+    color: var(--text-muted);
+    font-size: var(--font-size-400);
+    line-height: var(--font-height-flat);
+  }
+
+  .time-field-description,
+  .time-field-status {
+    margin: 0;
+    font-size: var(--font-size-300);
+    line-height: var(--font-height-regular);
+  }
+
+  .time-field-description,
+  .time-field-status {
+    color: var(--text-muted);
+  }
+
+  .time-field:has(.time-field-input:disabled, .time-field-select:disabled) > :is(legend, .time-field-legend, .time-field-description, .time-field-status),
+  .time-field[data-disabled] > :is(legend, .time-field-legend, .time-field-description, .time-field-status),
+  .time-field:has(.time-field-input:disabled, .time-field-select:disabled) .time-field-label,
+  .time-field[data-disabled] .time-field-label {
+    color: var(--text-disabled);
+    cursor: not-allowed;
+    opacity: var(--opacity-07);
+  }
+
+  @media (max-width: 32rem) {
+    .time-field-controls {
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    }
+
+    .time-field-period {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .time-field-input,
+    .time-field-select {
+      border-width: var(--border-width-050);
+    }
+
+    .time-field-input:disabled,
+    .time-field-select:disabled {
+      opacity: var(--opacity-07);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .time-field > legend,
+    .time-field-legend,
+    .time-field-label {
+      color: LinkText;
+    }
+
+    .time-field-input,
+    .time-field-select {
+      border-color: ButtonBorder;
+      background: Field;
+      color: FieldText;
+    }
+
+    .time-field-input:focus-visible,
+    .time-field-select:focus-visible {
+      outline: var(--border-width-050) solid Highlight;
+      outline-offset: 1px;
+    }
+
+    .time-field-input:disabled,
+    .time-field-select:disabled,
+    .time-field:has(.time-field-input:disabled, .time-field-select:disabled) > :is(legend, .time-field-legend, .time-field-description, .time-field-status),
+    .time-field[data-disabled] > :is(legend, .time-field-legend, .time-field-description, .time-field-status),
+    .time-field:has(.time-field-input:disabled, .time-field-select:disabled) .time-field-label,
+    .time-field[data-disabled] .time-field-label {
+      color: GrayText;
+      opacity: 1;
+    }
+
+    .time-field-input:is([aria-invalid="true"], :user-invalid),
+    .time-field-select:is([aria-invalid="true"], :user-invalid),
+    .time-field[data-invalid] .time-field-input,
+    .time-field[data-invalid] .time-field-select {
+      border-color: LinkText;
+    }
+
+    .time-field-status[role="alert"],
+    .time-field-error {
+      color: LinkText;
+    }
+  }
+}

@@ -1,0 +1,56 @@
+/*
+ * Mewa owns shared foundations and component contracts. Pixie's product-specific layout and
+ * utility layer loads first; Mewa loads second so overlapping foundation roles resolve to the pinned
+ * library contract. Component entry styles include their declared style dependencies.
+ */
+@import "../vendor/mewa-ui/css/base.css";
+@import "../vendor/mewa-ui/css/tokens.css";
+@import "../vendor/mewa-ui/css/typography.css";
+@import "../vendor/mewa-ui/css/layout.css";
+@import "../vendor/mewa-ui/css/icon.css";
+@import "../vendor/mewa-ui/css/button.css";
+@import "../vendor/mewa-ui/css/button-group.css";
+@import "../vendor/mewa-ui/css/toolbar.css";
+@import "../vendor/mewa-ui/css/field.css";
+@import "../vendor/mewa-ui/css/text-field.css";
+@import "../vendor/mewa-ui/css/textarea.css";
+@import "../vendor/mewa-ui/css/select.css";
+@import "../vendor/mewa-ui/css/checkbox.css";
+@import "../vendor/mewa-ui/css/radio-group.css";
+@import "../vendor/mewa-ui/css/switch.css";
+@import "../vendor/mewa-ui/css/form.css";
+@import "../vendor/mewa-ui/css/badge.css";
+@import "../vendor/mewa-ui/css/callout.css";
+@import "../vendor/mewa-ui/css/card.css";
+@import "../vendor/mewa-ui/css/skeleton.css";
+@import "../vendor/mewa-ui/css/spinner.css";
+@import "../vendor/mewa-ui/css/progress.css";
+@import "../vendor/mewa-ui/css/code-block.css";
+@import "../vendor/mewa-ui/css/file-diff.css";
+@import "../vendor/mewa-ui/css/image.css";
+@import "../vendor/mewa-ui/css/sources.css";
+@import "../vendor/mewa-ui/css/table.css";
+@import "../vendor/mewa-ui/css/dialog.css";
+@import "../vendor/mewa-ui/css/alert-dialog.css";
+@import "../vendor/mewa-ui/css/popover.css";
+@import "../vendor/mewa-ui/css/dropdown-menu.css";
+@import "../vendor/mewa-ui/css/toast.css";
+@import "../vendor/mewa-ui/css/tabs.css";
+@import "../vendor/mewa-ui/css/toggle.css";
+@import "../vendor/mewa-ui/css/toggle-group.css";
+@import "../vendor/mewa-ui/css/app-shell.css";
+@import "../vendor/mewa-ui/css/header.css";
+@import "../vendor/mewa-ui/css/nav.css";
+@import "../vendor/mewa-ui/css/sidebar.css";
+@import "../vendor/mewa-ui/css/scroll-area.css";
+@import "../vendor/mewa-ui/css/resizable.css";
+@import "../vendor/mewa-ui/css/message-scroller.css";
+@import "../vendor/mewa-ui/css/message.css";
+@import "../vendor/mewa-ui/css/composer.css";
+@import "../vendor/mewa-ui/css/suggestion.css";
+@import "../vendor/mewa-ui/css/thinking-indicator.css";
+@import "../vendor/mewa-ui/css/reasoning.css";
+@import "../vendor/mewa-ui/css/tool-call.css";
+@import "../vendor/mewa-ui/css/agent-activity.css";
+@import "../vendor/mewa-ui/css/todo-list.css";
+@import "../vendor/mewa-ui/css/tree-view.css";

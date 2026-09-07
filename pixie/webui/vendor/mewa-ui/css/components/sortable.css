@@ -1,0 +1,172 @@
+@layer components {
+  .sortable {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-100);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    &[data-orientation="horizontal"] {
+      flex-flow: row wrap;
+    }
+  }
+
+  .sortable-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+    padding: var(--space-200) var(--space-300);
+    border: var(--border-width-025) solid var(--border-primary);
+    background: var(--surface-primary);
+    color: var(--text-primary);
+    font-size: var(--font-size-350);
+    cursor: grab;
+    user-select: none;
+
+    &:active { cursor: grabbing; }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    &[data-active] {
+      border-color: var(--border-focus);
+      background: var(--surface-secondary);
+    }
+
+    &[data-dragging] {
+      border-style: dashed;
+      opacity: var(--opacity-05);
+    }
+
+    &[data-over="before"] {
+      border-block-start: var(--border-width-050) solid var(--surface-inverted);
+    }
+
+    &[data-over="after"] {
+      border-block-end: var(--border-width-050) solid var(--surface-inverted);
+    }
+
+    .sortable[data-orientation="horizontal"] &[data-over="before"] {
+      border-block-start: var(--border-width-025) solid var(--border-primary);
+      border-inline-start: var(--border-width-050) solid var(--surface-inverted);
+    }
+
+    .sortable[data-orientation="horizontal"] &[data-over="after"] {
+      border-block-end: var(--border-width-025) solid var(--border-primary);
+      border-inline-end: var(--border-width-050) solid var(--surface-inverted);
+    }
+
+    &[aria-disabled="true"] {
+      opacity: var(--opacity-05);
+      cursor: not-allowed;
+    }
+  }
+
+  .sortable-handle {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: var(--font-size-400);
+    line-height: var(--font-height-flat);
+    cursor: grab;
+
+    &:active { cursor: grabbing; }
+
+    & svg {
+      width: var(--size-400);
+      height: var(--size-400);
+    }
+  }
+
+  .sortable-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: var(--space-100);
+    margin-inline-start: auto;
+  }
+
+  .sortable-step {
+    display: inline-grid;
+    width: var(--size-800);
+    height: var(--size-800);
+    place-items: center;
+    padding: 0;
+    border: var(--border-width-025) solid var(--border-primary);
+    border-radius: 0;
+    background: var(--surface-primary);
+    color: var(--text-primary);
+    font: inherit;
+    line-height: var(--font-height-flat);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: var(--surface-secondary);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    &:disabled {
+      background: var(--surface-secondary);
+      color: var(--text-disabled);
+      cursor: not-allowed;
+    }
+  }
+
+  .sortable-live {
+    position: absolute;
+    width: var(--border-width-025);
+    height: var(--border-width-025);
+    margin: calc(-1 * var(--border-width-025));
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (prefers-contrast: more) {
+    .sortable-item,
+    .sortable-step {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .sortable-item,
+    .sortable-step {
+      border-color: ButtonBorder;
+      background: ButtonFace;
+      color: ButtonText;
+    }
+
+    .sortable-item[data-active] {
+      border-color: Highlight;
+    }
+
+    .sortable-item[data-dragging] {
+      border-color: GrayText;
+    }
+
+    .sortable-item[data-over="before"] {
+      border-block-start-color: Highlight;
+    }
+
+    .sortable-item[data-over="after"] {
+      border-block-end-color: Highlight;
+    }
+
+    .sortable-item[aria-disabled="true"],
+    .sortable-step:disabled,
+    .sortable-handle {
+      color: GrayText;
+    }
+  }
+}

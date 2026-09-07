@@ -1,0 +1,153 @@
+/* -- Sheet component ------------------------------------------- */
+
+@layer components {
+  /* -- Base -------------------------------------------------- */
+  dialog.sheet {
+    border: none;
+    background-color: var(--surface-primary);
+    color: var(--text-primary);
+    padding: 0;
+    margin: 0;
+    max-width: none;
+    max-height: none;
+    /* -- Side: right (default) --------------------------------- */
+    &, &[data-side="right"] {
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      left: auto;
+      width: 24rem;
+      max-width: 100vw;
+      max-height: 100vh;
+      height: 100%;
+      border-left: var(--border-width-025) solid var(--border-primary);
+      transform: translateX(100%);
+      transition-property: transform, overlay, display;
+      transition-duration: var(--motion-duration-spatial);
+      transition-timing-function: var(--motion-easing-standard);
+      transition-behavior: normal, allow-discrete, allow-discrete;
+    }
+
+    &[open], &[data-side="right"][open] {
+      transform: translateX(0);
+    }
+
+    /* -- Side: left -------------------------------------------- */
+    &[data-side="left"] {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      right: auto;
+      width: 24rem;
+      max-width: 100vw;
+      max-height: 100vh;
+      height: 100%;
+      border-left: none;
+      border-right: var(--border-width-025) solid var(--border-primary);
+      transform: translateX(-100%);
+
+      &[open] { transform: translateX(0); }
+    }
+
+    /* -- Side: bottom ------------------------------------------ */
+    &[data-side="bottom"] {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      top: auto;
+      width: 100%;
+      max-width: 100vw;
+      max-height: 100vh;
+      height: auto;
+      border-left: none;
+      border-top: var(--border-width-025) solid var(--border-primary);
+      transform: translateY(100%);
+
+      &[open] { transform: translateY(0); }
+    }
+
+    /* -- Backdrop ---------------------------------------------- */
+    &::backdrop {
+      background: var(--overlay-strong);
+      backdrop-filter: blur(var(--blur-200));
+      opacity: 0;
+      transition-property: opacity, overlay, display;
+      transition-duration: var(--motion-duration-spatial);
+      transition-timing-function: var(--motion-easing-standard);
+      transition-behavior: normal, allow-discrete, allow-discrete;
+    }
+
+    &[open]::backdrop {
+      opacity: 1;
+    }
+  }
+
+  @starting-style {
+    dialog.sheet[open],
+    dialog.sheet[data-side="right"][open] {
+      transform: translateX(100%);
+    }
+
+    dialog.sheet[data-side="left"][open] {
+      transform: translateX(-100%);
+    }
+
+    dialog.sheet[data-side="bottom"][open] {
+      transform: translateY(100%);
+    }
+
+    dialog.sheet[open]::backdrop {
+      opacity: 0;
+    }
+  }
+
+  /* -- Content sections -------------------------------------- */
+  .sheet-content     { padding: var(--space-600); position: relative; }
+  .sheet-header      { margin-bottom: var(--space-400); padding-right: var(--space-800); }
+  .sheet-title       { font-size: var(--font-size-400); font-weight: var(--font-weight-550); margin: 0 0 var(--space-200); letter-spacing: -0.01em; }
+  .sheet-description { font-size: var(--font-size-350); color: var(--text-muted); margin: 0; line-height: var(--font-height-regular); }
+  .sheet-body        { margin-top: var(--space-400); }
+  .sheet-footer      { display: flex; justify-content: flex-end; gap: var(--space-200); margin-top: var(--space-600); }
+
+  /* -- Close button ------------------------------------------ */
+  .sheet-close-x {
+    position: absolute;
+    top: var(--space-400); right: var(--space-400);
+    width: 1.75rem; height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+
+    cursor: pointer;
+    &:hover {
+      color: var(--text-primary);
+      background-color: var(--surface-secondary);
+    }
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (prefers-contrast: more) {
+    dialog.sheet {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    dialog.sheet {
+      background: Canvas;
+      color: CanvasText;
+      border: var(--border-width-050) solid CanvasText;
+    }
+
+    &[open]::backdrop {
+      backdrop-filter: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    dialog.sheet,
+    dialog.sheet::backdrop {
+      transition-duration: 0ms;
+    }
+  }
+}

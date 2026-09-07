@@ -1,0 +1,61 @@
+/* -- Accordion component --------------------------------------- */
+
+@layer components {
+  .accordion {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .accordion-item {
+    border-bottom: var(--border-width-025) solid var(--border-primary);
+
+    &:last-child { border-bottom: none; }
+
+  }
+
+  .accordion-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: var(--space-400) 0;
+    font-size: var(--font-size-400);
+    font-weight: var(--font-weight-550);
+    text-align: left;
+    cursor: pointer;
+    list-style: none;
+    color: var(--text-primary);
+    &::-webkit-details-marker { display: none; }
+    &::marker { content: ''; }
+    &:hover { text-decoration: underline; }
+  }
+
+  .accordion-chevron {
+    color: var(--text-muted);
+    flex-shrink: 0;
+
+    details[open] > .accordion-trigger & {
+      transform: rotate(180deg);
+    }
+  }
+
+  .accordion-content {
+    padding-bottom: var(--space-400);
+    font-size: var(--font-size-350);
+    line-height: var(--font-height-regular);
+    color: var(--text-muted);
+    overflow: hidden;
+
+    & p { margin: 0; }
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (prefers-contrast: more) {
+    .accordion-item { border-bottom-width: var(--border-width-050); }
+  }
+
+  @media (forced-colors: active) {
+    .accordion-item { border-bottom-color: CanvasText; }
+    .accordion-trigger { color: CanvasText; }
+  }
+}

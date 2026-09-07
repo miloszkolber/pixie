@@ -1,0 +1,38 @@
+{
+  "name": "mewa-svelte",
+  "version": "0.1.2",
+  "private": true,
+  "description": "Optional Svelte 5 lifecycle attachment and Bun compiler plugin for mewa_ui.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "**/*"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./bun-plugin.js": {
+      "types": "./bun-plugin.d.ts",
+      "import": "./bun-plugin.js",
+      "default": "./bun-plugin.js"
+    },
+    "./manifest.json": "./manifest.json",
+    "./checksums.json": "./checksums.json",
+    "./LICENSE": "./LICENSE"
+  },
+  "peerDependencies": {
+    "svelte": ">=5.29.0 <6"
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miloszkolber/mewa_ui.git"
+  },
+  "homepage": "https://github.com/miloszkolber/mewa_ui#readme",
+  "bugs": {
+    "url": "https://github.com/miloszkolber/mewa_ui/issues"
+  }
+}

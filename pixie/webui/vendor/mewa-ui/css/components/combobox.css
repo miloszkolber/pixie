@@ -1,0 +1,175 @@
+/* -- Combobox component ---------------------------------------- */
+
+@layer components {
+  .combobox {
+    position: relative;
+  }
+
+  .combobox-trigger {
+    width: 100%;
+    height: var(--size-1000);
+    justify-content: space-between;
+  }
+
+  .combobox-value {
+    overflow: hidden;
+    flex: 1;
+    font-weight: var(--font-weight-400);
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .combobox-value[data-placeholder] {
+    color: var(--text-secondary);
+  }
+
+  .combobox-chevron {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    opacity: var(--opacity-05);
+  }
+
+  .combobox-content {
+    position: fixed;
+    inset: auto;
+    top: anchor(bottom);
+    left: anchor(left);
+    width: anchor-size(width);
+    margin: var(--space-100) 0 0;
+    padding: 0;
+    overflow: hidden;
+    border: var(--border-width-025) solid var(--border-primary);
+    background-color: var(--surface-primary);
+    color: var(--text-primary);
+    position-try-fallbacks: flip-block;
+  }
+
+  .combobox-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+    width: 100%;
+    min-block-size: var(--size-1000);
+    box-sizing: border-box;
+    padding: var(--space-200) var(--space-300);
+    border-bottom: var(--border-width-025) solid var(--border-primary);
+    cursor: text;
+
+    &:focus-within {
+      background-color: var(--surface-secondary);
+      outline: var(--border-width-025) solid var(--border-focus);
+      outline-offset: calc(-1 * var(--border-width-025));
+    }
+
+    &:focus-within :is(.combobox-search-icon, svg, [data-lucide]) {
+      color: var(--text-primary);
+    }
+  }
+
+  .combobox-search-icon {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+  }
+
+  .combobox-search-input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-350);
+
+    &::placeholder {
+      color: var(--text-secondary);
+    }
+  }
+
+  .combobox-listbox {
+    max-height: 16rem;
+    padding: var(--space-100);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .combobox-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+    min-block-size: var(--size-1000);
+    padding: var(--space-200);
+    outline: none;
+    font-size: var(--font-size-350);
+    cursor: pointer;
+
+    &:hover,
+    &[data-highlighted] {
+      background-color: var(--surface-secondary);
+      color: var(--text-primary);
+    }
+
+    &[aria-selected="true"] {
+      background-color: var(--surface-secondary);
+    }
+
+    &[aria-selected="true"]::after {
+      content: '';
+      display: inline-block;
+      width: var(--size-400);
+      height: var(--size-400);
+      flex-shrink: 0;
+      margin-inline-start: auto;
+      background-color: currentColor;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    &[aria-disabled="true"] {
+      pointer-events: none;
+      opacity: var(--opacity-05);
+    }
+  }
+
+  .combobox-status {
+    position: absolute;
+    width: var(--size-025);
+    height: var(--size-025);
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .combobox-empty {
+    padding: var(--space-600) var(--space-200);
+    color: var(--text-secondary);
+    font-size: var(--font-size-350);
+    text-align: center;
+  }
+
+  .combobox-group-label {
+    padding: var(--space-200);
+    color: var(--text-muted);
+    font-size: var(--font-size-300);
+    font-weight: var(--font-weight-550);
+  }
+
+  .combobox-separator {
+    height: var(--border-width-025);
+    margin: var(--space-100) calc(-1 * var(--space-100));
+    background: var(--border-primary);
+  }
+
+  @media (forced-colors: active) {
+    .combobox-content {
+      border-color: ButtonText;
+    }
+
+    .combobox-item:hover,
+    .combobox-item[data-highlighted] {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+}

@@ -1,0 +1,116 @@
+/* -- Header component -------------------------------------- */
+
+@layer components {
+  .header {
+    inline-size: 100%;
+    border-block-end: var(--border-width-025) solid var(--border-primary);
+    background-color: var(--surface-primary);
+    color: var(--text-primary);
+  }
+
+  .header[data-sticky] {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: var(--z-raised);
+    background-color: var(--background-glass);
+    backdrop-filter: blur(var(--blur-100));
+  }
+
+  .header-inner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-300);
+    min-block-size: var(--size-1400);
+    padding: var(--space-200) var(--space-400);
+  }
+
+  .header-brand-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-200);
+    min-block-size: var(--size-1000);
+    color: var(--text-primary);
+    font-weight: var(--font-weight-550);
+    text-decoration: none;
+    outline: none;
+
+    &:hover {
+      color: var(--text-secondary);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+  }
+
+  .header-brand-mark {
+    display: inline-grid;
+    place-items: center;
+    inline-size: var(--size-800);
+    block-size: var(--size-800);
+    flex: 0 0 auto;
+    background-color: var(--surface-inverted);
+    color: var(--text-inverted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+    font-weight: var(--font-weight-550);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-200);
+    margin-inline-start: auto;
+
+    & > a {
+      display: inline-flex;
+      align-items: center;
+      min-block-size: var(--size-1000);
+      padding-inline: var(--space-300);
+      color: var(--text-secondary);
+      text-decoration: none;
+      outline: none;
+
+      &:hover {
+        background-color: var(--surface-hover);
+        color: var(--text-primary);
+      }
+
+      &:focus-visible {
+        outline: var(--focus-ring-width) solid var(--border-focus);
+        outline-offset: var(--border-width-025);
+      }
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .header {
+      border-block-end-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .header,
+    .header[data-sticky] {
+      background: Canvas;
+      color: CanvasText;
+      border-color: CanvasText;
+      backdrop-filter: none;
+    }
+
+    .header-brand-mark {
+      forced-color-adjust: none;
+      background: CanvasText;
+      color: Canvas;
+    }
+
+    .header-actions > a:hover {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+}

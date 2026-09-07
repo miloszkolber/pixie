@@ -1,0 +1,269 @@
+/* -- File Upload component ------------------------------------- */
+
+@layer components {
+  .file-upload {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-200);
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  .file-upload-dropzone {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-100);
+    min-block-size: var(--size-3200);
+    border: var(--border-width-025) dashed var(--border-muted);
+    background: var(--surface-primary);
+    padding: var(--space-600);
+    color: var(--text-primary);
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .file-upload-dropzone:hover {
+    border-color: var(--border-hover);
+    background: var(--surface-hover);
+  }
+
+  .file-upload[data-dragging] .file-upload-dropzone {
+    border-color: var(--border-selected);
+    background: var(--surface-selected);
+    border-style: solid;
+  }
+
+  .file-upload-title {
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-regular);
+  }
+
+  .file-upload-prompt,
+  .file-upload-hint,
+  .file-upload-status,
+  .file-upload-error {
+    font-size: var(--font-size-300);
+    line-height: var(--font-height-regular);
+  }
+
+  .file-upload-prompt {
+    color: var(--text-secondary);
+  }
+
+  .file-upload-hint,
+  .file-upload-status {
+    color: var(--text-muted);
+  }
+
+  .file-upload-input {
+    inline-size: 100%;
+    min-inline-size: 0;
+    block-size: var(--size-1000);
+    margin-block-start: var(--space-300);
+    border: var(--border-width-025) solid var(--border-secondary);
+    background: var(--background);
+    padding: 0;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-350);
+    text-align: start;
+    outline: none;
+  }
+
+  .file-upload-input::file-selector-button {
+    block-size: 100%;
+    border: 0;
+    border-inline-end: var(--border-width-025) solid var(--border-secondary);
+    background: var(--surface-secondary);
+    padding-inline: var(--space-300);
+    color: var(--text-primary);
+    font: inherit;
+    font-weight: var(--font-weight-550);
+    cursor: pointer;
+  }
+
+  .file-upload[data-enhanced] .file-upload-input {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-raised);
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    opacity: var(--opacity-00);
+    cursor: pointer;
+  }
+
+  .file-upload-dropzone:has(.file-upload-input:focus-visible) {
+    border-color: var(--border-focus);
+    outline: var(--border-width-025) solid var(--border-focus);
+    outline-offset: 0;
+  }
+
+  .file-upload:has(.file-upload-input:disabled) .file-upload-dropzone {
+    border-color: var(--border-disabled);
+    background: var(--surface-disabled);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  .file-upload:has(.file-upload-input:disabled) :is(.file-upload-prompt, .file-upload-hint) {
+    color: var(--text-disabled);
+  }
+
+  .file-upload[data-invalid] .file-upload-dropzone,
+  .file-upload[data-state="error"] .file-upload-dropzone,
+  .file-upload:has(.file-upload-input:is([aria-invalid="true"], :user-invalid)) .file-upload-dropzone {
+    border-color: var(--border-negative);
+  }
+
+  .file-upload-list {
+    display: flex;
+    flex-direction: column;
+    list-style: none;
+    border: var(--border-width-025) solid var(--border-primary);
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
+  }
+
+  .file-upload-list:empty {
+    display: none;
+  }
+
+  .file-upload-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-300);
+    min-inline-size: 0;
+    min-block-size: var(--size-1200);
+    padding: var(--space-200) var(--space-300);
+    background: var(--surface-primary);
+  }
+
+  .file-upload-item + .file-upload-item {
+    border-block-start: var(--border-width-025) solid var(--border-primary);
+  }
+
+  .file-upload-preview {
+    inline-size: var(--size-1000);
+    block-size: var(--size-1000);
+    border: var(--border-width-025) solid var(--border-muted);
+    background: var(--surface-secondary);
+    object-fit: cover;
+  }
+
+  span.file-upload-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+  }
+
+  .file-upload-file {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .file-upload-name {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    line-height: var(--font-height-regular);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-upload-meta {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+    line-height: var(--font-height-regular);
+  }
+
+  .file-upload-remove {
+    min-inline-size: var(--size-800);
+    block-size: var(--size-800);
+    border: var(--border-width-025) solid var(--border-primary);
+    background: transparent;
+    padding-inline: var(--space-200);
+    color: var(--text-secondary);
+    font-size: var(--font-size-300);
+  }
+
+  .file-upload-remove:hover:not(:disabled) {
+    border-color: var(--border-hover);
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .file-upload-remove:disabled {
+    border-color: var(--border-disabled);
+    color: var(--text-disabled);
+  }
+
+  .file-upload-status,
+  .file-upload-error {
+    margin: 0;
+  }
+
+  .file-upload-status:empty,
+  .file-upload-error:empty {
+    display: none;
+  }
+
+  .file-upload-error {
+    color: var(--text-negative);
+  }
+
+  @media (prefers-contrast: more) {
+    .file-upload-dropzone,
+    .file-upload-list,
+    .file-upload-preview,
+    .file-upload-remove {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .file-upload-dropzone,
+    .file-upload-list,
+    .file-upload-item,
+    .file-upload-preview {
+      border-color: CanvasText;
+      background: Canvas;
+      color: CanvasText;
+    }
+
+    .file-upload[data-dragging] .file-upload-dropzone {
+      border-color: Highlight;
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    .file-upload-dropzone:has(.file-upload-input:focus-visible) {
+      outline: var(--border-width-050) solid Highlight;
+      outline-offset: 1px;
+    }
+
+    .file-upload-remove {
+      border-color: ButtonText;
+      background: ButtonFace;
+      color: ButtonText;
+    }
+
+    .file-upload-error {
+      color: LinkText;
+    }
+  }
+}

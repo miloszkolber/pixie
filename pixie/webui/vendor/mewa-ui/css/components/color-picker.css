@@ -1,0 +1,116 @@
+/* -- Color Picker component ------------------------------------ */
+
+@layer components {
+  .color-picker {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+    min-inline-size: 0;
+  }
+
+  .color-picker-input {
+    flex: 0 0 auto;
+    inline-size: var(--size-1000);
+    block-size: var(--size-1000);
+    border: var(--border-width-025) solid var(--border-secondary);
+    border-radius: var(--border-radius-000);
+    background: var(--background);
+    padding: var(--space-100);
+    color: var(--text-primary);
+    cursor: pointer;
+    outline: none;
+  }
+
+  .color-picker-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  .color-picker-input::-webkit-color-swatch {
+    border: 0;
+    border-radius: var(--border-radius-000);
+  }
+
+  .color-picker-input::-moz-color-swatch {
+    border: 0;
+    border-radius: var(--border-radius-000);
+  }
+
+  .color-picker-input:hover:not(:disabled),
+  .color-picker-hex:hover:not(:disabled) {
+    border-color: var(--border-hover);
+  }
+
+  .color-picker-input:focus-visible,
+  .color-picker-hex:focus-visible {
+    border-color: var(--border-focus);
+    outline: var(--border-width-025) solid var(--border-focus);
+    outline-offset: 0;
+  }
+
+  .color-picker-hex {
+    inline-size: var(--size-3200);
+    min-inline-size: 0;
+    block-size: var(--size-1000);
+    border: var(--border-width-025) solid var(--border-secondary);
+    border-radius: var(--border-radius-000);
+    background: var(--background);
+    padding-inline: var(--space-300);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-350);
+    text-transform: lowercase;
+    outline: none;
+  }
+
+  .color-picker-input:is([aria-invalid="true"], :user-invalid),
+  .color-picker-hex[aria-invalid="true"] {
+    border-color: var(--border-negative);
+  }
+
+  .color-picker-input:is([aria-invalid="true"], :user-invalid):focus-visible,
+  .color-picker-hex[aria-invalid="true"]:focus-visible {
+    outline-color: var(--border-negative);
+  }
+
+  .color-picker-input:disabled,
+  .color-picker-hex:disabled {
+    border-color: var(--border-disabled);
+    background: var(--surface-disabled);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+    opacity: 1;
+  }
+
+  @media (prefers-contrast: more) {
+    .color-picker-input,
+    .color-picker-hex {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .color-picker-input,
+    .color-picker-hex {
+      border-color: ButtonBorder;
+      background: Field;
+      color: FieldText;
+    }
+
+    .color-picker-input:focus-visible,
+    .color-picker-hex:focus-visible {
+      outline: var(--border-width-050) solid Highlight;
+      outline-offset: 1px;
+    }
+
+    .color-picker-input:is([aria-invalid="true"], :user-invalid),
+    .color-picker-hex[aria-invalid="true"] {
+      border-color: LinkText;
+    }
+
+    .color-picker-input:disabled,
+    .color-picker-hex:disabled {
+      border-color: GrayText;
+      color: GrayText;
+    }
+  }
+}

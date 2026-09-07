@@ -1,0 +1,22 @@
+@layer components {
+  .skeleton {
+    inline-size: 100%;
+    min-block-size: var(--size-300);
+    background-color: var(--surface-secondary);
+  }
+
+  .skeleton-round {
+    inline-size: var(--size-1000);
+    block-size: var(--size-1000);
+    min-block-size: 0;
+    border-radius: var(--border-radius-6400);
+  }
+
+  @media (forced-colors: active) {
+    .skeleton {
+      background: Canvas;
+      outline: var(--border-width-025) solid CanvasText;
+      outline-offset: calc(-1 * var(--border-width-025));
+    }
+  }
+}

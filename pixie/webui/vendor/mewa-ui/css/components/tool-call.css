@@ -1,0 +1,106 @@
+@layer components {
+  .tool-call {
+    border-block: var(--border-width-025) solid var(--border-primary);
+    background-color: var(--surface-primary);
+    color: var(--text-primary);
+  }
+
+  .tool-call-summary,
+  .tool-call-static {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-200);
+    min-height: var(--size-1000);
+    padding: var(--space-200) var(--space-300);
+  }
+
+  .tool-call-summary {
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .tool-call-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .tool-call-summary:focus-visible {
+    outline: var(--focus-ring-width) solid var(--border-focus);
+    outline-offset: calc(-1 * var(--border-width-050));
+  }
+
+  .tool-call-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-400);
+    height: var(--size-400);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-weight: var(--font-weight-550);
+  }
+
+  .tool-call-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+  }
+
+  .tool-call-state {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-300);
+  }
+
+  .tool-call[data-status="running"] .tool-call-mark,
+  .tool-call[data-status="running"] .tool-call-state {
+    color: var(--text-caution);
+  }
+
+  .tool-call[data-status="complete"] .tool-call-mark,
+  .tool-call[data-status="complete"] .tool-call-state {
+    color: var(--text-positive);
+  }
+
+  .tool-call[data-status="error"] .tool-call-mark,
+  .tool-call[data-status="error"] .tool-call-state {
+    color: var(--text-negative);
+  }
+
+  .tool-call-content {
+    padding: 0 var(--space-300) var(--space-300) calc(var(--space-300) + var(--size-400) + var(--space-200));
+    color: var(--text-secondary);
+    font-size: var(--font-size-350);
+  }
+
+  @media (max-width: 37.5rem) {
+    .tool-call-summary,
+    .tool-call-static {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .tool-call-state {
+      grid-column: 2;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .tool-call {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .tool-call {
+      background: Canvas;
+      color: CanvasText;
+      border-color: CanvasText;
+    }
+
+    .tool-call-mark,
+    .tool-call-state {
+      color: CanvasText;
+    }
+  }
+}

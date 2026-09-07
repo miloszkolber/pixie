@@ -1,0 +1,140 @@
+/* -- Number Field component ------------------------------------- */
+
+@layer components {
+  .number-field {
+    display: inline-grid;
+    grid-template-columns: minmax(0, var(--size-1600)) var(--size-1000) var(--size-1000);
+    grid-template-rows: 1fr;
+    height: var(--size-1000);
+    border: var(--border-width-025) solid var(--border-secondary);
+
+    background: var(--background);
+
+    overflow: visible;
+
+    &:has(input:is([aria-invalid="true"], :user-invalid)) {
+      border-color: var(--text-negative);
+    }
+
+    & input {
+      grid-column: 1;
+      grid-row: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      height: 100%;
+      width: 100%;
+      min-width: 0;
+      padding: 0 var(--space-300);
+      text-align: start;
+      font-size: var(--font-size-350);
+      font-family: var(--font-sans);
+      color: var(--text-primary);
+      -moz-appearance: textfield;
+
+      &::-webkit-inner-spin-button,
+      &::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+
+      &:focus {
+        outline: var(--focus-ring-width) solid var(--border-focus);
+        outline-offset: var(--border-width-025);
+      }
+
+      &:focus-visible {
+        outline: var(--focus-ring-width) solid var(--border-focus);
+        outline-offset: var(--border-width-025);
+      }
+
+      &:is([aria-invalid="true"], :user-invalid) {
+        outline-color: var(--text-negative);
+      }
+    }
+
+    & button {
+      grid-row: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 0;
+      height: 100%;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: var(--font-size-350);
+      font-family: var(--font-sans);
+      line-height: var(--font-height-flat);
+      flex-shrink: 0;
+      padding: 0;
+
+      /* Step glyphs are square icon buttons inside the control. */
+      & :where(i, svg) {
+        width: var(--size-400);
+        height: var(--size-400);
+      }
+
+      &:focus-visible {
+        outline: var(--focus-ring-width) solid var(--border-focus);
+        outline-offset: calc(-1 * var(--focus-ring-width));
+      }
+
+      &:hover {
+        background: var(--surface-secondary);
+        color: var(--text-primary);
+      }
+
+      &:first-of-type:not([data-action]),
+      &[data-action="decrement"] {
+        grid-column: 2;
+        border-inline-start: var(--border-width-025) solid var(--border-secondary);
+      }
+
+      &:last-of-type:not([data-action]),
+      &[data-action="increment"] {
+        grid-column: 3;
+      }
+
+      &:is(:last-of-type),
+      &[data-action="increment"] {
+        border-inline-start: var(--border-width-025) solid var(--border-secondary);
+      }
+
+      &:disabled {
+        background: var(--surface-secondary);
+        color: var(--text-disabled);
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (prefers-contrast: more) {
+    .number-field { border-width: var(--border-width-050); }
+    .number-field button { border-width: var(--border-width-050); }
+  }
+
+  @media (forced-colors: active) {
+    .number-field {
+      background: Field;
+      border-color: ButtonText;
+    }
+
+    .number-field input {
+      color: FieldText;
+    }
+
+    .number-field button {
+      color: ButtonText;
+      border-color: ButtonText;
+    }
+
+    .number-field button:hover {
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+}

@@ -1,0 +1,92 @@
+@layer components {
+  .tree {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: var(--font-size-350);
+  }
+
+  .tree-group {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 var(--space-500);
+  }
+
+  .tree-item {
+    padding: 0;
+  }
+
+  .tree-branch {
+    border: none;
+
+  }
+
+  .tree-branch-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+    padding: var(--space-100) var(--space-200);
+
+    cursor: pointer;
+    color: var(--text-primary);
+    list-style: none;
+
+    &:hover {
+      background-color: var(--surface-secondary);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    & svg {
+      width: var(--size-400);
+      height: var(--size-400);
+      flex-shrink: 0;
+    }
+
+    & svg:first-child {
+      width: 0.875rem;
+      height: 0.875rem;
+      color: var(--text-muted);
+    }
+  }
+
+  details[open] > .tree-branch-trigger > svg:first-child {
+    transform: rotate(90deg);
+  }
+
+  .tree-leaf {
+    display: flex;
+    align-items: center;
+    gap: var(--space-200);
+    padding: var(--space-100) var(--space-200);
+    padding-left: calc(var(--space-200) + 0.875rem + var(--space-200));
+
+    color: var(--text-primary);
+    cursor: default;
+
+    &:hover {
+      background-color: var(--surface-secondary);
+    }
+
+    & svg {
+      width: var(--size-400);
+      height: var(--size-400);
+      flex-shrink: 0;
+      color: var(--text-muted);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .tree-branch-trigger,
+    .tree-leaf { color: CanvasText; }
+    .tree-branch-trigger svg:first-child { color: CanvasText; }
+    .tree-leaf svg { color: CanvasText; }
+  }
+}

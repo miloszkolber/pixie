@@ -1,0 +1,57 @@
+/* -- Separator component ---------------------------------------- */
+
+@layer components {
+  .separator {
+    border: none;
+    margin: 0;
+    flex-shrink: 0;
+    background: var(--border-primary);
+
+    height: 1px;
+    width: 100%;
+
+    &[data-orientation="vertical"] {
+      height: auto;
+      width: 1px;
+      align-self: stretch;
+    }
+  }
+
+  /* -- Labeled separator ------------------------------------- */
+  .separator-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-300);
+
+    & .separator { flex: 1; }
+
+    & span {
+      font-size: var(--font-size-300);
+      font-weight: var(--font-weight-550);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+  }
+
+  /* -- Accessibility ----------------------------------------- */
+  @media (forced-colors: active) {
+    .separator {
+      background: CanvasText;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .separator {
+      background: var(--text-primary);
+      height: 2px;
+
+      &[data-orientation="vertical"] {
+        width: 2px;
+        height: auto;
+      }
+    }
+  }
+}

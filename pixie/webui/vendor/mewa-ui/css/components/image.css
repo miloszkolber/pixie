@@ -1,0 +1,163 @@
+@layer components {
+  .image {
+    position: relative;
+    overflow: hidden;
+
+    margin: 0;
+
+    & > img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* -- Fit variants ---------------------------------------- */
+    &[data-fit="contain"] > img { object-fit: contain; }
+    &[data-fit="fill"]    > img { object-fit: fill; }
+    &[data-fit="none"]    > img { object-fit: none; }
+
+    /* -- Aspect ratio ---------------------------------------- */
+    &[data-ratio="1/1"]  { aspect-ratio: 1 / 1; }
+    &[data-ratio="4/3"]  { aspect-ratio: 4 / 3; }
+    &[data-ratio="3/2"]  { aspect-ratio: 3 / 2; }
+    &[data-ratio="16/9"] { aspect-ratio: 16 / 9; }
+    &[data-ratio="21/9"] { aspect-ratio: 21 / 9; }
+    &[data-ratio="3/4"]  { aspect-ratio: 3 / 4; }
+
+    /* -- Circular variant (avatar-style images only) ----------- */
+    &[data-radius="full"] { border-radius: var(--border-radius-6400); }
+
+    /* -- Preview cursor -------------------------------------- */
+    &[data-preview] {
+      cursor: zoom-in;
+    }
+
+    /* -- Fallback -------------------------------------------- */
+    & > .image-fallback {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--surface-secondary);
+      color: var(--text-muted);
+
+      & > svg {
+        width: var(--size-1000);
+        height: var(--size-1000);
+        opacity: var(--opacity-05);
+      }
+    }
+
+    &:has(> img:not([data-error])) > .image-fallback {
+      display: none;
+    }
+  }
+
+  /* -- Caption ----------------------------------------------- */
+  .image-caption {
+    padding: var(--space-300) 0 var(--space-100);
+    font-size: var(--font-size-350);
+    line-height: var(--font-height-regular);
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  /* -- Lightbox dialog --------------------------------------- */
+  dialog.image-lightbox {
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: auto;
+    position: fixed;
+    inset: 0;
+    max-width: 100vw;
+    max-height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    opacity: 0;
+    &[open] {
+      opacity: 1;
+    }
+
+    &::backdrop {
+      background: var(--overlay-strong);
+    }
+  }
+
+  .image-lightbox-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    position: relative;
+
+    & > img {
+      max-width: 90vw;
+      max-height: 85vh;
+      object-fit: contain;
+
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+  }
+
+  .image-lightbox-toolbar {
+    position: absolute;
+    top: var(--space-400);
+    right: var(--space-400);
+    display: flex;
+    gap: var(--space-100);
+    z-index: var(--z-raised);
+  }
+
+  .image-lightbox-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: var(--border-width-025) solid var(--border-secondary);
+    background: var(--background);
+    color: var(--text-primary);
+    cursor: pointer;
+    &:hover {
+      background: var(--surface-secondary);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    & > svg {
+      width: var(--size-400);
+      height: var(--size-400);
+    }
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (prefers-contrast: more) {
+    .image-lightbox-btn {
+      border: var(--border-width-050) solid currentColor;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .image-fallback {
+      background: Canvas;
+      color: CanvasText;
+    }
+
+    .image-caption { color: CanvasText; }
+
+    .image-lightbox-btn {
+      background: CanvasText;
+      color: Canvas;
+      border: var(--border-width-050) solid CanvasText;
+    }
+  }
+}

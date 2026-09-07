@@ -1,0 +1,149 @@
+/* -- Slider component ------------------------------------------- */
+
+@layer components {
+  .slider {
+    --slider-value: 50%;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: var(--size-200);
+    margin: 0;
+    border-radius: 0;
+    background: var(--surface-secondary);
+    cursor: pointer;
+    outline: none;
+    border: none;
+    accent-color: var(--surface-inverted);
+
+    &::-webkit-slider-runnable-track {
+      height: var(--size-200);
+      border-radius: 0;
+      background: linear-gradient(
+        to right,
+        var(--surface-inverted) 0%,
+        var(--surface-inverted) var(--slider-value),
+        var(--surface-secondary) var(--slider-value),
+        var(--surface-secondary) 100%
+      );
+    }
+
+    &::-moz-range-track {
+      height: var(--size-200);
+      border-radius: 0;
+      background: var(--surface-secondary);
+      border: none;
+    }
+
+    &::-moz-range-progress {
+      height: var(--size-200);
+      border-radius: 0;
+      background: var(--surface-inverted);
+    }
+
+    &::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: var(--size-500);
+      height: var(--size-500);
+      border-radius: 0;
+      background: var(--background);
+      border: var(--border-width-050) solid var(--surface-inverted);
+      margin-top: calc((var(--size-200) - var(--size-500)) / 2);
+      cursor: pointer;
+    }
+
+    &::-moz-range-thumb {
+      width: var(--size-500);
+      height: var(--size-500);
+      border-radius: 0;
+      background: var(--background);
+      border: var(--border-width-050) solid var(--surface-inverted);
+      cursor: pointer;
+    }
+
+    &:focus-visible {
+      &::-webkit-slider-thumb {
+        outline: var(--focus-ring-width) solid var(--border-focus);
+        outline-offset: var(--border-width-025);
+      }
+      &::-moz-range-thumb {
+        outline: var(--focus-ring-width) solid var(--border-focus);
+        outline-offset: var(--border-width-025);
+      }
+    }
+
+    &:disabled {
+      opacity: var(--opacity-05);
+      cursor: not-allowed;
+
+      &::-webkit-slider-thumb { cursor: not-allowed; }
+      &::-moz-range-thumb { cursor: not-allowed; }
+    }
+
+    &[data-orientation="vertical"] {
+      writing-mode: vertical-lr;
+      direction: rtl;
+      width: var(--size-200);
+      height: 12rem;
+
+      &::-webkit-slider-runnable-track {
+        width: var(--size-200);
+        background: linear-gradient(
+          to top,
+          var(--surface-inverted) 0%,
+          var(--surface-inverted) var(--slider-value),
+          var(--surface-secondary) var(--slider-value),
+          var(--surface-secondary) 100%
+        );
+      }
+
+      &::-webkit-slider-thumb {
+        margin-top: 0;
+        margin-left: calc((var(--size-200) - var(--size-500)) / 2);
+      }
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .slider {
+      &::-webkit-slider-thumb {
+        border-width: 3px;
+      }
+      &::-moz-range-thumb {
+        border-width: 3px;
+      }
+    }
+  }
+
+  @media (forced-colors: active) {
+    .slider {
+      &::-webkit-slider-runnable-track {
+        background: ButtonFace;
+        border: var(--border-width-025) solid ButtonText;
+      }
+      &::-moz-range-track {
+        background: ButtonFace;
+        border: var(--border-width-025) solid ButtonText;
+      }
+      &::-moz-range-progress {
+        background: Highlight;
+      }
+      &::-webkit-slider-thumb {
+        background: ButtonText;
+        border-color: ButtonText;
+      }
+      &::-moz-range-thumb {
+        background: ButtonText;
+        border-color: ButtonText;
+      }
+
+      &:focus-visible {
+        &::-webkit-slider-thumb {
+          outline-color: Highlight;
+        }
+        &::-moz-range-thumb {
+          outline-color: Highlight;
+        }
+      }
+    }
+  }
+}

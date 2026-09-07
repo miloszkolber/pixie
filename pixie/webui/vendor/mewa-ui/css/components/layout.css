@@ -1,0 +1,69 @@
+/* -- Layout component ---------------------------------------- */
+
+@layer components {
+  /* -- Gap scale --------------------------------------------- */
+  :where(.layout-container, .layout-stack, .layout-grid, .layout-sidebar, .layout-center, .layout-split) {
+    --gap: var(--space-400);
+  }
+
+  :where(.layout-container, .layout-stack, .layout-grid, .layout-sidebar, .layout-center, .layout-split)[data-gap="none"] { --gap: 0; }
+  :where(.layout-container, .layout-stack, .layout-grid, .layout-sidebar, .layout-center, .layout-split)[data-gap="xs"]   { --gap: var(--space-200); }
+  :where(.layout-container, .layout-stack, .layout-grid, .layout-sidebar, .layout-center, .layout-split)[data-gap="sm"]   { --gap: var(--space-300); }
+  :where(.layout-container, .layout-stack, .layout-grid, .layout-sidebar, .layout-center, .layout-split)[data-gap="md"]   { --gap: var(--space-400); }
+  :where(.layout-container, .layout-stack, .layout-grid, .layout-sidebar, .layout-center, .layout-split)[data-gap="lg"]   { --gap: var(--space-600); }
+  :where(.layout-container, .layout-stack, .layout-grid, .layout-sidebar, .layout-center, .layout-split)[data-gap="xl"]   { --gap: var(--space-1000); }
+
+  /* -- Container --------------------------------------------- */
+  .layout-container {
+    width: min(100% - var(--space-1000), var(--container-max, var(--breakpoint-max-focused)));
+    margin-inline: auto;
+    padding-inline: var(--space-400);
+  }
+
+  /* -- Stack ------------------------------------------------ */
+  .layout-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+  }
+
+  /* -- Grid ------------------------------------------------- */
+  .layout-grid {
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--min, 15rem)), 1fr));
+  }
+
+  /* -- Sidebar ---------------------------------------------- */
+  .layout-sidebar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap);
+
+    & > :first-child {
+      flex-basis: var(--sidebar-width, 14rem);
+      flex-grow: 1;
+    }
+
+    & > :last-child {
+      flex-basis: 0;
+      flex-grow: 999;
+      min-inline-size: 50%;
+    }
+  }
+
+  /* -- Center ----------------------------------------------- */
+  .layout-center {
+    display: grid;
+    place-content: center;
+  }
+
+  /* -- Split ------------------------------------------------ */
+  .layout-split {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap);
+  }
+}

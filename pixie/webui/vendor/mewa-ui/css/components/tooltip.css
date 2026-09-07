@@ -1,0 +1,150 @@
+/* Flipped placement needs the arrow on the opposite side. These named
+   tries re-position the tooltip AND carry the arrow side through a custom
+   property, so a flipped tip never keeps a stale arrow. @position-try is a
+   top-level at-rule and is declared outside @layer on purpose. */
+@position-try --tip-flip-top { position-area: bottom; --tooltip-arrow-side: top; }
+@position-try --tip-flip-bottom { position-area: top; --tooltip-arrow-side: bottom; }
+@position-try --tip-flip-left { position-area: right; --tooltip-arrow-side: left; }
+@position-try --tip-flip-right { position-area: left; --tooltip-arrow-side: right; }
+
+@layer components {
+  .tooltip {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    border: none;
+    display: none;  /* protect closed state from author display resets */
+
+    background-color: var(--surface-inverted);
+    color: var(--text-inverted);
+    padding: var(--space-200) var(--space-300);
+    font-size: var(--font-size-300);
+    line-height: var(--font-height-regular);
+
+    pointer-events: auto;
+    max-width: 16rem;
+    width: max-content;
+
+    /* -- Default: top center -- */
+    position-area: top;
+    margin-bottom: var(--space-200);
+    position-try-fallbacks: --tip-flip-top, flip-inline, flip-block;
+
+    &:popover-open {
+      display: block;
+      opacity: 1;
+    }
+
+    /* ----- Side variants ----- */
+    &[data-side="bottom"] {
+      position-area: bottom;
+      margin-bottom: 0;
+      margin-top: var(--space-200);
+      position-try-fallbacks: --tip-flip-bottom, flip-inline, flip-block;
+    }
+
+    &[data-side="left"] {
+      position-area: left;
+      margin-bottom: 0;
+      margin-right: var(--space-200);
+      position-try-fallbacks: --tip-flip-left, flip-block, flip-inline;
+    }
+
+    &[data-side="right"] {
+      position-area: right;
+      margin-bottom: 0;
+      margin-left: var(--space-200);
+      position-try-fallbacks: --tip-flip-right, flip-block, flip-inline;
+    }
+
+    /* ----- Align variants (combined with side) ----- */
+    &[data-align="start"] {
+      &:not([data-side="left"]):not([data-side="right"]) { position-area: top left; }
+      &[data-side="bottom"] { position-area: bottom left; }
+      &[data-side="left"] { position-area: left top; }
+      &[data-side="right"] { position-area: right top; }
+    }
+
+    &[data-align="end"] {
+      &:not([data-side="left"]):not([data-side="right"]) { position-area: top right; }
+      &[data-side="bottom"] { position-area: bottom right; }
+      &[data-side="left"] { position-area: left bottom; }
+      &[data-side="right"] { position-area: right bottom; }
+    }
+
+    /* ----- Arrow ----- */
+    & [data-arrow] {
+      position: absolute;
+      width: var(--size-200);
+      height: var(--size-200);
+      background: inherit;
+      transform: rotate(45deg);
+      border: none;
+    }
+
+    &:not([data-side]), &[data-side="top"] {
+      & [data-arrow] { bottom: calc(-1 * var(--size-100)); left: 50%; margin-left: calc(-1 * var(--space-100)); }
+    }
+    &[data-side="bottom"] {
+      & [data-arrow] { top: calc(-1 * var(--size-100)); left: 50%; margin-left: calc(-1 * var(--space-100)); }
+    }
+    &[data-side="left"] {
+      & [data-arrow] { right: calc(-1 * var(--size-100)); top: 50%; margin-top: calc(-1 * var(--space-100)); }
+    }
+    &[data-side="right"] {
+      & [data-arrow] { left: calc(-1 * var(--size-100)); top: 50%; margin-top: calc(-1 * var(--space-100)); }
+    }
+  }
+
+  /* -- Flipped arrow placement ---------------------------------
+     When the tooltip flips, the named position-try (or the fallback
+     script) sets --tooltip-arrow-side on the tooltip itself. A style query
+     reads that custom property and moves the caret to the edge the tooltip
+     now sits on. The selector repeats the base specificity and is declared
+     after it, so it wins the tie. */
+  @container style(--tooltip-arrow-side: top) {
+    .tooltip:not([data-side]) [data-arrow],
+    .tooltip[data-side] [data-arrow] {
+      bottom: auto;
+      top: calc(-1 * var(--size-100));
+      left: 50%;
+      margin: 0 0 0 calc(-1 * var(--space-100));
+    }
+  }
+  @container style(--tooltip-arrow-side: bottom) {
+    .tooltip:not([data-side]) [data-arrow],
+    .tooltip[data-side] [data-arrow] {
+      top: auto;
+      bottom: calc(-1 * var(--size-100));
+      left: 50%;
+      margin: 0 0 0 calc(-1 * var(--space-100));
+    }
+  }
+  @container style(--tooltip-arrow-side: left) {
+    .tooltip:not([data-side]) [data-arrow],
+    .tooltip[data-side] [data-arrow] {
+      right: auto;
+      left: calc(-1 * var(--size-100));
+      top: 50%;
+      margin: calc(-1 * var(--space-100)) 0 0 0;
+    }
+  }
+  @container style(--tooltip-arrow-side: right) {
+    .tooltip:not([data-side]) [data-arrow],
+    .tooltip[data-side] [data-arrow] {
+      left: auto;
+      right: calc(-1 * var(--size-100));
+      top: 50%;
+      margin: calc(-1 * var(--space-100)) 0 0 0;
+    }
+  }
+
+  /* -- Accessibility ---------------------------------------- */
+  @media (forced-colors: active) {
+    .tooltip {
+      background: Canvas;
+      color: CanvasText;
+      border: var(--border-width-025) solid CanvasText;
+    }
+  }
+}

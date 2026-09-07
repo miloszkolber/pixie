@@ -1,0 +1,101 @@
+/* -- Toggle component ------------------------------------------ */
+
+@layer components {
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-200);
+    font-size: var(--font-size-350);
+    font-weight: var(--font-weight-550);
+    font-family: var(--font-sans);
+    line-height: var(--font-height-flat);
+    white-space: nowrap;
+
+    border: var(--border-width-025) solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    outline: none;
+    flex-shrink: 0;
+    height: var(--size-1000);
+    padding: 0 var(--space-300);
+    min-width: var(--size-1000);
+
+    &:not([aria-pressed="true"]):hover {
+      background-color: var(--surface-secondary);
+      color: var(--text-primary);
+    }
+
+    &[aria-pressed="true"] {
+      background-color: var(--surface-secondary);
+      color: var(--text-primary);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-ring-width) solid var(--border-focus);
+      outline-offset: var(--border-width-025);
+    }
+
+    &:disabled {
+      pointer-events: none;
+      opacity: var(--opacity-05);
+    }
+
+    & svg {
+      pointer-events: none;
+      flex-shrink: 0;
+
+      &:not([class*="size-"]) { width: var(--size-400); height: var(--size-400); }
+    }
+
+    /* -- Variants -------------------------------------------- */
+    &[data-variant="outline"] {
+      border: var(--border-width-025) solid var(--border-secondary);
+      background: transparent;
+
+
+      &:not([aria-pressed="true"]):hover {
+        background-color: var(--surface-secondary);
+        color: var(--text-primary);
+      }
+
+      &[aria-pressed="true"] {
+        background-color: var(--surface-secondary);
+        color: var(--text-primary);
+      }
+    }
+
+    /* -- Sizes ----------------------------------------------- */
+  }
+
+  @media (prefers-contrast: more) {
+    .toggle {
+      border: var(--border-width-050) solid transparent;
+
+      &[data-variant="outline"] {
+        border-color: var(--text-primary);
+      }
+
+      &[aria-pressed="true"] {
+        border-color: currentColor;
+      }
+    }
+  }
+
+  @media (forced-colors: active) {
+    .toggle {
+      border: var(--border-width-025) solid ButtonText;
+
+      &[aria-pressed="true"] {
+        background: Highlight;
+        color: HighlightText;
+      }
+
+      &:disabled {
+        border-color: GrayText;
+        color: GrayText;
+      }
+    }
+  }
+}

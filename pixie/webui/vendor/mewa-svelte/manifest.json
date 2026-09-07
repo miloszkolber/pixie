@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "mewa-svelte",
+  "version": "0.1.2",
+  "framework": "svelte",
+  "frameworkRange": ">=5.29.0 <6",
+  "builder": "bun",
+  "corePackage": "mewa-ui",
+  "entries": {
+    "attachment": "index.js",
+    "bunPlugin": "bun-plugin.js"
+  },
+  "licenses": {
+    "mewaUi": "LICENSE"
+  }
+}

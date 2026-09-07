@@ -1,0 +1,66 @@
+@layer components {
+  .suggestion {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-200);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .suggestion-item {
+    min-width: 0;
+  }
+
+  .suggestion-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-800);
+    max-width: 100%;
+    padding-inline: var(--space-300);
+    border: var(--border-width-025) solid var(--border-primary);
+    background-color: var(--surface-primary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: var(--font-size-350);
+    text-align: start;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  .suggestion-button:hover:not(:disabled) {
+    border-color: var(--border-hover);
+    background-color: var(--surface-hover);
+  }
+
+  .suggestion-button:focus-visible {
+    outline: var(--focus-ring-width) solid var(--border-focus);
+    outline-offset: var(--border-width-025);
+  }
+
+  .suggestion-button:disabled {
+    border-color: var(--border-disabled);
+    background-color: var(--surface-disabled);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  @media (prefers-contrast: more) {
+    .suggestion-button {
+      border-width: var(--border-width-050);
+    }
+  }
+
+  @media (forced-colors: active) {
+    .suggestion-button {
+      background: ButtonFace;
+      color: ButtonText;
+      border-color: ButtonText;
+    }
+
+    .suggestion-button:disabled {
+      color: GrayText;
+      border-color: GrayText;
+    }
+  }
+}
