@@ -230,7 +230,8 @@ func ensureDirectory(path, root string) error {
 	}
 	info, err := os.Lstat(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		if err := os.Mkdir(path, 0700); err != nil && !errors.Is(err, fs.ErrExist) {
+		// Recursive: fresh XDG data roots may miss every parent level.
+		if err := os.MkdirAll(path, 0700); err != nil && !errors.Is(err, fs.ErrExist) {
 			return err
 		}
 		info, err = os.Lstat(path)
