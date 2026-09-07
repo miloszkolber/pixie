@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/miloszkolber/pixie/internal/diagnostics"
@@ -98,75 +97,41 @@ func engineBrowserCommand(t *testing.T, registry *mcpserver.Registry, session st
 	return result
 }
 
-func TestBrowserEngineDefaultsToChromium(t *testing.T) {
+func TestBrowserModuleReadyWithoutEngineSelection(t *testing.T) {
 	root := t.TempDir()
 	registry := engineRegistry(t, root, nil)
-	if registry.Engine() != "chromium" {
-		t.Fatalf("default engine = %q", registry.Engine())
+	if ready, detail := registry.Health("browser"); !ready {
+		t.Fatalf("browser not ready: %q", detail)
 	}
-	if status := engineStatus(t, registry); status["browserEngine"] != "chromium" {
-		t.Fatalf("status engine = %#v", status["browserEngine"])
-	}
-	if ready, _ := registry.Health("browser"); !ready {
-		t.Fatal("chromium engine is not ready with fixture binaries")
-	}
-}
-
-func TestBrowserEngineRejectsUnknownBackends(t *testing.T) {
-	root := t.TempDir()
-	registry := engineRegistry(t, root, nil)
-	if err := registry.SetEngine("firefox"); err == nil {
-		t.Fatal("unknown engine accepted")
-	}
-	if registry.Engine() != "chromium" {
-		t.Fatalf("engine after rejection = %q", registry.Engine())
-	}
-}
-
-func TestObscuraWithoutEndpointDegradesInsteadOfFallingBack(t *testing.T) {
-	root := t.TempDir()
-	registry := engineRegistry(t, root, nil)
-	if err := registry.SetEngine("obscura"); err != nil {
-		t.Fatal(err)
-	}
-	if ready, detail := registry.Health("browser"); ready || !strings.Contains(detail, "PIXIE_BROWSER_CDP") {
-		t.Fatalf("obscura health = %v %q", ready, detail)
-	}
-	catalog := registry.Catalog()
-	module := catalog.Modules[0]
-	// The engine switch never alters the model-facing API: identity, tools,
-	// and resources stay identical; only readiness degrades.
+	module := registry.Catalog().Modules[0]
 	if module.ID != "browser" || module.ExtensionName != "pixie-browser" || module.Path != "/mcp/browser" ||
-		module.Transport != "streamable_http" {
-		t.Fatalf("obscura module identity changed = %#v", module)
+		module.Transport != "streamable_http" || module.State != "ready" {
+		t.Fatalf("browser module = %#v", module)
 	}
-	if module.State != "unavailable" || !strings.Contains(module.Detail, "PIXIE_BROWSER_CDP") {
-		t.Fatalf("obscura module = %#v", module)
-	}
-	params := map[string]any{
-		"name":      "browser_command",
-		"arguments": map[string]any{"session": "obscura-degraded", "command": "snapshot"},
-	}
-	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params})
-	if err != nil {
-		t.Fatal(err)
-	}
-	degraded := serve(registry, http.MethodPost, "/mcp/browser", string(body), "127.0.0.1:17874", map[string]string{
-		"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
-		"MCP-Protocol-Version": "2025-11-25",
-	})
-	if degraded.Code != http.StatusNotFound {
-		t.Fatalf("degraded obscura status = %d %s", degraded.Code, degraded.Body.String())
-	}
-	if err := registry.SetEngine("chromium"); err != nil {
-		t.Fatal(err)
-	}
-	if ready, _ := registry.Health("browser"); !ready {
-		t.Fatal("chromium engine did not recover")
+	if status := engineStatus(t, registry); status["browserEngine"] != nil {
+		t.Fatalf("status still reports an engine choice: %#v", status["browserEngine"])
 	}
 }
 
-func TestObscuraWithEndpointStartsAndChromiumIgnoresCDP(t *testing.T) {
+func TestStaleEnginePreferenceFileIgnoredAndRemoved(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "browser.json"), []byte(`{"engine":"obscura"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry := engineRegistry(t, root, nil)
+	if ready, detail := registry.Health("browser"); !ready {
+		t.Fatalf("browser not ready with stale preference present: %q", detail)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "browser.json")); !os.IsNotExist(err) {
+		t.Fatal("stale browser.json was not removed")
+	}
+}
+
+func TestOperatorCDPEndpointIgnored(t *testing.T) {
 	root := t.TempDir()
 	getenv := func(key string) (string, bool) {
 		if key == "PIXIE_BROWSER_CDP" {
@@ -175,40 +140,13 @@ func TestObscuraWithEndpointStartsAndChromiumIgnoresCDP(t *testing.T) {
 		return "", false
 	}
 	registry := engineRegistry(t, root, getenv)
-	// The persisted chromium engine wins over the operator CDP override: the
-	// child never sees a CDP backend while chromium is selected.
+	// Chromium is the only backend: the child never sees a CDP endpoint even
+	// when the retired operator variable is still set.
 	result := engineBrowserCommand(t, registry, "chromium-ignores-cdp")
 	if result.IsError || result.StructuredContent["stdout"] != "unset" {
 		t.Fatalf("chromium child saw CDP: %#v", result)
 	}
-	if err := registry.SetEngine("obscura"); err != nil {
-		t.Fatal(err)
-	}
 	if ready, detail := registry.Health("browser"); !ready {
-		t.Fatalf("obscura with endpoint not ready: %q", detail)
-	}
-	result = engineBrowserCommand(t, registry, "obscura-uses-cdp")
-	if result.IsError || result.StructuredContent["stdout"] != "127.0.0.1:9222" {
-		t.Fatalf("obscura child missed CDP: %#v", result)
-	}
-}
-
-func TestBrowserEnginePersistsAcrossRestarts(t *testing.T) {
-	root := t.TempDir()
-	first := engineRegistry(t, root, nil)
-	if err := first.SetEngine("obscura"); err != nil {
-		t.Fatal(err)
-	}
-	first.Shutdown()
-	second := reopenEngineRegistry(t, root, nil)
-	if second.Engine() != "obscura" {
-		t.Fatalf("reopened engine = %q", second.Engine())
-	}
-	raw, err := os.ReadFile(filepath.Join(root, "data", "browser.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), `"engine"`) {
-		t.Fatalf("browser.json = %s", raw)
+		t.Fatalf("browser not ready: %q", detail)
 	}
 }

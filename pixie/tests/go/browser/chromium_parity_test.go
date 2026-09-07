@@ -96,7 +96,7 @@ type liveRuntime struct {
 	config  browser.Config
 }
 
-func startLiveRuntime(t *testing.T, agentBrowser, chromium string, cdpEndpoint string) *liveRuntime {
+func startLiveRuntime(t *testing.T, agentBrowser, chromium string) *liveRuntime {
 	t.Helper()
 	// Chromium's SingletonSocket lives under $TMPDIR and inherits its length
 	// limit (~107 bytes): use a short root because the default t.TempDir
@@ -128,7 +128,7 @@ func startLiveRuntime(t *testing.T, agentBrowser, chromium string, cdpEndpoint s
 	configuration := browser.Config{
 		Host: "127.0.0.1", Port: 8787,
 		ArtifactRoot: filepath.Join(root, "artifacts"), StateRoot: filepath.Join(root, "state"),
-		AgentBrowser: wrapper, BrowserConfig: configFile, CDPEndpoint: cdpEndpoint,
+		AgentBrowser: wrapper, BrowserConfig: configFile,
 		CommandTimeout: 60 * time.Second, RequestTimeout: 90 * time.Second,
 		MaxArtifactBytes: 64 * 1024 * 1024, MaxTotalArtifactBytes: 256 * 1024 * 1024,
 		MaxStateBytes: 256 * 1024 * 1024, MaxSessions: 16, MaxStateEntries: 20_000,
@@ -198,7 +198,7 @@ func liveBinaries(t *testing.T) (agentBrowser, chromium string) {
 func TestLiveChromiumAcceptance(t *testing.T) {
 	agentBrowser, chromium := liveBinaries(t)
 	fixture := startLiveFixtures(t)
-	runtime := startLiveRuntime(t, agentBrowser, chromium, "")
+	runtime := startLiveRuntime(t, agentBrowser, chromium)
 	service := runtime.service
 
 	t.Run("connect and navigate simple HTML", func(t *testing.T) {
@@ -337,56 +337,6 @@ func TestLiveChromiumAcceptance(t *testing.T) {
 			requireCompleted(t, liveCommand(t, service, session, "close"), session, "close")
 		}
 	})
-}
-
-// TestLiveObscuraCompatibility defines the deployment-host Obscura suite and
-// runs it only when an obscura binary is available. Without one it stays
-// skipped (unevaluated): Chromium remains the default engine and this test is
-// the concrete procedure to run where Obscura can be installed. Metrics to
-// compare per engine: startup latency, idle and per-session memory,
-// navigate/snapshot/screenshot latency and success rate, render fidelity,
-// and JS compatibility.
-func TestLiveObscuraCompatibility(t *testing.T) {
-	if os.Getenv("PIXIE_BROWSER_LIVE") != "1" {
-		t.Skip("PIXIE_BROWSER_LIVE=1 not set; skipping Obscura compatibility")
-	}
-	obscura := os.Getenv("PIXIE_TEST_OBSCURA")
-	if obscura == "" {
-		obscura = "obscura"
-	}
-	if _, err := exec.LookPath(obscura); err != nil {
-		t.Skipf("obscura binary unavailable (%v): Chromium stays the default; run this suite on the deployment host with `obscura serve --port 9222` and PIXIE_TEST_OBSCURA set", err)
-	}
-	agentBrowser, chromium := liveBinaries(t)
-	fixture := startLiveFixtures(t)
-
-	port := freePort(t)
-	serve := exec.Command(obscura, "serve", "--port", port)
-	serve.Stdout, serve.Stderr = nil, nil
-	if err := serve.Start(); err != nil {
-		t.Fatalf("obscura serve: %v", err)
-	}
-	t.Cleanup(func() {
-		if serve.Process != nil {
-			_ = serve.Process.Kill()
-			_, _ = serve.Process.Wait()
-		}
-	})
-	waitForCDP(t, port)
-
-	runtime := startLiveRuntime(t, agentBrowser, chromium, "127.0.0.1:"+port)
-	service := runtime.service
-	steps := []liveStep{
-		{command: "open", session: "obscura-home", args: []string{fixture.base + "/"}},
-		{command: "snapshot", session: "obscura-home", args: []string{"-i"}},
-		{command: "get", session: "obscura-home", args: []string{"title"}},
-		{command: "screenshot", session: "obscura-home", args: []string{"obscura.png"}},
-		{command: "close", session: "obscura-home"},
-	}
-	for _, step := range steps {
-		outcome := liveCommand(t, service, step.session, step.command, step.args...)
-		requireCompleted(t, outcome, step.session, step.command)
-	}
 }
 
 type liveStep struct {

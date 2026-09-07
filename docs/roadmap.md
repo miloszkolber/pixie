@@ -151,8 +151,7 @@ Acceptance: a fresh local installation can start basic chat using an existing Pi
 - Review the deployed filesystem, UID, environment and network boundaries. Sanitized child environment variables and a read-only root filesystem are useful defenses, not isolation from controller files under a shared UID. Do not equate a successful screenshot with a sandbox test.
 - Evaluate the smallest practical process/filesystem boundary for Chromium while keeping one Pixie control plane. Document deployment prerequisites and residual risks. Ask before accepting a material security regression or requiring new privileged machinery.
 - Test Browser panels, leases, artifact access/cleanup, cancellation, untrusted pages and admitted project boundaries. Do not restore the removed interactive MCP Apps feature.
-- Keep Chromium supported. Obscura stays experimental until tested through CDP against representative sites and the required navigation, snapshot/ref, interaction, screenshot and cleanup paths. A missing item in upstream documentation is not proof that an implementation is absent.
-- Add a Browser engine selector only if multiple verified usable engines justify one. Otherwise keep the UI honest and small. Do not change the model-facing Browser API by engine.
+- Keep Chromium as the only backend. There is no engine selector and no alternative-engine evaluation track.
 
 Acceptance: verified compatibility and explicit security boundaries for the selected deployment. Publish measurements only for configurations actually exercised, not as universal engine claims.
 

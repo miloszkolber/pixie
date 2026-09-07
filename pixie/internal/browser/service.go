@@ -53,14 +53,8 @@ var temporaryArtifactPrefix = ".pixie-screenshot-"
 // Config defines the browser service's runtime and storage boundaries. It is
 // a module-internal composition contract used by the MCP host to embed the
 // service without reaching into its process-global environment.
-//
-// CDPEndpoint selects the browser engine backend without altering the
-// model-facing API. Empty keeps the default Chromium launch; a set value
-// (operator PIXIE_BROWSER_CDP, e.g. an Obscura "obscura serve" endpoint)
-// connects agent-browser to that CDP endpoint instead.
 type Config struct {
 	Host, Token, PublicOrigin, ArtifactRoot, StateRoot, AgentBrowser, BrowserConfig string
-	CDPEndpoint                                                                     string
 	Port                                                                            int
 	Authentication                                                                  bool
 	CommandTimeout, RequestTimeout, PanelLeaseTimeout                               time.Duration
@@ -110,15 +104,9 @@ func ConfigFromEnvironment(lookup func(string) (string, bool)) (Config, error) {
 	}
 	token, _ := lookup("PIXIE_BROWSER_TOKEN")
 	publicOrigin, _ := lookup("PIXIE_BROWSER_PUBLIC_ORIGIN")
-	cdpValue, _ := lookup("PIXIE_BROWSER_CDP")
-	cdpEndpoint, err := normalizeCDPEndpoint(cdpValue)
-	if err != nil {
-		return Config{}, err
-	}
 	return validateNetworkConfig(Config{
 		Host: host, Port: port, Authentication: auth, Token: token, PublicOrigin: publicOrigin,
 		ArtifactRoot: defaultArtifactRoot, StateRoot: defaultStateRoot, AgentBrowser: defaultAgentBrowser, BrowserConfig: defaultBrowserConfig,
-		CDPEndpoint:    cdpEndpoint,
 		CommandTimeout: defaultCommandTimeout, RequestTimeout: defaultRequestTimeout,
 		MaxArtifactBytes: defaultArtifactLimit, MaxTotalArtifactBytes: defaultTotalArtifact, MaxStateBytes: defaultStateLimit, MaxSessions: defaultSessionLimit, MaxStateEntries: defaultStateEntries,
 	})
@@ -574,18 +562,13 @@ func (a *app) checkGlobalArtifactQuota() error {
 	return nil
 }
 
-func runtimeEnvironment(stateDir, agentBrowser, cdpEndpoint string) []string {
+func runtimeEnvironment(stateDir, agentBrowser string) []string {
 	home := filepath.Join(stateDir, "home")
 	environment := []string{
 		"PATH=" + filepath.Dir(agentBrowser), "HOME=" + home, "TMPDIR=" + filepath.Join(stateDir, "tmp"),
 		"XDG_CONFIG_HOME=" + filepath.Join(home, ".config"), "XDG_DATA_HOME=" + filepath.Join(home, ".local", "share"),
 		"XDG_STATE_HOME=" + filepath.Join(home, ".local", "state"), "AGENT_BROWSER_SOCKET_DIR=" + filepath.Join(stateDir, "run"),
 		"AGENT_BROWSER_CONTENT_BOUNDARIES=1", "AGENT_BROWSER_MAX_OUTPUT=20000",
-	}
-	// The endpoint is only present when the operator selected a CDP backend
-	// (Obscura). Chromium launches are unchanged when it is empty.
-	if cdpEndpoint != "" {
-		environment = append(environment, "AGENT_BROWSER_CDP="+cdpEndpoint)
 	}
 	return environment
 }
@@ -650,7 +633,7 @@ func (r *runningCommand) terminate() {
 
 func (a *app) closeSession(session, stateDir, artifactDir string) bool {
 	command := exec.Command(a.config.AgentBrowser, "--config", a.config.BrowserConfig, "--session", agentBrowserSession, "close")
-	command.Env = runtimeEnvironment(stateDir, a.config.AgentBrowser, a.config.CDPEndpoint)
+	command.Env = runtimeEnvironment(stateDir, a.config.AgentBrowser)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		return false
@@ -864,7 +847,7 @@ func (a *app) runBrowser(ctx context.Context, request browserRequest) (result ma
 	// name need not repeat the public identifier. Keeping it short prevents the
 	// Unix socket path from exceeding Chromium's platform limit.
 	command = exec.Command(a.config.AgentBrowser, append([]string{"--config", a.config.BrowserConfig, "--session", agentBrowserSession, request.Command}, args...)...)
-	command.Dir, command.Env = artifactDir, runtimeEnvironment(stateDir, a.config.AgentBrowser, a.config.CDPEndpoint)
+	command.Dir, command.Env = artifactDir, runtimeEnvironment(stateDir, a.config.AgentBrowser)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	collector := captureCommandOutput(command)
 	if err := command.Start(); err != nil {

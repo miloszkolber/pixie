@@ -3,8 +3,7 @@ import { describe, expect, test } from "bun:test";
 // Stage G §28 contract: what the Browser MCP surface guarantees on Chromium
 // with agent-browser 0.34.0. Live behavior is verified by
 // tests/go/browser/chromium_parity_test.go (PIXIE_BROWSER_LIVE=1); this file
-// locks the documented contract so the model-facing API cannot drift while
-// the Obscura evaluation below stays unevaluated.
+// locks the documented contract so the model-facing API cannot drift.
 
 const guide = await Bun.file(new URL("../../internal/browser/guide.md", import.meta.url)).text();
 const mcpDoc = await Bun.file(new URL("../../../docs/mcp.md", import.meta.url)).text();
@@ -51,37 +50,12 @@ describe("browser §28 command contract on Chromium", () => {
 	});
 });
 
-describe("browser engine preference", () => {
-	test("chromium stays the default engine", () => {
-		expect(mcpDoc).toMatch(/default.*chromium/i);
-	});
-
-	test("engine switch keeps the model-facing API identical", () => {
-		expect(mcpDoc).toMatch(/does not alter the model-facing API/);
-	});
-
-	test("obscura selection requires a CDP endpoint", () => {
-		expect(mcpDoc).toMatch(/PIXIE_BROWSER_CDP/);
+describe("browser runs on Chromium", () => {
+	test("chromium is the backend", () => {
+		expect(mcpDoc).toMatch(/chromium/i);
 	});
 
 	test("session length guidance reflects the socket path limit", () => {
 		expect(mcpDoc).toMatch(/28 characters/);
 	});
-
-	test("obscura verdict is documented with upstream CDP evidence", () => {
-		expect(mcpDoc).toMatch(/no Accessibility domain/);
-		expect(mcpDoc).toMatch(/Chromium therefore stays both default and preferred/);
-	});
-});
-
-test.skipIf(Bun.which("obscura") == null)("obscura passes the Chromium compatibility suite", () => {
-	// Unevaluated live: no obscura binary on this host. The documented
-	// upstream interface (no Accessibility domain) already rejects Obscura
-	// as the preferred backend; the live suite
-	// tests/go/browser/chromium_parity_test.go TestLiveObscuraCompatibility
-	// (open, snapshot with refs, get title, screenshot, close over
-	// `obscura serve --port 9222` with AGENT_BROWSER_CDP) would demonstrate
-	// it empirically if a binary is present. Chromium stays default and
-	// preferred regardless.
-	expect(Bun.which("obscura")).not.toBeNull();
 });
