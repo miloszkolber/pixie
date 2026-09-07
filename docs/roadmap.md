@@ -30,6 +30,10 @@ x86-64 numbers are recorded ([security](security.md) for Browser open/snapshot/c
 
 Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](https://github.com/mjakl/pi-subagent) with the known-agent child regression from [subagent child verification](subagent-child-verification.md). No submission has been made. Do not publish any contribution without signoff. Once an upstream release passes the child tests, drop the local patch in `agent/extensions/local-patches/`.
 
+### 4. SDK built-in extension export proposal
+
+The pinned Pi SDK loads its built-in llama.cpp extension only inside the CLI (`--llama`) and does not export the factory from its package index, so the assistant keeps a pinned deep-import bootstrap in `assistant/src/extensions/llama.ts` ([extensions](pi-extensions.md)). Propose exporting the built-in extension factories from the SDK index. No submission has been made; the publication signoff gate applies. Once an upstream release exports them, load the factory through the public API and drop the deep import.
+
 ### Host state (complete)
 
 This host runs `/home/core/.pi` directly via `PI_CODING_AGENT_DIR=/home/core/.pi` for interactive Pi, pixie-assistant and native children, with unit `pixie-assistant.service`. Universal documentation keeps Pi's default plus an optional override example.
