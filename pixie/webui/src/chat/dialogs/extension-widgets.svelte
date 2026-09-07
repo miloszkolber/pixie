@@ -1,7 +1,12 @@
 <script lang="ts">
 import type { SessionRuntime } from "../runtime/session-runtime";
-let { widgets, placement }: { widgets: SessionRuntime["extensionWidgets"]; placement: string } = $props();
-let entries = $derived(Object.entries(widgets).filter(([, widget]) => widget.placement === placement).sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0)));
+let { widgets, placement }: { widgets: SessionRuntime["extensionWidgets"]; placement: string } =
+	$props();
+let entries = $derived(
+	Object.entries(widgets)
+		.filter(([, widget]) => widget.placement === placement)
+		.sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0)),
+);
 </script>
 
 {#if entries.length}

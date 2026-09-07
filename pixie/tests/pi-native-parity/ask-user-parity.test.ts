@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
+import rpivAsk from "@juicesharp/rpiv-ask-user-question";
 import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
 } from "@juicesharp/rpiv-ask-user-question/events";
-import rpivAsk from "@juicesharp/rpiv-ask-user-question";
 import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
@@ -199,11 +199,14 @@ test("a headless tool call returns the no_ui error envelope", async () => {
 
 test("the tool emits prompt and blocked events around the wait", async () => {
 	const upstreamEvents: unknown[] = [];
-	const { dir, sessions, events } = await fixture([rpivAsk, (pi) => {
-		for (const type of [ASK_USER_PROMPT_EVENT, ASK_USER_BLOCKED_EVENT]) {
-			pi.events.on(type, (payload) => upstreamEvents.push({ type, ...(payload as object) }));
-		}
-	}]);
+	const { dir, sessions, events } = await fixture([
+		rpivAsk,
+		(pi) => {
+			for (const type of [ASK_USER_PROMPT_EVENT, ASK_USER_BLOCKED_EVENT]) {
+				pi.events.on(type, (payload) => upstreamEvents.push({ type, ...(payload as object) }));
+			}
+		},
+	]);
 	const entry = await sessions.create(dir);
 	const pending = findTool(entry, "ask_user_question").execute(
 		"parity-ask-events",

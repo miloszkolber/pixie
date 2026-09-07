@@ -2,10 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
 	CallToolRequestSchema,
@@ -13,15 +14,17 @@ import {
 	ListToolsRequestSchema,
 	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import {
-	PIXIE_BROWSER_RUNTIME_NAME,
-} from "../../../pi/pixie-assistant/src/extensions/pi-mcp-adapter.ts";
+import { PIXIE_BROWSER_RUNTIME_NAME } from "../../../pi/pixie-assistant/src/extensions/pi-mcp-adapter.ts";
 import { piMcpAdapterWithConfig } from "./upstream.ts";
-import { createRequire } from "node:module";
+
 const piMcpAdapter = piMcpAdapterWithConfig();
+
 import { startHost } from "../../../pi/pixie-assistant/src/server.ts";
 import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
-const compatibilityMcp = (pi: ExtensionAPI, dir: string) => piMcpAdapterWithConfig({ agentDir: dir })(pi);
+
+const compatibilityMcp = (pi: ExtensionAPI, dir: string) =>
+	piMcpAdapterWithConfig({ agentDir: dir })(pi);
+
 import { cleanups, fixture } from "./helpers.ts";
 
 const savedEnv = new Map<string, string | undefined>();
@@ -240,9 +243,12 @@ test("native adapter starts under Bun and enables application administration", a
 	const dir = await mkdtemp(`${tmpdir()}/pixie-mcp-parity-host-`);
 	cleanups.push(() => rm(dir, { recursive: true, force: true }));
 	setEnv("PI_CODING_AGENT_DIR", dir);
-	await writeFile(join(dir, "settings.json"), JSON.stringify({
-		extensions: [createRequire(import.meta.url).resolve("pi-mcp-adapter")],
-	}));
+	await writeFile(
+		join(dir, "settings.json"),
+		JSON.stringify({
+			extensions: [createRequire(import.meta.url).resolve("pi-mcp-adapter")],
+		}),
+	);
 	const host = await startHost({
 		agentDir: dir,
 		secret: "parity-mcp-adapter-secret",

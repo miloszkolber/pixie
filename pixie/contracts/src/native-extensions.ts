@@ -22,7 +22,13 @@ export interface NativeExtensionInventory {
 		state: NativeResourceState;
 	}[];
 	paths: { path: string; scope: string }[];
-	resources: (NativeExtensionSource & { path: string; enabled: boolean; state: NativeResourceState; resourceKey?: string; configurationSupported?: boolean })[];
+	resources: (NativeExtensionSource & {
+		path: string;
+		enabled: boolean;
+		state: NativeResourceState;
+		resourceKey?: string;
+		configurationSupported?: boolean;
+	})[];
 	extensions: {
 		path: string;
 		resolvedPath: string;

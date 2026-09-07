@@ -199,14 +199,26 @@ test("native configuration and repeated deferred reload preserve the resident MC
 	const client = await rpc(`ws://127.0.0.1:${host.server.port}/pi`, secret);
 	const created = await client.call("session.create", { cwd: dir });
 	const entry = await host.sessions.get(created.sessionId);
-	const inventory = await client.call("pi.extensions.list", { sessionId: created.sessionId, cwd: dir });
-	const resource = inventory.resources.find((item: {path: string}) => item.path === adapter);
-	expect(await client.call("pi.extensions.configure", {
-		sessionId: created.sessionId, cwd: dir, scope: "user", resourceKey: resource.resourceKey,
-		expectedRevision: inventory.configurationRevisions.user, enabled: false, confirmed: true,
-	})).toMatchObject({ saved: true, loaded: false, reload: "deferred" });
+	const inventory = await client.call("pi.extensions.list", {
+		sessionId: created.sessionId,
+		cwd: dir,
+	});
+	const resource = inventory.resources.find((item: { path: string }) => item.path === adapter);
+	expect(
+		await client.call("pi.extensions.configure", {
+			sessionId: created.sessionId,
+			cwd: dir,
+			scope: "user",
+			resourceKey: resource.resourceKey,
+			expectedRevision: inventory.configurationRevisions.user,
+			enabled: false,
+			confirmed: true,
+		}),
+	).toMatchObject({ saved: true, loaded: false, reload: "deferred" });
 	for (let i = 0; i < 3; i++) {
-		expect(await client.call("pi.extensions.reload", { sessionId: created.sessionId, cwd: dir })).toMatchObject({ loaded: true, reload: "reloaded" });
+		expect(
+			await client.call("pi.extensions.reload", { sessionId: created.sessionId, cwd: dir }),
+		).toMatchObject({ loaded: true, reload: "reloaded" });
 		const current = await host.sessions.get(created.sessionId);
 		if (i === 0) expect(current).not.toBe(entry);
 		expect(current.session.getActiveToolNames()).not.toContain("mcp");

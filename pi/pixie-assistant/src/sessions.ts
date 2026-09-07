@@ -10,10 +10,10 @@ import {
 	type ExtensionFactory,
 	hasTrustRequiringProjectResources,
 	ModelRuntime,
+	ProjectTrustStore,
 	type SessionEntry,
 	SessionManager,
 	SettingsManager,
-	ProjectTrustStore,
 } from "@earendil-works/pi-coding-agent";
 import agentAuthoring from "./agents.ts";
 import { CAPABILITY_EVENT, Capabilities, type CapabilityContext } from "./capabilities.ts";
@@ -283,24 +283,24 @@ export class Sessions {
 			// Native services register extension providers before initial model selection.
 			// Loading directly and binding only after createAgentSession loses native
 			// defaults and resumed extension models that are not built-in providers.
-		const services = await createAgentSessionServices({
-			cwd,
-			agentDir: this.agentDir,
-			modelRuntime,
-			settingsManager: settings,
-			// Resolve trust the way native Pi does without an interactive
-			// prompt: stored decisions and the global default apply, and an
-			// undecided "ask" project stays untrusted until the operator
-			// records trust. Reopening after a trust change picks it up.
-			resourceLoaderReloadOptions: {
-				resolveProjectTrust: async () => {
-					if (!hasTrustRequiringProjectResources(cwd)) return true;
-					const decision = this.trust.get(cwd);
-					if (decision !== null) return decision;
-					return settings.getDefaultProjectTrust() === "always";
+			const services = await createAgentSessionServices({
+				cwd,
+				agentDir: this.agentDir,
+				modelRuntime,
+				settingsManager: settings,
+				// Resolve trust the way native Pi does without an interactive
+				// prompt: stored decisions and the global default apply, and an
+				// undecided "ask" project stays untrusted until the operator
+				// records trust. Reopening after a trust change picks it up.
+				resourceLoaderReloadOptions: {
+					resolveProjectTrust: async () => {
+						if (!hasTrustRequiringProjectResources(cwd)) return true;
+						const decision = this.trust.get(cwd);
+						if (decision !== null) return decision;
+						return settings.getDefaultProjectTrust() === "always";
+					},
 				},
-			},
-			resourceLoaderOptions: {
+				resourceLoaderOptions: {
 					eventBus: bus,
 					extensionFactories: [
 						{
@@ -533,20 +533,40 @@ export class Sessions {
 		// silently install missing code (a residual filesystem race remains,
 		// identical to native Pi's own reload path).
 		const entry = this.entries.get(id);
-		if (!entry) return { loaded: false, reload: "deferred" as const, reason: "session-not-resident" as const };
-		if (!this.isIdle(id, entry)) return { loaded: false, reload: "deferred" as const, reason: "session-busy" as const };
+		if (!entry)
+			return {
+				loaded: false,
+				reload: "deferred" as const,
+				reason: "session-not-resident" as const,
+			};
+		if (!this.isIdle(id, entry))
+			return { loaded: false, reload: "deferred" as const, reason: "session-busy" as const };
 		const metadata = await this.metadata(id);
 		const trusted = this.projectTrusted(metadata.cwd);
-		const probeSettings = SettingsManager.create(metadata.cwd, this.agentDir, { projectTrusted: trusted });
-		const probe = new DefaultPackageManager({ cwd: metadata.cwd, agentDir: this.agentDir, settingsManager: probeSettings });
+		const probeSettings = SettingsManager.create(metadata.cwd, this.agentDir, {
+			projectTrusted: trusted,
+		});
+		const probe = new DefaultPackageManager({
+			cwd: metadata.cwd,
+			agentDir: this.agentDir,
+			settingsManager: probeSettings,
+		});
 		let configured: ReturnType<DefaultPackageManager["listConfiguredPackages"]> = [];
 		try {
 			configured = probe.listConfiguredPackages();
 		} catch {
-			return { loaded: false, reload: "deferred" as const, reason: "sdk-loader-install-policy" as const };
+			return {
+				loaded: false,
+				reload: "deferred" as const,
+				reason: "sdk-loader-install-policy" as const,
+			};
 		}
 		if (configured.some((pkg) => !pkg.installedPath))
-			return { loaded: false, reload: "deferred" as const, reason: "sdk-loader-install-policy" as const };
+			return {
+				loaded: false,
+				reload: "deferred" as const,
+				reason: "sdk-loader-install-policy" as const,
+			};
 		await this.release(id);
 		const reopened = await this.get(id);
 		return {

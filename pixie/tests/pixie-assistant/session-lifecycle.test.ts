@@ -191,13 +191,17 @@ test("explicit close bypasses UI/work pins and runs shutdown and disposal when a
 test("manual compaction summarizes an adequate transcript and the session stays usable across reopen", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pixie-lifecycle-compact-"));
 	cleanups.push(() => rm(root, { recursive: true, force: true }));
-	const agentDir = join(root, "agent"), cwd = join(root, "project");
+	const agentDir = join(root, "agent"),
+		cwd = join(root, "project");
 	const { mkdir, writeFile } = await import("node:fs/promises");
 	const { ProjectTrustStore } = await import("@earendil-works/pi-coding-agent");
 	const rpivTodo = (await import("@juicesharp/rpiv-todo")).default;
 	await mkdir(join(cwd, ".pi"), { recursive: true });
 	// Tiny keep-recent window so a bounded deterministic transcript compacts.
-	await writeFile(join(cwd, ".pi", "settings.json"), JSON.stringify({ compaction: { keepRecentTokens: 400, reserveTokens: 1024 } }));
+	await writeFile(
+		join(cwd, ".pi", "settings.json"),
+		JSON.stringify({ compaction: { keepRecentTokens: 400, reserveTokens: 1024 } }),
+	);
 	new ProjectTrustStore(agentDir).set(cwd, true);
 	const events: Record<string, unknown>[] = [];
 	const sessions = new Sessions(agentDir, [makeProvider(), rpivTodo], (_id, event) => {
@@ -211,12 +215,17 @@ test("manual compaction summarizes an adequate transcript and the session stays 
 	const id = entry.session.sessionId;
 	const signal = new AbortController().signal;
 	const todo = entry.session.agent.state.tools.find((tool) => tool.name === "todo")!;
-	const created = await todo.execute("compact-todo-create", { action: "create", subject: "Surviving task" }, signal);
+	const created = await todo.execute(
+		"compact-todo-create",
+		{ action: "create", subject: "Surviving task" },
+		signal,
+	);
 	expect(created.details.tasks).toMatchObject([{ id: 1, subject: "Surviving task" }]);
 	const paragraph = "Compaction fodder. ".repeat(100);
 	for (let i = 0; i < 6; i++) {
 		await sessions.call("session.prompt", {
-			sessionId: id, content: [{ type: "text", text: `Turn ${i}: ${paragraph}` }],
+			sessionId: id,
+			content: [{ type: "text", text: `Turn ${i}: ${paragraph}` }],
 		});
 	}
 	// Direct tool.execute writes no branch entries, so upstream replay
@@ -224,22 +233,26 @@ test("manual compaction summarizes an adequate transcript and the session stays 
 	// created task. Persist the envelope the way a real model turn would, so
 	// the compaction path below exercises genuine replay input.
 	entry.session.sessionManager.appendMessage({
-		role: "toolResult", toolCallId: "compact-todo-turn", toolName: "todo",
+		role: "toolResult",
+		toolCallId: "compact-todo-turn",
+		toolName: "todo",
 		content: [{ type: "text", text: "Created #1" }],
-		details: created.details, isError: false, timestamp: Date.now(),
+		details: created.details,
+		isError: false,
+		timestamp: Date.now(),
 	});
-	const before = await sessions.call("session.load", { sessionId: id }) as any;
+	const before = (await sessions.call("session.load", { sessionId: id })) as any;
 	const messagesBefore = (before.messages as unknown[]).length;
 	expect(messagesBefore).toBeGreaterThan(6);
 	const result = await entry.session.compact();
 	expect(result.summary.length).toBeGreaterThan(0);
 	expect(result.tokensBefore).toBeGreaterThan(0);
-	const after = await sessions.call("session.load", { sessionId: id }) as any;
+	const after = (await sessions.call("session.load", { sessionId: id })) as any;
 	// Recent turns stay by design; the compaction summary entry is appended.
 	expect((after.messages as unknown[]).length).toBeGreaterThanOrEqual(messagesBefore);
-	expect(after.messages).toEqual(expect.arrayContaining([
-		expect.objectContaining({ summaryKind: "compaction" }),
-	]));
+	expect(after.messages).toEqual(
+		expect.arrayContaining([expect.objectContaining({ summaryKind: "compaction" })]),
+	);
 	// Extension context survives: tools still registered, todo state intact.
 	// Re-resolve the tool handle post-compaction: native compaction may
 	// rebuild tool instances, so a pre-compaction handle can observe
@@ -252,9 +265,12 @@ test("manual compaction summarizes an adequate transcript and the session stays 
 	// session answers again; compacting twice is a native error, not corruption.
 	await sessions.release(id);
 	const reopened = await sessions.get(id);
-	const reloaded = await sessions.call("session.load", { sessionId: id }) as any;
+	const reloaded = (await sessions.call("session.load", { sessionId: id })) as any;
 	expect(JSON.stringify(reloaded.messages)).toContain("summary");
-	await sessions.call("session.prompt", { sessionId: id, content: [{ type: "text", text: "Still here" }] });
+	await sessions.call("session.prompt", {
+		sessionId: id,
+		content: [{ type: "text", text: "Still here" }],
+	});
 	expect(reopened.session.getActiveToolNames()).toContain("todo");
 	// The single new turn after reopen is too small to compact again, so the
 	// native gate refuses instead of corrupting state.
@@ -263,9 +279,13 @@ test("manual compaction summarizes an adequate transcript and the session stays 
 
 test("native in-session branches do not corrupt Pixie snapshot, load or fork", async () => {
 	const { dir, sessions, entry, id, prompt } = await fixture((pi) => {
-		pi.registerTool({ name: "branch_probe", label: "Branch probe", description: "Branch fixture",
+		pi.registerTool({
+			name: "branch_probe",
+			label: "Branch probe",
+			description: "Branch fixture",
 			parameters: { type: "object", properties: {} },
-			execute: async () => ({ content: [{ type: "text", text: "probe" }], details: {} }) });
+			execute: async () => ({ content: [{ type: "text", text: "probe" }], details: {} }),
+		});
 	});
 	await prompt("First turn");
 	const manager = entry.session.sessionManager;
@@ -284,10 +304,10 @@ test("native in-session branches do not corrupt Pixie snapshot, load or fork", a
 	// Snapshot, load and fork all follow the current branch without errors.
 	const snapshot = sessions.snapshot(entry, true);
 	expect(snapshot).toBeTruthy();
-	const loaded = await sessions.call("session.load", { sessionId: id }) as any;
+	const loaded = (await sessions.call("session.load", { sessionId: id })) as any;
 	expect((loaded.messages as unknown[]).length).toBeGreaterThan(0);
-	const forked = await sessions.call("session.fork", { sessionId: id, cwd: dir }) as any;
+	const forked = (await sessions.call("session.fork", { sessionId: id, cwd: dir })) as any;
 	expect(forked.sessionId).not.toBe(id);
-	const forkLoaded = await sessions.call("session.load", { sessionId: forked.sessionId }) as any;
+	const forkLoaded = (await sessions.call("session.load", { sessionId: forked.sessionId })) as any;
 	expect((forkLoaded.messages as unknown[]).length).toBeGreaterThan(0);
 });

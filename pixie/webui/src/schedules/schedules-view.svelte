@@ -6,10 +6,18 @@ import Dialog from "../components/dialog.svelte";
 import { getTransport } from "../connection";
 import { appStore, appStoreApi } from "../store";
 import ScheduleForm from "./schedule-form.svelte";
-import { activeExecution, scheduleSessionHref, scheduleTime, SchedulesModel } from "./schedules-model";
+import {
+	activeExecution,
+	scheduleSessionHref,
+	scheduleTime,
+	SchedulesModel,
+} from "./schedules-model";
 
 let { project }: { project: Project } = $props();
-const model = new SchedulesModel(untrack(() => project.id), getTransport());
+const model = new SchedulesModel(
+	untrack(() => project.id),
+	getTransport(),
+);
 const view = model.readable;
 let selected = $derived($view.jobs.find((job) => job.id === $view.selectedId));
 let active = $derived(selected ? activeExecution(selected) : undefined);
@@ -22,7 +30,9 @@ let deleteTrigger: HTMLButtonElement | null = null;
 
 async function focusSelection(): Promise<void> {
 	await tick();
-	const target = region?.querySelector<HTMLButtonElement>('.schedule-row[aria-pressed="true"]') ?? region?.querySelector<HTMLButtonElement>('[data-testid="schedule-create"]');
+	const target =
+		region?.querySelector<HTMLButtonElement>('.schedule-row[aria-pressed="true"]') ??
+		region?.querySelector<HTMLButtonElement>('[data-testid="schedule-create"]');
 	target?.focus();
 }
 
@@ -36,15 +46,29 @@ $effect(() => {
 		if (!cancelled) timer = setTimeout(() => void poll(), 5000);
 	}
 	void poll();
-	return () => { cancelled = true; clearTimeout(timer); };
+	return () => {
+		cancelled = true;
+		clearTimeout(timer);
+	};
 });
 
 async function save(values: { prompt: string; cron: string; timezone: string }): Promise<void> {
 	if (locked || !editor) return;
 	const ok = editor.job
-		? await model.mutate("schedule.update", { scheduleId: editor.job.id, ...values }, "Schedule saved.")
-		: await model.mutate("schedule.create", { root: project.roots[0] ?? "", ...values }, "Schedule created.");
-	if (ok) { editor = null; await focusSelection(); }
+		? await model.mutate(
+				"schedule.update",
+				{ scheduleId: editor.job.id, ...values },
+				"Schedule saved.",
+			)
+		: await model.mutate(
+				"schedule.create",
+				{ root: project.roots[0] ?? "", ...values },
+				"Schedule created.",
+			);
+	if (ok) {
+		editor = null;
+		await focusSelection();
+	}
 }
 </script>
 

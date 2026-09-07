@@ -3,8 +3,18 @@ import type { NativeExtensionInventory } from "@pixie/contracts";
 import Button from "@/components/button.svelte";
 import { nativeReaderLabel, nativeStateLabel } from "./extensions-model";
 
-let { inventory = null, loading = false, error = null, label, busy = null, notice = null, canRequestReload = false,
-	onRefresh = () => {}, onConfigure = () => {}, onReload = () => {} }: {
+let {
+	inventory = null,
+	loading = false,
+	error = null,
+	label,
+	busy = null,
+	notice = null,
+	canRequestReload = false,
+	onRefresh = () => {},
+	onConfigure = () => {},
+	onReload = () => {},
+}: {
 	inventory?: NativeExtensionInventory | null;
 	loading?: boolean;
 	error?: string | null;

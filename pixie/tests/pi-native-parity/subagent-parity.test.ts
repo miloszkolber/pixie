@@ -3,8 +3,8 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
-import { piSubagent } from "./upstream.ts";
 import { cleanups, echoProvider, findTool, fixture, tempDir } from "./helpers.ts";
+import { piSubagent } from "./upstream.ts";
 
 // Structural view of the upstream discovery result. The upstream `agents`
 // module is loaded through `createRequire` (same reason as the profile

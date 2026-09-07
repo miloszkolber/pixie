@@ -71,7 +71,8 @@ export function hydrateChatResource(
 		.request("session.getMessages", { projectId: projectAreaId, sessionId })
 		.then((response) => {
 			if (response.kind !== "snapshot") throw new Error("invalid chat snapshot");
-			const { summary, messages, pendingTools, pendingDialogs, commands, planState, page } = response;
+			const { summary, messages, pendingTools, pendingDialogs, commands, planState, page } =
+				response;
 			const current = appStoreApi.getState();
 			if (!isConnectedGeneration(current, generation)) return false;
 			if (

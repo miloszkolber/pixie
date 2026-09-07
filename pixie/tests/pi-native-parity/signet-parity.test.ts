@@ -86,8 +86,11 @@ test("installed Signet registers the four memory tools without MCP", async () =>
 		for (const name of SIGNET_TOOLS) {
 			expect(entry.session.getActiveToolNames()).toContain(name);
 		}
-		expect(sessions.inventory(entry).extensions.some((extension) =>
-			extension.tools.includes("signet_recall"))).toBe(true);
+		expect(
+			sessions
+				.inventory(entry)
+				.extensions.some((extension) => extension.tools.includes("signet_recall")),
+		).toBe(true);
 		expect(entry.capabilities.snapshot().mcp).toBeUndefined();
 		const commands = sessions.commands(entry).map((c) => String(c.name));
 		expect(commands).toEqual(expect.arrayContaining(["recall", "remember", "signet-status"]));

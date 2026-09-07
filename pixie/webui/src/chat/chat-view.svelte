@@ -1,10 +1,5 @@
 <script lang="ts">
-import type {
-	AgentMentionInfo,
-	PromptHit,
-	QueueLane,
-	WsResult,
-} from "@pixie/contracts";
+import type { AgentMentionInfo, PromptHit, QueueLane, WsResult } from "@pixie/contracts";
 import { onDestroy, tick, untrack } from "svelte";
 import Button from "../components/button.svelte";
 import Dialog from "../components/dialog.svelte";

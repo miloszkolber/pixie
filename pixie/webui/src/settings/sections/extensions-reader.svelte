@@ -5,9 +5,14 @@ import { getTransport } from "@/connection";
 import ExtensionsInventory from "./extensions-inventory.svelte";
 import { ExtensionsModel } from "./extensions-model";
 let { target, label }: { target: NativeExtensionTarget; label: string } = $props();
-const model = new ExtensionsModel(untrack(() => target), getTransport());
+const model = new ExtensionsModel(
+	untrack(() => target),
+	getTransport(),
+);
 const state = model.readable;
-onMount(() => { void model.load(); });
+onMount(() => {
+	void model.load();
+});
 onDestroy(() => model.dispose());
 </script>
 

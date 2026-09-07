@@ -3,8 +3,8 @@ import { mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
-import { extensionInventory } from "./extension-inventory.ts";
 import { configureExtension } from "./extension-configuration.ts";
+import { extensionInventory } from "./extension-inventory.ts";
 import llama from "./extensions/llama.ts";
 import { Providers } from "./providers.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
@@ -111,26 +111,39 @@ async function startUnlockedHost(options: HostOptions) {
 				version: "0.85.1",
 				capabilities: capabilitySnapshot(),
 			};
-		if (["pi.extensions.list", "pi.extensions.configure", "pi.extensions.reload"].includes(method)) {
+		if (
+			["pi.extensions.list", "pi.extensions.configure", "pi.extensions.reload"].includes(method)
+		) {
 			const id = text(p.sessionId);
 			const metadata = id ? await sessions.metadata(id) : undefined;
 			const cwd = await realpath(text(p.cwd) || metadata?.cwd || agentDir);
-			if (metadata && cwd !== await realpath(metadata.cwd)) throw new Error("Session project mismatch");
+			if (metadata && cwd !== (await realpath(metadata.cwd)))
+				throw new Error("Session project mismatch");
 			const entry = id ? sessions.entries.get(id) : !text(p.cwd) ? control : undefined;
 			if (method === "pi.extensions.reload") {
 				if (!id) throw new Error("Select a native session for a reload request");
 				return sessions.nativeReloadStatus(id);
 			}
 			if (method === "pi.extensions.configure") {
-				if (p.scope !== "user" && p.scope !== "project") throw new Error("Select a native settings scope");
-				if (typeof p.enabled !== "boolean" || p.confirmed !== true) throw new Error("Confirm the native configuration change");
+				if (p.scope !== "user" && p.scope !== "project")
+					throw new Error("Select a native settings scope");
+				if (typeof p.enabled !== "boolean" || p.confirmed !== true)
+					throw new Error("Confirm the native configuration change");
 				return configureExtension(agentDir, cwd, {
-					scope: p.scope, resourceKey: required(p.resourceKey, "native resource"),
-					expectedRevision: required(p.expectedRevision, "configuration revision"), enabled: p.enabled, confirmed: true,
+					scope: p.scope,
+					resourceKey: required(p.resourceKey, "native resource"),
+					expectedRevision: required(p.expectedRevision, "configuration revision"),
+					enabled: p.enabled,
+					confirmed: true,
 				});
 			}
-			return extensionInventory(agentDir, cwd, entry?.session,
-				id ? entry ? "session" : "not-resident" : entry ? "service" : "configured-only", id || null);
+			return extensionInventory(
+				agentDir,
+				cwd,
+				entry?.session,
+				id ? (entry ? "session" : "not-resident") : entry ? "service" : "configured-only",
+				id || null,
+			);
 		}
 		if (method === "provider.loginStart") {
 			const result = (await providers.call(method, p)) as RecordValue;

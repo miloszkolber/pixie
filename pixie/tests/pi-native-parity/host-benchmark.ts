@@ -10,8 +10,8 @@ import { join } from "node:path";
 import rpivAsk from "@juicesharp/rpiv-ask-user-question";
 import rpivTodo from "@juicesharp/rpiv-todo";
 import rpivWeb from "@juicesharp/rpiv-web-tools";
-import { piSubagent } from "./upstream.ts";
 import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
+import { piSubagent } from "./upstream.ts";
 
 const config = process.argv[2];
 if (!config) {
@@ -31,8 +31,7 @@ if (!config) {
 		}
 	}
 } else {
-	const factories =
-		config === "overlay" ? [rpivTodo, rpivWeb, rpivAsk, piSubagent] : [];
+	const factories = config === "overlay" ? [rpivTodo, rpivWeb, rpivAsk, piSubagent] : [];
 	const dir = await mkdtemp(join(tmpdir(), "pixie-host-benchmark-"));
 	let sessions: Sessions | undefined;
 	try {
@@ -41,8 +40,7 @@ if (!config) {
 		sessions = new Sessions(dir, factories, () => {});
 		const entry = await sessions.create(dir);
 		const createMs = Math.round((performance.now() - started) * 10) / 10;
-		const rssDeltaMb =
-			Math.round(((process.memoryUsage().rss - rssBefore) / 1048576) * 10) / 10;
+		const rssDeltaMb = Math.round(((process.memoryUsage().rss - rssBefore) / 1048576) * 10) / 10;
 		const names = entry.session.getActiveToolNames();
 		const schemas = entry.session.agent.state.tools.map((tool) =>
 			JSON.stringify({ name: tool.name, description: tool.description }),

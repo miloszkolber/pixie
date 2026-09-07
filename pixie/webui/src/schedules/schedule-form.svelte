@@ -5,8 +5,16 @@ import Button from "../components/button.svelte";
 import { errorText, getTransport } from "../connection";
 import { scheduleTime } from "./schedules-model";
 
-let { project, job, disabled, onSave, onCancel }: {
-	project: Project; job: Schedule | null; disabled: boolean;
+let {
+	project,
+	job,
+	disabled,
+	onSave,
+	onCancel,
+}: {
+	project: Project;
+	job: Schedule | null;
+	disabled: boolean;
 	onSave: (values: { prompt: string; cron: string; timezone: string }) => Promise<void>;
 	onCancel: () => void;
 } = $props();
@@ -22,22 +30,33 @@ const id = $props.id();
 let promptElement: HTMLTextAreaElement;
 onMount(() => promptElement.focus());
 $effect(() => {
-	void cron; void timezone;
+	void cron;
+	void timezone;
 	generation++;
 	preview = null;
 	error = "";
 	checking = false;
 });
-$effect(() => () => { generation++; });
+$effect(() => () => {
+	generation++;
+});
 async function checkTiming(): Promise<void> {
 	const current = ++generation;
 	checking = true;
 	error = "";
 	try {
-		const result = await getTransport().request("schedule.preview", { projectId: project.id, root: project.roots[0] ?? "", cron, timezone });
+		const result = await getTransport().request("schedule.preview", {
+			projectId: project.id,
+			root: project.roots[0] ?? "",
+			cron,
+			timezone,
+		});
 		if (current === generation) preview = result;
 	} catch (cause) {
-		if (current === generation) { preview = null; error = errorText(cause); }
+		if (current === generation) {
+			preview = null;
+			error = errorText(cause);
+		}
 	} finally {
 		if (current === generation) checking = false;
 	}

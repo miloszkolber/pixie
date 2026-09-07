@@ -49,7 +49,12 @@ import type {
 	TextResourceAttachment,
 } from "./domain";
 
-import type { NativeExtensionChange, NativeExtensionConfiguration, NativeExtensionInventory, NativeExtensionTarget } from "./native-extensions";
+import type {
+	NativeExtensionChange,
+	NativeExtensionConfiguration,
+	NativeExtensionInventory,
+	NativeExtensionTarget,
+} from "./native-extensions";
 
 export const PROTOCOL_VERSION = 88;
 
@@ -511,8 +516,14 @@ export interface WsMethodMap {
 	"browser.panelClose": { params: { panelId: string }; result: Ack };
 	"pi.extensionList": { params: Record<string, never>; result: PiExtensionCatalog };
 	"pi.nativeExtensions": { params: NativeExtensionTarget; result: NativeExtensionInventory };
-	"pi.nativeExtensionConfigure": { params: NativeExtensionConfiguration; result: NativeExtensionChange };
-	"pi.nativeExtensionReload": { params: NativeExtensionTarget & { sessionId: string }; result: NativeExtensionChange };
+	"pi.nativeExtensionConfigure": {
+		params: NativeExtensionConfiguration;
+		result: NativeExtensionChange;
+	};
+	"pi.nativeExtensionReload": {
+		params: NativeExtensionTarget & { sessionId: string };
+		result: NativeExtensionChange;
+	};
 	"pi.extensionAdd": {
 		params: { name: string; enabled: boolean };
 		result: PiExtensionCatalog;

@@ -127,7 +127,9 @@ test("untrusted project extensions never execute while user extensions load", as
 	expect(entry.session.getActiveToolNames()).not.toContain("project_probe");
 	expect(existsSync(marker)).toBe(false);
 	expect(
-		sessions.inventory(entry).extensions.some((extension) => extension.resolvedPath.endsWith("project.js")),
+		sessions
+			.inventory(entry)
+			.extensions.some((extension) => extension.resolvedPath.endsWith("project.js")),
 	).toBe(false);
 	// Recording trust through the native store enables project extensions on
 	// the next session, with no other configuration change.

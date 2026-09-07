@@ -46,7 +46,11 @@ onDestroy(() => {
 	// Svelte can remove a keyed modal before native close restores focus.
 	// Wait for its replacement to mount, then restore only if nothing owns focus.
 	queueMicrotask(() => {
-		if (target?.isConnected && (document.activeElement === document.body || !document.activeElement)) target.focus();
+		if (
+			target?.isConnected &&
+			(document.activeElement === document.body || !document.activeElement)
+		)
+			target.focus();
 	});
 });
 

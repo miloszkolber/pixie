@@ -21,7 +21,9 @@ let seenRequestId = $state("");
 
 // Remote settlement, navigation and reconnect remove the presenter, not the
 // native request. Only explicit user dismissal may send cancellation.
-onDestroy(() => { settled = true; });
+onDestroy(() => {
+	settled = true;
+});
 
 function resetFor(requestId: string, prefill: string | undefined): void {
 	if (seenRequestId === requestId) return;
