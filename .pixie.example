@@ -12,6 +12,9 @@ PIXIE_PI_SECRET_KEY=replace-with-a-random-pi-secret
 # application's artifact proxy. Keep this token in Pi's private service environment too.
 PIXIE_MCP_TOKEN=replace-with-a-random-mcp-token
 
+# Web UI, API and in-process MCP publisher share one listener on this port.
+PIXIE_CONTROLLER_PORT=7312
+
 # Optional controller login; required for remote binding unless explicitly acknowledged.
 PIXIE_AUTH_ENABLED=false
 # PIXIE_TOKEN=replace-with-a-random-controller-token
