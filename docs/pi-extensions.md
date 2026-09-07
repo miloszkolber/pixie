@@ -55,7 +55,7 @@ The optional upstream `ask_user_question` tool uses sequential `select`/`input` 
 
 The optional native subagent extension owns child execution and execution-time discovery. Its project definitions apply only when the project is trusted and override user ones. Progress updates and final details project through the generic tool path onto the child-run card, including parallel calls. Pixie owns only Markdown authoring.
 
-Additive application services can register through `pixie:capability:v1`, defined in `agent/pixie-assistant/src/capabilities.ts`. This is separate from native tool discovery and is not required to execute an extension.
+Additive application services can register through `pixie:capability:v1`, defined in `assistant/src/capabilities.ts`. This is separate from native tool discovery and is not required to execute an extension.
 
 The `rpiv-web` search backend is operator-owned external configuration. Provider selection, API keys, and the SearXNG endpoint live in `~/.config/rpiv-web-tools/config.json` and provider environment variables (`WEB_SEARCH_PROVIDER`, `SEARXNG_URL`, per-provider `*_API_KEY`); the default is self-hosted SearXNG at `http://localhost:8080`. Pixie never reads or writes this config. The upstream `web_fetch` SSRF guard refuses loopback and private targets, so it cannot reach Docker-local loopback services; this protection is retained, not weakened.
 

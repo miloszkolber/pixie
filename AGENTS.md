@@ -64,7 +64,7 @@ Preserve the focused current baseline. Keep features, dependencies, tests, proto
 ## Verification
 
 - Run the narrowest relevant check during development.
-- Keep all tests under `pixie/tests/`.
+- Keep all tests under `package/tests/`.
 - Add small regression tests for observable contracts and realistic failure modes at persistence, concurrency, authorization, protocol, filesystem, performance and fragile UI boundaries.
 - Do not test copied types, constants, trivial forwarding or implementation details.
 - Use broader integration/image checks for changes crossing Pi, browser, or persistence boundaries.

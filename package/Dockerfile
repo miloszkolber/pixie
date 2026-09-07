@@ -15,7 +15,7 @@ COPY package.json bun.lock bunfig.toml /work/
 COPY package/package.json ./
 COPY package/webui/package.json webui/package.json
 COPY package/contracts/package.json contracts/package.json
-COPY agent/pixie-assistant/package.json /work/agent/pixie-assistant/package.json
+COPY assistant/package.json /work/assistant/package.json
 COPY agent/extensions/local-patches/*.patch /work/agent/extensions/local-patches/
 RUN --mount=type=cache,id=bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
     bun install --frozen-lockfile
@@ -70,7 +70,7 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     done < /tmp/modules
 
 FROM go-source AS ui-test-build
-COPY pixie/tests/ui/fixture/ tests/ui/fixture/
+COPY package/tests/ui/fixture/ tests/ui/fixture/
 ARG TARGETOS
 ARG TARGETARCH
 RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
@@ -145,12 +145,12 @@ RUN --mount=type=cache,id=ui-acceptance-apt,target=/var/cache/apt,sharing=locked
     && chown -R 1000:1000 /artifacts
 COPY --from=ui-test-build /out/pixie-ui-fixture /app/pixie-ui-fixture
 COPY --from=web-build /work/pixie/webui/dist /app/web
-COPY pixie/tests/ui/run.sh /app/run-ui-acceptance
-COPY pixie/tests/ui/pi.sh /app/run-pi-acceptance
-COPY pixie/tests/ui/faults.js /app/ui-faults.js
-COPY pixie/tests/ui/history.sh /app/run-history-measurement
-COPY pixie/tests/ui/history.js /app/ui-history.js
-COPY pixie/tests/ui/history-interactions.js /app/ui-history-interactions.js
+COPY package/tests/ui/run.sh /app/run-ui-acceptance
+COPY package/tests/ui/pi.sh /app/run-pi-acceptance
+COPY package/tests/ui/faults.js /app/ui-faults.js
+COPY package/tests/ui/history.sh /app/run-history-measurement
+COPY package/tests/ui/history.js /app/ui-history.js
+COPY package/tests/ui/history-interactions.js /app/ui-history-interactions.js
 RUN chmod 0755 /app/run-ui-acceptance \
     && test -x /app/pixie-ui-fixture \
     && test -f /app/web/index.html \
@@ -185,7 +185,7 @@ COPY --from=go-build /out/pixie /app/pixie
 COPY --from=go-build /out/licenses/pixie /app/licenses
 COPY --from=web-build /work/pixie/webui/dist /app/web
 COPY --from=web-build /out/licenses /app/licenses
-COPY pixie/internal/browser/config.json /app/config.json
+COPY package/internal/browser/config.json /app/config.json
 RUN test -x /app/pixie \
     && test -f /app/config.json \
     && test -x /usr/local/bin/agent-browser \

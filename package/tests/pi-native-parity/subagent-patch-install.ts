@@ -12,8 +12,8 @@ try {
 		"bun.lock",
 		...manifest.workspaces.packages.map((path: string) => `${path}/package.json`),
 		...Object.values(manifest.patchedDependencies),
-		"pixie/tests/pi-native-parity/subagent-child.test.ts",
-		"pixie/tests/pi-native-parity/subagent-child-provider.ts",
+		"package/tests/pi-native-parity/subagent-child.test.ts",
+		"package/tests/pi-native-parity/subagent-child-provider.ts",
 	] as string[]) {
 		await mkdir(dirname(join(temporary, path)), { recursive: true });
 		await copyFile(join(root, path), join(temporary, path));
@@ -40,7 +40,7 @@ try {
 	const testArgs = [
 		process.execPath,
 		"test",
-		"pixie/tests/pi-native-parity/subagent-child.test.ts",
+		"package/tests/pi-native-parity/subagent-child.test.ts",
 	];
 	const patched = await run(testArgs);
 	if (patched.code !== 0) throw new Error(patched.output);

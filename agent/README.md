@@ -15,7 +15,7 @@ bun install --frozen-lockfile
 Start the assistant with the chosen Pi state directory:
 
 ```sh
-bun agent/pixie-assistant/src/main.ts --agent-dir /absolute/path/to/pi-agent
+bun ../assistant/src/main.ts --agent-dir /absolute/path/to/pi-agent
 ```
 
 Before starting, supply `PIXIE_PI_SECRET_KEY` through your private environment, as described in [deployment](../docs/deployment.md#host-service). Provider authentication and model selection remain native Pi operations. Use separate sessions for simultaneous vanilla Pi CLI and host work.
@@ -34,6 +34,6 @@ Installer generation does not inherit Signet credentials, workspace paths or end
 
 ## Verification
 
-Pi-facing tests live in [`package/tests/pi-native-parity/`](../pixie/tests/pi-native-parity/). They use disposable directories, not real `~/.pi`. See [development](../docs/development.md) for broader checks. They do not establish daemon availability, provider inference, Browser/MCP adapter parity or a live deployment.
+Pi-facing tests live in [`package/tests/pi-native-parity/`](../package/tests/pi-native-parity/). They use disposable directories, not real `~/.pi`. See [development](../docs/development.md) for broader checks. They do not establish daemon availability, provider inference, Browser/MCP adapter parity or a live deployment.
 
 The pinned upstream subagent runner derives child commands from `process.execPath` and supplies an entry script only when that executable is named `node`. Under Bun it invokes bare Bun with Pi arguments; the checked-in [subagent patch](extensions/local-patches/README.md) resolves Pi's public RPC entrypoint for that case instead. Child inference through this launcher is covered by the parity suite's real-child tests.

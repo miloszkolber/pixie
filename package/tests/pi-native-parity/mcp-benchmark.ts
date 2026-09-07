@@ -1,5 +1,5 @@
 // Run with the locked runtime:
-// bun x bun@1.4.0 pixie/tests/pi-native-parity/mcp-benchmark.ts
+// bun x bun@1.4.0 package/tests/pi-native-parity/mcp-benchmark.ts
 // Each sample is a fresh process with an empty metadata cache. These are local
 // fixture measurements, not provider token counts or production-host timings.
 import { mkdtemp, rm, writeFile } from "node:fs/promises";

@@ -1,5 +1,5 @@
 // Run with the locked runtime:
-// bun x bun@1.4.0 pixie/tests/pi-native-parity/host-benchmark.ts
+// bun x bun@1.4.0 package/tests/pi-native-parity/host-benchmark.ts
 // Each sample is a fresh process. Fixture-only local measurements: host
 // startup/session latency, memory delta and tool-surface size for the
 // baseline (no optional factories) versus the overlay set. Not provider

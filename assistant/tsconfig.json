@@ -15,7 +15,7 @@
 	"include": [
 		"src/**/*.ts",
 		"scripts/**/*.ts",
-		"../../pixie/tests/pixie-assistant/**/*.ts",
-		"../../pixie/tests/pi-native-parity/**/*.ts"
+		"../package/tests/pixie-assistant/**/*.ts",
+		"../package/tests/pi-native-parity/**/*.ts"
 	]
 }
