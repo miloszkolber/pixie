@@ -580,10 +580,7 @@ test("Browser registers through the adapter runtime API first-wins fail-closed",
 	expect(status.snapshot === null || typeof status.snapshot === "object").toBe(true);
 });
 
-test.each([
-	"capability",
-	"session-start",
-])("runtime Browser registration via %s executes through the upstream proxy over authenticated SDK Streamable HTTP", async (registration) => {
+test("runtime Browser registration via capability executes through the upstream proxy over authenticated SDK Streamable HTTP", async () => {
 	const seenAuth: (string | undefined)[] = [];
 	const methods: string[] = [];
 	const calledTools: string[] = [];
@@ -654,24 +651,20 @@ test.each([
 	});
 	const address = http.address() as { port: number };
 	const url = `http://127.0.0.1:${address.port}/mcp/browser`;
-	setEnv("PIXIE_MCP_ADAPTER_BROWSER_URL", registration === "session-start" ? url : undefined);
-	setEnv("PIXIE_MCP_ADAPTER_BROWSER_TOKEN", "runtime-browser-token");
 	const { entry, sessions, call } = await adapterSession({ mcpServers: {} });
 	// Finish upstream initialization before testing late, lazy registration.
 	await call({});
 	const context = sessions.context(entry);
-	if (registration === "capability") {
-		expect(
-			await entry.capabilities.call(
-				"adapter.registerBrowser",
-				{
-					url,
-					token: "runtime-browser-token",
-				},
-				context,
-			),
-		).toEqual({ ok: true });
-	}
+	expect(
+		await entry.capabilities.call(
+			"adapter.registerBrowser",
+			{
+				url,
+				token: "runtime-browser-token",
+			},
+			context,
+		),
+	).toEqual({ ok: true });
 	await expect(
 		entry.capabilities.call(
 			"adapter.registerBrowser",

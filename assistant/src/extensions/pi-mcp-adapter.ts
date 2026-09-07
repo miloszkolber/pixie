@@ -79,20 +79,10 @@ export function piMcpAdapterWithConfig(options?: {
 			if (value && typeof value === "object") snapshot = value as RecordValue;
 		});
 
-		// Best-effort Browser registration. The assistant otherwise does not
-		// know the controller's publisher address, so this only runs when the
-		// operator sets it explicitly. Duplicates fail closed upstream (first
-		// registration wins); a stale registration is left alone.
-		pi.on("session_start", () => {
-			const endpoint = process.env.PIXIE_MCP_ADAPTER_BROWSER_URL;
-			if (!endpoint) return;
-			try {
-				registerPixieBrowser(pi, endpoint, process.env.PIXIE_MCP_ADAPTER_BROWSER_TOKEN);
-			} catch {
-				// Fail-closed upstream; parity runs assert the duplicate error
-				// explicitly through `adapter.registerBrowser` instead.
-			}
-		});
+		// Browser registration is explicit only (adapter.registerBrowser or
+		// mcp.attach from the operator/UI). Implicit session-start wiring from
+		// environment was removed: headless operator configuration belongs in
+		// Pi's native MCP settings, not in Pixie-owned session magic.
 
 		registerCapability(pi, {
 			id: "mcp",
