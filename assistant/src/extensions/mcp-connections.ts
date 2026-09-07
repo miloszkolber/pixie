@@ -81,7 +81,7 @@ function connection(
 	};
 }
 
-export function mcpRuntimeBridge(
+export function mcpConnectionsBridge(
 	pi: ExtensionAPI,
 	agentDir: string,
 ): {

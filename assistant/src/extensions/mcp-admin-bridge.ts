@@ -1,7 +1,7 @@
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { registerCapability } from "../capabilities.ts";
 import type { RecordValue } from "../storage.ts";
-import { mcpRuntimeBridge } from "./mcp-runtime-bridge.ts";
+import { mcpConnectionsBridge } from "./mcp-connections.ts";
 
 // Application administration only. Pi loads the operator-installed adapter.
 // The public snapshot request discovers its runtime without registering a
@@ -56,13 +56,13 @@ function text(value: unknown): string {
 	return typeof value === "string" ? value : "";
 }
 
-export default function piMcpAdapterExtension(pi: ExtensionAPI): void {
-	piMcpAdapterWithConfig()(pi);
+export default function mcpAdminBridge(pi: ExtensionAPI): void {
+	mcpAdminBridgeWithConfig()(pi);
 }
 
 // agentDir only scopes Pixie's persisted connection records. Native adapter
 // configuration and execution remain entirely upstream-owned.
-export function piMcpAdapterWithConfig(options?: {
+export function mcpAdminBridgeWithConfig(options?: {
 	agentDir?: string;
 }): (pi: ExtensionAPI) => void {
 	return (pi: ExtensionAPI) => {
@@ -72,7 +72,7 @@ export function piMcpAdapterWithConfig(options?: {
 		};
 		pi.events.emit("pi-mcp-adapter:runtime-snapshot:v1", probe);
 		if (typeof probe.result?.ok !== "boolean") return;
-		const bridge = mcpRuntimeBridge(pi, options?.agentDir ?? getAgentDir());
+		const bridge = mcpConnectionsBridge(pi, options?.agentDir ?? getAgentDir());
 
 		let snapshot: RecordValue | null = null;
 		pi.events.on(PI_MCP_ADAPTER_STATUS_EVENT, (value: unknown) => {
