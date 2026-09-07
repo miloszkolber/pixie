@@ -84,6 +84,15 @@ test("native configuration requires confirmation, saves scoped revisions and dis
 	expect(model.state.getState().inventory?.resources[0]).toMatchObject({ enabled: false, state: "loaded" });
 	await model.requestReload();
 	expect(model.state.getState().notice).toContain("Nothing was stopped");
+	const reloadedTransport = { request: async (method: string) => {
+		if (method === "pi.nativeExtensions") return structuredClone(inventory);
+		if (method === "pi.nativeExtensionReload") return { loaded: true, reload: "reloaded" };
+		throw new Error(`Unexpected method: ${method}`);
+	} } as unknown as Pick<WsTransport, "request">;
+	const reloadedModel = new ExtensionsModel({projectId: "p", root: "/project", sessionId: "chat"}, reloadedTransport);
+	await reloadedModel.load();
+	await reloadedModel.requestReload();
+	expect(reloadedModel.state.getState().notice).toContain("reopened with the saved native configuration");
 	failSave = true;
 	await model.configure(resource, () => true);
 	expect(model.state.getState().error).toContain("Save outcome not confirmed");

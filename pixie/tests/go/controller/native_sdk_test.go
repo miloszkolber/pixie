@@ -115,8 +115,9 @@ func TestApplicationThroughNativePiHost(t *testing.T) {
 				t.Fatal("foreign session inventory accepted")
 			}
 			reload := callBrowser(t, ws, "native-reload", "pi.nativeExtensionReload", owner)
-			if reload["ok"] != true || reload["result"].(map[string]any)["reload"] != "deferred" {
-				t.Fatalf("native reload safety gate: %#v", reload)
+			if reload["ok"] != true || reload["result"].(map[string]any)["reload"] != "reloaded" ||
+				reload["result"].(map[string]any)["loaded"] != true {
+				t.Fatalf("idle native session did not reopen with saved configuration: %#v", reload)
 			}
 			foreignChange := callBrowser(t, ws, "foreign-native-change", "pi.nativeExtensionConfigure", map[string]any{
 				"projectId": "foreign", "root": root, "sessionId": info.SessionID, "scope": "project",

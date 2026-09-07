@@ -45,9 +45,9 @@ export interface NativeExtensionTarget {
 
 export interface NativeExtensionChange {
 	saved?: boolean;
-	loaded: false;
-	reload: "deferred";
-	reason: "session-busy" | "session-not-resident" | "sdk-loader-install-policy";
+	loaded: boolean;
+	reload: "deferred" | "reloaded";
+	reason?: "session-busy" | "session-not-resident" | "sdk-loader-install-policy";
 	warning?: string | null;
 }
 

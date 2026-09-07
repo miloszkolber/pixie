@@ -120,7 +120,7 @@ test("write-time compare-and-set preserves unrelated concurrent edits and reject
 	} finally { SettingsManager.prototype.setExtensionPaths = originalSetter; }
 });
 
-test("repeated deferred reload leaves another native session's active provider, tools, listeners and passive state intact", async () => {
+test("idle reload reopens with saved configuration while another session's active run is untouched", async () => {
 	const { agentDir, cwd, extension } = await fixture();
 	let finish!: () => void;
 	const pause = new Promise<void>((resolve) => { finish = resolve; });
@@ -142,20 +142,30 @@ test("repeated deferred reload leaves another native session's active provider, 
 		for (let i = 0; i < 100 && active.session.isIdle; i++) await Bun.sleep(5);
 		await configureExtension(agentDir, cwd, await requestFor(agentDir, cwd, extension, false));
 		const eventCount = events.length;
-		for (let i = 0; i < 3; i++) {
-			expect(sessions.nativeReloadStatus(idle.session.sessionId)).toMatchObject({ loaded: false, reload: "deferred", reason: "sdk-loader-install-policy" });
-			expect(sessions.nativeReloadStatus(active.session.sessionId).reason).toBe("session-busy");
-		}
-		expect(sessions.entries.get(idle.session.sessionId)).toBe(idle);
+		expect(await sessions.nativeReloadStatus(active.session.sessionId)).toMatchObject({ loaded: false, reload: "deferred", reason: "session-busy" });
+		// The idle session reopens from the same native file with the saved
+		// filters: the probe tool is gone, while the active run continues.
+		expect(await sessions.nativeReloadStatus(idle.session.sessionId)).toMatchObject({ loaded: true, reload: "reloaded" });
+		const reopened = sessions.entries.get(idle.session.sessionId)!;
+		expect(reopened).not.toBe(idle);
+		expect(reopened.session.getActiveToolNames()).not.toContain("native_configuration_probe");
 		expect(sessions.entries.get(active.session.sessionId)).toBe(active);
-		expect(starts).toBe(2); expect(shutdowns).toBe(0); expect(events).toHaveLength(eventCount);
-		expect(idle.session.getActiveToolNames().filter((name) => name === "native_configuration_probe")).toHaveLength(1);
-		apis[0]!.events.emit(SESSION_LIVENESS_EVENT, { key: "background", active: true });
-		expect(sessions.nativeReloadStatus(idle.session.sessionId).reason).toBe("session-busy");
-		apis[0]!.events.emit(SESSION_LIVENESS_EVENT, { key: "background", active: false });
+		expect(starts).toBe(3); expect(shutdowns).toBe(1);
+		// Reopening replays the extension's passive session_start UI only.
+		expect(events.slice(eventCount).map((event) => (event as {type: string}).type).sort())
+			.toEqual(["pixie:ui:status", "pixie:ui:title", "pixie:ui:working"]);
+		expect(active.session.getActiveToolNames().filter((name) => name === "native_configuration_probe")).toHaveLength(1);
+		// The closed runner's bus is stale by SDK design; liveness now flows
+		// through the reopened session's API handle.
+		const reopenedApi = apis.at(-1)!;
+		reopenedApi.events.emit(SESSION_LIVENESS_EVENT, { key: "background", active: true });
+		expect((await sessions.nativeReloadStatus(idle.session.sessionId)).reason).toBe("session-busy");
+		reopenedApi.events.emit(SESSION_LIVENESS_EVENT, { key: "background", active: false });
 		let answered = false;
-		const dialog = contexts[0]!.ui.input("Keep this dialog").then((value) => { answered = true; return value; });
-		expect(sessions.nativeReloadStatus(idle.session.sessionId).reason).toBe("session-busy");
+		// The reopened session bound a fresh UI context; the pre-reload one
+		// belongs to the closed runner.
+		const dialog = contexts.at(-1)!.ui.input("Keep this dialog").then((value) => { answered = true; return value; });
+		expect((await sessions.nativeReloadStatus(idle.session.sessionId)).reason).toBe("session-busy");
 		expect(answered).toBe(false);
 		const request = events.findLast((event) => (event as {type: string}).type === "pixie:ui:request") as { requestId: string };
 		await sessions.resolveUiResponse({ sessionId: idle.session.sessionId, requestId: request.requestId, value: "kept" });

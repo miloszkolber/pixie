@@ -13,11 +13,14 @@ export function nativeReaderLabel(reader: NativeExtensionInventory["context"]["r
 }
 
 export function reloadNotice(result: NativeExtensionChange): string {
+	if (result.reload === "reloaded" && result.loaded) {
+		return `${result.saved ? "Configuration saved. " : ""}Idle session reopened with the saved native configuration. Inventory below reflects the rebuilt session.`;
+	}
 	const reason = result.reason === "session-busy"
 		? "active work, pending dialogs or registered background work. Nothing was stopped."
 		: result.reason === "session-not-resident"
 			? "the selected session is not resident. It was not opened."
-			: "the SDK has no safe no-install reload path for concurrent sessions.";
+			: "a configured package is missing, so reopening could install code. Resolve it through native Pi configuration.";
 	return `${result.saved ? "Configuration saved. Loaded extensions are unchanged. " : ""}Reload deferred: ${reason}${result.warning ? " Settings cleanup reported a warning. Refresh inventory." : ""}`;
 }
 
@@ -79,8 +82,9 @@ export class ExtensionsModel {
 		try {
 			const result = await this.transport.request("pi.nativeExtensionReload", { ...this.target, sessionId: this.target.sessionId });
 			if (generation !== this.generation) return;
-			if (result.loaded !== false || result.reload !== "deferred") throw new Error("Unexpected reload outcome");
+			if (result.reload !== "deferred" && result.reload !== "reloaded") throw new Error("Unexpected reload outcome");
 			this.state.setState({ busy: null, notice: reloadNotice(result) });
+			await this.load();
 		} catch {
 			if (generation === this.generation) this.state.setState({ busy: null, error: "Reload request outcome unavailable. No reload success is confirmed." });
 		}

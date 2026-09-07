@@ -115,7 +115,7 @@ Acceptance: unfamiliar package, local extension, built-in, user/project preceden
 ### 6. Safe native extension configuration and reload
 
 - Add setting-backed extension controls only after read-only inventory and lifecycle tests work. Use native package/settings APIs and show the exact user/project scope being changed. Installation of extension code is an explicit operator action, not a side effect of connecting the UI.
-- Prefer native reload over restarting the service when safe. Coordinate capability/bus listeners, commands, tools, pending UI, passive state, background liveness and provider state across concurrent sessions.
+- Prefer reopening the idle session over restarting the service: close and rebuild it from the same native file, which leaves other sessions' runners, providers and dialogs untouched (Pi's own `reload()` resets global provider state and is not used). A read-only preflight refuses when a configured package has no installed path, so activation cannot silently install code.
 - Define a busy-session policy: defer changes, or request an explicit stop, rather than destroying work silently. Report saved configuration versus active configuration separately.
 - Verify cleanup on disable, removal, failed initialization and repeated reload. A reload can execute arbitrary extension code, so configuration rollback alone does not guarantee runtime rollback.
 - Use systemd restart as a documented operational fallback where necessary. Do not introduce a root helper merely to toggle an extension. Prevent child processes from recursively starting server listeners.

@@ -271,8 +271,10 @@ func (a *PiAdmin) nativeExtensionChange(ctx context.Context, method string, requ
 	if err := a.call(ctx, hostMethod, params, &response); err != nil {
 		return nil, fmt.Errorf("native configuration outcome not confirmed. Refresh inventory before retrying")
 	}
-	if response.Loaded || response.Reload != "deferred" ||
-		(response.Reason != "session-busy" && response.Reason != "session-not-resident" && response.Reason != "sdk-loader-install-policy") ||
+	reloaded := response.Loaded && response.Reload == "reloaded"
+	deferred := !response.Loaded && response.Reload == "deferred" &&
+		(response.Reason == "session-busy" || response.Reason == "session-not-resident" || response.Reason == "sdk-loader-install-policy")
+	if (!reloaded && !deferred) ||
 		(method == "pi.nativeExtensionConfigure" && (response.Saved == nil || !*response.Saved)) {
 		return nil, fmt.Errorf("unexpected native configuration outcome. Refresh inventory")
 	}

@@ -206,9 +206,9 @@ test("native configuration and repeated deferred reload preserve the resident MC
 		expectedRevision: inventory.configurationRevisions.user, enabled: false, confirmed: true,
 	})).toMatchObject({ saved: true, loaded: false, reload: "deferred" });
 	for (let i = 0; i < 3; i++) {
-		expect(await client.call("pi.extensions.reload", { sessionId: created.sessionId, cwd: dir })).toMatchObject({ loaded: false, reload: "deferred" });
-		expect(await host.sessions.get(created.sessionId)).toBe(entry);
-		expect(entry.session.getActiveToolNames().filter((name) => name === "mcp")).toHaveLength(1);
-		expect(entry.capabilities.snapshot().mcp).toBe(1);
+		expect(await client.call("pi.extensions.reload", { sessionId: created.sessionId, cwd: dir })).toMatchObject({ loaded: true, reload: "reloaded" });
+		const current = await host.sessions.get(created.sessionId);
+		if (i === 0) expect(current).not.toBe(entry);
+		expect(current.session.getActiveToolNames()).not.toContain("mcp");
 	}
 });
