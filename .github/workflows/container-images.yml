@@ -179,12 +179,13 @@ jobs:
           REVISION: ${{ github.sha }}
         run: |
           gh run download "$GITHUB_RUN_ID" --name deployment-pixie --dir image-identities
+          # A single --name download extracts files directly, not into a per-artifact subdirectory.
           jq -s --arg revision "$REVISION" --arg owner "$OWNER" '
             if length != 1 or any(.[]; .revision != $revision or (.digest | test("^sha256:[a-f0-9]{64}$") | not))
               or ([.[].image] | sort) != (["ghcr.io/" + $owner + "/pixie"] | sort)
             then error("Images do not form one deployment revision")
             else {schemaVersion: 1, revision: $revision, images: map({image, digest, reference: (.image + "@" + .digest)})} end
-          ' image-identities/*/image.json > deployment.json
+          ' image-identities/image.json > deployment.json
       - name: Publish deployment manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
