@@ -17,11 +17,16 @@ export PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=false PIXIE_PUBLIC_ORIGIN=
 export PIXIE_MCP_TOKEN=ci-mcp-token-0123456789abcdef0123456789
 
 compose --env-file /dev/null -f "$repo_root/docker-compose.yaml" config --format json > "$fixture/compose.json"
+# .pixie is the configuration source when present but must stay optional:
+# the render above already succeeded without one in the repo root.
+test ! -e "$repo_root/.pixie"
+grep -q -A2 "env_file:" "$repo_root/docker-compose.yaml"
+grep -q "path: .pixie" "$repo_root/docker-compose.yaml"
+grep -q "required: false" "$repo_root/docker-compose.yaml"
 jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" '
   (.services | keys) == ["pixie"] and
   all(.services | to_entries[]; .key as $service | .value |
     .user == "1000:1000" and .read_only == true and .network_mode == "host" and
-    (has("env_file") | not) and
     (.volumes | length) == 1 and
     (all(.volumes[]; .type == "bind"))
   ) and

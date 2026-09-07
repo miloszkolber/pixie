@@ -1,15 +1,19 @@
+# Pixie configuration source. Compose reads this file when present
+# (overlaying shell environment); explicit `environment:` entries in
+# docker-compose.yaml take precedence over values set here.
+
 # Existing host directory holding Pixie application state, owned by UID/GID 1000.
-# The container mounts it whole at /var/lib/pixie, so browser/{artifacts,state}/
-# live directly inside it.
+# The container mounts it whole at /var/lib/pixie, with browser/{artifacts,state}/
+# directly inside.
 PIXIE_DATA_PATH=/absolute/path/to/pixie-data
 
-# Shared with the Pi host service. Pi runs on the host, outside the containers.
+# Shared with the Pi host service. Pi runs on the host, outside the container.
 PIXIE_PI_URL=ws://127.0.0.1:3284/pi
 PIXIE_PI_SECRET_KEY=replace-with-a-random-pi-secret
 
-# The in-process MCP publisher and Pi adapter registration share one strong private
-# token. It authenticates the catalog, the embedded Browser module and the
-# application's artifact proxy. Keep this token in Pi's private service environment too.
+# Required: a strong private token authenticating the in-process MCP publisher
+# (catalog, Browser module, artifact proxy). The controller refuses to start
+# without it, and it must differ from PIXIE_TOKEN.
 PIXIE_MCP_TOKEN=replace-with-a-random-mcp-token
 
 # Web UI, API and in-process MCP publisher share one listener on this port.
@@ -18,9 +22,27 @@ PIXIE_CONTROLLER_PORT=7312
 # Optional controller login; required for remote binding unless explicitly acknowledged.
 PIXIE_AUTH_ENABLED=false
 # PIXIE_TOKEN=replace-with-a-random-controller-token
-# PIXIE_CONTROLLER_HOST=0.0.0.0
+# PIXIE_CONTROLLER_HOST=127.0.0.1
 # PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=false
 # PIXIE_PUBLIC_ORIGIN=https://pixie.example.com
+# Setting PIXIE_ALLOWED_ORIGINS is rejected with cookie authentication; use PIXIE_PUBLIC_ORIGIN.
 
-# Pin this to a release or sha-<revision> tag when using a published image.
-# PIXIE_IMAGE=ghcr.io/miloszkolber/pixie:sha-revision
+# Retired and ignored (warning at startup): PIXIE_MCP_MODULES,
+# PIXIE_MCP_DISABLED_MODULES. Toggle modules in Tools instead.
+
+# Optional external Browser service: with PIXIE_BROWSER_URL unset (default),
+# panels and artifacts use the in-process Browser module. Point it at a
+# separately deployed Browser HTTP surface to isolate browser work outside
+# this container; a non-loopback URL requires browser authentication below.
+# PIXIE_BROWSER_URL=http://127.0.0.1:8787
+# PIXIE_BROWSER_TOKEN=replace-with-a-random-browser-token
+# PIXIE_BROWSER_AUTH=true
+# Advanced operator overrides for the Browser HTTP surface (normally derived
+# from the controller settings above):
+# PIXIE_BROWSER_HOST=127.0.0.1
+# PIXIE_BROWSER_PORT=8787
+# PIXIE_BROWSER_PUBLIC_ORIGIN=https://browser.example.com
+
+# Non-Docker runs only: override the container data and web-asset directories.
+# PIXIE_DATA_DIR=/var/lib/pixie
+# PIXIE_STATIC_DIR=/path/to/pixie/webui/dist

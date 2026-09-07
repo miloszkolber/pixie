@@ -6,6 +6,9 @@ services:
         network_mode: host
         user: "1000:1000"
         read_only: true
+        env_file:
+            - path: .pixie
+              required: false
         environment:
             PIXIE_PI_URL: "${PIXIE_PI_URL:-ws://127.0.0.1:3284/pi}"
             PIXIE_PI_SECRET_KEY: "${PIXIE_PI_SECRET_KEY:?set the Pi service secret in .pixie}"
