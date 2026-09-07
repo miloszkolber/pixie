@@ -6,7 +6,7 @@
 		"@modelcontextprotocol/sdk": "1.30.0"
 	},
 	"scripts": {
-		"build": "bun run build:go && bun run build:web",
+		"build": "bun run build:web && bun run build:go",
 		"build:go": "go build -trimpath -o dist/pixie ./cmd",
 		"dev:web": "bun --filter @pixie/web dev",
 		"build:web": "bun --filter @pixie/web build",

@@ -338,9 +338,9 @@ func (a *PiAdmin) ProviderStatus(ctx context.Context) (map[string]any, error) {
 		if configured && available {
 			item["availableModelCount"] = len(provider.Models)
 		}
-	if provider.LastRefreshError != "" {
-		item["detail"] = sanitizeProviderDetail(provider.LastRefreshError)
-	} else if provider.Available != nil && !available {
+		if provider.LastRefreshError != "" {
+			item["detail"] = sanitizeProviderDetail(provider.LastRefreshError)
+		} else if provider.Available != nil && !available {
 			item["detail"] = "Provider runtime is unavailable"
 		}
 		result = append(result, item)

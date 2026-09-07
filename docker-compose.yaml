@@ -20,6 +20,9 @@ services:
             PIXIE_PUBLIC_ORIGIN: "${PIXIE_PUBLIC_ORIGIN:-}"
             # The in-process MCP publisher and Pi adapter registration share this token.
             PIXIE_MCP_TOKEN: "${PIXIE_MCP_TOKEN:?set a strong MCP token in .pixie}"
+            # Pinned to the container layout below; non-Docker runs leave
+            # PIXIE_DATA_DIR unset for the XDG default (see docs/deployment.md).
+            PIXIE_DATA_DIR: "/var/lib/pixie"
         volumes:
             - ${PIXIE_DATA_PATH}:/var/lib/pixie
             # Add each admitted project root here as a read-only bind at the same absolute path.

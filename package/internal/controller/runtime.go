@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,8 +20,14 @@ import (
 
 const (
 	DefaultControllerPort = 7312
-	DefaultDataDir        = "/var/lib/pixie"
-	DefaultStaticDir      = "/app/web"
+	// DefaultDataDir is the last-resort state directory when neither
+	// PIXIE_DATA_DIR nor a home directory is available. Containers pin
+	// PIXIE_DATA_DIR explicitly; see defaultDataDir.
+	DefaultDataDir = "/var/lib/pixie"
+	// DefaultStaticDir is the last-resort web asset directory, matching the
+	// container layout. Release binaries serve embedded assets instead; see
+	// resolveStaticFiles.
+	DefaultStaticDir = "/app/web"
 )
 
 type RuntimeConfig struct {
@@ -53,6 +60,19 @@ type Runtime struct {
 	errors    chan error
 }
 
+// defaultDataDir resolves user-writable state storage: an explicit
+// XDG_DATA_HOME wins, then ~/.local/share/pixie, with the container path as
+// the last resort when no home directory is available.
+func defaultDataDir(getenv func(string) string) string {
+	if xdg := strings.TrimSpace(getenv("XDG_DATA_HOME")); filepath.IsAbs(xdg) {
+		return filepath.Join(xdg, "pixie")
+	}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, ".local", "share", "pixie")
+	}
+	return DefaultDataDir
+}
+
 func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	if config.Getenv == nil {
 		config.Getenv = os.Getenv
@@ -68,11 +88,10 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		config.Port = DefaultControllerPort
 	}
 	if config.DataDir == "" {
-		config.DataDir = DefaultDataDir
+		config.DataDir = defaultDataDir(config.Getenv)
 	}
-	if config.StaticDir == "" {
-		config.StaticDir = DefaultStaticDir
-	}
+	// An empty StaticDir is intentional: asset resolution prefers the
+	// embedded web bundle and falls back to DefaultStaticDir.
 	build := diagnostics.NormalizeBuild(config.AppVersion, config.AppRevision)
 	if config.Policy == nil {
 		config.Policy, err = workspace.DiscoverPathPolicy()

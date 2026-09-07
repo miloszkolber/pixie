@@ -6,10 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"mime"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -39,6 +39,7 @@ type HTTPHandler struct {
 	Auth          AuthConfig
 	auth          *Auth
 	StaticDir     string
+	static        staticFiles
 	Ready         http.HandlerFunc
 	MCPRegistry   http.Handler
 	browserClient *http.Client
@@ -56,7 +57,7 @@ func (h *HTTPHandler) inProcessBrowserHandler() http.Handler {
 }
 
 func NewHTTPHandler(webSocket *WebSocketServer, objective ObjectiveHandler, projects *workspace.Projects, files *workspace.Files, authConfig AuthConfig, staticDir string, ready http.HandlerFunc) (*HTTPHandler, error) {
-	result := &HTTPHandler{WebSocket: webSocket, Objective: objective, Projects: projects, Files: files, Auth: authConfig, StaticDir: staticDir, Ready: ready, browserClient: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	result := &HTTPHandler{WebSocket: webSocket, Objective: objective, Projects: projects, Files: files, Auth: authConfig, StaticDir: staticDir, static: resolveStaticFiles(staticDir), Ready: ready, browserClient: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	if authConfig.Enabled {
 		auth, err := NewAuth(authConfig.ControllerToken)
 		if err != nil {
@@ -261,26 +262,24 @@ func (h *HTTPHandler) serveStatic(response http.ResponseWriter, request *http.Re
 		http.NotFound(response, request)
 		return
 	}
-	file := filepath.Join(h.StaticDir, filepath.FromSlash(requested))
-	if !workspace.Within(h.StaticDir, file) || !regularFile(file) {
+	// Request paths are cleaned above and served from a rooted filesystem,
+	// so traversal cannot escape the asset root.
+	file := requested
+	if _, ok := h.static.stat(file); !ok {
 		if path.Ext(requested) != "" {
 			http.NotFound(response, request)
 			return
 		}
-		file = filepath.Join(h.StaticDir, "index.html")
+		file = "index.html"
 	}
-	if !regularFile(file) {
+	info, ok := h.static.stat(file)
+	if !ok {
 		http.NotFound(response, request)
 		return
 	}
-	if filepath.Base(file) == "index.html" {
-		content, err := os.ReadFile(file)
-		if err != nil {
-			http.NotFound(response, request)
-			return
-		}
-		info, err := os.Stat(file)
-		if err != nil || !info.Mode().IsRegular() {
+	if file == "index.html" {
+		content, ok := h.static.read(file)
+		if !ok {
 			http.NotFound(response, request)
 			return
 		}
@@ -294,47 +293,34 @@ func (h *HTTPHandler) serveStatic(response http.ResponseWriter, request *http.Re
 	} else {
 		response.Header().Set("Cache-Control", "no-cache")
 	}
-	h.serveStaticFile(response, request, file)
+	h.serveStaticFile(response, request, file, info)
 }
 
-func (h *HTTPHandler) serveStaticFile(response http.ResponseWriter, request *http.Request, file string) {
-	compressedFile := file + ".gz"
-	if !regularFile(compressedFile) || !precompressibleStaticAsset(file) {
-		http.ServeFile(response, request, file)
+func (h *HTTPHandler) serveStaticFile(response http.ResponseWriter, request *http.Request, file string, info fs.FileInfo) {
+	compressed, compressedOK := h.static.read(file + ".gz")
+	if !compressedOK || !precompressibleStaticAsset(file) {
+		h.serveStaticBytes(response, request, file, info)
 		return
 	}
 	response.Header().Add("Vary", "Accept-Encoding")
 	if !acceptsContentEncoding(request.Header.Get("Accept-Encoding"), "gzip") {
-		http.ServeFile(response, request, file)
-		return
-	}
-	compressed, err := os.Open(compressedFile)
-	if err != nil {
-		http.ServeFile(response, request, file)
-		return
-	}
-	defer compressed.Close()
-	compressedInfo, err := compressed.Stat()
-	if err != nil || !compressedInfo.Mode().IsRegular() {
-		http.ServeFile(response, request, file)
-		return
-	}
-	originalInfo, err := os.Stat(file)
-	if err != nil || !originalInfo.Mode().IsRegular() {
-		http.NotFound(response, request)
+		h.serveStaticBytes(response, request, file, info)
 		return
 	}
 	response.Header().Set("Content-Encoding", "gzip")
-	if contentType := mime.TypeByExtension(filepath.Ext(file)); contentType != "" {
+	if contentType := mime.TypeByExtension(path.Ext(file)); contentType != "" {
 		response.Header().Set("Content-Type", contentType)
 	}
-	http.ServeContent(
-		response,
-		request,
-		filepath.Base(file),
-		originalInfo.ModTime(),
-		io.NewSectionReader(compressed, 0, compressedInfo.Size()),
-	)
+	http.ServeContent(response, request, path.Base(file), info.ModTime(), bytes.NewReader(compressed))
+}
+
+func (h *HTTPHandler) serveStaticBytes(response http.ResponseWriter, request *http.Request, file string, info fs.FileInfo) {
+	content, ok := h.static.read(file)
+	if !ok {
+		http.NotFound(response, request)
+		return
+	}
+	http.ServeContent(response, request, path.Base(file), info.ModTime(), bytes.NewReader(content))
 }
 
 func precompressibleStaticAsset(file string) bool {
@@ -445,9 +431,4 @@ func immutableStaticAsset(requested string) bool {
 		}
 	}
 	return true
-}
-
-func regularFile(file string) bool {
-	info, err := os.Stat(file)
-	return err == nil && info.Mode().IsRegular()
 }

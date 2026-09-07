@@ -46,6 +46,8 @@ PIXIE_AUTH_ENABLED=false
 # PIXIE_BROWSER_PORT=8787
 # PIXIE_BROWSER_PUBLIC_ORIGIN=https://browser.example.com
 
-# Non-Docker runs only: override the container data and web-asset directories.
+# Non-Docker runs only: the Compose service pins PIXIE_DATA_DIR to the
+# container layout below; plain binaries default to $XDG_DATA_HOME/pixie.
+# PIXIE_STATIC_DIR is a development-only override (release binaries embed the UI).
 # PIXIE_DATA_DIR=/var/lib/pixie
 # PIXIE_STATIC_DIR=/path/to/pixie/webui/dist

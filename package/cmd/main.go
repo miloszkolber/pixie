@@ -23,6 +23,10 @@ var revision = "unknown"
 func main() {
 	build := diagnostics.NormalizeBuild(version, revision)
 	slog.SetDefault(diagnostics.NewLogger("pixie", build))
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Printf("pixie %s (revision %s)\n", build.Version, build.Revision)
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
 		host := "127.0.0.1"
 		if configured := strings.TrimSpace(os.Getenv("PIXIE_CONTROLLER_HOST")); configured == "::" || configured == "::1" {

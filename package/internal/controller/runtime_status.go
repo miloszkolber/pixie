@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"github.com/miloszkolber/pixie/internal/diagnostics"
@@ -62,7 +61,7 @@ type runtimeStatusProvider struct {
 	requests      *diagnostics.RequestCounter
 	projects      *workspace.Projects
 	settings      *Settings
-	staticDir     string
+	static        staticFiles
 	agent         *PiClient
 	auth          AuthConfig
 	browserClient *http.Client
@@ -72,7 +71,7 @@ func newRuntimeStatusProvider(build diagnostics.BuildInfo, requests *diagnostics
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	return &runtimeStatusProvider{
 		build: build, started: time.Now(), requests: requests, projects: projects, settings: settings,
-		staticDir: staticDir, agent: agent, auth: auth,
+		static: resolveStaticFiles(staticDir), agent: agent, auth: auth,
 		browserClient: &http.Client{
 			Transport: transport,
 			Timeout:   runtimeStatusTimeout,
@@ -134,7 +133,7 @@ func (s *runtimeStatusProvider) localReady() (bool, string) {
 	if _, err := s.settings.Get(); err != nil {
 		return false, "Application state is unavailable."
 	}
-	if !regularFile(filepath.Join(s.staticDir, "index.html")) {
+	if _, ok := s.static.stat("index.html"); !ok {
 		return false, "Application interface is unavailable."
 	}
 	return true, ""
