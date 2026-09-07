@@ -24,32 +24,40 @@ Corrected over-claims (this review): "Browser receives only its own state and ar
 
 Residual risks and smallest practical hardening (no privileged machinery): a compromised renderer (expected without the Chromium sandbox) inherits UID-1000 access to controller state, admitted projects (read-only mounts still readable, and data-dir siblings writable), and loopback services including Pi and the controller itself; malicious pages can also probe the host network. Cheapest mitigations within scope: keep `read_only: true` plus tmpfs mounts on every deployment; mount admitted projects read-only at the same absolute path and never add writable project binds; run with authentication enabled and distinct `PIXIE_MCP_TOKEN`/`PIXIE_TOKEN` values; prefer loopback controller binds and set `PIXIE_BROWSER_PUBLIC_ORIGIN` exactly when exposing beyond loopback; close browser sessions promptly and keep per-session/global artifact and state quotas tight; for stronger needs, run the Browser service in a separate container/UID and point `PIXIE_BROWSER_URL` at it.
 
-## Measurements (UNVERIFIED placeholders)
+## Measurements
 
-No Browser measurements were taken in this change; the numbers below are placeholders to fill on a live deployment. Existing fixtures: `package/tests/performance/main.go` is a controller comparison harness (project.list, file_1MiB, PNG-over-HTTP workloads with p50/p95 and a 5% budget), not a Browser harness; `package/tests/performance/transcript.ts` explicitly does not measure browser paint or deployment-host latency. There is no Browser task-latency fixture in the tree.
+Existing fixtures: `package/tests/performance/main.go` is a controller comparison harness (project.list, file_1MiB, PNG-over-HTTP workloads with p50/p95 and a 5% budget), not a Browser harness; `package/tests/performance/transcript.ts` explicitly does not measure browser paint or deployment-host latency. There is no Browser task-latency fixture in the tree.
 
-| Configuration | Startup (UNVERIFIED) | Browser task latency, open+snapshot+screenshot (UNVERIFIED) |
-| --- | --- | --- |
-| Merged `pixie` image, x86-64, Browser module enabled | UNVERIFIED | UNVERIFIED |
-| Merged `pixie` image, arm64, Browser module enabled | UNVERIFIED | UNVERIFIED |
+| Configuration | Browser task latency, open+snapshot+close over `POST :7312/mcp/browser` (`tools/call browser_command`) |
+| --- | --- |
+| Merged `pixie` image, x86-64, Browser module enabled, measured live 2026-09-07 against `https://example.com` (agent-browser 0.34.0 per `package/Dockerfile`, Chromium bundled in image) | open 859 ms, snapshot 19 ms, close 263 ms (single round trip, wall clock, bearer-authenticated loopback) |
+| Merged `pixie` image, arm64, Browser module enabled | UNVERIFIED |
+
+Assistant service on the same host (2026-09-07, `pixie-assistant.service`, Pi SDK 0.85.1, `--llama`): `livez` 200 in ~13 ms loopback, authenticated `readyz` capability snapshot 200 in ~15 ms, resident set ~73 MB (peak 99 MB shortly after start).
 
 Fixture commands (run on the live deployment host, then record machine, CPU/RAM, image digest, `agent-browser` version, Chromium version, and controller revision alongside each number):
 
 ```sh
 # Startup: cold start to healthy, Browser ready.
 /usr/bin/time -v docker compose up -d pixie
-curl -sf http://127.0.0.1:7312/readyz; curl -sf http://127.0.0.1:8787/readyz
+curl -sf http://127.0.0.1:7312/livez; curl -sf http://127.0.0.1:3284/livez
 docker logs pixie --since 10m | grep -i -E 'browser|ready|listen'
 
-# Browser task latency: one bounded open+snapshot+screenshot round trip via the
-# in-process module (bearer required when auth is enabled).
-time curl -sf -H "Authorization: Bearer $PIXIE_MCP_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"session":"bench-1","command":"open","args":["https://example.com"]}' \
-  http://127.0.0.1:8787/v1/browser
-time curl -sf -H "Authorization: Bearer $PIXIE_MCP_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"session":"bench-1","command":"snapshot"}' http://127.0.0.1:8787/v1/browser
-time curl -sf -H "Authorization: Bearer $PIXIE_MCP_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"session":"bench-1","command":"screenshot","args":["bench.png"]}' http://127.0.0.1:8787/v1/browser
+# Browser task latency: one bounded open+snapshot+close round trip via the
+# in-process module (MCP tools/call, bearer required when auth is enabled).
+python3 -c "
+import json, time, urllib.request
+tok = open('/home/core/docker/pixie/.pixie').read()  # parse PIXIE_MCP_TOKEN
+def call(args, i):
+    body = json.dumps({'jsonrpc':'2.0','id':i,'method':'tools/call',
+        'params':{'name':'browser_command','arguments':args}}).encode()
+    req = urllib.request.Request('http://127.0.0.1:7312/mcp/browser', data=body,
+        headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream',
+                 'Authorization':'Bearer '+tok})
+    t = time.time(); urllib.request.urlopen(req, timeout=120).read(); return (time.time()-t)*1000
+print('open', call({'session':'bench-1','command':'open','args':['https://example.com']}, 1))
+print('snapshot', call({'session':'bench-1','command':'snapshot','args':[]}, 2))
+print('close', call({'session':'bench-1','command':'close','args':[]}, 3))
 ```
 
 | Boundary | Credential |
