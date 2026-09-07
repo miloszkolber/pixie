@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
-import { type ManagedSession, Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import { type ManagedSession, Sessions } from "../../../assistant/src/sessions.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {

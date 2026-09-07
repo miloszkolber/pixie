@@ -6,7 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
 import { piMcpAdapterWithConfig } from "../pi-native-parity/upstream.ts";
 
 const mcpExtension = (pi: ExtensionAPI, dir: string) =>

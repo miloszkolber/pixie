@@ -12,16 +12,16 @@ ARG CREATED=1970-01-01T00:00:00Z
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS web-build
 WORKDIR /work/pixie
 COPY package.json bun.lock bunfig.toml /work/
-COPY pixie/package.json ./
-COPY pixie/webui/package.json webui/package.json
-COPY pixie/contracts/package.json contracts/package.json
+COPY package/package.json ./
+COPY package/webui/package.json webui/package.json
+COPY package/contracts/package.json contracts/package.json
 COPY agent/pixie-assistant/package.json /work/agent/pixie-assistant/package.json
 COPY agent/extensions/local-patches/*.patch /work/agent/extensions/local-patches/
 RUN --mount=type=cache,id=bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
     bun install --frozen-lockfile
-COPY pixie/webui/ webui/
-COPY pixie/contracts/ contracts/
-COPY pixie/tsconfig.base.json ./
+COPY package/webui/ webui/
+COPY package/contracts/ contracts/
+COPY package/tsconfig.base.json ./
 RUN bun run build:web \
     && mkdir -p /out/licenses/frontend \
     && (cd /work && find node_modules -type f \( -iname 'license*' -o -iname 'notice*' \) \
@@ -40,11 +40,11 @@ RUN bun run build:web \
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS go-source
 WORKDIR /work
-COPY pixie/go.mod pixie/go.sum ./
+COPY package/go.mod package/go.sum ./
 RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     go mod download
-COPY pixie/cmd/ cmd/
-COPY pixie/internal/ internal/
+COPY package/cmd/ cmd/
+COPY package/internal/ internal/
 
 FROM go-source AS go-build
 ARG TARGETOS
@@ -57,8 +57,8 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     set -eu; \
     mkdir -p /out/licenses/pixie/go; \
     cp /usr/local/go/LICENSE /out/licenses/pixie/go/LICENSE; \
-    go build -trimpath -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie ./cmd/pixie; \
-    go list -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd/pixie \
+    go build -trimpath -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie ./cmd; \
+    go list -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd \
         > /tmp/modules.unsorted; \
     sort -u /tmp/modules.unsorted > /tmp/modules; \
     cut -d ' ' -f1 /tmp/modules > /out/licenses/pixie/modules.txt; \

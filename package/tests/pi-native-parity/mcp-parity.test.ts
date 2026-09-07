@@ -14,13 +14,13 @@ import {
 	ListToolsRequestSchema,
 	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { PIXIE_BROWSER_RUNTIME_NAME } from "../../../agent/pixie-assistant/src/extensions/pi-mcp-adapter.ts";
+import { PIXIE_BROWSER_RUNTIME_NAME } from "../../../assistant/src/extensions/pi-mcp-adapter.ts";
 import { piMcpAdapterWithConfig } from "./upstream.ts";
 
 const piMcpAdapter = piMcpAdapterWithConfig();
 
-import { startHost } from "../../../agent/pixie-assistant/src/server.ts";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import { startHost } from "../../../assistant/src/server.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
 
 const compatibilityMcp = (pi: ExtensionAPI, dir: string) =>
 	piMcpAdapterWithConfig({ agentDir: dir })(pi);

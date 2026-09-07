@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { startHost } from "../../../agent/pixie-assistant/src/server.ts";
+import { startHost } from "../../../assistant/src/server.ts";
 
 const [dir, project, profile] = process.argv.slice(2);
 if (!dir || !project) throw new Error("Fixture directories required");

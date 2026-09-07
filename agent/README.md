@@ -34,6 +34,6 @@ Installer generation does not inherit Signet credentials, workspace paths or end
 
 ## Verification
 
-Pi-facing tests live in [`pixie/tests/pi-native-parity/`](../pixie/tests/pi-native-parity/). They use disposable directories, not real `~/.pi`. See [development](../docs/development.md) for broader checks. They do not establish daemon availability, provider inference, Browser/MCP adapter parity or a live deployment.
+Pi-facing tests live in [`package/tests/pi-native-parity/`](../pixie/tests/pi-native-parity/). They use disposable directories, not real `~/.pi`. See [development](../docs/development.md) for broader checks. They do not establish daemon availability, provider inference, Browser/MCP adapter parity or a live deployment.
 
 The pinned upstream subagent runner derives child commands from `process.execPath` and supplies an entry script only when that executable is named `node`. Under Bun it invokes bare Bun with Pi arguments; the checked-in [subagent patch](extensions/local-patches/README.md) resolves Pi's public RPC entrypoint for that case instead. Child inference through this launcher is covered by the parity suite's real-child tests.

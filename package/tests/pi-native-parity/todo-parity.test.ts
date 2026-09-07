@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import rpivTodo from "@juicesharp/rpiv-todo";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {

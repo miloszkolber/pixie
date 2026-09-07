@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {

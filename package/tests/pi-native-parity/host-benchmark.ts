@@ -10,7 +10,7 @@ import { join } from "node:path";
 import rpivAsk from "@juicesharp/rpiv-ask-user-question";
 import rpivTodo from "@juicesharp/rpiv-todo";
 import rpivWeb from "@juicesharp/rpiv-web-tools";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
 import { piSubagent } from "./upstream.ts";
 
 const config = process.argv[2];

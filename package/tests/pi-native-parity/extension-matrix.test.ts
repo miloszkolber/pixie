@@ -4,9 +4,9 @@ import { writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { PiConnector } from "@signetai/connector-pi";
-import llama from "../../../agent/pixie-assistant/src/extensions/llama.ts";
-import { startHost } from "../../../agent/pixie-assistant/src/server.ts";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import llama from "../../../assistant/src/extensions/llama.ts";
+import { startHost } from "../../../assistant/src/server.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
 import { cleanups, echoProvider, fixture, tempDir, toolNames } from "./helpers.ts";
 
 afterEach(async () => {

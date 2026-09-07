@@ -2,9 +2,9 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import llama from "../../../agent/pixie-assistant/src/extensions/llama.ts";
-import { Providers } from "../../../agent/pixie-assistant/src/providers.ts";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import llama from "../../../assistant/src/extensions/llama.ts";
+import { Providers } from "../../../assistant/src/providers.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {

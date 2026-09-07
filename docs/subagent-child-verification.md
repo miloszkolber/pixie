@@ -12,8 +12,8 @@ Run from the repository root with Bun 1.4.0:
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
-bun test pixie/tests/pi-native-parity/subagent-child.test.ts pixie/tests/pi-native-parity/subagent-parity.test.ts
-bun pixie/tests/pi-native-parity/subagent-patch-install.ts
+bun test package/tests/pi-native-parity/subagent-child.test.ts package/tests/pi-native-parity/subagent-parity.test.ts
+bun package/tests/pi-native-parity/subagent-patch-install.ts
 ```
 
 The real-child regression discovers a known agent from isolated native agent state and calls the upstream runner. A file extension loaded by the child's `settings.json` registers a deterministic, in-process model provider. It makes no network requests and needs no external credentials. The fixture checks fresh output and usage, named-session history across two distinct child invocations, cancellation after a real provider turn starts, and disappearance of the cancelled PID. A native extension confirmation is cancelled through the upstream headless RPC response path. The child records its actual PID, Bun version, selected agent directory and argv for assertions.

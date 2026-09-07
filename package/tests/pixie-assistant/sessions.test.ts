@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
-import { JsonStore } from "../../../agent/pixie-assistant/src/storage.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
+import { JsonStore } from "../../../assistant/src/storage.ts";
 import { makeProvider } from "./provider-fixture.ts";
 
 const cleanups: (() => Promise<unknown>)[] = [];

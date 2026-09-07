@@ -8,9 +8,9 @@ import {
 	type ExtensionContext,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { configureExtension } from "../../../agent/pixie-assistant/src/extension-configuration.ts";
-import { extensionInventory } from "../../../agent/pixie-assistant/src/extension-inventory.ts";
-import { SESSION_LIVENESS_EVENT, Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import { configureExtension } from "../../../assistant/src/extension-configuration.ts";
+import { extensionInventory } from "../../../assistant/src/extension-inventory.ts";
+import { SESSION_LIVENESS_EVENT, Sessions } from "../../../assistant/src/sessions.ts";
 import { makeProvider } from "./provider-fixture.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];

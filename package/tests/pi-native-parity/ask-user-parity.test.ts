@@ -4,7 +4,7 @@ import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
 } from "@juicesharp/rpiv-ask-user-question/events";
-import { Sessions } from "../../../agent/pixie-assistant/src/sessions.ts";
+import { Sessions } from "../../../assistant/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {

@@ -72,7 +72,7 @@ Docker stays the primary method, but the application also runs as plain binaries
 
 ```sh
 bun install --frozen-lockfile
-bun run build:web      # web UI into pixie/webui/dist (build time only)
+bun run build:web      # web UI into package/webui/dist (build time only)
 cd pixie && CGO_ENABLED=0 go build -trimpath -o /usr/local/bin/pixie ./cmd/pixie
 ```
 
