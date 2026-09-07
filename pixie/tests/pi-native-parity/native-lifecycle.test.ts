@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { type ManagedSession, Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
@@ -10,7 +11,7 @@ afterEach(async () => {
 });
 
 async function fixture() {
-	const root = await mkdtemp("/tmp/opencode/pixie-native-lifecycle-");
+	const root = await mkdtemp(join(tmpdir(), "pixie-native-lifecycle-"));
 	cleanup.push(() => rm(root, { recursive: true, force: true }));
 	const agentDir = join(root, "agent"),
 		cwd = join(root, "project");

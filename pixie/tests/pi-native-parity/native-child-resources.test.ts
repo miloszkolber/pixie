@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProjectTrustStore, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type ManagedSession, Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
@@ -10,7 +11,7 @@ const { runAgent } = require("@mjakl/pi-subagent/runner");
 const { discoverAgents } = require("@mjakl/pi-subagent/agents");
 
 test("real known child and assistant execute the same unknown user/project native resources", async () => {
-	const root = await mkdtemp("/tmp/opencode/pixie-native-child-");
+	const root = await mkdtemp(join(tmpdir(), "pixie-native-child-"));
 	const previous = process.env.PI_CODING_AGENT_DIR;
 	let sessions: Sessions | undefined;
 	try {

@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 test("public native package resolver can deny missing installs without fetching or mutating configuration", async () => {
-	const root = await mkdtemp("/tmp/opencode/pixie-native-package-policy-");
+	const root = await mkdtemp(join(tmpdir(), "pixie-native-package-policy-"));
 	try {
 		const cwd = join(root, "project"),
 			agentDir = join(root, "agent");

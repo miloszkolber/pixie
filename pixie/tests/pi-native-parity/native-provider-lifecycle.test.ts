@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import llama from "../../../pi/pixie-assistant/src/extensions/llama.ts";
 import { Providers } from "../../../pi/pixie-assistant/src/providers.ts";
@@ -10,7 +11,7 @@ afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 async function root() {
-	const dir = await mkdtemp("/tmp/opencode/pixie-native-provider-");
+	const dir = await mkdtemp(join(tmpdir(), "pixie-native-provider-"));
 	cleanup.push(() => rm(dir, { recursive: true, force: true }));
 	const agentDir = join(dir, "agent"),
 		cwd = join(dir, "project");
