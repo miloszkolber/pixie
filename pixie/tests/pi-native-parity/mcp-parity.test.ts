@@ -13,13 +13,14 @@ import {
 	ListToolsRequestSchema,
 	ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import piMcpAdapter, {
+import {
 	PIXIE_BROWSER_RUNTIME_NAME,
-	piMcpAdapterWithConfig,
-} from "../../../pi/host/src/extensions/pi-mcp-adapter.ts";
-import signet from "../../../pi/host/src/extensions/signet.ts";
-import { startHost } from "../../../pi/host/src/server.ts";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
+} from "../../../pi/pixie-assistant/src/extensions/pi-mcp-adapter.ts";
+import { piMcpAdapterWithConfig } from "./upstream.ts";
+import { createRequire } from "node:module";
+const piMcpAdapter = piMcpAdapterWithConfig();
+import { startHost } from "../../../pi/pixie-assistant/src/server.ts";
+import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
 const compatibilityMcp = (pi: ExtensionAPI, dir: string) => piMcpAdapterWithConfig({ agentDir: dir })(pi);
 import { cleanups, fixture } from "./helpers.ts";
 
@@ -235,15 +236,17 @@ function normalizeStatus(value: unknown): string {
 	return String(value ?? "").replace(/\s+/g, "-");
 }
 
-test("adapter profile starts under Bun and advertises its marker", async () => {
+test("native adapter starts under Bun and enables application administration", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/pixie-mcp-parity-host-`);
 	cleanups.push(() => rm(dir, { recursive: true, force: true }));
 	setEnv("PI_CODING_AGENT_DIR", dir);
+	await writeFile(join(dir, "settings.json"), JSON.stringify({
+		extensions: [createRequire(import.meta.url).resolve("pi-mcp-adapter")],
+	}));
 	const host = await startHost({
 		agentDir: dir,
 		secret: "parity-mcp-adapter-secret",
 		port: 0,
-		extensions: ["pi-mcp-adapter"],
 	});
 	try {
 		const base = `http://127.0.0.1:${host.server.port}`;
@@ -254,7 +257,8 @@ test("adapter profile starts under Bun and advertises its marker", async () => {
 		).json()) as { capabilities: Record<string, number> };
 		// Bun compatibility is unknown upstream (engines node>=20); this test
 		// running green under Bun is the recorded startup datum.
-		expect(ready.capabilities["pi-mcp-adapter"]).toBe(1);
+		expect(ready.capabilities.mcp).toBe(1);
+		expect(ready.capabilities["pi-mcp-adapter"]).toBeUndefined();
 	} finally {
 		await host.close();
 	}
@@ -263,7 +267,8 @@ test("adapter profile starts under Bun and advertises its marker", async () => {
 		(await entry.capabilities.call("adapter.status", {}, sessions.context(entry)))) as any;
 	expect(status).toMatchObject({
 		engine: "pi-mcp-adapter",
-		version: "2.32.1",
+		version: null,
+		testedVersion: "2.32.1",
 		bunCompat: "unknown",
 		proxyTool: "mcp",
 		runtimeName: PIXIE_BROWSER_RUNTIME_NAME,
@@ -703,10 +708,10 @@ test.each([
 	expect(fixtureErrors).toEqual([]);
 });
 
-test("signet marker needs no MCP connection", async () => {
-	const { sessions, dir } = await fixture([signet]);
+test("baseline advertises neither absent Signet nor MCP", async () => {
+	const { sessions, dir } = await fixture();
 	const entry = await sessions.create(dir);
-	expect(entry.capabilities.snapshot()).toMatchObject({ signet: 1 });
+	expect(entry.capabilities.snapshot().signet).toBeUndefined();
 	expect(entry.capabilities.snapshot().mcp).toBeUndefined();
 	const names = (entry.session.agent.state.tools as any[]).map((tool) => tool.name);
 	expect(names.some((name) => name.includes("__"))).toBe(false);
@@ -884,7 +889,6 @@ test("public proxy resource output stays rendered content without raw resource f
 	// The bridge exposes the upstream runtime and administration only.
 	expect(entry.capabilities.snapshot()).toMatchObject({
 		mcp: 1,
-		"pi-mcp-adapter": 1,
 	});
 	expect(entry.capabilities.snapshot()).not.toHaveProperty("mcp-apps");
 	expect(entry.capabilities.snapshot()).not.toHaveProperty("mcp-app-tools");

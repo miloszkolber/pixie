@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Resolve the host's locked dependency, not stale application-local installs.
-const require = createRequire(new URL("../../../pi/host/package.json", import.meta.url));
+const require = createRequire(new URL("../../../pi/pixie-assistant/package.json", import.meta.url));
 const { runAgent } = require("@mjakl/pi-subagent/runner");
 const { discoverAgents } = require("@mjakl/pi-subagent/agents");
 const { getFinalOutput } = require("@mjakl/pi-subagent/types");

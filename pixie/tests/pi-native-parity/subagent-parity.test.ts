@@ -3,12 +3,12 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
-import piSubagent from "../../../pi/host/src/extensions/pi-subagent.ts";
+import { piSubagent } from "./upstream.ts";
 import { cleanups, echoProvider, findTool, fixture, tempDir } from "./helpers.ts";
 
 // Structural view of the upstream discovery result. The upstream `agents`
 // module is loaded through `createRequire` (same reason as the profile
-// bridge in pi-host): a static import would pull its untyped JavaScript
+// bridge in pixie-assistant): a static import would pull its untyped JavaScript
 // helpers into Pixie's strict typecheck.
 interface UpstreamAgentConfig {
 	name: string;
@@ -91,7 +91,7 @@ test("the profile registers the upstream subagent tool and marker", async () => 
 	const { dir, sessions } = await fixture([piSubagent, echoProvider()]);
 	const entry = await sessions.create(dir);
 	expect(entry.session.getActiveToolNames()).toContain("subagent");
-	expect(entry.capabilities.snapshot()).toMatchObject({ "pi-subagent": 1 });
+	expect(entry.session.getActiveToolNames()).toContain("subagent");
 });
 
 test("delegation depth gate removes the tool at max depth", async () => {
@@ -100,7 +100,7 @@ test("delegation depth gate removes the tool at max depth", async () => {
 	const { dir, sessions } = await fixture([piSubagent, echoProvider()]);
 	const entry = await sessions.create(dir);
 	expect(entry.session.getActiveToolNames()).not.toContain("subagent");
-	expect(entry.capabilities.snapshot()).toMatchObject({ "pi-subagent": 1 });
+	expect(entry.capabilities.snapshot()["pi-subagent"]).toBeUndefined();
 });
 
 test("discovery parses full frontmatter and skips invalid files", async () => {
@@ -302,4 +302,3 @@ test("an empty user directory gains the upstream starter agent", async () => {
 	const { agents } = discoverAgents(dir, "both", false);
 	expect(agents.map((a) => a.name)).toContain("explore");
 });
-

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
-import rpivWeb from "../../../pi/host/src/extensions/rpiv-web.ts";
+import rpivWeb from "@juicesharp/rpiv-web-tools";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {

@@ -5,8 +5,7 @@ import { join } from "node:path";
 import { type AssistantMessage, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { PiConnector } from "@signetai/connector-pi";
-import signet from "../../../pi/host/src/extensions/signet.ts";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
+import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
 import { cleanups, echoProvider, findTool, fixture, tempDir } from "./helpers.ts";
 
 const savedEnv = new Map<string, string | undefined>();
@@ -65,10 +64,10 @@ const SIGNET_TOOLS = [
 	"signet_remember",
 ];
 
-test("the signet profile advertises its marker with no tools and no MCP", async () => {
-	const { dir, sessions } = await fixture([signet, echoProvider()]);
+test("absent Signet has no marker, tools or MCP", async () => {
+	const { dir, sessions } = await fixture([echoProvider()]);
 	const entry = await sessions.create(dir);
-	expect(entry.capabilities.snapshot()).toMatchObject({ signet: 1 });
+	expect(entry.capabilities.snapshot().signet).toBeUndefined();
 	expect(entry.capabilities.snapshot().mcp).toBeUndefined();
 	for (const name of SIGNET_TOOLS) {
 		expect(entry.session.getActiveToolNames()).not.toContain(name);
@@ -81,13 +80,14 @@ test("installed Signet registers the four memory tools without MCP", async () =>
 	const restore = silenceWarnings();
 	try {
 		await installManaged(dir, configHome);
-		const sessions = new Sessions(dir, [signet, echoProvider()], () => {});
+		const sessions = new Sessions(dir, [echoProvider()], () => {});
 		cleanups.push(() => sessions.close());
 		const entry = await sessions.create(cwd);
 		for (const name of SIGNET_TOOLS) {
 			expect(entry.session.getActiveToolNames()).toContain(name);
 		}
-		expect(entry.capabilities.snapshot()).toMatchObject({ signet: 1 });
+		expect(sessions.inventory(entry).extensions.some((extension) =>
+			extension.tools.includes("signet_recall"))).toBe(true);
 		expect(entry.capabilities.snapshot().mcp).toBeUndefined();
 		const commands = sessions.commands(entry).map((c) => String(c.name));
 		expect(commands).toEqual(expect.arrayContaining(["recall", "remember", "signet-status"]));
@@ -102,7 +102,7 @@ test("an unreachable daemon stays fail-open on attach and every tool", async () 
 	const restore = silenceWarnings();
 	try {
 		await installManaged(dir, configHome);
-		const sessions = new Sessions(dir, [signet, echoProvider()], () => {});
+		const sessions = new Sessions(dir, [echoProvider()], () => {});
 		cleanups.push(() => sessions.close());
 		// Session attach succeeds even though the daemon refuses connections.
 		const entry = await sessions.create(cwd);
@@ -222,7 +222,7 @@ test("auto-recall reaches the model hidden and stays out of the transcript", asy
 	setEnv("SIGNET_DAEMON_URL", daemon.url);
 	await installManaged(dir, configHome);
 	const captured: unknown[] = [];
-	const sessions = new Sessions(dir, [signet, capturingProvider(captured)], () => {});
+	const sessions = new Sessions(dir, [capturingProvider(captured)], () => {});
 	cleanups.push(() => sessions.close());
 	const entry = await sessions.create(cwd);
 	const echo = entry.modelRuntime.getModel("fixture", "echo");
@@ -252,7 +252,7 @@ test("online recall and remember round-trip through the daemon", async () => {
 	const daemon = startFakeDaemon();
 	setEnv("SIGNET_DAEMON_URL", daemon.url);
 	await installManaged(dir, configHome);
-	const sessions = new Sessions(dir, [signet, echoProvider()], () => {});
+	const sessions = new Sessions(dir, [echoProvider()], () => {});
 	cleanups.push(() => sessions.close());
 	const entry = await sessions.create(cwd);
 	const signal = new AbortController().signal;

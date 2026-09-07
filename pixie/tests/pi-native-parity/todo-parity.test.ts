@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
-import rpivTodo from "../../../pi/host/src/extensions/rpiv-todo.ts";
-import { Sessions } from "../../../pi/host/src/sessions.ts";
+import rpivTodo from "@juicesharp/rpiv-todo";
+import { Sessions } from "../../../pi/pixie-assistant/src/sessions.ts";
 import { cleanups, findTool, fixture } from "./helpers.ts";
 
 afterEach(async () => {
@@ -145,4 +145,3 @@ test("upstream todo keeps per-session state isolated", async () => {
 	expect(listed.details.tasks).toHaveLength(0);
 	expect(listed.details.nextId).toBe(1);
 });
-

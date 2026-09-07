@@ -28,7 +28,7 @@ func TestApplicationThroughNativePiHost(t *testing.T) {
 	for _, profile := range []string{"vanilla", "optional", "project"} {
 		t.Run(profile, func(t *testing.T) {
 			root := t.TempDir()
-			script, _ := filepath.Abs("../../pi-host/native-host-fixture.ts")
+			script, _ := filepath.Abs("../../pixie-assistant/native-host-fixture.ts")
 			agentDir := t.TempDir()
 			cmd := exec.CommandContext(t.Context(), bun, script, agentDir, root, profile)
 			stdout, err := cmd.StdoutPipe()
@@ -95,12 +95,35 @@ func TestApplicationThroughNativePiHost(t *testing.T) {
 				t.Fatalf("native history projection: %s", raw)
 			}
 			capabilities := callBrowser(t, ws, "caps", "pi.capabilities", map[string]any{})["result"].(map[string]any)
-			if (capabilities["agents"] == float64(1)) != (profile == "optional") {
+			if capabilities["agents"] != float64(1) || (capabilities["mcp"] == float64(1)) != (profile == "optional") {
 				t.Fatalf("wrong capability scope: %#v", capabilities)
 			}
 			scoped := callBrowser(t, ws, "project-caps", "pi.capabilities", map[string]any{"projectId": project["id"], "root": root})["result"].(map[string]any)
-			if (scoped["agents"] == float64(1)) != (profile != "vanilla") {
+			if scoped["agents"] != float64(1) || (scoped["mcp"] == float64(1)) != (profile == "optional") {
 				t.Fatalf("project capability missing: %#v", scoped)
+			}
+			inventory := callBrowser(t, ws, "native-inventory", "pi.nativeExtensions", owner)
+			if inventory["ok"] != true {
+				t.Fatalf("native inventory: %#v", inventory)
+			}
+			reader := inventory["result"].(map[string]any)["context"].(map[string]any)
+			if reader["reader"] != "session" || reader["sessionId"] != info.SessionID || reader["cwd"] != root {
+				t.Fatalf("wrong native inventory context: %#v", reader)
+			}
+			wrong := callBrowser(t, ws, "foreign-inventory", "pi.nativeExtensions", map[string]any{"projectId": "foreign", "root": root, "sessionId": info.SessionID})
+			if wrong["ok"] == true {
+				t.Fatal("foreign session inventory accepted")
+			}
+			reload := callBrowser(t, ws, "native-reload", "pi.nativeExtensionReload", owner)
+			if reload["ok"] != true || reload["result"].(map[string]any)["reload"] != "deferred" {
+				t.Fatalf("native reload safety gate: %#v", reload)
+			}
+			foreignChange := callBrowser(t, ws, "foreign-native-change", "pi.nativeExtensionConfigure", map[string]any{
+				"projectId": "foreign", "root": root, "sessionId": info.SessionID, "scope": "project",
+				"resourceKey": strings.Repeat("a", 64), "expectedRevision": strings.Repeat("b", 64), "enabled": true, "confirmed": true,
+			})
+			if foreignChange["ok"] == true {
+				t.Fatal("foreign native configuration change accepted")
 			}
 			if profile == "optional" {
 				created := callBrowser(t, ws, "agent", "pi.agentCreate", map[string]any{"name": "Reviewer", "description": "Review", "instructions": "Inspect", "scope": "global", "modelId": "fixture/echo"})
