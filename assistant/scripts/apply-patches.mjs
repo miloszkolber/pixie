@@ -107,5 +107,11 @@ for (const job of JOBS) {
 		warn(
 			`could not apply ${job.patchFile} (${error.message?.split("\n")[0] ?? error}); ${job.missingNote}.`,
 		);
+		continue;
 	}
+	// git apply can exit 0 while skipping a patch (for example under a
+	// git-repository home directory, where patch paths resolve against the
+	// repository root), so verify the applied marker after the fact.
+	if (!applied(job, target))
+		warn(`${job.patchFile} exited cleanly but the marker is absent; ${job.missingNote}.`);
 }
