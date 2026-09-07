@@ -168,7 +168,7 @@ Acceptance: useful operational recovery, clean relevant validation, reproducible
 
 ### 11. Pre-release history cleanup
 
-Leave the squash until implementation, packaging and validation settle. Apply the proposed boundary below only after explicit approval, with a protected backup and unchanged root/final trees. Review retained branches/tags and the canonical remote URL. A rewrite is local preparation, not permission for force-pushing. Revalidate the release candidate after commit identities change.
+The squash is done: history before `669955a` is folded into it as the single root, with all later commits replayed and the final tree verified byte-identical. Revalidate the release candidate after commit identities change.
 
 ### 12. Remote publication and first automated release, parked last
 
@@ -190,13 +190,9 @@ Migration plan, after separate confirmation:
 
 Do not put credentials or runtime state into the repository. No permanent symlink or dual-read layer is planned unless a demonstrated external consumer requires one.
 
-## Proposed history boundary
+## History boundary (done)
 
-The inspected history has 116 commits reachable from `669955a` inclusive. Its parent is `d6efba5`. The proposed result is one new root commit with exactly the tree of `669955a`, followed by the intended later changes, preserving the final tree.
-
-Git cannot retain the literal hash `669955a` after removing its parent: parent identity is part of a commit's hash. Descendant hashes also change. The old published npm artifact remains immutable, and rewriting a branch does not erase other branches, tags, remote objects or clones.
-
-Before execution, confirm this snapshot boundary and which later branches/merges to retain. Create a recoverable bundle outside the repository, inventory refs and published references, perform the rewrite in an isolated local checkout, and verify the root tree and final tree byte-for-byte against the originals. Address temporary backup branches and the old `gooseberry.git` origin URL deliberately, not as incidental cleanup. No history rewrite or force-push is authorized by this plan. Leave this operation for the pre-release stage and request a separate signoff for the remote update.
+History before `669955a` is folded into it as the single root commit, with all 65 later commits replayed and the final tree verified byte-identical. The old published npm artifact remains immutable, and the rewrite did not erase other branches, tags, remote objects or clones. The pre-rewrite backup bundle was kept outside the repository until the rewritten history was verified and pushed.
 
 ## Final architecture review gate
 
