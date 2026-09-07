@@ -40,7 +40,6 @@
 		"@juicesharp/rpiv-ask-user-question": "2.9.0",
 		"@juicesharp/rpiv-todo": "2.9.0",
 		"@juicesharp/rpiv-web-tools": "2.9.0",
-		"@mjakl/pi-subagent": "3.0.1",
 		"@signetai/connector-pi": "0.157.3",
 		"pi-mcp-adapter": "2.32.1",
 		"@types/bun": "catalog:",

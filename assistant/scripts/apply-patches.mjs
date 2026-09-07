@@ -1,28 +1,19 @@
-// Postinstall: apply the bundled upstreamable patches to installed copies.
-// The repository workspace applies the same patches through root
-// patchedDependencies; standalone npm/tarball installs have no workspace, so
-// the published package carries its own copies under patches/. Idempotent
-// (skips when already applied), warns instead of failing when a dependency is
-// missing, version-drifted, or unpatchable, so installs never break:
-// unpatched installs only lose Bun child subagent launches and the public
-// path to the SDK's built-in extension barrel.
+// Postinstall: apply the bundled upstreamable SDK patch to installed copies.
+// The repository workspace applies it through root patchedDependencies;
+// standalone npm/tarball installs have no workspace, so the published
+// package carries its own copy under patches/. Idempotent (skips when
+// already applied), warns instead of failing when a dependency is missing,
+// version-drifted, or unpatchable, so installs never break: unpatched
+// installs only lose the public path to the SDK's built-in extension
+// barrel. Extension-specific fixes stay out of the assistant entirely; they
+// live with the extension setup (the workspace agent layer, or the
+// standalone agent distribution).
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const JOBS = [
-	{
-		dependency: "@mjakl/pi-subagent",
-		expectedVersion: "3.0.1",
-		patchFile: "pi-subagent-3.0.1-bun-rpc-entry.patch",
-		// The patched runner resolves the public RPC entry explicitly.
-		appliedMarker: {
-			file: "runner.ts",
-			text: "process.execPath,\n      prefixArgs: [fileURLToPath(import.meta.resolve(",
-		},
-		missingNote: "Bun child subagent launches need the patched package",
-	},
 	{
 		dependency: "@earendil-works/pi-coding-agent",
 		expectedVersion: "0.85.1",

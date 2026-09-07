@@ -28,7 +28,7 @@ x86-64 numbers are recorded ([security](security.md) for Browser open/snapshot/c
 
 ### 3. Upstream patch contribution
 
-Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](https://github.com/mjakl/pi-subagent) with the known-agent child regression from [subagent child verification](subagent-child-verification.md). No submission has been made. Do not publish any contribution without signoff. Once an upstream release passes the child tests, drop the local patch in `agent/extensions/local-patches/`.
+Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](https://github.com/mjakl/pi-subagent) with the known-agent child regression from [subagent child verification](subagent-child-verification.md). The patch lives in the workspace agent layer and the standalone agent distribution; the assistant stays extension-agnostic and ships no extension-specific patch. No submission has been made. Do not publish any contribution without signoff. Once an upstream release passes the child tests, drop the local patch in `agent/extensions/local-patches/`.
 
 ### 4. SDK built-in extension export proposal
 

@@ -23,6 +23,7 @@
 	"type": "module",
 	"devDependencies": {
 		"@biomejs/biome": "2.5.0",
+		"@mjakl/pi-subagent": "3.0.1",
 		"typescript": "catalog:"
 	},
 	"trustedDependencies": [
