@@ -69,7 +69,7 @@ The bridge advertises one application capability, `mcp`. Without a compatible na
 
 ## Local llama.cpp provider
 
-`--llama` loads the Pi SDK's own built-in llama.cpp extension unchanged. The public SDK does not export the CLI built-in factory, so the existing pinned deep-import bootstrap remains isolated in `extensions/llama.ts`. It registers the local provider and `/llama` command. Model selection uses `pi.providers.*` and `session.configure`. The operator supplies `LLAMA_BASE_URL`. Auth uses the stored credential, `LLAMA_API_KEY`, or the dummy key `local`. The `/llama` management command requires a terminal. Provider registration, catalog refresh and inference are headless.
+`--llama` loads the Pi SDK's own built-in llama.cpp extension unchanged. The pinned SDK does not export its built-in extension barrel from the public index; an additive upstreamable export patch publishes the `./extensions` subpath (applied by Bun `patchedDependencies` and, for standalone installs, the assistant postinstall), and `assistant/src/extensions/llama.ts` imports the factory through that public path. A missing patch degrades to unavailable, while a requested `--llama` profile fails loudly at startup. It registers the local provider and `/llama` command. Model selection uses `pi.providers.*` and `session.configure`. The operator supplies `LLAMA_BASE_URL`. Auth uses the stored credential, `LLAMA_API_KEY`, or the dummy key `local`. The `/llama` management command requires a terminal. Provider registration, catalog refresh and inference are headless.
 
 ## Signet memory
 

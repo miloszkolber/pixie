@@ -22,9 +22,9 @@ Preserve the focused current baseline. Keep features, dependencies, tests, proto
 
 ## Pi boundary
 
-- Use the unmodified pinned Pi SDK through the host service. The application and embedded Browser module ship in one merged container image.
+- Use the pinned Pi SDK through the host service. The application and embedded Browser module ship in one merged container image.
 - Keep Pi authoritative for transcripts, providers, credentials, models, core tools and native settings.
-- Run the unmodified SDK from source with Bun. Do not add standalone Pi binary packaging.
+- Run the SDK from source with Bun. Local patches stay small, additive and upstreamable, applied through Bun patchedDependencies and the assistant postinstall. Do not add standalone Pi binary packaging.
 - Optional extensions add capabilities. Do not introduce permission management, tool interception, replacement system prompts or restrictive execution modes.
 - Detect supported capability versions and complete operation sets before exposing optional features.
 - Retain Pixie's project ownership, durable queues, schedules, goals/tasks, questions, Browser isolation and transcript presentation.

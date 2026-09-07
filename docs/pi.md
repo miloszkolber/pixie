@@ -1,6 +1,6 @@
 # Pi integration
 
-The source host service uses unmodified `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai`, pinned to `0.85.1`. Bun runs the service on the host. Pi owns provider credentials, models, settings and native JSONL sessions under the selected agent directory, normally `~/.pi/agent`.
+The source host service uses `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai`, pinned to `0.85.1`. Two small additive upstreamable patches travel with the assistant: the subagent Bun child-launch fix and an SDK export patch that publishes the built-in extension barrel ([extensions](pi-extensions.md)). Bun runs the service on the host. Pi owns provider credentials, models, settings and native JSONL sessions under the selected agent directory, normally `~/.pi/agent`.
 
 ## Feature ownership
 

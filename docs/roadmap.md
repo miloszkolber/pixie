@@ -32,7 +32,7 @@ Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](http
 
 ### 4. SDK built-in extension export proposal
 
-The pinned Pi SDK loads its built-in llama.cpp extension only inside the CLI (`--llama`) and does not export the factory from its package index, so the assistant keeps a pinned deep-import bootstrap in `assistant/src/extensions/llama.ts` ([extensions](pi-extensions.md)). Propose exporting the built-in extension factories from the SDK index. No submission has been made; the publication signoff gate applies. Once an upstream release exports them, load the factory through the public API and drop the deep import.
+The pinned Pi SDK loads its built-in llama.cpp extension only inside the CLI (`--llama`) and does not export the factory from its package index. The local additive export patch (`agent/extensions/local-patches/`) already publishes the `./extensions` subpath, and the assistant loads the factory through that public path ([extensions](pi-extensions.md)). Propose the same export upstream. No submission has been made; the publication signoff gate applies. Once an upstream release exports the barrel, drop the local patch.
 
 ### Host state (complete)
 
