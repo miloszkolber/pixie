@@ -30,7 +30,7 @@ jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" --slurpfile safe "$f
     .logging.driver == "local" and .logging.options."max-size" == "10m" and
     .logging.options."max-file" == "3" and
     (has("env_file") | not) and
-    (.volumes | length) == 2 and
+    (.volumes | length) == 3 and
     (all(.volumes[]; .type == "bind" and (.bind | type) == "object")) and
     (all(.volumes[]; .bind.create_host_path == $safe[0].services[$service].volumes[0].bind.create_host_path))
   ) and
@@ -42,8 +42,10 @@ jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" --slurpfile safe "$f
   .services.pixie.pids_limit == 512 and
   .services.pixie.volumes[0].source == ($data + "/app") and
   .services.pixie.volumes[0].target == "/var/lib/pixie" and
-  .services.pixie.volumes[1].source == ($data + "/browser") and
-  .services.pixie.volumes[1].target == "/var/lib/pixie-browser" and
+  .services.pixie.volumes[1].source == ($data + "/browser/artifacts") and
+  .services.pixie.volumes[1].target == "/var/lib/pixie/mcp-browser/artifacts" and
+  .services.pixie.volumes[2].source == ($data + "/browser/state") and
+  .services.pixie.volumes[2].target == "/var/lib/pixie/mcp-browser/state" and
   .services.pixie.environment.PIXIE_PI_SECRET_KEY == env.PIXIE_PI_SECRET_KEY and
   .services.pixie.environment.PIXIE_MCP_TOKEN == env.PIXIE_MCP_TOKEN and
   (.services.pixie.environment.PIXIE_MCP_URL == null) and
