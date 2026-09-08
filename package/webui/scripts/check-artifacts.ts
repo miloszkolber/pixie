@@ -3,11 +3,13 @@ import { dirname, extname, join, normalize, relative } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 interface ManifestOutput {
+	entryPoint?: string;
 	imports?: { path: string }[];
 	precompressedFor?: string;
 }
 
 interface BundleManifest {
+	entrypoint?: string;
 	outputs: Record<string, ManifestOutput>;
 }
 
@@ -131,6 +133,36 @@ export function checkArtifacts(
 
 	for (const file of files) {
 		if (statSync(join(outputRoot, file)).size === 0) failures.push(`empty output file: ${file}`);
+	}
+
+	// The built document must boot the application: its module script has to be the
+	// declared bundle entry, not merely an existing chunk. A wrong-but-present chunk
+	// evaluates cleanly yet never mounts the app, shipping a blank page while every
+	// existence check above stays green. Manifests without a declared entry skip this.
+	const entrypoint = manifest.entrypoint ?? "index.html";
+	const entryScripts = Object.entries(manifest.outputs).filter(
+		([path, output]) => path.endsWith(".js") && output.entryPoint === entrypoint,
+	);
+	if (entryScripts.length > 1) {
+		failures.push(`multiple Web UI JavaScript entries for ${entrypoint}`);
+	}
+	if (entryScripts.length === 1 && files.includes("index.html")) {
+		const entry = entryScripts[0]?.[0] ?? "";
+		const document = readFileSync(join(outputRoot, "index.html"), "utf8");
+		const scripts = [...document.matchAll(/<script[^>]*\bsrc="([^"]+)"[^>]*>/g)].map(
+			(match) => match[1] ?? "",
+		);
+		const loadsEntry = scripts.some((reference) => {
+			const clean = reference.split(/[?#]/, 1)[0]?.replace(/^\/+/, "");
+			if (!clean) return false;
+			const resolved = normalize(join(dirname("index.html"), clean))
+				.replaceAll("\\", "/")
+				.replace(/^\.\//, "");
+			return resolved === entry;
+		});
+		if (!loadsEntry) {
+			failures.push(`index.html does not load the Web UI JavaScript entry bundle: ${entry}`);
+		}
 	}
 
 	if (failures.length > 0) throw new Error(`Invalid Web UI artifact:\n${failures.join("\n")}`);

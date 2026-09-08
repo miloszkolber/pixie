@@ -47,7 +47,13 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
 COPY package/cmd/ cmd/
 COPY package/internal/ internal/
 COPY package/webui/*.go webui/
-COPY package/webui/dist/.gitkeep webui/dist/.gitkeep
+# Never COPY anything from package/webui/dist/ here: `bun run build` wipes that
+# directory (including the tracked .gitkeep), which used to break every container
+# build after a local web build with a missing-.gitkeep checksum error. The Go
+# `//go:embed all:dist` directive needs the directory to exist with at least one
+# file, so synthesize the placeholder instead. The real bundle arrives later via
+# COPY --from=web-build; this placeholder only feeds the disk-fallback path.
+RUN mkdir -p webui/dist && touch webui/dist/.gitkeep
 
 FROM go-source AS go-build
 ARG TARGETOS
