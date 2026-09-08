@@ -18,12 +18,13 @@
 !package/tests/deployment/git-runtime.test.sh
 !package/tests/ui/
 !package/tests/ui/**
-!agent/
 !assistant/
 !assistant/package.json
 !assistant/patches/
 !assistant/patches/*.mjs
 !assistant/patches/*.patch
+!patches/
+!patches/*.patch
 !package/contracts/
 !package/contracts/**
 !package/webui/
@@ -41,6 +42,5 @@ package/webui/dist/*
 **/*.log
 **/.env*
 
-!agent/extensions/
-!agent/extensions/local-patches/
-!agent/extensions/local-patches/*.patch
+!patches/
+!patches/*.patch

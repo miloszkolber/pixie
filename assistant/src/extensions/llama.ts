@@ -14,7 +14,7 @@ import { registerCapability } from "../capabilities.ts";
 // Loading: the SDK publishes the factory as `builtInExtensions` in its
 // extensions barrel, but the pinned 0.85.1 package does not export that
 // barrel from its public index. An additive upstreamable export patch
-// (`agent/extensions/local-patches/`, applied by Bun patchedDependencies and
+// (`assistant/patches/`, applied by Bun patchedDependencies and
 // by the assistant postinstall for standalone installs) publishes the
 // `./extensions` subpath, and this bridge imports the factory through it.
 // The import degrades to "unavailable" when the patch is absent so installs

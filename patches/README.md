@@ -1,0 +1,7 @@
+# Workspace patches
+
+`@mjakl%2Fpi-subagent@3.0.1.patch` adds explicit public Pi RPC entry resolution for Bun child launches. The workspace applies it through `patchedDependencies` for real-child verification, and the published assistant stays extension-agnostic and ships no extension-specific patch. Without it, a Bun parent launches the child without a usable script and the child fails with `Script not found "rpc"`; the patch resolves the SDK's public `rpc-entry` export and passes its path as the child script, leaving upstream's Node branch, arguments, environment and cancellation unchanged. The real-child regression in `package/tests/pi-native-parity/subagent-child.test.ts` covers fresh output and usage, named-session history, cancellation and the recorded child argv.
+
+The SDK-surface patch (`@earendil-works%2Fpi-coding-agent@0.85.1.patch`, the built-in extension barrel export) does not live here: it belongs to the assistant and is applied from `assistant/patches/` through root `patchedDependencies` and the assistant postinstall.
+
+Bun applies the patch above through the root `patchedDependencies` declaration and lockfile. Reproduce with `bun install --frozen-lockfile` using the repository's pinned Bun. To revise a patch, use `bun patch <package>@<version>`, edit the prepared package, then `bun patch --commit node_modules/<package> --patches-dir patches`. Here `--commit` is Bun's patch-generation command, not a Git commit.

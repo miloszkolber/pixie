@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "../../..");
-const patchPath = join(root, "agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch");
+const patchPath = join(root, "patches/@mjakl%2Fpi-subagent@3.0.1.patch");
 
 async function run(args: string[], cwd: string) {
 	const child = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });
@@ -25,7 +25,7 @@ test("subagent child-launch patch applies cleanly to the pinned dependency versi
 	const workspace = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 	expect(workspace.devDependencies["@mjakl/pi-subagent"]).toBe("3.0.1");
 	expect(workspace.patchedDependencies["@mjakl/pi-subagent@3.0.1"]).toBe(
-		"agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch",
+		"patches/@mjakl%2Fpi-subagent@3.0.1.patch",
 	);
 	const assistant = JSON.parse(await readFile(join(root, "assistant/package.json"), "utf8"));
 	expect(Object.keys(assistant.dependencies ?? {})).not.toContain("@mjakl/pi-subagent");

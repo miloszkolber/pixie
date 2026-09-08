@@ -1,6 +1,6 @@
 # Pi integration
 
-The source host service uses `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai`, pinned to `0.85.1`. One small additive upstreamable patch travels with the assistant: an SDK export patch that publishes the built-in extension barrel ([extensions](pi-extensions.md)). The assistant stays extension-agnostic; extension-specific fixes live in the workspace agent layer, never in the assistant package. Bun runs the service on the host. Pi owns provider credentials, models, settings and native JSONL sessions under the selected agent directory, normally `~/.pi/agent`.
+The source host service uses `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai`, pinned to `0.85.1`. One small additive upstreamable patch travels with the assistant: an SDK export patch that publishes the built-in extension barrel ([extensions](pi-extensions.md)). The assistant stays extension-agnostic; extension-specific fixes live in workspace `patches/`, never in the assistant package. Bun runs the service on the host. Pi owns provider credentials, models, settings and native JSONL sessions under the selected agent directory, normally `~/.pi/agent`.
 
 ## Feature ownership
 

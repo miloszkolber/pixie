@@ -6,8 +6,7 @@
 // version-drifted, or unpatchable, so installs never break: unpatched
 // installs only lose the public path to the SDK's built-in extension
 // barrel. Extension-specific fixes stay out of the assistant entirely; they
-// live with the extension setup (the workspace agent layer, or the
-// standalone agent distribution).
+// live with the workspace setup in top-level `patches/`.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

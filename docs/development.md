@@ -2,7 +2,7 @@
 
 Use the pinned Bun and Go versions in `package.json` and `package/go.mod`. Go filesystem checks require Linux; use disposable containers on macOS.
 
-The `pixie/` directory holds the Bun workspace, lockfile and shared tooling. The Pi SDK service lives in `assistant/`; application source and tests live in `package/`; agent examples and local patches live in `agent/`.
+The `pixie/` directory holds the Bun workspace, lockfile and shared tooling. The Pi SDK service lives in `assistant/`; application source and tests live in `package/`; workspace patches live in `patches/`.
 
 From `pixie/`:
 

@@ -28,11 +28,11 @@ x86-64 numbers are recorded ([security](security.md) for Browser open/snapshot/c
 
 ### 3. Upstream patch contribution
 
-Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](https://github.com/mjakl/pi-subagent). Without it, a Bun parent launches the child without a script and the child fails with `Script not found "rpc"`; the local patch resolves the SDK's public `rpc-entry` export and passes its path as the child script. The patch lives in the workspace agent layer; the assistant stays extension-agnostic and ships no extension-specific patch. No submission has been made. Do not publish any contribution without signoff. Once an upstream release passes the real-child tests in `package/tests/pi-native-parity/subagent-child.test.ts`, drop the local patch in `agent/extensions/local-patches/`.
+Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](https://github.com/mjakl/pi-subagent). Without it, a Bun parent launches the child without a script and the child fails with `Script not found "rpc"`; the local patch resolves the SDK's public `rpc-entry` export and passes its path as the child script. The patch lives in workspace `patches/`; the assistant stays extension-agnostic and ships no extension-specific patch. No submission has been made. Do not publish any contribution without signoff. Once an upstream release passes the real-child tests in `package/tests/pi-native-parity/subagent-child.test.ts`, drop the local patch in `patches/`.
 
 ### 4. SDK built-in extension export proposal
 
-The pinned Pi SDK loads its built-in llama.cpp extension only inside the CLI (`--llama`) and does not export the factory from its package index. The local additive export patch (`agent/extensions/local-patches/`) already publishes the `./extensions` subpath, and the assistant loads the factory through that public path ([extensions](pi-extensions.md)). Propose the same export upstream. No submission has been made; the publication signoff gate applies. Once an upstream release exports the barrel, drop the local patch.
+The pinned Pi SDK loads its built-in llama.cpp extension only inside the CLI (`--llama`) and does not export the factory from its package index. The local additive export patch (`assistant/patches/`) already publishes the `./extensions` subpath, and the assistant loads the factory through that public path ([extensions](pi-extensions.md)). Propose the same export upstream. No submission has been made; the publication signoff gate applies. Once an upstream release exports the barrel, drop the local patch.
 
 ### 5. Right-rail module tabs
 
@@ -54,7 +54,7 @@ This host runs `/home/core/.pi` directly via `PI_CODING_AGENT_DIR=/home/core/.pi
 - Read-only native Extensions inventory, distinct from MCP connections; configuration saves are explicit and deferred, applying on session reopen or through the whole-host reload, with the per-session reload flow retired ([extensions](pi-extensions.md)).
 - Lifecycle and trust parity (compaction, forks, retries, default-deny project trust) covered by native-SDK tests and fixtures ([development](development.md)).
 - Assistant hardening: the wire protocol documented as the integration contract with transport conformance tests ([protocol](pi-protocol.md)), defensive frame serialization, duplicate in-flight request ids answered with error frames, and the parity suite formalized as the SDK upgrade gate ([development](development.md)).
-- Documented packaging and first automated release: `0.1.1` published from tag `pixie-assistant-v0.1.1` via OIDC with signed provenance and strict pack checks; Docker-primary deployment with a supported self-contained binary plus published package path and systemd units, and a standalone `pi` binary with the pinned extension tree built from the agent directory ([deployment](deployment.md), [agent](../agent/README.md)).
+- Documented packaging and first automated release: `0.1.1` published from tag `pixie-assistant-v0.1.1` via OIDC with signed provenance and strict pack checks; Docker-primary deployment with a supported self-contained binary plus published package path and systemd units ([deployment](deployment.md)).
 - Browser security review and x86-64 task-latency measurement recorded ([security](security.md)).
 - History before `669955a` squashed to a single root with the tree verified byte-identical.
 

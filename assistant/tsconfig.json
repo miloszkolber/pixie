@@ -15,7 +15,6 @@
 	},
 	"include": [
 		"src/**/*.ts",
-		"../agent/main.ts",
 		"../package/tests/pixie-assistant/**/*.ts",
 		"../package/tests/pi-native-parity/**/*.ts"
 	]

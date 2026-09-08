@@ -19,7 +19,7 @@ async function run(args: string[], cwd: string) {
 // The SDK export patch is SDK-surface and travels with the assistant: the
 // workspace applies it through root patchedDependencies, and standalone
 // installs apply the same single file through the assistant postinstall.
-// The agent directory carries no copy. Without it the built-in llama.cpp
+// Without it the built-in llama.cpp
 // factory is unreachable through the public API, so the import degrades and
 // a requested --llama profile fails loudly at startup.
 test("the single SDK export patch applies cleanly to the pinned dependency version", async () => {
