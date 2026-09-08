@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import manifest from "../package.json" with { type: "json" };
 import { startHost } from "./server.ts";
+import { parseAssistantPort, validateAssistantHost, validateAssistantSecret } from "./startup.ts";
 
 const { values } = parseArgs({
 	options: {
@@ -21,6 +22,9 @@ if (values.version) {
 	console.log(`pixie-assistant ${assistantVersion} (Pi SDK ${piSdkVersion})`);
 	process.exit(0);
 }
+const hostname = validateAssistantHost(values.host);
+const port = parseAssistantPort(values.port);
+const secret = validateAssistantSecret(process.env.PIXIE_PI_SECRET_KEY);
 const agentDir = resolve(values["agent-dir"] ?? getAgentDir());
 // Native extensions use Pi's process-level directory convention. The service
 // owns one agent directory, including when selected through the CLI flag.
@@ -58,10 +62,10 @@ const close = (exitCode: number) => {
 
 host = await startHost({
 	agentDir: process.env.PI_CODING_AGENT_DIR,
-	hostname: values.host ?? "127.0.0.1",
-	port: Number(values.port ?? 3284),
+	hostname,
+	port,
 	llama: values.llama,
-	secret: process.env.PIXIE_PI_SECRET_KEY ?? "",
+	secret,
 	allowSelfRestart: process.env.PIXIE_ALLOW_SELF_RESTART === "1",
 	onRestart: () => close(requestedRestartExitCode),
 });

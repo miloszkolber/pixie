@@ -10,6 +10,11 @@ import llama, { llamaFactory } from "./extensions/llama.ts";
 import { Providers } from "./providers.ts";
 import { buildEventFrame, serializeFrame } from "./serialize.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
+import {
+	validateAssistantHost,
+	validateAssistantRuntimePort,
+	validateAssistantSecret,
+} from "./startup.ts";
 import { HostError, object, type RecordValue, required, serviceStore, text } from "./storage.ts";
 
 export interface HostOptions {
@@ -40,12 +45,15 @@ interface Peer {
 	loading: Map<string, { messages: RecordValue[]; bytes: number }>;
 }
 export async function startHost(options: HostOptions) {
+	const hostname = validateAssistantHost(options.hostname);
+	const port = validateAssistantRuntimePort(options.port);
+	const secret = validateAssistantSecret(options.secret);
 	await mkdir(options.agentDir, { recursive: true, mode: 0o700 });
 	const agentDir = await realpath(options.agentDir);
 	await mkdir(join(agentDir, "pixie"), { recursive: true, mode: 0o700 });
 	const release = await lock(join(agentDir, "pixie", "host"), { realpath: false });
 	try {
-		const host = await startUnlockedHost({ ...options, agentDir });
+		const host = await startUnlockedHost({ ...options, agentDir, hostname, port, secret });
 		let closing: Promise<void> | undefined;
 		return { ...host, close: () => (closing ??= host.close().finally(release)) };
 	} catch (error) {
@@ -274,7 +282,7 @@ async function startUnlockedHost(options: HostOptions) {
 	let server: ReturnType<typeof Bun.serve<Peer>>;
 	try {
 		server = Bun.serve<Peer>({
-			hostname: options.hostname ?? "127.0.0.1",
+			hostname: options.hostname,
 			port: options.port ?? 3284,
 			maxRequestBodySize: 32 * 1024 * 1024,
 			fetch(request, server) {
