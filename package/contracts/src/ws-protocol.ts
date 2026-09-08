@@ -150,6 +150,9 @@ export const WS_METHODS = {
 	historySearch: "history.search",
 	piStatus: "pi.status",
 	runtimeStatus: "runtime.status",
+	mcpRegistryCatalog: "mcpRegistry.catalog",
+	mcpRegistryModuleSetEnabled: "mcpRegistry.moduleSetEnabled",
+	mcpRegistryModuleRestart: "mcpRegistry.moduleRestart",
 	browserPanelOpen: "browser.panelOpen",
 	browserPanelCommand: "browser.panelCommand",
 	browserPanelClose: "browser.panelClose",
@@ -503,6 +506,10 @@ export interface WsMethodMap {
 	};
 	"mcpRegistry.moduleSetEnabled": {
 		params: { moduleId: string; enabled: boolean };
+		result: McpRegistryCatalog;
+	};
+	"mcpRegistry.moduleRestart": {
+		params: { moduleId: string };
 		result: McpRegistryCatalog;
 	};
 	"mcpAdapter.status": {

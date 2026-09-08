@@ -74,6 +74,10 @@ func TestMCPRegistryHandlerTogglesPersistedEnablement(t *testing.T) {
 	if !enabled.Modules[0].Enabled {
 		t.Fatalf("re-enabled catalog = %#v", enabled)
 	}
+	restarted := handleJSON(t, handler, "mcpRegistry.moduleRestart", `{"moduleId":"browser"}`).(mcpserver.Catalog)
+	if !restarted.Modules[0].Enabled || restarted.Modules[0].State != "ready" {
+		t.Fatalf("restarted catalog = %#v", restarted)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := handler.Handle(ctx, "mcpRegistry.moduleSetEnabled", json.RawMessage(`{"moduleId":"signet","enabled":true}`), "test-client"); err == nil {

@@ -93,6 +93,17 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, err
 		}
 		return h.MCPRegistry.Catalog(), nil
+	case "mcpRegistry.moduleRestart":
+		var request struct {
+			ModuleID string `json:"moduleId"`
+		}
+		if h.MCPRegistry == nil || decodeParams(raw, &request) != nil || request.ModuleID == "" {
+			return nil, fmt.Errorf("malformed MCP module restart request")
+		}
+		if err := h.MCPRegistry.Restart(request.ModuleID); err != nil {
+			return nil, err
+		}
+		return h.MCPRegistry.Catalog(), nil
 	case "mcpAdapter.status":
 		return h.Admin.AdapterStatus(ctx), nil
 	case "history.search":

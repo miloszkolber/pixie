@@ -91,6 +91,95 @@ func TestRegistryPublishesBrowserByDefault(t *testing.T) {
 	}
 }
 
+func TestRegistryUnchangedEnablePreservesBrowserHandle(t *testing.T) {
+	registry := testRegistry(t, nil)
+	previous := registry.BrowserLegacyHandler()()
+	if previous == nil {
+		t.Fatal("Browser handler was unavailable before unchanged enable")
+	}
+	if err := registry.SetEnabled("browser", true); err != nil {
+		t.Fatal(err)
+	}
+	if ready, detail := registry.Health("browser"); !ready {
+		t.Fatalf("unchanged enable made Browser unavailable: %s", detail)
+	}
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:17871/readyz", nil)
+	response := httptest.NewRecorder()
+	previous.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unchanged enable invalidated Browser handle: status = %d body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRegistryExplicitRestartReplacesBrowserHandle(t *testing.T) {
+	registry := testRegistry(t, nil)
+	previous := registry.BrowserLegacyHandler()()
+	if previous == nil {
+		t.Fatal("Browser handler was unavailable before restart")
+	}
+	if err := registry.Restart("browser"); err != nil {
+		t.Fatal(err)
+	}
+	oldRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:17871/readyz", nil)
+	oldResponse := httptest.NewRecorder()
+	previous.ServeHTTP(oldResponse, oldRequest)
+	if oldResponse.Code != http.StatusServiceUnavailable {
+		t.Fatalf("old Browser handle status after restart = %d body = %s", oldResponse.Code, oldResponse.Body.String())
+	}
+	if response := serve(registry, http.MethodGet, "/mcp/browser/readyz", "", "127.0.0.1:17871", nil); response.Code != http.StatusOK {
+		t.Fatalf("restarted Browser readiness status = %d body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRegistryPrePublicationPersistenceFailurePreservesStateAndRuntime(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, "config.json")
+	if err := os.WriteFile(configPath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	agentBrowser, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(dataDir, "mcp-modules.json")
+	original := []byte("{\"modules\":{\"browser\":{\"enabled\":true}}}\n")
+	if err := os.WriteFile(statePath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := mcpserver.NewRegistry(mcpserver.Config{
+		Host: "127.0.0.1", Port: 17873, DataDir: dataDir,
+		Binaries: testBinaries(t, root, agentBrowser, configPath),
+	}, diagnostics.NormalizeBuild("test", "test"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(registry.Shutdown)
+	before := registry.Catalog()
+	if err := os.Mkdir(statePath+".bak", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.SetEnabled("browser", false); err == nil {
+		t.Fatal("persistence failure was not reported")
+	}
+	after := registry.Catalog()
+	if len(after.Modules) != 1 || !after.Modules[0].Enabled || after.Revision != before.Revision {
+		t.Fatalf("pre-publication failure changed catalog: before=%#v after=%#v", before, after)
+	}
+	if ready, detail := registry.Health("browser"); !ready {
+		t.Fatalf("pre-publication failure changed runtime readiness: %s", detail)
+	}
+	if current, err := os.ReadFile(statePath); err != nil || string(current) != string(original) {
+		t.Fatalf("pre-publication failure changed primary: %q, %v", current, err)
+	}
+	if response := serve(registry, http.MethodGet, "/mcp/browser/readyz", "", "127.0.0.1:17873", nil); response.Code != http.StatusOK {
+		t.Fatalf("pre-publication failure changed Browser route status = %d body = %s", response.Code, response.Body.String())
+	}
+}
+
 func TestRegistryRoutesBrowserModuleWithToken(t *testing.T) {
 	registry := testRegistry(t, func(config *mcpserver.Config) { config.Token = registryTestToken })
 	host := "127.0.0.1:17871"

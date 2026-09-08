@@ -226,12 +226,44 @@ func (r *Registry) SetEnabled(id string, enabled bool) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.enabled[id] = enabled
+	if r.enabled[id] == enabled {
+		return nil
+	}
 	state := persistedState{Modules: map[string]persistedModule{id: {Enabled: enabled}}}
 	if err := persist.Write(r.store, storeFile, state, validateState); err != nil {
 		return fmt.Errorf("persist in-process MCP module state: %w", err)
 	}
+	// Publish the desired state only after persist.Write has completed its
+	// pre-publication work. A failed write must leave the live catalog and
+	// module handle aligned with the last committed state.
+	r.enabled[id] = enabled
 	r.startLocked()
+	return nil
+}
+
+// Restart reconstructs an enabled module without changing its persisted
+// desired state. It is intentionally separate from SetEnabled so a retry of an
+// unchanged enablement cannot interrupt a healthy Browser service.
+func (r *Registry) Restart(id string) error {
+	if id != browserID {
+		return fmt.Errorf("unknown in-process MCP module %q", id)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.enabled[id] {
+		return fmt.Errorf("cannot restart disabled in-process MCP module %q", id)
+	}
+	config := r.browserConfig()
+	service, err := browser.NewService(config, r.build, r.logger)
+	if err != nil {
+		r.logger.Error("in-process Browser module restart failed", "error", err)
+		return fmt.Errorf("restart in-process MCP module %q: %w", id, err)
+	}
+	previous := r.browser
+	r.browser = service
+	if previous != nil {
+		previous.Shutdown()
+	}
 	return nil
 }
 
@@ -347,10 +379,6 @@ func (r *Registry) startLocked() {
 	service, err := browser.NewService(config, r.build, r.logger)
 	if err != nil {
 		r.logger.Error("in-process Browser module unavailable", "error", err)
-		if r.browser != nil {
-			r.browser.Shutdown()
-			r.browser = nil
-		}
 		return
 	}
 	if r.browser != nil {
