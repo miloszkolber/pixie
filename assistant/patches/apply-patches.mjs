@@ -81,7 +81,7 @@ for (const job of JOBS) {
 
 	if (applied(job, target)) continue; // Already applied (e.g. workspace install via patchedDependencies).
 
-	const patchPath = join(pkgRoot, "patches", job.patchFile);
+	const patchPath = join(here, job.patchFile);
 	if (!existsSync(patchPath)) {
 		warn(`bundled patch file missing (${job.patchFile}); skipping.`);
 		continue;

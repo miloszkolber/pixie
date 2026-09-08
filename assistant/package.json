@@ -13,7 +13,6 @@
 	},
 	"files": [
 		"src",
-		"scripts",
 		"patches"
 	],
 	"publishConfig": {
@@ -27,7 +26,7 @@
 		"start": "bun src/main.ts",
 		"typecheck": "tsc --noEmit",
 		"build": "bun build src/main.ts --target=bun --outdir=dist",
-		"postinstall": "node scripts/apply-patches.mjs"
+		"postinstall": "node patches/apply-patches.mjs"
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "0.85.1",
