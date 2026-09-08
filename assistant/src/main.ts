@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import manifest from "../package.json" with { type: "json" };
+import { DEFAULT_SERVICE_DRAIN_DEADLINE_MS } from "./lifecycle.ts";
 import { startHost } from "./server.ts";
 import { parseAssistantPort, validateAssistantHost, validateAssistantSecret } from "./startup.ts";
 
@@ -32,7 +33,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.MCP_UI_VIEWER ??= "none";
 
 const requestedRestartExitCode = 75;
-const drainDeadlineMs = 25_000;
+const drainDeadlineMs = DEFAULT_SERVICE_DRAIN_DEADLINE_MS;
 let host: Awaited<ReturnType<typeof startHost>> | undefined;
 let closing = false;
 const close = (exitCode: number) => {

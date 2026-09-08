@@ -7,6 +7,14 @@ import { lock } from "proper-lockfile";
 import { configureExtension } from "./extension-configuration.ts";
 import { extensionInventory } from "./extension-inventory.ts";
 import llama, { llamaFactory } from "./extensions/llama.ts";
+import {
+	createDeadline,
+	DEFAULT_ADMIN_DEADLINE_MS,
+	DEFAULT_AUTH_DEADLINE_MS,
+	DEFAULT_HELLO_DEADLINE_MS,
+	DEFAULT_SERVICE_DRAIN_DEADLINE_MS,
+	type Deadline,
+} from "./lifecycle.ts";
 import { Providers } from "./providers.ts";
 import { buildEventFrame, serializeFrame } from "./serialize.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
@@ -27,6 +35,12 @@ export interface HostOptions {
 	allowSelfRestart?: boolean;
 	/** Notify the executable/composition root after restart admission is stopped. */
 	onRestart?: () => void;
+	/** Bound host construction before a partially-started host is cleaned up. */
+	startupDeadlineMs?: number;
+	/** Bound provider/extension administration requests. */
+	adminDeadlineMs?: number;
+	/** Bound the complete service drain, including construction and teardown. */
+	drainDeadlineMs?: number;
 }
 
 // The host reports the SDK it actually embeds; the protocol contract defines
@@ -46,24 +60,94 @@ interface Peer {
 	active: Set<number>;
 	loading: Map<string, { messages: RecordValue[]; bytes: number }>;
 }
+
+function operationDeadlineMs(method: string, options: HostOptions): number | undefined {
+	if (method === "runtime.hello") return DEFAULT_HELLO_DEADLINE_MS;
+	if (
+		method === "provider.loginStart" ||
+		method === "provider.loginReply" ||
+		method === "provider.loginBegin" ||
+		method === "provider.loginCancel"
+	)
+		return DEFAULT_AUTH_DEADLINE_MS;
+	if (
+		method.startsWith("provider.") ||
+		method.startsWith("pi.providers.") ||
+		method.startsWith("pi.defaults.") ||
+		method.startsWith("pi.preferences.") ||
+		method.startsWith("pi.extensions.") ||
+		method.startsWith("pi.config.extensions.") ||
+		method.startsWith("pi.session.extensions.") ||
+		method === "runtime.capabilities" ||
+		method === "pi.slash-commands.list" ||
+		method.startsWith("pi.sources.") ||
+		method === "pi.agent-mentions.list"
+	)
+		return options.adminDeadlineMs ?? DEFAULT_ADMIN_DEADLINE_MS;
+	return undefined;
+}
+
 export async function startHost(options: HostOptions) {
 	const hostname = validateAssistantHost(options.hostname);
 	const port = validateAssistantRuntimePort(options.port);
 	const secret = validateAssistantSecret(options.secret);
-	await mkdir(options.agentDir, { recursive: true, mode: 0o700 });
-	const agentDir = await realpath(options.agentDir);
-	await mkdir(join(agentDir, "pixie"), { recursive: true, mode: 0o700 });
-	const release = await lock(join(agentDir, "pixie", "host"), { realpath: false });
+	const startup = createDeadline(
+		options.startupDeadlineMs ?? DEFAULT_SERVICE_DRAIN_DEADLINE_MS,
+		"Assistant startup",
+	);
+	let release: (() => Promise<void>) | undefined;
+	let starting: Promise<Awaited<ReturnType<typeof startUnlockedHost>>> | undefined;
 	try {
-		const host = await startUnlockedHost({ ...options, agentDir, hostname, port, secret });
+		await startup.race(
+			mkdir(options.agentDir, { recursive: true, mode: 0o700 }),
+			"Assistant state setup",
+		);
+		const agentDir = await startup.race(realpath(options.agentDir), "Assistant state identity");
+		await startup.race(
+			mkdir(join(agentDir, "pixie"), { recursive: true, mode: 0o700 }),
+			"Assistant metadata setup",
+		);
+		const lockPromise = lock(join(agentDir, "pixie", "host"), { realpath: false });
+		void lockPromise.then(
+			(candidate) => {
+				if (startup.signal.aborted) void candidate().catch(() => {});
+			},
+			() => {},
+		);
+		release = await startup.race(lockPromise, "Assistant host lock");
+		starting = startUnlockedHost({ ...options, agentDir, hostname, port, secret }, startup);
+		const host = await startup.race(starting, "Assistant startup");
+		const unlock = release;
+		if (!unlock) throw new Error("Assistant host lock was not acquired");
+		startup.dispose();
 		let closing: Promise<void> | undefined;
-		return { ...host, close: () => (closing ??= host.close().finally(release)) };
+		return {
+			...host,
+			close: () =>
+				(closing ??= (async () => {
+					const deadline = createDeadline(
+						options.drainDeadlineMs ?? DEFAULT_SERVICE_DRAIN_DEADLINE_MS,
+						"Assistant shutdown",
+					);
+					try {
+						await host.close(deadline);
+					} finally {
+						try {
+							await deadline.race(unlock(), "Assistant host lock release");
+						} finally {
+							deadline.dispose();
+						}
+					}
+				})()),
+		};
 	} catch (error) {
-		await release();
+		startup.abort(new Error("Assistant startup cancelled"));
+		startup.dispose();
+		if (release) await startup.race(release(), "Assistant host lock release").catch(() => {});
 		throw error;
 	}
 }
-async function startUnlockedHost(options: HostOptions) {
+async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 	const agentDir = resolve(options.agentDir);
 	await mkdir(agentDir, { recursive: true, mode: 0o700 });
 	if (options.secret.length < 16)
@@ -76,6 +160,7 @@ async function startUnlockedHost(options: HostOptions) {
 	const peers = new Set<ServerWebSocket<Peer>>();
 	let stopping = false;
 	let restartPending = false;
+	const shutdown = new AbortController();
 	const inflight = new Set<Promise<unknown>>();
 	const sendData = (peer: ServerWebSocket<Peer>, data: string) => {
 		if (Buffer.byteLength(data) > 32 * 1024 * 1024) {
@@ -107,7 +192,14 @@ async function startUnlockedHost(options: HostOptions) {
 			}
 		},
 	);
-	const control = await sessions.control(agentDir);
+	let control: ManagedSession;
+	try {
+		const pending = sessions.control(agentDir);
+		control = startup ? await startup.race(pending, "Pi control session startup") : await pending;
+	} catch (error) {
+		await sessions.close(startup).catch(() => {});
+		throw error;
+	}
 	const providers = new Providers(
 		control.modelRuntime,
 		control.session.settingsManager,
@@ -123,19 +215,20 @@ async function startUnlockedHost(options: HostOptions) {
 		providers: 1,
 		...entry.capabilities.snapshot(),
 	});
-	const attach = async (entry: ManagedSession, p: RecordValue) => {
+	const attach = async (entry: ManagedSession, p: RecordValue, signal?: AbortSignal) => {
 		const supported = entry.capabilities.snapshot();
 		if (supported.mcp === 1 && Array.isArray(p.mcpServers))
 			await entry.capabilities.call(
 				"mcp.attach",
 				{ servers: p.mcpServers },
-				sessions.context(entry),
+				sessions.context(entry, signal),
 			);
 	};
 	const dispatch = async (
 		method: string,
 		p: RecordValue,
 		peer: ServerWebSocket<Peer>,
+		signal?: AbortSignal,
 	): Promise<unknown> => {
 		if (method === "runtime.hello")
 			return {
@@ -156,6 +249,7 @@ async function startUnlockedHost(options: HostOptions) {
 				// restart reply and duplicate restart requests remain available until
 				// the executable has had a chance to drain and exit.
 				stopping = true;
+				shutdown.abort(new Error("Service restarting"));
 				void (async () => {
 					// Reply first, then end the process so the
 					// service manager brings a fresh host up. Runs interrupt
@@ -226,7 +320,7 @@ async function startUnlockedHost(options: HostOptions) {
 			);
 			entry.refs++;
 			try {
-				await attach(entry, p);
+				await attach(entry, p, signal);
 			} finally {
 				entry.refs--;
 			}
@@ -237,7 +331,7 @@ async function startUnlockedHost(options: HostOptions) {
 		if (text(p.sessionId)) {
 			return sessions.use(text(p.sessionId), text(p.cwd) || undefined, async (entry) => {
 				if (method === "session.load") {
-					await attach(entry, p);
+					await attach(entry, p, signal);
 					peer.data.attachments.set(entry.session.sessionId, {
 						params: p,
 						entry: new WeakRef(entry),
@@ -255,10 +349,10 @@ async function startUnlockedHost(options: HostOptions) {
 					return { availableCommands: sessions.commands(entry) };
 				const attachment = peer.data.attachments.get(entry.session.sessionId);
 				if (attachment && attachment.entry.deref() !== entry) {
-					await attach(entry, attachment.params);
+					await attach(entry, attachment.params, signal);
 					attachment.entry = new WeakRef(entry);
 				}
-				return sessions.call(method, p);
+				return sessions.call(method, p, signal);
 			});
 		}
 		if (method === "session.list") return sessions.list(text(p.cursor));
@@ -269,17 +363,20 @@ async function startUnlockedHost(options: HostOptions) {
 			method === "pi.agent-mentions.list"
 		) {
 			const cwd = text(p.cwd) || text(p.projectDir) || text(object(p.target).projectDir);
-			const entry = cwd ? await sessions.control(cwd) : control;
+			let entry: ManagedSession | undefined;
 			try {
-				if (method === "runtime.capabilities") return capabilitySnapshot(entry);
+				entry = cwd ? await sessions.control(cwd) : control;
+				const current = entry;
+				if (!current) throw new Error("Missing Pi capability context");
+				if (method === "runtime.capabilities") return capabilitySnapshot(current);
 				if (method === "pi.slash-commands.list")
-					return { availableCommands: sessions.commands(entry) };
-				return await entry.capabilities.call(method, p, sessions.context(entry));
+					return { availableCommands: sessions.commands(current) };
+				return await current.capabilities.call(method, p, sessions.context(current, signal));
 			} finally {
-				if (entry !== control) await entry.close();
+				if (entry && entry !== control) await entry.close();
 			}
 		}
-		return control.capabilities.call(method, p, sessions.context(control));
+		return control.capabilities.call(method, p, sessions.context(control, signal));
 	};
 	let server: ReturnType<typeof Bun.serve<Peer>>;
 	try {
@@ -399,7 +496,19 @@ async function startUnlockedHost(options: HostOptions) {
 						for (const message of buffered)
 							if (Number(object(message.params).sequence) > sequence) send(peer, message);
 					};
-					const operation = dispatch(method, envelopeParams, peer)
+					const timeoutMs = operationDeadlineMs(method, options);
+					const operationDeadline = timeoutMs
+						? createDeadline(timeoutMs, `Pi ${method}`)
+						: undefined;
+					const signal = operationDeadline
+						? AbortSignal.any([shutdown.signal, operationDeadline.signal])
+						: shutdown.signal;
+					const dispatched = dispatch(method, envelopeParams, peer, signal);
+					inflight.add(dispatched);
+					void dispatched.finally(() => inflight.delete(dispatched)).catch(() => {});
+					const operation = (
+						operationDeadline ? operationDeadline.race(dispatched, `Pi ${method}`) : dispatched
+					)
 						.then(
 							(result) => {
 								if (handshaking) {
@@ -449,6 +558,7 @@ async function startUnlockedHost(options: HostOptions) {
 								flush();
 							},
 						)
+						.finally(() => operationDeadline?.dispose())
 						.finally(() => peer.data.active.delete(id));
 					inflight.add(operation);
 					void operation.finally(() => inflight.delete(operation)).catch(() => {});
@@ -460,9 +570,17 @@ async function startUnlockedHost(options: HostOptions) {
 			},
 		});
 	} catch (error) {
+		stopping = true;
+		shutdown.abort(new Error("Service startup failed"));
 		providers.close();
-		await sessions.close();
-		await control.close();
+		const cleanupDeadline =
+			startup ??
+			createDeadline(
+				options.drainDeadlineMs ?? DEFAULT_SERVICE_DRAIN_DEADLINE_MS,
+				"Assistant startup cleanup",
+			);
+		await Promise.allSettled([sessions.close(cleanupDeadline), control.close(cleanupDeadline)]);
+		if (!startup) cleanupDeadline.dispose();
 		throw error;
 	}
 	return {
@@ -471,15 +589,43 @@ async function startUnlockedHost(options: HostOptions) {
 		sessions,
 		control,
 		capabilities: capabilitySnapshot(),
-		close: async () => {
+		close: async (providedDeadline?: Deadline) => {
+			const deadline =
+				providedDeadline ??
+				createDeadline(
+					options.drainDeadlineMs ?? DEFAULT_SERVICE_DRAIN_DEADLINE_MS,
+					"Assistant shutdown",
+				);
+			const ownedDeadline = !providedDeadline;
 			stopping = true;
-			const stopped = server.stop(true);
+			shutdown.abort(new Error("Service stopping"));
+			let stopped: PromiseLike<void>;
+			try {
+				stopped = server.stop(true);
+			} catch (error) {
+				stopped = Promise.reject(error);
+			}
 			for (const peer of peers) peer.close(1001, "Service stopping");
 			providers.close();
-			await sessions.close();
-			await control.close();
-			await Promise.allSettled(inflight);
-			await stopped;
+			const cleanup = Promise.allSettled([
+				sessions.close(deadline),
+				control.close(deadline),
+				stopped,
+				...inflight,
+			]);
+			try {
+				const results = await deadline.race(cleanup, "Assistant service drain");
+				const failures = results.filter(
+					(result): result is PromiseRejectedResult => result.status === "rejected",
+				);
+				if (failures.length)
+					throw new AggregateError(
+						failures.map((failure) => failure.reason),
+						"Assistant service shutdown failed",
+					);
+			} finally {
+				if (ownedDeadline) deadline.dispose();
+			}
 		},
 	};
 }
