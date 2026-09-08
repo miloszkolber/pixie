@@ -103,7 +103,8 @@ func TestRegistryUnchangedEnablePreservesBrowserHandle(t *testing.T) {
 	if ready, detail := registry.Health("browser"); !ready {
 		t.Fatalf("unchanged enable made Browser unavailable: %s", detail)
 	}
-	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:17871/readyz", nil)
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	request.Host = "127.0.0.1:17871"
 	response := httptest.NewRecorder()
 	previous.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
