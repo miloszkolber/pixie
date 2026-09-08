@@ -48,7 +48,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] FIX-02 — F/E: known pre-publication module-save failure preserves prior committed state/runtime; post-publication uncertainty follows FIX-13 (F03/F32). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-02-and-fix-03--mcp-module-persistence-and-lifecycle).
 - [x] FIX-03 — F/E: unchanged enable preserves Browser handles; explicit Restart is separate (F04). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-02-and-fix-03--mcp-module-persistence-and-lifecycle).
 - [x] FIX-04 — C/F: guarded create/idempotency and selected-chat/empty-panel reproduction with stale-generation rejection (F07). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-04--guarded-chat-creation-and-stale-selection-rejection).
-- [ ] FIX-05 — A/F: strict host envelopes and deliberate v1/v2 duplicate behavior without changing browser/native ID domains (F05/F34).
+- [x] FIX-05 — A/F: strict host envelopes and deliberate v1/v2 duplicate behavior without changing browser/native ID domains (F05/F34). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-05--strict-v1-host-envelopes-and-handshake).
 - [x] FIX-06 — B/E/F: native thinking levels across session/default/schedule paths, including supported max (F22). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-06--native-thinking-levels-including-max).
 - [ ] FIX-07 — B/F: agent content revisions, exclusive create, rooted identity and stale/external-edit handling with explicit writer assumptions (F23).
 - [x] FIX-08 — B/F: literal-loopback assistant bind and validated startup inputs (F26). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-08--assistant-loopback-binding-and-startup-validation).

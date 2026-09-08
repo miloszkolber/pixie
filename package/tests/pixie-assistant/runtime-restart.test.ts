@@ -36,7 +36,7 @@ const connect = async (port: number | undefined, secret: string) => {
 		pending.clear();
 	};
 	cleanup.push(async () => ws.close());
-	return {
+	const client = {
 		close: () => ws.close(),
 		call: (method: string, params: unknown = {}) =>
 			new Promise<any>((resolve, reject) => {
@@ -45,6 +45,8 @@ const connect = async (port: number | undefined, secret: string) => {
 				ws.send(JSON.stringify({ id, method, params }));
 			}),
 	};
+	await client.call("runtime.hello", { protocolVersion: 1 });
+	return client;
 };
 
 const freePort = async () => {

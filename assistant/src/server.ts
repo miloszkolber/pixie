@@ -38,6 +38,8 @@ const sdkVersion = (
 ).version;
 
 interface Peer {
+	handshaken: boolean;
+	handshakePending: boolean;
 	sessions: Set<string>;
 	attachments: Map<string, { params: RecordValue; entry: WeakRef<ManagedSession> }>;
 	logins: Set<string>;
@@ -305,6 +307,8 @@ async function startUnlockedHost(options: HostOptions) {
 					url.pathname === "/pi" &&
 					server.upgrade(request, {
 						data: {
+							handshaken: false,
+							handshakePending: false,
 							sessions: new Set(),
 							attachments: new Map(),
 							logins: new Set(),
@@ -324,16 +328,31 @@ async function startUnlockedHost(options: HostOptions) {
 					peers.add(peer);
 				},
 				message(peer, raw) {
-					let request: RecordValue;
+					let value: unknown;
 					try {
-						request = object(JSON.parse(String(raw)));
+						value = JSON.parse(String(raw));
 					} catch {
 						peer.close(1007, "Invalid JSON");
 						return;
 					}
-					const id = Number(request.id);
-					if (!Number.isSafeInteger(id) || id <= 0) {
+					if (!value || typeof value !== "object" || Array.isArray(value)) {
+						peer.close(1008, "Invalid request envelope");
+						return;
+					}
+					const request = value as RecordValue;
+					const id = request.id;
+					if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) {
 						peer.close(1008, "Invalid request ID");
+						return;
+					}
+					const method = request.method;
+					if (typeof method !== "string" || method.length === 0) {
+						peer.close(1008, "Invalid request method");
+						return;
+					}
+					const params = request.params;
+					if (!params || typeof params !== "object" || Array.isArray(params)) {
+						peer.close(1008, "Invalid request params");
 						return;
 					}
 					// A reused in-flight id is a protocol mistake, not broken
@@ -347,9 +366,21 @@ async function startUnlockedHost(options: HostOptions) {
 						return;
 					}
 					peer.data.active.add(id);
-					const method = text(request.method),
-						params = object(request.params),
-						sessionId = text(params.sessionId);
+					const envelopeParams = params as RecordValue,
+						sessionId = text(envelopeParams.sessionId);
+					const handshaking = method === "runtime.hello" && !peer.data.handshaken;
+					if (!peer.data.handshaken) {
+						if (
+							peer.data.handshakePending ||
+							method !== "runtime.hello" ||
+							envelopeParams.protocolVersion !== 1
+						) {
+							peer.data.active.delete(id);
+							peer.close(1008, "Invalid or missing runtime hello");
+							return;
+						}
+						peer.data.handshakePending = true;
+					}
 					if (stopping && method !== "runtime.restart") {
 						peer.close(1001, "Service stopping");
 						return;
@@ -368,9 +399,13 @@ async function startUnlockedHost(options: HostOptions) {
 						for (const message of buffered)
 							if (Number(object(message.params).sequence) > sequence) send(peer, message);
 					};
-					const operation = dispatch(method, params, peer)
+					const operation = dispatch(method, envelopeParams, peer)
 						.then(
 							(result) => {
+								if (handshaking) {
+									peer.data.handshakePending = false;
+									peer.data.handshaken = true;
+								}
 								const snapshot = object(result);
 								if (
 									loading &&
@@ -403,6 +438,7 @@ async function startUnlockedHost(options: HostOptions) {
 								flush(Number(object(result).eventSequence ?? -1));
 							},
 							(error) => {
+								if (handshaking) peer.data.handshakePending = false;
 								send(peer, {
 									id,
 									error: {

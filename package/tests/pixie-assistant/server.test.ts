@@ -28,7 +28,7 @@ async function rpc(url: string, secret: string) {
 			else p?.resolve(value.result);
 		} else events.push(value);
 	};
-	return {
+	const client = {
 		events,
 		call: (method: string, params: unknown = {}) =>
 			new Promise<any>((resolve, reject) => {
@@ -37,6 +37,8 @@ async function rpc(url: string, secret: string) {
 				ws.send(JSON.stringify({ id, method, params }));
 			}),
 	};
+	await client.call("runtime.hello", { protocolVersion: 1 });
+	return client;
 }
 
 test("host authenticates transport and routes native provider prompts to the owning connection", async () => {

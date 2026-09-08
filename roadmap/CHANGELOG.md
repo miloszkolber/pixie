@@ -32,6 +32,13 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Verification:** `bun test package/tests/webui/workspace/start-chat.test.ts` (4 pass, 16 expectations, Bun 1.3.14); `bun test package/tests/webui/workspace` (44 pass, 332 expectations); `bun run --cwd package typecheck`; targeted Biome check; `bun run check:filenames`; `git diff --check`.
 - **Remaining boundary:** the full Web UI suite currently has 23 unrelated failures under Bun 1.3.14, mostly `NameTooLong` data-URL resolution failures in existing chat/tool renderer tests. Per-selection loading/error presentation beyond the existing restoration fallback remains part of `UI-03`/`UI-06`.
 
+### FIX-05 — Strict v1 host envelopes and handshake
+
+- **Implementation:** the assistant WebSocket host now rejects non-object envelopes, coerced/non-safe IDs, empty methods, non-object params and calls made before the negotiated v1 `runtime.hello`. The existing v1 duplicate in-flight ID behavior remains an error frame with the connection open; browser/native ID domains are untouched. Test clients now perform the documented handshake, and `docs/pi-protocol.md` matches the enforced contract.
+- **Behavior evidence:** conformance regressions cover malformed JSON, invalid/coerced IDs, array or missing handshake params, missing hello, unsupported protocol version, duplicate in-flight IDs and unknown methods after hello. Existing assistant, restart and extension-inventory flows pass through the handshake.
+- **Verification:** `bun test package/tests/pixie-assistant` (75 pass, 409 expectations, Bun 1.3.14); `bun run --cwd package typecheck`; `bun run --cwd package check:filenames`; targeted Biome check; `git diff --check`.
+- **Remaining boundary:** this checkout still speaks host protocol v1. Host v2 schemas/epochs and its distinct duplicate/handshake settlement behavior remain `API-02` work; native payloads remain forward-compatible after strict Pixie envelope validation.
+
 ### FIX-06 — Native thinking levels, including max
 
 - **Implementation:** the assistant preference bridge, Go Pi administration projection, shared `PiPreferences` contract and settings selector now accept the native `max` thinking level. Session clamping orders `max` after `xhigh`, while scheduled sessions continue to omit an override and inherit Pi's configured default.
