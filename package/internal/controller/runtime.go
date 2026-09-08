@@ -291,7 +291,8 @@ func (a *PiAdmin) reloadHost(ctx context.Context) (map[string]any, error) {
 	return map[string]any{"ok": true}, nil
 }
 
-func runtimePiStatus(ctx context.Context, client *PiClient) map[string]any {	if client.scope.requireSecret && client.scope.secret == "" {
+func runtimePiStatus(ctx context.Context, client *PiClient) map[string]any {
+	if client.scope.requireSecret && client.scope.secret == "" {
 		return map[string]any{"configured": false, "reachable": false, "error": "PIXIE_PI_SECRET_KEY is not configured"}
 	}
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
