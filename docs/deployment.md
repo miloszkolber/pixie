@@ -26,7 +26,7 @@ The npm workflow uses `pixie-assistant-v*` tags for `@pixie_ai/pixie-assistant`,
 bunx @pixie_ai/pixie-assistant@<version>
 ```
 
-Subagents stay optional: the production install ships no subagent package. To enable them standalone, install the exact pinned version alongside (`bun add @mjakl/pi-subagent@3.0.1` or `npm install -S @mjakl/pi-subagent@3.0.1`) and apply the Bun child-launch patch from the repository's `agent/extensions/local-patches/` (the standalone agent distribution carries its own copy); without the patch, Bun-run children cannot launch, and without the package, Pi simply offers no subagent extension.
+Subagents stay optional: the production install ships no subagent package. To enable them standalone, install the exact pinned version alongside (`bun add @mjakl/pi-subagent@3.0.1` or `npm install -S @mjakl/pi-subagent@3.0.1`) and apply the Bun child-launch patch from the repository's `agent/extensions/local-patches/`; without the patch, Bun-run children cannot launch, and without the package, Pi simply offers no subagent extension.
 
 ## Optional local models
 
@@ -68,7 +68,7 @@ Optional Signet memory is an operator-owned external service, not a Pixie-manage
 
 ## Without Docker
 
-Docker stays the primary method. Where containers are unavailable, the one supported non-Docker installation is a single self-contained `pixie` binary with the web UI embedded at build time, plus the published `pixie-assistant` package. No checkout, web toolchain, or asset directory is needed at run time. The Browser module stays optional and degrades to `disabled` without Chromium and `agent-browser` on `PATH`.
+Docker stays the primary method. Where containers are unavailable, the supported non-Docker installations are a single self-contained `pixie` binary with the web UI embedded at build time plus the published `pixie-assistant` package (no checkout, web toolchain or asset directory needed at run time), or the standalone `pi-agent` binary built from [agent/main.ts](../agent/main.ts), which embeds the assistant service itself and needs no bun, npm or checkout at run time; its extensions stay native settings and files on disk ([agent](../agent/README.md)). The Browser module stays optional and degrades to `disabled` without Chromium and `agent-browser` on `PATH`.
 
 Build once from a checkout (build time needs the Go, Bun and Node toolchains):
 

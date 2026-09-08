@@ -1,10 +1,23 @@
 # Pi
 
-This directory contains `pixie-assistant/`, the small Bun service around the unmodified Pi SDK, and [agents/](agents/README.md), which documents user-owned definitions.
+This directory is the home of the standalone agent packaging and the Pi-side setup layer: the executable entrypoint ([main.ts](main.ts)), agent definitions ([agents/](agents/README.md)), and the local upstream patches ([extensions/local-patches/](extensions/local-patches/README.md)). The assistant service itself lives in [`assistant/`](../assistant/).
 
-## Setup
+## Standalone binary
 
-Start with a checkout and the Bun version in root [`package.json`](../package.json). Root `package.json` and `bun.lock` are the workspace dependency authority. [`pixie-assistant/package.json`](pixie-assistant/package.json) pins the SDK and essential service dependencies. Optional packages are development dependencies for parity tests, not runtime requirements. An existing Pi configuration can be reused in place without copying credentials or native state.
+`main.ts` packages the assistant service as a single self-contained executable. The build embeds the checked-out assistant sources directly, so the binary always matches the working tree; there is no vendoring step.
+
+```sh
+bun run build:agent    # writes dist/pi-agent
+./dist/pi-agent --version
+```
+
+Run it like the source service: `PI_CODING_AGENT_DIR` (or `--agent-dir`), `PIXIE_PI_SECRET_KEY`, `--host`, `--port` and `--llama`. The binary is a plain headless Pi host and ships no settings template, no agent definitions and no extensions: native settings, sessions and extension packages stay operator-managed files on disk. A target machine needs no bun or npm to *run* the binary. To *use* optional extensions, produce the pinned extension `node_modules` tree once on any machine with bun (this checkout does it) and point the native settings at it; the binary loads them like any Pi resource.
+
+`.github/workflows/agent-build.yml` builds the binary on every push and pull request and attaches release artifacts on `agent-v*` tags.
+
+## Source service
+
+Start with a checkout and the Bun version in root [`package.json`](../package.json). Root `package.json` and `bun.lock` are the workspace dependency authority. [`assistant/package.json`](../assistant/package.json) pins the SDK and essential service dependencies. Optional packages are development dependencies for parity tests, not runtime requirements. An existing Pi configuration can be reused in place without copying credentials or native state.
 
 Install once from the repository root:
 

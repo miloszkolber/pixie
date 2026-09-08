@@ -1,0 +1,58 @@
+name: Build the pi-agent binary
+
+on:
+  push:
+    branches: [main]
+    tags: ["agent-v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: agent-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and smoke-test (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [bun-linux-x64, bun-linux-arm64]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun build ./agent/main.ts --compile --target ${{ matrix.target }} --outfile dist/pi-agent-${{ matrix.target }}
+      - name: Smoke-test the binary
+        if: matrix.target == 'bun-linux-x64'
+        run: |
+          ./dist/pi-agent-${{ matrix.target }} --version
+          agent_dir=$(mktemp -d)
+          PI_CODING_AGENT_DIR="$agent_dir" PIXIE_PI_SECRET_KEY="ci-agent-smoke-16" \
+            ./dist/pi-agent-${{ matrix.target }} --agent-dir "$agent_dir" --port 33991 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -sf -H "Authorization: Bearer ci-agent-smoke-16" \
+              http://127.0.0.1:33991/readyz | grep -q protocolVersion; then
+              echo "binary host ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "binary host did not become ready" >&2
+          exit 1
+      - name: Attach release artifacts
+        if: startsWith(github.ref, 'refs/tags/agent-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" "dist/pi-agent-${{ matrix.target }}" --clobber 2>/dev/null ||
+            gh release create "$GITHUB_REF_NAME" "dist/pi-agent-${{ matrix.target }}" --title "$GITHUB_REF_NAME" --notes "Standalone pi-agent binary."

@@ -54,7 +54,7 @@ This host runs `/home/core/.pi` directly via `PI_CODING_AGENT_DIR=/home/core/.pi
 - Read-only native Extensions inventory, distinct from MCP connections; configuration saves are explicit and deferred, applying on session reopen or through the whole-host reload, with the per-session reload flow retired ([extensions](pi-extensions.md)).
 - Lifecycle and trust parity (compaction, forks, retries, default-deny project trust) covered by native-SDK tests and fixtures ([development](development.md)).
 - Assistant hardening: the wire protocol documented as the integration contract with transport conformance tests ([protocol](pi-protocol.md)), defensive frame serialization, duplicate in-flight request ids answered with error frames, and the parity suite formalized as the SDK upgrade gate ([development](development.md)).
-- Documented packaging and first automated release: `0.1.1` published from tag `pixie-assistant-v0.1.1` via OIDC with signed provenance and strict pack checks; Docker-primary deployment with a supported self-contained binary plus published package path and systemd units ([deployment](deployment.md)).
+- Documented packaging and first automated release: `0.1.1` published from tag `pixie-assistant-v0.1.1` via OIDC with signed provenance and strict pack checks; Docker-primary deployment with a supported self-contained binary plus published package path and systemd units, and a standalone `pi-agent` binary built from the agent directory ([deployment](deployment.md), [agent](../agent/README.md)).
 - Browser security review and x86-64 task-latency measurement recorded ([security](security.md)).
 - History before `669955a` squashed to a single root with the tree verified byte-identical.
 

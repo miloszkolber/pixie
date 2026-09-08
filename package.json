@@ -31,17 +31,18 @@
 	],
 	"scripts": {
 		"build": "bun run --cwd package build",
+		"build:agent": "bun build ./agent/main.ts --compile --outfile dist/pi-agent",
 		"build:go": "bun run --cwd package build:go",
-		"dev:web": "bun run --cwd package dev:web",
 		"build:web": "bun run --cwd package build:web",
-		"mewa:check": "bun run --cwd package mewa:check",
-		"typecheck": "bun run --cwd package typecheck",
-		"test": "bun run --cwd package test",
-		"check:filenames": "bun run --cwd package check:filenames",
-		"lint": "bun run --cwd package lint",
-		"format": "bun run --cwd package format",
 		"check:deps": "bun run --cwd package check:deps",
-		"check:parity": "bun run --cwd package check:parity"
+		"check:filenames": "bun run --cwd package check:filenames",
+		"check:parity": "bun run --cwd package check:parity",
+		"dev:web": "bun run --cwd package dev:web",
+		"format": "bun run --cwd package format",
+		"lint": "bun run --cwd package lint",
+		"mewa:check": "bun run --cwd package mewa:check",
+		"test": "bun run --cwd package test",
+		"typecheck": "bun run --cwd package typecheck"
 	},
 	"patchedDependencies": {
 		"@mjakl/pi-subagent@3.0.1": "agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch",
