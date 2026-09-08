@@ -1,6 +1,6 @@
 # Openfig Design inspection
 
-Roadmap phase 10: the last feature integration. Read [draft-review.md](draft-review.md), [extensions.md](extensions.md) and [security-and-validation.md](security-and-validation.md). Track FIG-01 through FIG-06 in [execution.md](execution.md).
+Last feature integration, after Canvas Gate 6. Read [contracts.md](contracts.md), the [consolidated draft review](repository-review.md#canvas-and-openfig-draft-review), [extensions.md](extensions.md) and [security-and-validation.md](security-and-validation.md). Track FIG-01 through FIG-06 in [execution.md](execution.md). Shared contracts govern bounds, index-artifact handling and publication/durability outcomes.
 
 ## 1. Outcome and boundaries
 
@@ -20,7 +20,7 @@ Use pinned public `openfig-core` for parsing/indexing. Core 0.4.1 is the inspect
 
 Do not require `openfig-cli`, proxy its upstream MCP service, deep-import private rasterizer paths, copy its scene engine into Pixie, or implement a Figma renderer from scratch. The inspected CLI's package exports do not expose its Design rasterizers. A small PNG rasterizer wrapper does not supply missing scene construction.
 
-The original draft reports parse/thumbnail smoke tests and failed private-renderer experiments. They are retained with explicit attribution in [draft-review.md](draft-review.md), not treated as freshly executed validation or capacity/fidelity guarantees.
+The original draft reports parse/thumbnail smoke tests and failed private-renderer experiments. They are retained with explicit attribution in [the consolidated review](repository-review.md#prior-openfig-experiments), not treated as freshly executed validation or capacity/fidelity guarantees.
 
 Frame previews remain a separate desired milestone. Recheck for a released public upstream Design-frame API at FIG-06. Structure inspection must not depend on that milestone or pretend that repeating a cover thumbnail is rendering.
 
@@ -63,9 +63,9 @@ staging/<upload-id>/...
 
 Use generated IDs, never uploaded names or raw Figma node IDs as paths. `slot.json` records immutable document ID/hash, display name, upload time/size, parser/index versions, generation, availability and shared selection. Selection revision is separate from source identity. Index/cache revisions cannot change the source silently.
 
-Stream a bounded upload/checksum to staging; reserve the single slot while pending. Authenticate and check mutation origin before expensive work. Validate input, parse/index in the enclosed worker, and validate worker outputs in Go. Move complete immutable outputs into place, then durably publish the slot pointer last. Emit availability only after commit.
+Stream a bounded upload/checksum to staging; reserve the single slot while pending. Authenticate and check mutation origin before expensive work. Validate input, parse/index in the enclosed worker, and validate worker outputs in Go. Move complete immutable outputs into place, then durably publish the slot pointer last. Emit availability only after commit. The index uses its dedicated bounded artifact path, not generic persist.Write or a full-index host/browser frame. Post-publication errors follow the persistence-uncertainty contract, not an assumption that every failed call left the old pointer installed.
 
-Competing uploads cannot both commit. A retry identity/fingerprint or upload operation ID returns the same committed outcome rather than allocating a second document. Failure leaves committed state unchanged and cleans staging with bounded diagnostics. A client disconnect has an explicit cancel/operation-status policy, not an ambiguous background replacement.
+Competing uploads cannot both commit. A retry identity/fingerprint or upload operation ID returns the same committed outcome rather than allocating a second document. Failure leaves committed state unchanged only when non-publication is known; otherwise reconcile the validated primary before dependent actions. Clean staging with bounded diagnostics. A client disconnect has an explicit cancel/operation-status policy, not an ambiguous background replacement.
 
 Removal requires current document identity/revision. Durably tombstone its generation, revoke access, cancel matching jobs and then delete files. Physical cleanup can retry, but logical reads fail immediately. No stale job, backup recovery or upload completion can republish the removed source. Removal must work while the module is disabled or its worker is unavailable, without invoking the parser.
 
@@ -100,15 +100,15 @@ The inspected core parser expands archives/chunks synchronously and compiles the
 
 Preflight ZIP metadata in Go: entry count, total declared expansion, required input, paths, duplicates and ambiguous canvas/meta/thumbnail/image names. Reject traversal, absolute/invalid names and collisions caused by suffix matching or flattened asset basenames. Validate actual decompression/output too; compressed inner schema/zstd content can exceed archive estimates.
 
-Run the worker with a hard wall deadline, process-tree cancellation, bounded diagnostics/output and an enforced memory/resource enclosure. Choose and test a concrete limit on both architectures before enabling upload. Start by evaluating a 512 MiB worker memory budget; adjust only from measured representative/hostile fixtures and document the enforced value. `--max-old-space-size` is tuning, not the hard cap.
+Run the worker with a hard wall deadline, process-tree cancellation, bounded diagnostics/output and an enforced memory/resource enclosure. Use and test the concrete limits in contracts.md on both architectures before enabling upload. The initial worker memory budget is 512 MiB; adjust only from measured representative/hostile fixtures and document the enforced value. `--max-old-space-size` is tuning, not the hard cap.
 
 Use private read-only input and an isolated writable output directory. No Pi credentials, project mounts, application databases, broad host HOME, privileged daemon socket or network. A same-UID subprocess with only environment filtering is fault containment, not filesystem isolation. Both Docker and direct-host deployment must establish the actual worker boundary or mark Design unavailable without weakening it.
 
 No Figma API, online fonts/images, telemetry, package installation or downloads during upload/query/render. Use approved local assets/fallbacks with diagnostics. Test processing with external network unavailable and canary files outside the worker mounts.
 
-Validate worker protocol/schema, unknown response fields, output paths, symlinks, sizes, finite numeric values and image headers in Go. Do not trust a helper's “success” report without checking its bounded artifacts.
+Validate worker protocol/schema, unknown response fields, output paths, symlinks, sizes, finite numeric values and image headers in Go. Do not trust a helper's success report without checking its bounded artifacts.
 
-Initial budgets from the draft, to test rather than advertise as capacity:
+Initial budgets from the draft, governed by contracts.md and tested rather than advertised as capacity:
 
 | Resource | Initial budget |
 | --- | --- |
@@ -116,14 +116,14 @@ Initial budgets from the draft, to test rather than advertise as capacity:
 | Declared archive expansion | 256 MiB; actual expansion is independently bounded |
 | Archive entries | 4,096 |
 | Normalized nodes / graph depth | 100,000 / 128 |
-| Normalized index | 64 MiB |
+| Normalized index | 64 MiB through its dedicated artifact path |
 | Regenerable preview cache | 128 MiB |
 | Parse/render concurrency | One active heavy job initially |
 | Parse deadline | 30 seconds |
 | Worker diagnostics | 64 KiB |
 | Image tool result | 2 MiB encoded image bytes, before MCP base64 |
 
-Cap rendered pixels before allocation. Evict only derived caches, never source, for preview budgets. Bound queued work/admission as well as concurrent workers.
+Cap rendered pixels before allocation. Evict only derived caches, never source, for preview budgets. Bound queued work/admission as well as concurrent workers. Enforce the shared scratch/inode/decoded-memory limits; do not enlarge shared transport or metadata caps to accommodate the index.
 
 ## 7. UI and shared focus
 
@@ -131,7 +131,7 @@ Contribute an instance-scoped Design rail item. Slot 5 contains source/upload st
 
 Empty/upload UI clearly states the single instance-wide slot and who can read it. Upload uses streamed binary HTTP, not chat-WebSocket base64. Provide progress/cancel, format/limit errors, file name/size/date and explicit removal confirmation.
 
-Label the saved cover “Document thumbnail.” Until actual frame rendering is supported, show “Frame preview unavailable” with usable structure/text, not the cover repeated across frame cards. Render document strings as text.
+Label the saved cover Document thumbnail. Until actual frame rendering is supported, show Frame preview unavailable with usable structure/text, not the cover repeated across frame cards. Render document strings as text.
 
 Private browsing in a browser tab does not change agent focus. An explicit Shared focus action publishes a page and optional node/frame with optimistic selection revision. Reconcile through existing state events, including another client changing focus, document removal and reconnect.
 

@@ -1,163 +1,164 @@
 # Execution guide
 
-Read [README.md](README.md), the assigned plan and relevant entries in [repository-review.md](repository-review.md). These directions incorporate the user's six-column UI, native Go assistant and two-build release requirements. Do not revive superseded bundled-SDK, mixed-content-tab or two-process full-host instructions from older plans.
+Read [README.md](README.md), [contracts.md](contracts.md), [feature-coverage.md](feature-coverage.md), [acceptance.md](acceptance.md), the relevant findings in [repository-review.md](repository-review.md) and the assigned feature plan. Implement the tasks rather than writing another replacement plan. Use the reconciled roadmap on main; recheck the actual checkout and concurrent changes.
 
 ## Working rules
 
-When instructed to implement this roadmap, proceed with the listed code, tests, documentation and coherent local commits. Use stated defaults rather than asking for a new product decision for each task. Record bounded technical choices and evidence.
+Use the specified defaults and one owner per state/delivery/runtime concern. Preserve user changes, unknown native records, durable authority and retained behavior. Test with disposable state and owned/licensed fixtures, not live credentials, documents or repositories. The single review is evidence; current requirements live in the contracts/plans and only this ledger records progress.
 
-Remote pushes/tags, package/image/release publication, upstream submissions and live services retain explicit approval boundaries. Inspect workflow side effects before a push. This roadmap commit changes planning only; it is not permission to deploy all future implementation.
+Do not rewrite history, silently install native extensions, relocate Pi state, remove failing regressions or expand scope into a terminal/IDE/agent framework. Missing optional capabilities stay local; required authority/containment failures stay closed. A TUI workaround is not a retained Web UI feature's replacement.
 
-Do not rewrite Git history, relocate native Pi state, install optional native extensions or delete real documents for tests. Use disposable agent directories and owned/licensed fixtures. Preserve user changes and unknown native records.
+Investigate native bridge feasibility early, alongside the first vanilla and shell slices. An exact public API blocker has a coverage ID, reproduction, owner and release consequence. Continue independent work while it remains open; do not claim a mock proves an absent native API exists.
 
-Maintain one owner per runtime/delivery/state concern. Hide does not stop a session. Mewa owns foundations; files/Git remain read-only. No new provider database, agent loop, automatic worktrees, generic plugin marketplace or remotely supplied frontend code.
+## Approval boundaries
 
-Optional dependency failure stays local. Missing mandatory containment fails closed. Record a precise external/API/approval blocker and continue independent tasks; never silently reduce scope or call blocked work complete. Both build variants are mandatory for release; missing one is not an optional limitation.
+Remote writes/merges, upstream submissions, publication-policy enablement and live-service/native-state operations require their own authorization. Inspect indirect workflow effects before a push. Local implementation/tests/coherent commits proceed under the implementation request; documentation edits do not enable releases or deployment.
 
-## Initial pass
-
-Inspect the current checkout and concurrent changes; record the base revision. Recheck F02–F05/F07 and read actual package scripts. Run narrow baseline checks; historical green CI is not this task's result. Capture legacy transport behavior and a content-filled UI fixture before replacement.
-
-Update root AGENTS.md early for this roadmap, actual assistant/package paths, shared Go facade, full-host composition and colocated Go unit tests. Keep user docs accurate while implementation is in progress; the roadmap is not evidence that features already ship.
+After explicit approval, the continuous-release policy in builds-and-releases.md is standing authorization for eligible main commits. Before that, prepare/test without remote publication. Do not invent per-artifact version approvals after the policy is enabled, or treat it as approval for live deployment.
 
 ## Parallel ownership
 
-| Stream | Owns | Starts after |
+| Stream | Owner surface | Dependency |
 | --- | --- | --- |
-| A — Contracts/integration | Method inventory, schemas, capabilities, selection/module contracts and composition seam | Initial review |
-| B — Go assistant | Shared assistant runtime, public facade, standalone entrypoint and process tests | A's host/composition contract |
-| C — Shell/navigation | Shell, route driver, layout persistence and shared workspace store | Selection contract and primitive APIs |
-| D — Mewa/views | Adapters/foundations and list/detail/content views | Visual inventory; selection contract for integration |
-| E — Extensions | Registry, Browser contribution, native UI semantics and scoped MCP authority | A's module/capability contract |
-| F — Reliability/security | Reproductions, failures, containment, recovery and performance | Immediately |
-| G — Builds/docs | Full-host composition with B, both build targets, units, archives, installation/release tests and docs | Shared CLI/facade; editorial corrections may begin immediately |
-| H — Canvas | Canvas service, isolated render, tools and contribution | Core Gate 5 and E's scoped authority |
-| I — Openfig | Design storage/worker/query/UI and renderer gate | Core Gate 5 and Canvas foundation accepted |
+| A — Contracts/integration | Method/FC inventory, v2 schemas, identity/authority, shared composition | Initial source review |
+| B — Go assistant | Native I/O, supervision, catalog, public facade and bridge host | Agreed A fixtures |
+| C — Shell/navigation | Shared state, routes, layout, draft migration and upgrade recovery | Selection contract |
+| D — Mewa/views | Foundation/adapters and list/detail/content views | Inventory immediately; C props |
+| E — Extensions | Native UI semantics, bridge adapter, registry/routing and Browser | A capabilities; B transport |
+| F — Reliability/security | Regressions, subprocess/resource controls, recovery, worker profiles and measurements | Immediately |
+| G — Builds/docs | Combined composition, both artifacts/Docker, units, release/install/rollback/docs | Facade/identity; factual docs immediately |
+| H — Canvas | Canvas store/jobs/tools/view | Core Gate 5 and worker/session authority |
+| I — Openfig | Design worker/store/query/view and frame gate | Accepted Canvas foundation after Gate 5 |
 
-A owns shared schemas; C owns shared workspace state. B owns child I/O/lifecycle; E owns native UI semantics, with exactly one final response translation. G owns application composition with B through the facade, not a second assistant implementation.
+A integrates shared schemas, C shared workspace state, B native I/O, E primitive/adapter/module semantics and G release composition. Responses have one translation owner. Coordinate shared lockfiles, Dockerfile, CSS and registry edits through a designated editor; use fixtures rather than parallel conflicting implementations.
 
-Other streams integrate through fixtures/props rather than concurrent broad edits of shared files. H/I reuse E's registry and F's tested worker boundary. Early research is allowed, but Canvas then Openfig remain the last feature integrations.
+## Initial checks
+
+Record revision and concurrent changes; recheck F01–F41 against source. Capture current browser/host/native behavior separately and preserve correct tests. The isolated probes recorded in repository-review.md confirm existing behavior, not fixed production behavior. Promote them into real endpoint/subprocess regressions and invert unsafe expectations when implementing fixes.
+
+The consolidation changes documentation, not runtime, dependencies or workflows. Current operating docs remain true until corresponding behavior ships. Native bridge, services, workers, complete application and release artifacts still need their own live evidence. Use [migration.md](migration.md) for the detailed state inventory, staged conversion, topology switching and no-ledger-rewind procedure under MIG-01.
 
 ## Task ledger
 
-All tasks begin unimplemented. Check only after recording evidence below. Split tasks as needed without changing ownership or silently reducing scope.
+Every task below remains open until implementation evidence is recorded. FC01–FC33 and X01–X14 are required traceability, not optional tests. Discovering another retained method extends its appropriate row rather than deleting the method as cleanup. Consolidation retains the 78 existing tasks; findings F39–F41 are assigned to their existing owners below rather than creating duplicate work.
 
-### Foundation and regressions
+### Regressions and contracts
 
-- [ ] FIX-01 — F/B: production restart exits through bounded shutdown; real executable/service test, not only callback injection.
-- [ ] FIX-02 — F/E: failed module persistence changes neither effective state nor active Browser identity.
-- [ ] FIX-03 — F/E: unchanged enable is a no-op; explicit Restart is separate.
-- [ ] FIX-04 — C/F: one pending create per action; reproduce/isolate selected-chat/project-empty; stale responses cannot win.
-- [ ] FIX-05 — A/F: strict IDs/envelopes and deliberate duplicate-in-flight error behavior in conformance fixtures.
-- [ ] API-01 — A: exact browser/controller/assistant/native method map, capability versions and retained-feature dispositions.
-- [ ] API-02 — A/B: shared schema/bindings, epoch/checkpoint and acceptance/settlement contracts.
-- [ ] STATE-01 — A/C: primary/secondary selections, optional projects, context resolution, URL/persistence migration and reducer invariants.
-- [ ] MODULE-01 — A/E: contribution descriptors, sidebar-only/viewer-only fixtures and instance/project/session authority.
-- [ ] DOC-01 — G/A: root instructions recognize accepted architecture/paths/tests without claiming implementation is complete.
+- [ ] FIX-01 — F/B: real production restart exits through bounded teardown and obtains a new process/boot identity (F02).
+- [ ] FIX-02 — F/E: known pre-publication module-save failure preserves prior committed state/runtime; post-publication uncertainty follows FIX-13 (F03/F32).
+- [ ] FIX-03 — F/E: unchanged enable preserves Browser handles; explicit Restart is separate (F04).
+- [ ] FIX-04 — C/F: guarded create/idempotency and selected-chat/empty-panel reproduction with stale-generation rejection (F07).
+- [ ] FIX-05 — A/F: strict host envelopes and deliberate v1/v2 duplicate behavior without changing browser/native ID domains (F05/F34).
+- [ ] FIX-06 — B/E/F: native thinking levels across session/default/schedule paths, including supported max (F22).
+- [ ] FIX-07 — B/F: agent content revisions, exclusive create, rooted identity and stale/external-edit handling with explicit writer assumptions (F23).
+- [ ] FIX-08 — B/F: literal-loopback assistant bind and validated startup inputs (F26).
+- [ ] FIX-09 — B/G/F: service deadline encloses creation/admin/extensions/in-flight teardown, not just provider abort (F27).
+- [ ] FIX-10 — F/A: configured Host allowlist plus separately checked normalized Origin/proxy policy across real routes; X01 (F29).
+- [ ] FIX-11 — F/A: non-executing Git inspection, harmless clean/process-filter endpoint regressions and explicit raw-conversion semantics; X02 (F30).
+- [ ] FIX-12 — F/G: controller child-group termination and finite pipe draining, including Git and final container reaping; X03 (F31/F40).
+- [ ] FIX-13 — F/A/E: typed publication/durability outcomes, reconciliation and post-rename fault injection; X04 (F32).
+- [ ] API-01 — A: exhaustive browser/controller/host/native catalog and FC mapping, including schedule methods absent from constant lists and removal of broad Administration/provider assumptions (F20/F41).
+- [ ] API-02 — A/B: host v2 schemas/epochs/snapshot/settlement/error fixtures; separate browser/native request IDs and compatibility; X06 (F34).
+- [ ] API-03 — A/B/F: durable paired authority independent of ephemeral dialing, legacy recovery-blocked migration (F21).
+- [ ] STATE-01 — A/C: independent selections, nullable project grouping, explicit cwd/admission, routes/drafts/layout migration.
+- [ ] MIG-01 — A/B/F with G: full metadata inventory, staged conversion, topology switching and schema-aware rollback from migration.md; ungrouped queues/deletions, old archive metadata and no ledger rewind (F25/F32).
+- [ ] MODULE-01 — A/E: trusted contribution descriptors and sidebar-only/viewer-only fixtures with real scope authority.
+- [ ] ROUTE-01 — E/A/F: registered MCP/management/artifact routing through the assembled HTTP handler, reserved routes and no API-to-SPA fallback; X05 (F33).
+- [ ] LIMIT-01 — A/B/F: composed input/store/transport caps, aggregate-byte admission, control reserve and bounded Design index artifact; X07–X09 (F35).
+- [ ] LIFE-01 — B/E/C/F: verified Stop outcomes and explicit safe idle-runtime release under capacity pressure; X10–X11 (F36).
 
-### Shared Go assistant
+### Shared assistant and retained features
 
-- [ ] GO-01 — B: separate module, CLI/config, executable discovery, read-only doctor and independent Pi installation fixtures.
-- [ ] GO-02 — B: bounded JSONL framing, writer/correlation, cancellation, child exit and slow-consumer behavior.
-- [ ] GO-03 — B: vanilla create/prompt/model/thinking/abort/reopen slice, images and native resource/trust resolution.
-- [ ] GO-04 — B/F: clone/fork ownership, empty drafts, read-only catalog, unknown records, large histories and external replacement.
-- [ ] GO-05 — B/A/F: acceptance/settlement, retries/compaction/continuation, durable outbox ownership, uncertainty and Stop.
-- [ ] GO-06 — B/E: scoped dialogs/widgets/status/title/editor requests, draft conflicts and generation-safe replay.
-- [ ] GO-07 — B/F: on-demand residence, detached-work disposition, managed descendant cleanup and idle TUI handoff.
-- [ ] GO-08 — B/A: retained administration/optional features have tested dispositions, without silent loss or mandatory bundle.
-- [ ] GO-09 — B/G: staged metadata migration, old/new protocol coverage and rollback before removing legacy packaging.
+- [ ] GO-01 — B: separate module/facade, CLI/config/discovery/read-only doctor and independent Pi installations.
+- [ ] GO-02 — B: bounded native JSONL, writer/correlation/admission/backpressure, child exit and stalled-pipe handling.
+- [ ] GO-03 — B: vanilla create/prompt/images/model/thinking/abort/reopen with native resource/trust semantics.
+- [ ] GO-04 — B/F: clone/fork identity/cancellation, drafts, bounded read-only catalog/history, unknown entries and external replacement.
+- [ ] GO-05 — B/A/F: prepared/dispatching/accepted/settled/uncertain outbox, retry/compaction/continuation and verified Stop.
+- [ ] GO-06 — B/E: supported native UI/latest passive state, draft conflicts and generation-safe replay.
+- [ ] GO-07 — B/F: residency/capacity, detached-work disposition, explicit runtime release, descendants and idle TUI handoff.
+- [ ] BRIDGE-01 — B/E/A: public installed import/context/storage feasibility on npm/standalone Pi, private bounded channel and explicit asset opt-in.
+- [ ] BRIDGE-02 — E/B: every retained MCP admin operation uses a supported adapter API, not private AgentSession tool access (F28).
+- [ ] BRIDGE-03 — E/B: exact native UI cancellation/working hints or precise FC15 upstream blocker, without fabricated acknowledgments (F24).
+- [ ] GO-08 — B/E/A: all declared FC17–FC28 administration/authoring/optional profiles retain tested behavior; no TUI-only substitution.
+- [ ] GO-09 — B/G: staged legacy compatibility and schema-aware rollback before host/npm retirement.
 
-### Required build variants
+### Builds and release pipeline
 
-- [ ] BUILD-01 — A/B/G: public assistant/host facade and explicit composition lifecycle; standalone/full binary share it; no forbidden internal imports or duplicate supervisor.
-- [ ] BUILD-02 — B/G: assistant-only build independently compiles/runs without UI, controller, Chromium or Design dependencies.
-- [ ] BUILD-03 — G/B: full-host single binary embeds assistant/controller/UI; no separate assistant executable, Docker or external asset directory for core functionality.
-- [ ] BUILD-04 — G/A: explicit Docker controller-only mode never launches Pi; private full-host transport, matching identity and ownership conflict detection.
-- [ ] BUILD-05 — G/F: whole-composition restart/shutdown, two user-unit alternatives, preserved queues/state and Docker/full-host mode switching.
+- [ ] BUILD-01 — A/B/G: one public assistant/host facade/lifecycle; no copied implementation or forbidden internal imports.
+- [ ] BUILD-02 — B/G: assistant-only independently builds/runs without controller/UI/worker closure.
+- [ ] BUILD-03 — G/B: one full-host binary/service embeds engine/controller/real UI; no separate assistant/assets/Docker for core.
+- [ ] BUILD-04 — G/A: Docker explicitly controller-only, never starts Pi; combined private transport/pairing/ownership tested.
+- [ ] BUILD-05 — G/F: whole-composition drain/restart, both unit choices, effective final-container init/descendant handling and mode switch (F40).
+- [ ] REL-01 — G/A: one sha-<12> identity from exact full commit across tag/Release/binaries/archives; no hash ordering or run-counter fallback.
+- [ ] REL-02 — G: matching Docker tag with both runnable platforms, source/version labels and recorded index/platform digests.
+- [ ] REL-03 — G/F: complete four-archive/image staging, provenance, immutable retries/collisions/partial failure and non-regressing latest.
+- [ ] REL-04 — G: validate-only PR/schedule/docs paths and explicitly approved automatic main policy; no tag loops or untrusted privileged publication.
 
 ### Workspace and Mewa
 
-- [ ] UI-01 — C: six slots/selection reducers against fake transport; no generic mixed-content-tab ownership.
-- [ ] UI-02 — C/D: real Chat + File split, independent collapse, focus/restore and draft/stream continuity.
-- [ ] UI-03 — D/C: grouped/flat/ungrouped sessions, recent expansion, explicit Archive, guarded create and native titles.
-- [ ] UI-04 — D/C: Schedules list/detail/run navigation and Settings primary areas reuse existing backend behavior.
-- [ ] UI-05 — D/C: session details, multi-repository Git, file/diff views and context-safe secondary selection.
-- [ ] UI-06 — C/F: back/forward, persistence migration, stale responses/missing routes, scoped availability, mobile and keyboard resizers.
-- [ ] MEWA-01 — D: pinned component/token/adapter inventory; retain correct wrappers and integrity checks.
-- [ ] MEWA-02 — D: one foundation owner, temporary mapping retired after migration, verified cascade and lifecycle.
-- [ ] MEWA-03 — D/F: five content-filled modes, light/dark/zoom/accessibility, long content, independent scrolling and no page overflow.
+- [ ] UI-01 — C: six-slot reducer/shell against fixture transport, no mixed-content tab ownership.
+- [ ] UI-02 — C/D: real Chat + File split and independent collapse/focus/restore with draft/stream/scroll/focus continuity.
+- [ ] UI-03 — D/C: grouped/flat/ungrouped catalog, recent expansion, native titles, selected/running visibility and Archive.
+- [ ] UI-04 — D/C: Schedules and primary Settings list/detail/run navigation reuse backend state and semantics.
+- [ ] UI-05 — D/C: Details, multi-repository Git, read-only files/diffs and context-safe previews; show eligible idle-runtime release.
+- [ ] UI-06 — C/F: v2 routes/back-forward/restore, invalid/missing/stale states, responsive layouts and keyboard resizers.
+- [ ] UI-07 — C/G/F: old-tab/new-server and lazy-asset upgrade recovery without draft loss or mutation re-execution; X14 (F38).
+- [ ] MEWA-01 — D: pinned tokens/components/adapters and preserved correct wrappers/integrity.
+- [ ] MEWA-02 — D: one foundation owner/cascade/lifecycle; retire mappings/generators only after consumers migrate.
+- [ ] MEWA-03 — D/F: five content-filled light/dark layouts, zoom/keyboard/focus/overflow and no view-driven runtime loss.
 
-### Extensions, security and release preparation
+### Integrations, validation and docs
 
-- [ ] EXT-01 — E/B: complete native UI mapping/replay; explicit terminal-only limitations.
-- [ ] EXT-02 — E: one generalized registry; preserve all module states and unrelated runtime on toggle/failure/restart.
-- [ ] EXT-03 — E/C: Browser contribution in slots 4/5/6 with leases/artifacts/cleanup and separate Pi-tool availability.
-- [ ] EXT-04 — E/A/F: session-scoped MCP credentials/context; forged IDs and transport session IDs confer no authority.
-- [ ] SEC-01 — F/G: actual Browser threat model/flags and auth/origin/path/size tests in Docker and full-host modes; tested optional worker enclosure.
-- [ ] PERF-01 — F: repeatable amd64/arm64 measurements of both variants including Pi children, Browser and large-history UI.
-- [ ] PKG-01 — G/B: both binaries, matching units/private configs, doctor/version/readiness and install/stop/restart/remove smoke tests.
-- [ ] PKG-02 — G: exact-source two-variant × two-architecture release matrix, checksums/provenance/manifest, complete-set promotion and validation/publication separation.
-- [ ] PKG-03 — G/F: real Docker controller + assistant archive and full-host archive on both architectures; upgrade/rollback/mode switch and dependency diagnostics.
-- [ ] DOC-02 — G: current user docs/examples for both builds; old roadmap/drafts become links; Markdown/source links checked.
-- [ ] CUTOVER-01 — A: all core gates pass; remove only superseded paths whose replacements preserve retained scenarios.
+- [ ] EXT-01 — E/B: every supported native UI row, exact limitations and single final response mapping.
+- [ ] EXT-02 — E: generalized registry, complete-map persistence outcomes, independent desired/readiness states and no lock-held startup; mixed invalid/restrictive config fails locally without permissive fallback (F39).
+- [ ] EXT-03 — E/C: Browser in slots 4/5/6, leases/artifacts/cleanup, human/tool availability and explicitly tested deployment profile.
+- [ ] EXT-04 — E/A/F: generic scoped native MCP registration/credentials/revocation; forged IDs grant nothing.
+- [ ] SEC-01 — F/G: actual HTTP/auth/CSRF/filesystem/Browser posture in both modes; X01/X02/X13 without unsupported isolation claims.
+- [ ] SEC-02 — F/G: actual launcher/delegation, pre-exec resource placement, scratch/inode/egress/descriptor/descendant tests on both architectures; X12/X13 (F37).
+- [ ] PERF-01 — F: repeated full-process amd64/arm64 and content-filled UI measurements, including decoded/buffer memory; bounds change only with evidence.
+- [ ] PKG-01 — G/B: final archive/unit/config/version/doctor/readiness/start/stop/restart/uninstall evidence.
+- [ ] PKG-02 — G: complete commit-named release set and fix/retire stale legacy npm guards (F19).
+- [ ] PKG-03 — G/F: real matching Docker+assistant and full-host artifacts, both architectures, upgrade/rollback/mode-switch, effective entrypoint and old-browser recovery.
+- [ ] DOC-01 — G/A: root guidance/commands/contracts track implementation and canonical owners.
+- [ ] DOC-02 — G: brief current-state docs, no superseded plans or separate review copies, checked links/anchors/examples and supported installation profiles.
+- [ ] COVERAGE-01 — A/F: all mandatory FC rows and applicable X tests have actual native/bridge/UI/artifact evidence; reductions need specific approval.
+- [ ] CUTOVER-01 — A: pass core gates before removing replaced runtime/UI paths.
 
 ### Penultimate feature: Canvas
 
-- [ ] CAN-01 — H/E/F: session authority, quotas and offline worker containment before untrusted HTML execution.
-- [ ] CAN-02 — H: immutable revision store, idempotent create/write retry, single-flight jobs, tombstones and restart.
-- [ ] CAN-03 — H: six tools/guide, bounded text/DOM and actual images with exact version/render identities.
-- [ ] CAN-04 — H/C/D: registered sidebar/view/cards and version-aware live preview without untrusted controller-origin script.
-- [ ] CAN-05 — H/F/G: cross-session/egress/remove/disable races, cache/artifact limits and dependencies in both deployments/architectures.
+- [ ] CAN-01 — H/E/F: actual session authority and contained worker/resource profile before untrusted HTML.
+- [ ] CAN-02 — H: immutable revisions, retry/CAS/quota/tombstone state with explicit persistence uncertainty and recovery.
+- [ ] CAN-03 — H: six tools/guide, bounded DOM/text and actual exact-version image content.
+- [ ] CAN-04 — H/C/D: registered HTTP/UI contribution/cards, safe raster-first live preview and stale-version display.
+- [ ] CAN-05 — H/F/G: cross-session/egress/disable/delete/overflow/restart tests through both deployment/architecture profiles.
 
 ### Last feature: Openfig
 
-- [ ] FIG-01 — I/F: reproduce pinned public parser with licensed real .fig files; choose/test isolated worker artifact.
-- [ ] FIG-02 — I: bounded preflight/index, transactional single-document slot, explicit instance scope and durable restart/removal.
-- [ ] FIG-03 — I/E: one read-only query service/five tools, actual bounded images and stale-document/selection rejection.
-- [ ] FIG-04 — I/C/D: pages/layers/frames, labelled cover, private versus explicit shared focus, reference-in-chat and removal while disabled.
-- [ ] FIG-05 — I/F/G: structure MVP/failure/offline/authority matrix and both deployment variants on supported architectures.
-- [ ] FIG-06 — I: verify released public renderer and actual frame previews, or record exact upstream blocker without marking previews complete.
+- [ ] FIG-01 — I/F: independent released public parser/runtime, licensed real files and tested enclosed worker.
+- [ ] FIG-02 — I: bounded preflight/index artifact path, transactional instance-wide slot and durable source/removal; X09.
+- [ ] FIG-03 — I/E: shared read-only query service/five tools, real cover bytes, bounded cursors and source/focus identity.
+- [ ] FIG-04 — I/C/D: pages/layers/frame candidates, private versus shared focus, explicit draft reference and disabled removal.
+- [ ] FIG-05 — I/F/G: structural/offline/hostile-file/authority/recovery and multi-module tests in both modes/architectures.
+- [ ] FIG-06 — I: actual supported upstream frame renders with offline/license/fidelity/bounds evidence, or explicit external API blocker; cover extraction does not complete it.
 
-## Integration gates
+## Gates
 
-**Gate 1 — Contracts/regressions.** Actual dispatchers, schemas, selections, module scope and two-build facade are agreed. Tests cover confirmed defects; native feature gaps have dispositions. Owners work independently against fixtures.
+**Gate 1 — Contracts/regressions.** Relevant consolidated findings have fixtures; exhaustive FC catalog, separated request domains, v2 capability/authority, route ownership, selection and shared-build seam are agreed. BRIDGE feasibility begins here.
 
-**Gate 2 — Vertical slices.** Shared Go host uses independent vanilla Pi. New shell displays chat and file together. Full-host composition uses that same assistant facade; no optional module/native package is required.
+**Gate 2 — Independent slices.** Real selected vanilla Pi conversation with no optional package and a real Chat + File shell. Both executable compositions use the same facade.
 
-**Gate 3 — Continuity.** Images, clone/fork, retry/compaction, queues, reconnect, dialogs, switching/cancellation and all layout modes pass. No duplicate accepted prompt or cross-generation/context response.
+**Gate 3 — Continuity/metadata.** Images, commands/retry/compaction, clone/fork, outbox/Stop, UI epochs/layouts, idle-release capacity, ungrouped migration and durable/persistence recovery pass. No duplicate uncertain delivery.
 
-**Gate 4 — Optional integrations.** Browser uses registry; native MCP absence is non-fatal; supported optional integrations remain optional; failures do not replace shell or stop chat.
+**Gate 4 — Retained integrations.** Required declared FC profiles, provider/auth/settings/resources, UI/MCP fidelity and registered Browser pass. A core-only build with old controls disabled cannot pass without individually approved reductions. Browser's actual deployment boundary is documented/tested, not inferred from module labels.
 
-**Gate 5 — Core cutover/two builds.** Four final archives install on amd64/arm64. Docker controller uses standalone host; full-host needs one binary/service. Stop/restart, ownership conflict, metadata migration, rollback and mode switch pass; docs agree. Only now remove superseded implementations. Exact-source publication approval is still separate.
+**Gate 5 — Core cutover.** Four final archives and both OCI platforms pass actual installation/systemd/mode-switch/rollback and complete-set publication-failure tests. Applicable X01–X08/X10–X14 pass with old-browser upgrade recovery and truthful profiles/docs. X09 belongs to later Design. Only now retire replaced implementation; publication can still await approval without blocking local Canvas work.
 
-**Gate 6 — Canvas.** CAN tasks pass including session authority and actual egress isolation. No fallback to weaker execution just to get a screenshot.
+**Gate 6 — Canvas.** All CAN tasks and applicable cross-boundary storage/routing/worker cases pass with actual scoped rendering, not just an image.
 
-**Gate 7 — Openfig.** Structure is verified independently from frame rendering. Real previews need separate evidence or a visible blocker. Cover support does not satisfy FIG-06.
+**Gate 7 — Openfig.** Structure and real frame previews have separate evidence. Structure includes X09 and all applicable authority/worker/persistence cases. A supported renderer gap leaves FIG-06 open while other work completes; no cover substitution or false final completeness claim.
 
-## Previous roadmap items
+## Carry-forward work and evidence
 
-| Existing item | Disposition |
-| --- | --- |
-| Standalone optional subagents | GO-08 plus both artifact modes; preserve opt-in legacy support until retired, not a mandatory npm release before Go work |
-| arm64 measurements | PERF-01/PKG-03; old unverified measurements are not results |
-| Bun child-launch patch proposal | Reassess against selected native runtime; retain only while tested support needs it; upstream submission requires approval |
-| SDK built-in export patch | Legacy compatibility only; selected Pi CLI preferred for Go; remove after tested legacy retirement |
-| Right-rail module tabs | UI-05/EXT-02/EXT-03; same contribution contract for Canvas/Design |
-| Non-disruptive per-session reload | Deferred; no automatic installation/new reload machinery without demonstrated need |
-| Host relocation/history rewrite already completed | Not tasks; do not repeat |
+Standalone subagent/child-launch patches remain FC24/GO-08/PKG-03 work, not forced dependencies or an npm release before Go. Reassess SDK/extension patches against selected Pi and retire only with tested replacements. arm64 measurement is PERF-01. Per-session nondisruptive reload remains deferred. Completed host relocation/history rewrites are not tasks to repeat.
 
-## Evidence
-
-Append concise completion records as tasks land:
-
-```text
-Task IDs:
-Commit(s):
-Behavior and contract changes:
-Tests executed and result:
-UI/process/artifact evidence, including deployment variant where relevant:
-State migration and rollback impact:
-Remaining limitation or exact blocker:
-```
-
-Static review, mocks, native Pi tests and artifact/systemd checks are different evidence. Do not delete failing regressions because the rewrite fails them. Explain intentional approved changes and test their replacement. Final report names both build variants and distinguishes Openfig inspection from real frame rendering.
+For a completed task record task/FC/X IDs, implementation commit, behavior/profiles, actual commands/environment/results, UI/native/process/artifact evidence, migration/authority/rollback impact and remaining blocker. Static inspection, copied-function probes, endpoint tests, live Pi and final systemd/worker artifacts are distinct. Do not copy earlier test counts or mark runtime work complete because its roadmap is written.

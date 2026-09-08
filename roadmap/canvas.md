@@ -1,6 +1,6 @@
 # Canvas module
 
-Roadmap phase 9, after core Gate 5. Read [extensions.md](extensions.md), [security-and-validation.md](security-and-validation.md), and [draft-review.md](draft-review.md). Track CAN-01 through CAN-05 in [execution.md](execution.md).
+Penultimate feature, after core Gate 5. Read [contracts.md](contracts.md), [extensions.md](extensions.md), [security-and-validation.md](security-and-validation.md), and the [consolidated draft review](repository-review.md#canvas-and-openfig-draft-review). Track CAN-01 through CAN-05 in [execution.md](execution.md). Shared contracts govern limits and publication/durability outcomes.
 
 ## Outcome and scope
 
@@ -33,7 +33,7 @@ All results include structured content and compact text, exact version/generatio
 
 A repeated write mutation ID/fingerprint returns the original result; the same ID with different input fails. Persist retry results with the committed version. A lost acknowledgment is not permission to append another revision.
 
-Initial budgets: 512 KiB HTML/write, 64 MiB Canvas storage across sessions, 2 MiB encoded image bytes before MCP base64. Account separately for wire expansion and decoded pixels. Choose and test dimensions/pixel, selector result, execution deadline and concurrency limits before enabling the module. These are design budgets, not measured capacity.
+Initial budgets: 512 KiB HTML/write, 64 MiB Canvas storage across sessions, 2 MiB encoded image bytes before MCP base64. Account separately for wire expansion and decoded pixels. Use and test the dimensions/pixel, selector result, execution deadline and concurrency limits in contracts.md before enabling the module. These are design budgets, not measured capacity.
 
 Provide `pixie://canvas/guide` with call order, exact pinned Mewa subset/tokens and offline limitations. Make essential guidance tool-accessible if the native adapter cannot read resources. No MCP Apps framework is required. HTML outside the recommended subset remains allowed and labelled exceptional, but cannot bypass execution limits.
 
@@ -51,7 +51,7 @@ staging/<operation-id>/...
 
 Validate/map identities rather than interpolating model-supplied paths. Metadata includes current version, generation, authoring session/tool/mutation identity, hashes, timestamps and accounting. A recreated canvas has a new identity/generation.
 
-Serialize canvas commits and reserve global quota before staging. Write, sync and rename complete immutable revisions; commit the metadata pointer/mutation result last. A crash exposes old complete state or new complete state, never a partial write.
+Serialize canvas commits and reserve global quota before staging. Write, sync and rename complete immutable revisions; commit the metadata pointer/mutation result last. A crash exposes old complete state or new complete state, never a partial write. Handle post-publication errors as the explicit persistence-uncertain outcome in contracts.md; a returned error does not prove the old pointer remains installed.
 
 Startup restores committed state, cleans abandoned staging, reconciles accounting and reports corruption. Never recover a pre-deletion backup over a tombstone. Retain tombstones until stale jobs/retries cannot reauthorize old generations.
 
