@@ -23,7 +23,11 @@
 	"type": "module",
 	"devDependencies": {
 		"@biomejs/biome": "2.5.0",
+		"@juicesharp/rpiv-ask-user-question": "2.9.0",
+		"@juicesharp/rpiv-todo": "2.9.0",
+		"@juicesharp/rpiv-web-tools": "2.9.0",
 		"@mjakl/pi-subagent": "3.0.1",
+		"pi-mcp-adapter": "2.32.1",
 		"typescript": "catalog:"
 	},
 	"trustedDependencies": [
@@ -31,7 +35,7 @@
 	],
 	"scripts": {
 		"build": "bun run --cwd package build",
-		"build:agent": "bun build ./agent/main.ts --compile --outfile dist/pi-agent",
+		"build:agent": "bun build ./agent/main.ts --compile --outfile agent/dist/pi && bun ./agent/build-extensions.ts",
 		"build:go": "bun run --cwd package build:go",
 		"build:web": "bun run --cwd package build:web",
 		"check:deps": "bun run --cwd package check:deps",
@@ -45,7 +49,7 @@
 		"typecheck": "bun run --cwd package typecheck"
 	},
 	"patchedDependencies": {
-		"@mjakl/pi-subagent@3.0.1": "agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch",
-		"@earendil-works/pi-coding-agent@0.85.1": "agent/extensions/local-patches/@earendil-works%2Fpi-coding-agent@0.85.1.patch"
+		"@earendil-works/pi-coding-agent@0.85.1": "assistant/patches/pi-coding-agent-0.85.1-extensions-export.patch",
+		"@mjakl/pi-subagent@3.0.1": "agent/extensions/local-patches/@mjakl%2Fpi-subagent@3.0.1.patch"
 	}
 }

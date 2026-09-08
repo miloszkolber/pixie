@@ -2,18 +2,21 @@
 
 This directory is the home of the standalone agent packaging and the Pi-side setup layer: the executable entrypoint ([main.ts](main.ts)), agent definitions ([agents/](agents/README.md)), and the local upstream patches ([extensions/local-patches/](extensions/local-patches/README.md)). The assistant service itself lives in [`assistant/`](../assistant/).
 
-## Standalone binary
+## Standalone binary and extension tree
 
-`main.ts` packages the assistant service as a single self-contained executable. The build embeds the checked-out assistant sources directly, so the binary always matches the working tree; there is no vendoring step.
+`bun run build:agent` produces both artifacts of the standalone agent inside this directory:
+
+- `dist/pi` — the assistant service as a single self-contained executable. The build embeds the checked-out assistant sources directly, so the binary always matches the working tree; there is no vendoring step. The artifact is named `pi`; rename it on install if the machine also runs Pi's own `pi` CLI.
+- `dist/extensions/` — the pinned optional-extension tree as a standalone install root, built from the exact pins in the root manifest with the subagent child-launch patch applied during the build (`agent/build-extensions.ts`). Point native Pi settings at `dist/extensions/node_modules/<package>`.
+
+A target machine needs no bun or npm: run the binary as-is, and use the produced extension tree as plain files.
 
 ```sh
-bun run build:agent    # writes dist/pi-agent
-./dist/pi-agent --version
+bun run build:agent
+PI_CODING_AGENT_DIR=... PIXIE_PI_SECRET_KEY=... ./dist/pi --agent-dir ...
 ```
 
-Run it like the source service: `PI_CODING_AGENT_DIR` (or `--agent-dir`), `PIXIE_PI_SECRET_KEY`, `--host`, `--port` and `--llama`. The binary is a plain headless Pi host and ships no settings template, no agent definitions and no extensions: native settings, sessions and extension packages stay operator-managed files on disk. A target machine needs no bun or npm to *run* the binary. To *use* optional extensions, produce the pinned extension `node_modules` tree once on any machine with bun (this checkout does it) and point the native settings at it; the binary loads them like any Pi resource.
-
-`.github/workflows/agent-build.yml` builds the binary on every push and pull request and attaches release artifacts on `agent-v*` tags.
+The binary ships no settings template, no agent definitions and no extension configuration: native settings, sessions and extension packages stay operator-managed files on disk. `.github/workflows/agent-build.yml` builds both artifacts on every push and pull request, smoke-tests the binary against the built tree, and attaches release artifacts on `agent-v*` tags.
 
 ## Source service
 
@@ -28,7 +31,7 @@ bun install --frozen-lockfile
 Start the assistant with the chosen Pi state directory:
 
 ```sh
-bun ../assistant/src/main.ts --agent-dir /absolute/path/to/pi-agent
+bun ../assistant/src/main.ts --agent-dir /absolute/path/to/agent-state
 ```
 
 Before starting, supply `PIXIE_PI_SECRET_KEY` through your private environment, as described in [deployment](../docs/deployment.md#host-service). Provider authentication and model selection remain native Pi operations. Use separate sessions for simultaneous vanilla Pi CLI and host work.

@@ -68,7 +68,7 @@ Optional Signet memory is an operator-owned external service, not a Pixie-manage
 
 ## Without Docker
 
-Docker stays the primary method. Where containers are unavailable, the supported non-Docker installations are a single self-contained `pixie` binary with the web UI embedded at build time plus the published `pixie-assistant` package (no checkout, web toolchain or asset directory needed at run time), or the standalone `pi-agent` binary built from [agent/main.ts](../agent/main.ts), which embeds the assistant service itself and needs no bun, npm or checkout at run time; its extensions stay native settings and files on disk ([agent](../agent/README.md)). The Browser module stays optional and degrades to `disabled` without Chromium and `agent-browser` on `PATH`.
+Docker stays the primary method. Where containers are unavailable, the supported non-Docker installations are a single self-contained `pixie` binary with the web UI embedded at build time plus the published `pixie-assistant` package (no checkout, web toolchain or asset directory needed at run time), or the standalone `pi` binary built from [agent/main.ts](../agent/main.ts) together with the pinned extension tree in `agent/dist/extensions/`, both produced by `bun run build:agent`; the binary embeds the assistant service itself and needs no bun, npm or checkout at run time, and extensions load from the produced tree as plain files ([agent](../agent/README.md)). The Browser module stays optional and degrades to `disabled` without Chromium and `agent-browser` on `PATH`.
 
 Build once from a checkout (build time needs the Go, Bun and Node toolchains):
 

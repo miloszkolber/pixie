@@ -1,4 +1,4 @@
-name: Build the pi-agent binary
+name: Build the pi binary
 
 on:
   push:
@@ -29,30 +29,49 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      - run: bun build ./agent/main.ts --compile --target ${{ matrix.target }} --outfile dist/pi-agent-${{ matrix.target }}
-      - name: Smoke-test the binary
+      # build:agent produces the pinned extension tree and the host binary;
+      # the per-target binary is cross-compiled right after.
+      - run: bun run build:agent
+      - run: bun build ./agent/main.ts --compile --target ${{ matrix.target }} --outfile agent/dist/pi-${{ matrix.target }}
+      - name: Smoke-test the binary with the built extension tree
         if: matrix.target == 'bun-linux-x64'
         run: |
-          ./dist/pi-agent-${{ matrix.target }} --version
+          ./agent/dist/pi-bun-linux-x64 --version
           agent_dir=$(mktemp -d)
+          lib="$GITHUB_WORKSPACE/agent/dist/extensions/node_modules"
+          mkdir -p "$agent_dir"
+          cat > "$agent_dir/settings.json" <<EOF
+          { "extensions": [
+            "$lib/@mjakl/pi-subagent",
+            "$lib/@juicesharp/rpiv-todo",
+            "$lib/@juicesharp/rpiv-web-tools",
+            "$lib/@juicesharp/rpiv-ask-user-question",
+            "$lib/pi-mcp-adapter"
+          ] }
+          EOF
           PI_CODING_AGENT_DIR="$agent_dir" PIXIE_PI_SECRET_KEY="ci-agent-smoke-16" \
-            ./dist/pi-agent-${{ matrix.target }} --agent-dir "$agent_dir" --port 33991 &
+            ./agent/dist/pi-bun-linux-x64 --agent-dir "$agent_dir" --port 33991 &
           pid=$!
           trap 'kill $pid 2>/dev/null || true' EXIT
           for i in $(seq 1 30); do
             if curl -sf -H "Authorization: Bearer ci-agent-smoke-16" \
-              http://127.0.0.1:33991/readyz | grep -q protocolVersion; then
-              echo "binary host ready"
+              http://127.0.0.1:33991/readyz | grep -q '"mcp":1'; then
+              echo "binary host ready with the native MCP runtime"
               exit 0
             fi
             sleep 1
           done
-          echo "binary host did not become ready" >&2
+          echo "binary host did not become ready with the extension tree" >&2
           exit 1
       - name: Attach release artifacts
         if: startsWith(github.ref, 'refs/tags/agent-v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "$GITHUB_REF_NAME" "dist/pi-agent-${{ matrix.target }}" --clobber 2>/dev/null ||
-            gh release create "$GITHUB_REF_NAME" "dist/pi-agent-${{ matrix.target }}" --title "$GITHUB_REF_NAME" --notes "Standalone pi-agent binary."
+          files=("agent/dist/pi-${{ matrix.target }}")
+          if [ "${{ matrix.target }}" = "bun-linux-x64" ]; then
+            tar -czf pi-extensions.tar.gz -C agent/dist extensions
+            files+=("pi-extensions.tar.gz")
+          fi
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber 2>/dev/null ||
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" --title "$GITHUB_REF_NAME" --notes "Standalone pi binary per target and the pinned extension tree (linux-x64)."
