@@ -72,7 +72,8 @@ async function startUnlockedHost(options: HostOptions) {
 		if (peer.send(data) === -1 && peer.getBufferedAmount() > 32 * 1024 * 1024)
 			peer.close(1013, "Consumer is too slow");
 	};
-	const send = (peer: ServerWebSocket<Peer>, value: unknown) => sendData(peer, serializeFrame(value));
+	const send = (peer: ServerWebSocket<Peer>, value: unknown) =>
+		sendData(peer, serializeFrame(value));
 	// Fail loudly before the service starts when --llama is requested but the
 	// pinned SDK does not expose its built-in factory through the public export.
 	if (options.llama) llamaFactory();
@@ -147,9 +148,7 @@ async function startUnlockedHost(options: HostOptions) {
 			}
 			return { ok: true };
 		}
-		if (
-			["pi.extensions.list", "pi.extensions.configure"].includes(method)
-		) {
+		if (["pi.extensions.list", "pi.extensions.configure"].includes(method)) {
 			const id = text(p.sessionId);
 			const metadata = id ? await sessions.metadata(id) : undefined;
 			const cwd = await realpath(text(p.cwd) || metadata?.cwd || agentDir);

@@ -264,9 +264,7 @@ test("reopen applies saved configuration while another session's active run is u
 		reopenedApi.events.emit(SESSION_LIVENESS_EVENT, { key: "background", active: true });
 		expect(sessions.entries.get(idle.session.sessionId)?.hasExtensionWork?.()).toBe(true);
 		reopenedApi.events.emit(SESSION_LIVENESS_EVENT, { key: "background", active: false });
-		const dialog = contexts
-			.at(-1)!
-			.ui.input("Keep this dialog");
+		const dialog = contexts.at(-1)!.ui.input("Keep this dialog");
 		const request = events.findLast(
 			(event) => (event as { type: string }).type === "pixie:ui:request",
 		) as { requestId: string };
@@ -311,6 +309,3 @@ test("saving an enabled extension does not claim it loaded or roll back configur
 		state: "failed",
 	});
 });
-
-
-
