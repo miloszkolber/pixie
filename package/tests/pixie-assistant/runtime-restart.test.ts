@@ -9,13 +9,18 @@ afterEach(async () => {
 });
 
 const connect = async (port: number | undefined, secret: string) => {
-	const ws = new WebSocket(`ws://127.0.0.1:${port}/pi`, { headers: { Authorization: `Bearer ${secret}` } });
+	const ws = new WebSocket(`ws://127.0.0.1:${port}/pi`, {
+		headers: { Authorization: `Bearer ${secret}` },
+	});
 	await new Promise<void>((resolve, reject) => {
 		ws.onopen = () => resolve();
 		ws.onerror = () => reject(new Error("WebSocket connection failed"));
 	});
 	let serial = 0;
-	const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+	const pending = new Map<
+		number,
+		{ resolve: (value: any) => void; reject: (error: Error) => void }
+	>();
 	ws.onmessage = (e) => {
 		const value = JSON.parse(String(e.data));
 		const p = pending.get(value.id);

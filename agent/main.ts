@@ -30,9 +30,7 @@ if (values.version) {
 const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
 const { startHost } = await import("../assistant/src/server.ts");
 
-const agentDir = resolve(
-	values["agent-dir"] ?? process.env.PI_CODING_AGENT_DIR ?? getAgentDir(),
-);
+const agentDir = resolve(values["agent-dir"] ?? process.env.PI_CODING_AGENT_DIR ?? getAgentDir());
 // Native extensions use Pi's process-level directory convention.
 process.env.PI_CODING_AGENT_DIR = await realpath(agentDir).catch(() => agentDir);
 process.env.MCP_UI_VIEWER ??= "none";

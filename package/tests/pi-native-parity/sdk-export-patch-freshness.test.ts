@@ -4,10 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "../../..");
-const patchPath = join(
-	root,
-	"assistant/patches/pi-coding-agent-0.85.1-extensions-export.patch",
-);
+const patchPath = join(root, "assistant/patches/pi-coding-agent-0.85.1-extensions-export.patch");
 
 async function run(args: string[], cwd: string) {
 	const child = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" });

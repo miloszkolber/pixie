@@ -43,7 +43,9 @@ test("subagent child-launch patch applies cleanly to the pinned dependency versi
 		const installed = join(root, "node_modules/@mjakl/pi-subagent/runner.ts");
 		await cp(installed, join(runnerPatchDir, "runner.ts"));
 		// Reverse applies: the installed copy matches the patch post-image.
-		expect((await run(["git", "apply", "--check", "--reverse", runnerPatch], runnerPatchDir)).code).toBe(0);
+		expect(
+			(await run(["git", "apply", "--check", "--reverse", runnerPatch], runnerPatchDir)).code,
+		).toBe(0);
 		expect((await run(["git", "apply", "--reverse", runnerPatch], runnerPatchDir)).code).toBe(0);
 		const pristine = await readFile(join(runnerPatchDir, "runner.ts"), "utf8");
 		expect(pristine).not.toContain("rpc-entry");

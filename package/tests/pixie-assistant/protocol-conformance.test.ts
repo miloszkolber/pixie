@@ -115,7 +115,6 @@ describe("assistant wire contract", () => {
 		await invalid.opened;
 		invalid.ws.send(JSON.stringify({ id: 0, method: "runtime.hello", params: {} }));
 		expect(await invalid.closed).toBe(1008);
-
 	});
 
 	test("a reused in-flight request id answers with an error frame and keeps the connection", async () => {
@@ -126,7 +125,9 @@ describe("assistant wire contract", () => {
 		});
 		const frames: Array<{ id?: number; error?: { code: number; message: string } }> = [];
 		ws.onmessage = (e) => frames.push(JSON.parse(String(e.data)));
-		ws.send(JSON.stringify({ id: 9, method: "pi.slash-commands.list", params: { sessionId: "missing" } }));
+		ws.send(
+			JSON.stringify({ id: 9, method: "pi.slash-commands.list", params: { sessionId: "missing" } }),
+		);
 		await Bun.sleep(50);
 		ws.send(JSON.stringify({ id: 9, method: "runtime.hello", params: {} }));
 		await Bun.sleep(150);

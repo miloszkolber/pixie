@@ -75,7 +75,9 @@ for (const job of JOBS) {
 		continue;
 	}
 	if (version !== job.expectedVersion) {
-		warn(`installed ${job.dependency} is ${version}, patch targets ${job.expectedVersion}; skipping.`);
+		warn(
+			`installed ${job.dependency} is ${version}, patch targets ${job.expectedVersion}; skipping.`,
+		);
 		continue;
 	}
 

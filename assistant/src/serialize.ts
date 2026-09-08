@@ -7,7 +7,10 @@ const UNSERIALIZABLE_EVENT_TYPE = "host.unserializable";
 
 export interface EventFrame {
 	/** Buffered object form, used for session-load backlog replay. */
-	message: { method: "session.event"; params: { sessionId: string; event: unknown; sequence: number } };
+	message: {
+		method: "session.event";
+		params: { sessionId: string; event: unknown; sequence: number };
+	};
 	/** Serialized form, used for direct fan-out and byte accounting. */
 	data: string;
 }
@@ -18,7 +21,9 @@ export function serializeFrame(value: unknown): string {
 	} catch {
 		const record = value as { id?: unknown } | null;
 		const id =
-			record && typeof record === "object" && Number.isSafeInteger(record.id) ? record.id : undefined;
+			record && typeof record === "object" && Number.isSafeInteger(record.id)
+				? record.id
+				: undefined;
 		return JSON.stringify(
 			id === undefined
 				? { method: UNSERIALIZABLE_EVENT_TYPE }

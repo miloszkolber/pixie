@@ -23,13 +23,7 @@ const EXTENSION_PINS = [
 
 const PATCHED_PACKAGE = "@mjakl/pi-subagent";
 const PATCH_MARKER = "rpc-entry";
-const PATCHED_RUNNER = join(
-	root,
-	"node_modules",
-	"@mjakl",
-	"pi-subagent",
-	"runner.ts",
-);
+const PATCHED_RUNNER = join(root, "node_modules", "@mjakl", "pi-subagent", "runner.ts");
 
 const workspace = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const pins: Record<string, string> = {};
@@ -60,7 +54,8 @@ if ((await install.exited) !== 0) throw new Error("Extension tree install failed
 // instead and confirm the marker afterwards.
 const freshRunner = join(output, "node_modules", "@mjakl", "pi-subagent", "runner.ts");
 const fresh = await readFile(freshRunner, "utf8");
-if (fresh.includes(PATCH_MARKER)) throw new Error("Fresh install unexpectedly carries the patch marker");
+if (fresh.includes(PATCH_MARKER))
+	throw new Error("Fresh install unexpectedly carries the patch marker");
 const patched = await readFile(PATCHED_RUNNER, "utf8");
 if (!patched.includes(PATCH_MARKER))
 	throw new Error("Workspace subagent runner is unpatched; run bun install at the repository root");
@@ -77,4 +72,6 @@ for (const name of EXTENSION_PINS) {
 		throw new Error(`Extension ${name} resolved to ${manifest.version}, expected ${expected}`);
 }
 
-console.log(`extension tree ready: ${output} (${EXTENSION_PINS.length} pinned packages, subagent patched)`);
+console.log(
+	`extension tree ready: ${output} (${EXTENSION_PINS.length} pinned packages, subagent patched)`,
+);
