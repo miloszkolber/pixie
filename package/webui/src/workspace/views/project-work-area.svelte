@@ -24,6 +24,7 @@ import {
 	hydrateChatResource,
 	initProjectAreaChatReconciliation,
 } from "../navigation/chat-reconciliation";
+import { startChatSession } from "../navigation/start-chat";
 import ProjectChatHistory from "../projects/project-chat-history.svelte";
 import ProjectTree from "../projects/project-tree.svelte";
 import {
@@ -107,20 +108,7 @@ function showActivity(): void {
 }
 
 function startChat(): void {
-	void getTransport()
-		.request("session.create", {
-			projectId: projectAreaId,
-			...(projectArea?.root ? { cwd: projectArea.root } : {}),
-		})
-		.then(({ sessionId, model, thinkingLevel, commands }) => {
-			appStoreApi.getState().openChatSession(projectAreaId, sessionId, model, thinkingLevel);
-			appStoreApi.getState().setCommands(sessionId, commands);
-		})
-		.catch((cause) => {
-			if (!appStoreApi.getState().removedProjectAreaIds[projectAreaId]) {
-				toast.error(errorText(cause), "Couldn't start the chat");
-			}
-		});
+	void startChatSession(projectAreaId);
 }
 
 async function openBrowserTab(replacing?: Extract<ContentTab, { kind: "browser" }>): Promise<void> {
