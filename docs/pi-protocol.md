@@ -26,6 +26,7 @@ Client requests are `{ "id": <positive safe integer>, "method": string, "params"
 - A reused in-flight id answers with an error frame (code `-32000`) and keeps the connection open.
 - Frames above 32 MiB close the connection with `1009`; a consumer slower than a 32 MiB send or session-attachment buffer closes with `1013`.
 - More than 128 pending requests per connection answer with a `-32000` error frame.
+- `runtime.hello` has a 10-second deadline; provider/extension/default/preference administration has a 30-second deadline; interactive provider authentication retains a 10-minute deadline. A service drain shares a 25-second deadline across construction, administration, extensions, in-flight dispatches and teardown.
 - Operation failures answer with a `-32000` error frame unless the failure carries a specific code (for example `-32002` for an unknown or ambiguous session).
 - An event payload that cannot be serialized degrades to a `host.unserializable` stub with `sessionId` and `sequence` preserved; unserializable replies degrade to an error frame.
 
