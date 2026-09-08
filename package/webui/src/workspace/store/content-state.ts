@@ -12,6 +12,14 @@ import {
 	type ProjectAreaActivity,
 	type TabIntent,
 } from "./model";
+import {
+	clearPrimary,
+	clearSecondary,
+	selectPrimary,
+	selectSecondary,
+	selectSecondaryArea,
+	workspaceReducer,
+} from "./selection-state";
 import { selectProjectAreaNavTick, selectProjectAreaSessionIds } from "./selectors";
 
 export interface ContentWorkspaceState {
@@ -98,6 +106,119 @@ function patchDiffTab(
 	};
 }
 
+function selectionActionForTab(tab: ContentTab) {
+	if (tab.kind === "chat") {
+		return selectPrimary(
+			{ kind: "session", sessionId: tab.sessionId, projectId: tab.projectAreaId },
+			"chats",
+		);
+	}
+	if (tab.kind === "file") {
+		return selectSecondary(
+			{ kind: "file", projectId: tab.projectAreaId, resourceId: tab.id },
+			"files",
+		);
+	}
+	if (tab.kind === "diff") {
+		return selectSecondary(
+			{
+				kind: "diff",
+				projectId: tab.projectAreaId,
+				resourceId: tab.id,
+				reviewId: tab.targetComparison ?? tab.id,
+			},
+			"git",
+		);
+	}
+	return selectSecondary(
+		{
+			kind: "module",
+			moduleId: "browser",
+			resourceId: tab.panelId,
+			context: { scope: "project", projectId: tab.projectAreaId },
+		},
+		"module:browser",
+	);
+}
+
+function selectionMatchesTab(
+	selection: ReturnType<typeof workspaceReducer>,
+	tab: ContentTab,
+): "primary" | "secondary" | null {
+	if (tab.kind === "chat") {
+		return selection.primarySelection?.kind === "session" &&
+			selection.primarySelection.sessionId === tab.sessionId &&
+			(selection.primarySelection.projectId === undefined ||
+				selection.primarySelection.projectId === tab.projectAreaId)
+			? "primary"
+			: null;
+	}
+	if (tab.kind === "file") {
+		return selection.secondarySelection?.kind === "file" &&
+			selection.secondarySelection.projectId === tab.projectAreaId &&
+			selection.secondarySelection.resourceId === tab.id
+			? "secondary"
+			: null;
+	}
+	if (tab.kind === "diff") {
+		return selection.secondarySelection?.kind === "diff" &&
+			selection.secondarySelection.projectId === tab.projectAreaId &&
+			selection.secondarySelection.resourceId === tab.id
+			? "secondary"
+			: null;
+	}
+	return selection.secondarySelection?.kind === "module" &&
+		selection.secondarySelection.moduleId === "browser" &&
+		selection.secondarySelection.resourceId === tab.panelId
+		? "secondary"
+		: null;
+}
+
+function selectContentTab(state: AppState, tab: ContentTab): Partial<AppState> {
+	const workspaceSelection = workspaceReducer(state.workspaceSelection, selectionActionForTab(tab));
+	return workspaceSelection === state.workspaceSelection ? {} : { workspaceSelection };
+}
+
+function clearContentTabSelection(state: AppState, tab: ContentTab): Partial<AppState> {
+	const side = selectionMatchesTab(state.workspaceSelection, tab);
+	if (!side) return {};
+	const workspaceSelection = workspaceReducer(
+		state.workspaceSelection,
+		side === "primary" ? clearPrimary() : clearSecondary(),
+	);
+	return workspaceSelection === state.workspaceSelection ? {} : { workspaceSelection };
+}
+
+function clearProjectAreaContentSelection(
+	state: AppState,
+	projectAreaId: string,
+	tabs: readonly ContentTab[],
+): Partial<AppState> {
+	let workspaceSelection = state.workspaceSelection;
+	for (const tab of tabs) {
+		const side = selectionMatchesTab(workspaceSelection, tab);
+		if (!side) continue;
+		workspaceSelection = workspaceReducer(
+			workspaceSelection,
+			side === "primary" ? clearPrimary() : clearSecondary(),
+		);
+	}
+	const secondary = workspaceSelection.secondarySelection;
+	const belongsToProject =
+		secondary?.kind === "file" || secondary?.kind === "diff"
+			? secondary.projectId === projectAreaId
+			: secondary?.kind === "module" &&
+				(secondary.context.scope === "project"
+					? secondary.context.projectId === projectAreaId
+					: false);
+	if (belongsToProject) workspaceSelection = workspaceReducer(workspaceSelection, clearSecondary());
+	return workspaceSelection === state.workspaceSelection ? {} : { workspaceSelection };
+}
+
+function secondaryAreaForActivity(activity: ProjectAreaActivity): "files" | "git" {
+	return activity === "changes" ? "git" : "files";
+}
+
 export function bumpProjectAreaNavigation(
 	state: AppState,
 	projectAreaId: string,
@@ -139,6 +260,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 			const effectiveIntent = previewCompatible ? intent : "keep";
 			const claimPreview = previewCompatible && options.claimPreview === true;
 			const preview = state.previewTabByProjectArea[projectAreaId];
+			const selection = options.activate === false ? {} : selectContentTab(state, resolvedTab);
 			const activeTabByProjectArea =
 				options.activate === false
 					? state.activeTabByProjectArea
@@ -155,6 +277,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 									[projectAreaId]: tabs.with(existingIndex, resolvedTab),
 								},
 					activeTabByProjectArea,
+					...selection,
 					previewTabByProjectArea:
 						effectiveIntent === "keep" &&
 						(preview === resolvedTab.id || (claimPreview && preview !== undefined))
@@ -172,6 +295,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 					[projectAreaId]: at === -1 ? [...tabs, resolvedTab] : tabs.with(at, resolvedTab),
 				},
 				activeTabByProjectArea,
+				...selection,
 				previewTabByProjectArea:
 					effectiveIntent === "preview"
 						? { ...state.previewTabByProjectArea, [projectAreaId]: resolvedTab.id }
@@ -186,6 +310,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 			if (!currentProjectAreaId || state.removedProjectAreaIds[currentProjectAreaId]) return {};
 			const currentTabs = state.tabsByProjectArea[currentProjectAreaId] ?? [];
 			const closedBrowser = currentTabs.find((tab) => tab.id === id && tab.kind === "browser");
+			const closedTab = currentTabs.find((tab) => tab.id === id);
 			const tabs = currentTabs.filter((tab) => tab.id !== id);
 			const wasActive = state.activeTabByProjectArea[currentProjectAreaId] === id;
 			return {
@@ -203,6 +328,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 					wasActive && countNavigation
 						? bumpProjectAreaNavigation(state, currentProjectAreaId)
 						: state.navTickByProjectArea,
+				...(closedTab ? clearContentTabSelection(state, closedTab) : {}),
 				...(state.previewTabByProjectArea[currentProjectAreaId] === id
 					? {
 							previewTabByProjectArea: omitKey(state.previewTabByProjectArea, currentProjectAreaId),
@@ -217,9 +343,13 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 		set((state) => {
 			const projectAreaId = state.activeProjectAreaId;
 			if (!projectAreaId) return {};
+			const tab = (state.tabsByProjectArea[projectAreaId] ?? []).find(
+				(candidate) => candidate.id === id,
+			);
 			return {
 				activeTabByProjectArea: { ...state.activeTabByProjectArea, [projectAreaId]: id },
 				navTickByProjectArea: bumpProjectAreaNavigation(state, projectAreaId),
+				...(tab ? selectContentTab(state, tab) : {}),
 				...(intent === "keep" && state.previewTabByProjectArea[projectAreaId] === id
 					? {
 							previewTabByProjectArea: omitKey(state.previewTabByProjectArea, projectAreaId),
@@ -377,7 +507,8 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 	clearProjectAreaTabs: (projectAreaId) =>
 		set((state) => {
 			const browserPanelStateById = { ...state.browserPanelStateById };
-			for (const tab of state.tabsByProjectArea[projectAreaId] ?? []) {
+			const tabs = state.tabsByProjectArea[projectAreaId] ?? [];
+			for (const tab of tabs) {
 				if (tab.kind === "browser") delete browserPanelStateById[tab.panelId];
 			}
 			const sessions = { ...state.sessions };
@@ -397,6 +528,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 					projectAreaId,
 				),
 				activeActivityByProjectArea: omitKey(state.activeActivityByProjectArea, projectAreaId),
+				...clearProjectAreaContentSelection(state, projectAreaId, tabs),
 				browserPanelStateById,
 				sessions,
 				skillsSyncedTickBySession,
@@ -411,6 +543,11 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 							...state.activeActivityByProjectArea,
 							[projectAreaId]: activity,
 						},
+						shellRightView: activity,
+						workspaceSelection: workspaceReducer(
+							state.workspaceSelection,
+							selectSecondaryArea(secondaryAreaForActivity(activity)),
+						),
 					},
 		),
 	requestToolView: (projectAreaId, tool) =>
@@ -422,6 +559,11 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 							...state.activeActivityByProjectArea,
 							[projectAreaId]: tool === "changes" ? "changes" : "files",
 						},
+						shellRightView: tool === "changes" ? "changes" : "files",
+						workspaceSelection: workspaceReducer(
+							state.workspaceSelection,
+							selectSecondaryArea(tool === "changes" ? "git" : "files"),
+						),
 					},
 		),
 	requestChangesView: (projectAreaId, path) =>
@@ -432,6 +574,8 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 					...state.activeActivityByProjectArea,
 					[projectAreaId]: "changes",
 				},
+				shellRightView: "changes",
+				workspaceSelection: workspaceReducer(state.workspaceSelection, selectSecondaryArea("git")),
 				changesRequest: {
 					projectAreaId,
 					path,

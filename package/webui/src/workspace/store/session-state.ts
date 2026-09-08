@@ -23,6 +23,7 @@ import {
 	contentSessionId,
 	type RouteChatTarget,
 } from "./model";
+import { clearPrimary, selectPrimary, workspaceReducer } from "./selection-state";
 import { type HistoryTarget, selectProjectAreaTick } from "./selectors";
 
 export interface SessionWorkspaceState {
@@ -102,6 +103,29 @@ function sameQueue(left: SessionQueueState, right: SessionQueueState): boolean {
 	);
 }
 
+function selectChatWorkspace(state: AppState, projectAreaId: string, sessionId: string) {
+	return {
+		workspaceSelection: workspaceReducer(
+			state.workspaceSelection,
+			selectPrimary({ kind: "session", sessionId, projectId: projectAreaId }, "chats"),
+		),
+	};
+}
+
+function clearChatWorkspace(state: AppState, projectAreaId: string, sessionId: string) {
+	const selection = state.workspaceSelection.primarySelection;
+	if (
+		selection?.kind !== "session" ||
+		selection.sessionId !== sessionId ||
+		(selection.projectId !== undefined && selection.projectId !== projectAreaId)
+	) {
+		return {};
+	}
+	return {
+		workspaceSelection: workspaceReducer(state.workspaceSelection, clearPrimary()),
+	};
+}
+
 function withoutChat(
 	state: AppState,
 	projectAreaId: string,
@@ -145,6 +169,7 @@ function withoutChat(
 		removedTabIds.has(state.activeTabByProjectArea[projectAreaId] ?? "");
 	return {
 		...state,
+		...clearChatWorkspace(state, projectAreaId, sessionId),
 		...(markDeleted && !alreadyDeleted
 			? {
 					deletedSessionsByProjectArea: Object.assign(
@@ -260,6 +285,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 					options.activate === false
 						? state.activeTabByProjectArea
 						: { ...state.activeTabByProjectArea, [projectAreaId]: id },
+				...(options.activate === false ? {} : selectChatWorkspace(state, projectAreaId, sessionId)),
 				navTickByProjectArea:
 					options.activate === false
 						? state.navTickByProjectArea
@@ -328,6 +354,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 					...state.tabsByProjectArea,
 					[currentProjectAreaId]: remaining,
 				},
+				...clearChatWorkspace(state, currentProjectAreaId, sessionId),
 				navTickByProjectArea:
 					wasActive && countNavigation
 						? bumpProjectAreaNavigation(state, currentProjectAreaId)
@@ -596,6 +623,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 				activeTabByProjectArea: takesFocus
 					? { ...state.activeTabByProjectArea, [projectAreaId]: id }
 					: state.activeTabByProjectArea,
+				...(takesFocus ? selectChatWorkspace(state, projectAreaId, summary.sessionId) : {}),
 				navTickByProjectArea: takesFocus
 					? bumpProjectAreaNavigation(state, projectAreaId)
 					: state.navTickByProjectArea,
@@ -642,6 +670,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 				activeTabByProjectArea: cached
 					? { ...state.activeTabByProjectArea, [target.projectAreaId]: cached.id }
 					: state.activeTabByProjectArea,
+				...(cached ? selectChatWorkspace(state, target.projectAreaId, target.sessionId) : {}),
 			};
 		}),
 	clearHistoryOpen: () => set({ historyOpenRequest: null }),

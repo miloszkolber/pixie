@@ -3,6 +3,7 @@ import type { AppState } from "@/store/app-store";
 import type { StateCreator } from "@/store/external-store";
 import { omitKey } from "@/store/record";
 import type { ProjectArea } from "./model";
+import { workspaceSelectionForProject } from "./selection-state";
 import {
 	selectActiveProjectAreaProjectId,
 	selectProjectAreaNavTick,
@@ -203,6 +204,7 @@ export const createProjectWorkspaceState: StateCreator<AppState, [], [], Project
 		set((state) => ({
 			selectedProjectId,
 			activeProjectAreaId: null,
+			workspaceSelection: workspaceSelectionForProject(state.workspaceSelection, selectedProjectId),
 			...(options?.reveal
 				? {
 						expandedProjectIds: withExpandedProject(state.expandedProjectIds, selectedProjectId),
@@ -225,12 +227,24 @@ export const createProjectWorkspaceState: StateCreator<AppState, [], [], Project
 			expandedProjectIds: Object.fromEntries(projectIds.map((id) => [id, true as const])),
 		})),
 	selectMain: () =>
-		set({ selectedProjectId: null, activeProjectAreaId: null, routeChatTarget: null }),
+		set((state) => ({
+			selectedProjectId: null,
+			activeProjectAreaId: null,
+			routeChatTarget: null,
+			workspaceSelection: workspaceSelectionForProject(state.workspaceSelection, null),
+		})),
 	activateProjectArea: (projectArea) =>
 		set((state) =>
 			state.removedProjectAreaIds[projectArea.id]
 				? {}
-				: { selectedProjectId: projectArea.projectId, activeProjectAreaId: projectArea.id },
+				: {
+						selectedProjectId: projectArea.projectId,
+						activeProjectAreaId: projectArea.id,
+						workspaceSelection: workspaceSelectionForProject(
+							state.workspaceSelection,
+							projectArea.projectId,
+						),
+					},
 		),
 	activateProjectAreaFromRoute: (projectArea, sessionId) =>
 		set((state) => {
@@ -239,6 +253,10 @@ export const createProjectWorkspaceState: StateCreator<AppState, [], [], Project
 			return {
 				selectedProjectId: projectArea.projectId,
 				activeProjectAreaId: projectArea.id,
+				workspaceSelection: workspaceSelectionForProject(
+					state.workspaceSelection,
+					projectArea.projectId,
+				),
 				navTickByProjectArea: sessionId
 					? { ...state.navTickByProjectArea, [projectArea.id]: navTick }
 					: state.navTickByProjectArea,

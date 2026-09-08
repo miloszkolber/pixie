@@ -35,6 +35,27 @@ export {
 	type RouteChatTarget,
 	type TabIntent,
 } from "../workspace/store/model";
+export {
+	clearPrimary,
+	clearSecondary,
+	initialWorkspaceState,
+	type PrimaryArea,
+	type PrimarySelection,
+	type ResourceContext,
+	resetLayout,
+	type SecondaryArea,
+	type SecondarySelection,
+	selectPrimary,
+	selectPrimaryArea,
+	selectSecondary,
+	selectSecondaryArea,
+	setLayout,
+	type WorkspaceAction,
+	type WorkspaceLayout,
+	type WorkspaceSelectionSnapshot,
+	type WorkspaceSelectionState,
+	workspaceReducer,
+} from "../workspace/store/selection-state";
 
 export interface Toast {
 	id: string;
