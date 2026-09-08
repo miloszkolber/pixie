@@ -1,85 +1,61 @@
 # Pixie
 
-Pixie is a focused Web UI for Pi.
+Pixie is a lightweight web workspace for Pi.
 
-Read these files before changing the product:
+## Read first
 
-1. `README.md` defines the product surface.
-2. `docs/architecture.md` defines process, source and state boundaries.
-3. `docs/pi.md` defines the native Pi SDK and host protocol.
-4. `docs/security.md` defines authority and credential boundaries.
-5. `docs/deployment.md` defines host Pi and container deployment.
-6. `docs/development.md` defines verification and performance checks.
-7. `docs/roadmap.md` contains candidate future improvements.
+Read README.md and the relevant docs/architecture.md, docs/pi.md, docs/security.md, docs/deployment.md and docs/development.md before changing their behavior. For roadmap implementation, start with [roadmap/README.md](roadmap/README.md) and [roadmap/execution.md](roadmap/execution.md), then the assigned numbered plan.
 
-Product and engineering documentation belongs under `docs/`. Runtime prompt text may remain beside the small integration that owns it.
+Current behavior is documented under docs/. The canonical implementation plan, review and status live under roadmap/. Runtime prompt text can remain beside its integration. Give each fact one home. Keep human documentation short, factual and present-tense; do not copy future behavior into it before implementation or add operator-history narratives.
 
-Keep documentation short and present-tense: describe the product and direct setup. Give each fact one home and link to it. Omit migration narratives and historical negatives; put proposed work in `docs/roadmap.md`.
+## Implementation direction
 
-## Maintenance priority
+The current assistant uses the pinned Pi SDK under Bun. Its replacement is a Go engine that launches the selected host Pi executable through native RPC. Every release must include two builds: pixie-assistant for a Dockerized interface, and a complete host pixie binary with the same assistant engine, controller and embedded web UI. Both target supported amd64/arm64 hosts. See roadmap/02-assistant-go.md and roadmap/07-build-release.md for shared implementation and both systemd paths.
 
-Preserve the focused current baseline. Keep features, dependencies, tests, protocol methods, state, and documents aligned with it. Prefer a focused vertical slice over a generic workbench. Record accepted future improvements in `docs/roadmap.md`.
+Treat the existing SDK/runtime as implementation to migrate, not a permanent requirement. Do not build another agent loop, provider policy or Pi MCP client in Go. The all-in-one host path must not require a separate assistant installation/service; external-assistant Docker mode must not start Pi inside the image.
 
-## Pi boundary
+The workspace target is the six-slot layout in roadmap/03-workspace-ui.md. Primary and secondary selections are independent. Mewa owns shared visual foundations; Pixie owns composition and feature state. Canvas and Design are final optional stages, not prerequisites of core chat.
 
-- Use the pinned Pi SDK through the host service. The application and embedded Browser module ship in one merged container image.
-- Keep Pi authoritative for transcripts, providers, credentials, models, core tools and native settings.
-- Run the SDK from source with Bun. Local patches stay small, additive and upstreamable, applied through Bun patchedDependencies; the assistant stays extension-agnostic and carries only SDK-surface patches through its postinstall.
-- Optional extensions add capabilities. Do not introduce permission management, tool interception, replacement system prompts or restrictive execution modes.
-- Detect supported capability versions and complete operation sets before exposing optional features.
-- Retain Pixie's project ownership, durable queues, schedules, goals/tasks, questions, Browser isolation and transcript presentation.
+Preserve retained behavior and recovery safeguards until their tested replacement is ready. Classify dormant methods/UI hooks before changing them. Do not remove a feature or regression merely because it complicates the rewrite. Coordinate shared contracts and state through roadmap/execution.md.
 
-- Pixie owns schedules and their execution ledger. Keep recipes and the Automation settings screen out of the product.
+## Pi and product boundaries
 
-## Product boundary
+- Pi owns execution, transcripts, providers, credentials, models, settings, tools and extensions. Reuse native resources without a mandatory bundle, replacement prompts, tool interception or a new permission-management system.
+- Sharing an installation is not live attachment to an arbitrary running TUI. Separate processes must not write one session concurrently; use distinct sessions or explicit idle handoff.
+- A project has one admitted directory root and may contain zero, one or several Git repositories. Projects organize sessions; the target also supports flat/ungrouped presentation. Discovery is not filesystem admission.
+- Keep Files/Git read-only: bounded tree, source/Markdown/image previews, repository status and readable diffs. No editor, Monaco, LSP, debugger, terminal or automatic worktree manager. Agents change files/Git through Pi.
+- Preserve multi-image turns, native UI questions, goals/tasks, plans, defined-agent authoring and optional delegation, web access, local models, Signet and provider configuration through explicit capability dispositions.
+- Pixie owns schedules and their durable ledger. Expose schedule navigation/details, not another scheduler, recipe framework or Automation settings subsystem.
+- Native Pi extensions, native MCP connections and Pixie workspace modules are separate systems. Advertise supported complete operation sets. Optional failures remain local.
 
-- A project has exactly one admitted directory root. It may contain zero, one, or several Git repositories.
-- Group persistent Pi sessions by project, not by one required Git repository or worktree.
-- Keep Git observational in the UI: discovery, branch/HEAD, status, changed files, and readable diffs. Agents change Git through Pi tools.
-- Keep a bounded read-only file tree and Shiki source preview. Do not add editing, Monaco, LSP, debugger, or collaborative IDE behavior.
-- Keep goals/tasks, defined agents and delegation, multi-image turns, bounded browser QA, web access, optional Signet, and Pi provider configuration.
-- Keep the Web UI focused. Do not add a TUI or Web UI terminal.
+## Runtime and trust
 
-## Runtime boundaries
+The current controller and Browser publisher share package/go.mod and the default container image. The target additionally offers their direct-host composition with the shared assistant. Preserve explicit protocol/authentication boundaries in both; internal combined-mode credentials must not leak to native children or browsers.
 
-- Pi runs on the host as the user's authenticated loopback service. The default deployment uses one host-networked container: the application, which embeds the Browser module and MCP publisher from the same Go module on port `7312`.
-- Objective updates use session-scoped MCP on the application listener. Browser tools and essential instructions publish through the in-process Browser module at `/mcp/browser`; the catalog lives at `/api/mcp/modules`. The MCP surface can serve trusted external host-network services.
-- Pixie configures discovered MCP modules through Pi administration. The Browser connection is named `pixie-browser`. The universal Pi MCP client extension must not assume this service or any deployment address. Do not install host skills or put secrets in model-visible instructions.
-- The browser has its own state mount, without project, application-state or Pi-configuration mounts. Its sessions still share one UID and filesystem; host networking is not network isolation.
+Session-scoped objectives/questions/schedules and module calls must validate real authority, not a caller-provided project/session ID. Browser tools publish through the MCP module registry; optional Canvas and Design consume that same foundation. Do not install native skills/packages silently or place secrets in model-visible instructions.
 
-## Engineering approach
+Current Browser children share controller filesystem/UID and host networking in the supplied deployment. Environment filtering and directory conventions are not isolation. Direct-host mode does not inherit container restrictions. Untrusted Canvas/Design processing needs the enforced worker boundary in the roadmap; missing isolation cannot silently fall back to unrestricted execution.
 
-- Keep the documented behavior intact. Add an abstraction only when retained behavior requires it.
-- Keep frontend contracts as small as the documented surface permits.
-- Classify dormant protocol methods and UI hooks before changing them. Wire retained functionality; do not remove it merely as cleanup.
-- Keep final Docker images non-root and read-only, with no source, tests, compilers, caches or unused native runtimes. The application is assembled without a shell or package manager; the browser retains the slim runtime Chromium needs.
+Keep artifacts/frames/history bounded, private credentials protected, project reads revalidated and ambiguous dispatch explicit. Do not retry work automatically after an uncertain acceptance. API resource checks protect Pixie; they do not replace Pi's native tool policy.
 
-## Source naming
+## Source and engineering
 
-- Source directories and source, test, component, and script filenames use lowercase kebab-case.
-- Conventional lowercase entry and barrel names such as `index.ts` and `main.ts` remain unchanged. Svelte components, types, and exports may use PascalCase inside files.
-- Go files use conventional lowercase names, including underscores and the required `_test.go` suffix.
-- `bun run check:filenames` enforces this convention across the application.
+Current source paths are assistant/ for the host integration and package/ for controller, modules, contracts, webui and integration tests. Shared Bun tooling/lock is at the repository root. The Go plan retains separate assistant/go.mod and package/go.mod, with a public assistant/host facade; do not introduce obsolete pi/ or pixie/ source roots.
+
+Add abstractions only for retained behavior or accepted roadmap contracts. Keep dependencies, protocol fields, scripts, docs and generated artifacts aligned. Production images/archives contain only their required runtime/assets/licenses, not source, tests, compilers, unused runtimes or credentials. Optional worker dependencies are explicit, not silently bundled into assistant-only.
+
+Use lowercase kebab-case source/test/component/script filenames. Conventional index.ts/main.ts remain unchanged. Types and component exports can be PascalCase. Go uses conventional lowercase/underscore names and _test.go. Preserve existing filename checks while adapting their intended scope.
 
 ## Verification
 
-- Run the narrowest relevant check during development.
-- Keep all tests under `package/tests/`.
-- Add small regression tests for observable contracts and realistic failure modes at persistence, concurrency, authorization, protocol, filesystem, performance and fragile UI boundaries.
-- Do not test copied types, constants, trivial forwarding or implementation details.
-- Use broader integration/image checks for changes crossing Pi, browser, or persistence boundaries.
-- Before committing, review stale imports, protocol fields, scripts, documentation, generated files, and dependency-lock entries.
+Run the narrowest relevant checks during development and cross-boundary tests before integration. Keep existing tests under package/tests; colocate new Go unit tests with assistant code where needed. Add regressions for persistence, concurrency, authorization, protocol, filesystem, fragile UI and resource boundaries, not copied constants or trivial forwarding.
 
-## Git history
+Before committing, review stale imports, lock entries, contracts, generated files, scripts and docs. Root Bun checks include lint, typecheck, test, build, check:deps, check:filenames and Mewa validation. Current Go checks run from package/; add explicit assistant-module and both-release-variant checks when introduced. Do not claim an SDK-host fixture proves independently installed Pi compatibility.
 
-- Keep changes in separate, coherent commits. Do not squash or amend commits, or rewrite existing history, unless the user explicitly asks.
-- Write outcome-specific imperative subjects. Avoid vague `update`, `cleanup`, or `fixes` subjects and commits that mix unrelated work.
-- Use the canonical identity `Miłosz Kolber <143708325+miloszkolber@users.noreply.github.com>`.
+Use real native/artifact/browser fixtures at release gates. Documentation-only edits require link/path/content checks, not claims of runtime execution. Report actual results separately from planned tests.
 
-## Current stack
+## Commits and approvals
 
-The controller and embedded Browser module share one Go module and one merged container image with a single application executable. The frontend uses TypeScript and Svelte 5, a small framework-neutral external store, Mewa UI foundations pinned from GitHub Releases, and Bun for compilation, development, and tests. The controller uses a small native Pi event adapter and the pinned Coder WebSocket library. The host service uses the pinned Pi SDK and Bun. Treat these as current implementation choices, not permanent product scope.
+Keep separate coherent commits with outcome-specific imperative subjects. Do not amend, squash or rewrite history without an explicit request. Use the canonical identity Miłosz Kolber <143708325+miloszkolber@users.noreply.github.com> where the execution tool permits author selection.
 
-## Pi source ownership
-
-Keep Pi host code, extensions and configuration examples under top-level `pi/`. Application code stays under `pixie/`; shared Bun tooling and its lockfile live at the repository root. Runtime Pi state uses the selected agent directory.
+An implementation request permits ordinary local coding, tests and commits. Remote pushes/merges, upstream submissions, tags/releases, package/image publication, release-workflow dispatch, live service changes and native-state relocation/deletion need separate authorization. A push approval must cover publication it triggers. Follow roadmap/execution.md; the documentation commit installing the roadmap is not approval to deploy or publish its implementation.
