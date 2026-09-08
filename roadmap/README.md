@@ -44,6 +44,7 @@ Both host variants ship for Linux amd64 and arm64. The matching `ghcr.io/miloszk
 | [documentation.md](documentation.md) | Brief accurate operating docs and example validation |
 | [repository-review.md](repository-review.md) | Single consolidated finding/draft-review record and evidence limits |
 | [sources.md](sources.md) | Pinned source references, not a separate review or task list |
+| [CHANGELOG.md](CHANGELOG.md) | Completed roadmap items and their implementation evidence |
 | [canvas.md](canvas.md) | Penultimate feature: same-session HTML drafting and isolated screenshot iteration |
 | [openfig.md](openfig.md) | Final feature: offline Design inspection and separate actual frame rendering |
 

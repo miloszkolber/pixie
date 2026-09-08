@@ -44,7 +44,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 
 ### Regressions and contracts
 
-- [ ] FIX-01 — F/B: real production restart exits through bounded teardown and obtains a new process/boot identity (F02).
+- [x] FIX-01 — F/B: real production restart exits through bounded teardown and obtains a new process/boot identity (F02). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-01--production-assistant-restart).
 - [ ] FIX-02 — F/E: known pre-publication module-save failure preserves prior committed state/runtime; post-publication uncertainty follows FIX-13 (F03/F32).
 - [ ] FIX-03 — F/E: unchanged enable preserves Browser handles; explicit Restart is separate (F04).
 - [ ] FIX-04 — C/F: guarded create/idempotency and selected-chat/empty-panel reproduction with stale-generation rejection (F07).
