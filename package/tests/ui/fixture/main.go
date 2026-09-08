@@ -331,7 +331,7 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 		case "runtime.capabilities":
 			result = map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}
 		case "runtime.hello":
-			result = map[string]any{"protocolVersion": 1, "runtimeId": "ui-fixture", "version": "0.85.1", "capabilities": map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}}
+			result = map[string]any{"protocolVersion": 1, "runtimeId": "ui-fixture", "bootId": "ui-fixture-boot", "version": "0.85.1", "capabilities": map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}}
 		case "session.list":
 			result = map[string]any{"sessions": []any{map[string]any{
 				"sessionId": sessionID,

@@ -33,7 +33,7 @@ func (e *recordingEvents) snapshot() []string {
 }
 
 func piInitializeResponse() map[string]any {
-	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}}
+	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}}
 }
 
 func writeRPC(connection *websocket.Conn, value any) error {

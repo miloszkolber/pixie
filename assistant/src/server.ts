@@ -20,7 +20,7 @@ export interface HostOptions {
 	llama?: boolean;
 	/** Permit `runtime.restart` to end the process for the service manager. */
 	allowSelfRestart?: boolean;
-	/** Termination hook for self restart; defaults to process exit. */
+	/** Notify the executable/composition root after restart admission is stopped. */
 	onRestart?: () => void;
 }
 
@@ -60,6 +60,9 @@ async function startUnlockedHost(options: HostOptions) {
 		throw new Error("Pi host secret must contain at least 16 characters");
 	const identity = serviceStore<{ id: string }>(agentDir, "identity", () => ({ id: randomUUID() }));
 	const runtimeId = await identity.update((s) => s.id);
+	// Unlike runtimeId, this is intentionally fresh for every engine start. It
+	// lets reconnecting clients distinguish a new process from a new transport.
+	const bootId = randomUUID();
 	const peers = new Set<ServerWebSocket<Peer>>();
 	let stopping = false;
 	let restartPending = false;
@@ -128,22 +131,32 @@ async function startUnlockedHost(options: HostOptions) {
 			return {
 				protocolVersion: 1,
 				runtimeId,
+				bootId,
 				version: sdkVersion,
 				capabilities: capabilitySnapshot(),
 			};
 		if (method === "runtime.restart") {
 			if (!options.allowSelfRestart)
 				throw new Error("Service self restart is not enabled for this deployment");
+			const onRestart = options.onRestart;
+			if (!onRestart) throw new Error("Service self restart has no executable termination hook");
 			if (!restartPending) {
 				restartPending = true;
+				// Stop admitting new work as soon as the request is accepted. The
+				// restart reply and duplicate restart requests remain available until
+				// the executable has had a chance to drain and exit.
+				stopping = true;
 				void (async () => {
-					// Reply first, then drop peers and end the process so the
+					// Reply first, then end the process so the
 					// service manager brings a fresh host up. Runs interrupt
 					// with the documented restart semantics; session
 					// transcripts stay durable on disk.
 					await Bun.sleep(250);
-					for (const peer of peers) peer.close(1001, "Service restarting");
-					options.onRestart?.();
+					try {
+						onRestart();
+					} catch (error) {
+						console.error("Service self restart hook failed", error);
+					}
 				})();
 			}
 			return { ok: true };
@@ -277,6 +290,7 @@ async function startUnlockedHost(options: HostOptions) {
 					return Response.json({
 						protocolVersion: 1,
 						runtimeId,
+						bootId,
 						capabilities: capabilitySnapshot(),
 					});
 				if (
@@ -302,10 +316,6 @@ async function startUnlockedHost(options: HostOptions) {
 					peers.add(peer);
 				},
 				message(peer, raw) {
-					if (stopping) {
-						peer.close(1001, "Service stopping");
-						return;
-					}
 					let request: RecordValue;
 					try {
 						request = object(JSON.parse(String(raw)));
@@ -332,6 +342,10 @@ async function startUnlockedHost(options: HostOptions) {
 					const method = text(request.method),
 						params = object(request.params),
 						sessionId = text(params.sessionId);
+					if (stopping && method !== "runtime.restart") {
+						peer.close(1001, "Service stopping");
+						return;
+					}
 					const loading = method === "session.load" && sessionId !== "";
 					if (loading && peer.data.loading.has(sessionId)) {
 						peer.data.active.delete(id);
@@ -409,6 +423,7 @@ async function startUnlockedHost(options: HostOptions) {
 	}
 	return {
 		server,
+		bootId,
 		sessions,
 		control,
 		capabilities: capabilitySnapshot(),

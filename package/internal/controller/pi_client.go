@@ -251,6 +251,7 @@ func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (Ag
 	var response struct {
 		ProtocolVersion int            `json:"protocolVersion"`
 		RuntimeID       string         `json:"runtimeId"`
+		BootID          string         `json:"bootId"`
 		Version         string         `json:"version"`
 		Capabilities    map[string]int `json:"capabilities"`
 	}
@@ -261,7 +262,7 @@ func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (Ag
 		return AgentProfile{}, fmt.Errorf("incompatible Pi host service")
 	}
 	caps := response.Capabilities
-	p := AgentProfile{Name: "Pi", Version: response.Version, Pi: true, Compatible: true, MissingRequired: []string{}, Capabilities: caps, identity: "pi:" + response.RuntimeID}
+	p := AgentProfile{Name: "Pi", Version: response.Version, BootID: response.BootID, Pi: true, Compatible: true, MissingRequired: []string{}, Capabilities: caps, identity: "pi:" + response.RuntimeID}
 	p.Operations = AgentOperations{DeleteSession: true, ForkSession: true, PromptImage: true, PromptEmbeddedContext: true, Steer: true, RenameSession: true, ArchiveSession: true, Administration: true, HTTPMCP: caps["mcp"] == 1}
 	for _, capability := range []string{"sessions", "providers"} {
 		if caps[capability] != 1 {

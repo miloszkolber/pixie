@@ -84,7 +84,7 @@ func TestPiClientFramesPiAndOrdersNotifications(t *testing.T) {
 		t.Fatalf("notification was not handled before the response: %#v", methods)
 	}
 	_, profile, err := client.Profile(ctx)
-	if err != nil || !profile.Pi || !profile.Compatible || !profile.Operations.Administration || !profile.Operations.DeleteSession || !profile.Operations.PromptImage || !profile.Operations.HTTPMCP {
+	if err != nil || profile.BootID != "fixture-boot" || !profile.Pi || !profile.Compatible || !profile.Operations.Administration || !profile.Operations.DeleteSession || !profile.Operations.PromptImage || !profile.Operations.HTTPMCP {
 		t.Fatalf("unexpected capability profile: %#v, %v", profile, err)
 	}
 	select {

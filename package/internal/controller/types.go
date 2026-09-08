@@ -16,6 +16,7 @@ type AgentProfile struct {
 	Capabilities    map[string]int  `json:"capabilities"`
 	Name            string          `json:"name"`
 	Version         string          `json:"version"`
+	BootID          string          `json:"bootId,omitempty"`
 	Pi              bool            `json:"pi"`
 	Compatible      bool            `json:"compatible"`
 	MissingRequired []string        `json:"missingRequired"`

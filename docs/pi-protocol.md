@@ -14,7 +14,7 @@ The first request is `runtime.hello`:
 { "id": 1, "method": "runtime.hello", "params": {} }
 ```
 
-The result carries `protocolVersion` (`1`), a stable `runtimeId`, the host SDK `version`, and a capability map. `sessions`, `providers` and `agents` are always `1`; optional feature groups (for example `mcp`, `llama`) appear only when a supported native runtime is loaded. Clients must check capability versions before using their methods.
+The result carries `protocolVersion` (`1`), a stable `runtimeId`, a fresh `bootId` for the current host process, the host SDK `version`, and a capability map. `sessions`, `providers` and `agents` are always `1`; optional feature groups (for example `mcp`, `llama`) appear only when a supported native runtime is loaded. Clients must check capability versions before using their methods.
 
 ## Frames
 
@@ -33,7 +33,7 @@ Client requests are `{ "id": <positive safe integer>, "method": string, "params"
 | Group | Shape |
 | --- | --- |
 | `runtime.hello`, `runtime.capabilities` | Service identity, protocol version and capability versions |
-| `runtime.restart` | End the process for the service manager; enabled per deployment with `PIXIE_ALLOW_SELF_RESTART=1` and rejected otherwise. Replies `ok`, then closes peers and exits ([deployment](deployment.md)) |
+| `runtime.restart` | End the process for the service manager; enabled per deployment with `PIXIE_ALLOW_SELF_RESTART=1` and rejected otherwise. The accepted request blocks new work, replies `ok`, and the production entrypoint drains for up to 25 seconds before exiting with status 75 ([deployment](deployment.md)) |
 | `pi.extensions.list` / `configure` | Native resource inventory and deferred configuration |
 | `pi.providers.*`, `pi.defaults.*`, `pi.preferences.*`, `provider.login*` | Provider catalog, credentials and OAuth flows; secrets never leave the host |
 | `session.create` / `fork` / `load` / `list` / `prompt` / `steer` / `abort` / `queue*` / `delete` / `rename` / `archive` / `setModel` / `setThinkingLevel` and related | Session lifecycle, runs and configuration |

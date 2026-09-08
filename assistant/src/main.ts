@@ -26,23 +26,45 @@ const agentDir = resolve(values["agent-dir"] ?? getAgentDir());
 // owns one agent directory, including when selected through the CLI flag.
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.MCP_UI_VIEWER ??= "none";
-const host = await startHost({
+
+const requestedRestartExitCode = 75;
+const drainDeadlineMs = 25_000;
+let host: Awaited<ReturnType<typeof startHost>> | undefined;
+let closing = false;
+const close = (exitCode: number) => {
+	if (closing) return;
+	closing = true;
+	const current = host;
+	if (!current) {
+		process.exit(1);
+		return;
+	}
+	const deadline = setTimeout(() => {
+		console.error(`pixie-assistant shutdown exceeded ${drainDeadlineMs}ms`);
+		process.exit(exitCode === requestedRestartExitCode ? requestedRestartExitCode : 1);
+	}, drainDeadlineMs);
+	void current.close().then(
+		() => {
+			clearTimeout(deadline);
+			process.exit(exitCode);
+		},
+		(error) => {
+			clearTimeout(deadline);
+			console.error("pixie-assistant shutdown failed", error);
+			process.exit(exitCode === requestedRestartExitCode ? requestedRestartExitCode : 1);
+		},
+	);
+};
+
+host = await startHost({
 	agentDir: process.env.PI_CODING_AGENT_DIR,
 	hostname: values.host ?? "127.0.0.1",
 	port: Number(values.port ?? 3284),
 	llama: values.llama,
 	secret: process.env.PIXIE_PI_SECRET_KEY ?? "",
 	allowSelfRestart: process.env.PIXIE_ALLOW_SELF_RESTART === "1",
+	onRestart: () => close(requestedRestartExitCode),
 });
 console.log(`pixie-assistant listening on ${host.server.hostname}:${host.server.port}`);
-let closing = false;
-const close = () => {
-	if (closing) return;
-	closing = true;
-	void host.close().then(
-		() => process.exit(0),
-		() => process.exit(1),
-	);
-};
-process.on("SIGTERM", close);
-process.on("SIGINT", close);
+process.on("SIGTERM", () => close(0));
+process.on("SIGINT", () => close(0));

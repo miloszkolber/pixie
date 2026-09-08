@@ -85,6 +85,7 @@ describe("assistant wire contract", () => {
 		const hello = await a.call("runtime.hello");
 		expect(hello.protocolVersion).toBe(1);
 		expect(typeof hello.runtimeId).toBe("string");
+		expect(typeof hello.bootId).toBe("string");
 		expect(typeof hello.version).toBe("string");
 		expect(hello.capabilities).toMatchObject({ sessions: 1, providers: 1, agents: 1 });
 		expect(await a.call("runtime.capabilities")).toEqual(hello.capabilities);
