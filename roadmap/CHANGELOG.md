@@ -17,3 +17,10 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Behavior evidence:** regression fixtures verify unchanged enablement keeps an existing Browser handler usable, explicit restart invalidates only the old handler while the replacement is ready, and a deliberately unwritable backup path leaves the primary file, catalog, readiness and Browser route unchanged.
 - **Verification:** `CGO_ENABLED=0 go test -count=1 ./...`; `CGO_ENABLED=0 go vet ./...`; `bun run --cwd package typecheck`.
 - **Remaining boundary:** post-rename/directory-sync uncertainty and complete-map mutation reconciliation remain `FIX-13`/`EXT-02` work. Module startup and shutdown still require the broader no-lock-held lifecycle work in `EXT-02`.
+
+### FIX-08 — Assistant loopback binding and startup validation
+
+- **Implementation:** `348df29` adds shared startup validation for the assistant entrypoint and server. Production CLI input accepts only `localhost`, `127.0.0.1` or `::1`, parses ports as strict integers from `1` through `65535`, and validates the secret before agent-directory creation. Direct host startup validates its runtime port (`0` remains available for ephemeral tests), host and secret before creating state or taking the host lock.
+- **Behavior evidence:** the subprocess regression rejects `--host 0.0.0.0` and `--port 65536` without creating the assistant state directory. Unit coverage rejects DNS/remote/bracketed host forms and coercive port values including whitespace, negatives, fractions, hexadecimal and non-finite strings.
+- **Verification:** `bun test package/tests/pixie-assistant/startup-validation.test.ts` (3 pass, 36 expectations, Bun 1.3.14); `bun test package/tests/pixie-assistant` (73 pass, 403 expectations, Bun 1.3.14); `bun run --cwd package typecheck`; `bun run check:filenames`; targeted Biome check; `git diff --check`.
+- **Remaining boundary:** controller `GO-01` host authority and separate remote Origin/authentication policy remain independent work. The repository-wide lint command still reports pre-existing diagnostics outside this change.

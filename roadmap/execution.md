@@ -51,7 +51,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [ ] FIX-05 — A/F: strict host envelopes and deliberate v1/v2 duplicate behavior without changing browser/native ID domains (F05/F34).
 - [ ] FIX-06 — B/E/F: native thinking levels across session/default/schedule paths, including supported max (F22).
 - [ ] FIX-07 — B/F: agent content revisions, exclusive create, rooted identity and stale/external-edit handling with explicit writer assumptions (F23).
-- [ ] FIX-08 — B/F: literal-loopback assistant bind and validated startup inputs (F26).
+- [x] FIX-08 — B/F: literal-loopback assistant bind and validated startup inputs (F26). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-08--assistant-loopback-binding-and-startup-validation).
 - [ ] FIX-09 — B/G/F: service deadline encloses creation/admin/extensions/in-flight teardown, not just provider abort (F27).
 - [ ] FIX-10 — F/A: configured Host allowlist plus separately checked normalized Origin/proxy policy across real routes; X01 (F29).
 - [ ] FIX-11 — F/A: non-executing Git inspection, harmless clean/process-filter endpoint regressions and explicit raw-conversion semantics; X02 (F30).
