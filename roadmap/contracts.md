@@ -1,172 +1,195 @@
 # Shared implementation contracts
 
-Read before parallel implementation. This file owns target identity, transport, state, migration and initial operational defaults. Feature plans supply behavior; [feature-coverage.md](feature-coverage.md) decides whether migration is complete. These defaults are implementation inputs, not measured performance claims.
+Read before parallel implementation. This file owns identity, transport, state transitions, migration and initial bounds. [Feature coverage](feature-coverage.md) owns retained functionality; [cross-boundary acceptance](acceptance.md) defines additional tests. Defaults are implementation inputs, not measured capacity. Reviews are evidence, not competing specifications.
 
 ## Authority and ownership
 
-Pi is the only execution engine and native transcript/settings authority. The assistant supervises selected Pi processes and projects their public APIs. The controller owns projects, archive/grouping, schedules, its durable outbox and authorized application metadata. The UI owns local drafts, selections, view state and presentation, not execution lifetime.
+Pi owns native execution, transcripts, settings, providers, credentials, trust and resources. The assistant supervises selected Pi processes and projects supported APIs. The controller owns projects, grouping/archive, schedules, pre-handoff outbox and application metadata. The UI owns local drafts, selections and presentation, never accepted-run lifetime.
 
-One serialized owner handles each session's process, native I/O, command admission and event sequence. One controller outbox owns a message before native handoff. Multiple UI clients subscribe to the same runtime; they do not start duplicate owners. Native extensions/MCP clients execute inside Pi. A workspace module cannot become another Pi MCP client or agent orchestrator.
+One serialized owner handles a session's child, native I/O, admission and sequence. Several clients subscribe to one owner. Native MCP remains inside Pi; no workspace module starts a second native MCP client or agent loop. The explicitly enabled generic bridge uses public APIs from that selected installation, not a bundled SDK.
 
-Native credentials/settings are changed only through supported native APIs and explicit authorized user actions. The optional bridge uses the selected installation's public APIs. Intentional bounded authoring of native agent Markdown files is a separate file-edit feature, not permission to rewrite transcripts or generic native JSON in Go.
+Native settings change through supported native APIs and explicit user actions. Bounded agent Markdown authoring is a separate user-authorized feature, not permission to rewrite native JSON/transcripts in Go. Follow native locking for settings. A Pixie lock/revision check does not compel an unrelated editor/TUI to cooperate: prevent stale-form writes, revalidate immediately before publication, and state remaining external-writer limitations. Atomic replacement alone is not content compare-and-set or no-clobber creation.
 
 ## Identity and durable authority
 
-Keep these identities separate:
-
 | Identity | Lifetime and role |
 | --- | --- |
-| `sourceCommit` / `releaseId` | Build provenance; full SHA / sha-<12>. Never a session capability version. |
-| `hostIdentity` | Random stable installation identity for one canonical Pi agent directory; shared by both binaries. |
-| `authorityBindingId` | Controller's persisted, explicitly paired trust record for that host and native storage scope. Governs destructive recovery. |
-| `bootId` | Random per assistant-engine start. Not persisted as the installation identity. |
-| `childGeneration` | New identity whenever a Pi child is started/replaced, including fork/clone ownership transfer. |
-| `nativeSessionId`, native entry/leaf IDs | Pi-owned identities preserved without renaming. |
-| `sessionKey` | Opaque controller/assistant reference binding host, native ID and canonical file identity. Disambiguates copied/duplicate native IDs. |
-| `requestId` | One transport connection's positive safe-integer correlation ID. |
-| `mutationId` / `deliveryId` | Stable application retry identity and native-delivery identity; neither is a transport request ID. |
-| module document/version/generation | Authoritative resource identity independent of view selection. |
-| selection revision / draft revision | Client/shared-focus conflict detection, not resource authorization. |
+| sourceCommit / releaseId | Full source SHA / sha-<12>; build provenance, not an ordered schema version |
+| hostIdentity | Stable random installation identity for one canonical native agent directory; shared by both binaries |
+| authorityBindingId | Persisted explicit controller pairing with that host/native storage; destructive recovery authority |
+| bootId | Fresh assistant-engine start identity |
+| childGeneration | Fresh managed execution-context identity on start/replacement or successful native session ownership transfer |
+| nativeSessionId / entry / leaf / tool-call IDs | Native identities retained without renaming or numerical coercion |
+| sessionKey | Opaque paired-host/native-session/file association; no first-match behavior for copied/duplicate native IDs |
+| browserRequestId | Browser protocol's string correlation/replay ID, scoped by client/connection policy |
+| hostRequestId | Host v2 positive safe integer, scoped to that host transport connection |
+| nativeRequestId | Native RPC's separate optional string correlation ID; generate one for calls requiring correlation |
+| mutationId / deliveryId | Stable retry/delivery identity with payload fingerprint; not a transport request ID |
+| module generation / document / revision | Durable resource identity, independent of visible selection |
+| selection revision / draft revision | Shared-focus or per-client edit conflict detection, not authorization |
 
-The current `PiClient.deletionAgentBinding` hashes endpoint and secret. Do not carry that formula unchanged into an ephemeral full-host listener. Introduce version-2 recovery binding to `authorityBindingId`, hostIdentity, native storage identity and the recorded session file identity. Live requests still require an authenticated channel to that paired authority. A bootId, endpoint change, or authentication credential is not a new native session.
+Maintain explicit request-ID maps at each adapter. Do not convert browser string `001` into host integer 1 or pass host IDs to native callbacks as durable identity. Reconnect invalidates transport mappings, not the mutation ledger. Classify browser replay/ack/resume separately from host responses. URL schema v2, browser protocol, host protocol v2, native RPC and MCP negotiate independently.
 
-For full-host mode the composition root admits only the exact locally constructed host instance and supplies its private transport out of band. For external-assistant mode pairing is explicit and persisted; a new hostIdentity/storage scope requires re-pairing. Secret rotation for an already verified binding is explicit and tested. Do not automatically trust a peer because it claims the old hostIdentity.
+Replace the current endpoint/secret-derived deletion binding with a v2 binding to authorityBindingId, hostIdentity, verified native storage and session-file association. Live recovery still needs an authenticated connection to the paired authority. A new port, bootId or rotated credential is not a new native session; a claimed old hostIdentity alone is not proof of pairing.
 
-Migrate legacy deletion bindings only while their old authenticated configuration is verifiable and exact host/session/file identities agree. Otherwise retain the record as `recovery-blocked`, keep the local deletion tombstone, and require explicit reconciliation. Never discard the journal or retry against an arbitrary new endpoint to hide a mismatch. Test ephemeral-port changes, restarts, secret rotation, copied agent directories and Docker/full-host switches.
+The embedded composition admits only its locally constructed host and supplies private dialing credentials internally. External pairing and verified secret rotation are explicit. A changed host/native storage requires re-pairing. Migrate old deletion claims only while their previous authenticated configuration and exact session association are verifiable. Otherwise retain the tombstone as recovery-blocked; never discard it or replay a delete against a new endpoint.
 
-The assistant's identity/lock are shared across both entrypoints and keyed by the canonical agent-directory path. Store new assistant-owned metadata under `$XDG_STATE_HOME/pixie/assistant/<agent-dir-key>` (default `~/.local/state/pixie/assistant/<key>`). Preserve the existing identity during an explicit migration from native `<agentDir>/pixie`; do not relocate native files. Resolve directory symlinks and revalidate identity after native first-run creation; merely listing a fresh installation does not create or write native configuration.
+Keep one assistant identity/lock per canonical agent directory across both binaries. New assistant metadata uses `$XDG_STATE_HOME/pixie/assistant/<agent-dir-key>` (default `~/.local/state/pixie/assistant/<key>`). Explicit migration preserves the old `<agentDir>/pixie` identity/metadata without relocating native files. Revalidate directory identity after native first-run creation. File incarnation checks detect replacement; normal native appends must not create a new sessionKey on every message.
+
+## HTTP authority and routing
+
+Validate request authority before serving API/WS/module/file/static routes. Derive an allowlist from configured listener/public origins, not from the requesting Host. Local defaults admit documented literal loopback/localhost forms at the actual listener port; normalize default ports and IPv6 consistently on both sides. An arbitrary DNS hostname resolving to loopback is not automatically admitted.
+
+Remote UI requires the declared public origin and authentication. Configure trusted proxy peers and host rewrites explicitly; arbitrary Forwarded/X-Forwarded-* headers cannot change accepted scheme, host or secure-cookie policy. Match Host independently of Origin. Browser-origin/CSRF/cookie checks remain additional controls. Explicitly authenticated service-to-service requests may omit Origin under their distinct role/route policy; they do not bypass Host or resource authority.
+
+One top-level router consumes registered module route ownership. Reserve core routes such as /ws, /auth, /mcp/objective and management namespaces. Reject duplicate/overlapping registrations. Register module MCP, management and artifact surfaces through the same definition instead of adding Browser/Canvas/Design branches. Unknown /mcp/* and /api/* paths return non-success API errors, never the SPA document. The static fallback is only for frontend navigation. Test the real assembled HTTP handler.
+
+A session ID, project field, MCP transport-session identifier, document ID or URL route is not permission. Resolve resource scope from the authenticated principal and paired context before expensive work. Keep human management authority distinct from model read/tool authority. Secrets never enter prompts, URLs, argv, layout state or unredacted diagnostics.
 
 ## Host protocol
 
-Use host `protocolVersion: 2` for the rewritten contract. Its acceptance semantics, capability model and epoch-scoped events differ from version 1. Native Pi's JSONL protocol is a separate boundary. Keep the legacy v1 adapter during migration only; a controller negotiates one contract, never mixes reply semantics. Update contracts, dispatchers, generated bindings, tests and docs in the same integration.
+The rewritten host uses protocolVersion 2. Retain the explicit v1 adapter during migration; do not keep v1 while silently changing completion/capability semantics. Negotiate one host contract per connection and update schemas, dispatchers, bindings, callers and tests together. Browser protocol 88 is the reviewed baseline, not an alias for either host version.
 
-Keep `/pi` authenticated WebSocket and the existing request/result/error envelope. A v2 hello is required before other methods and reports releaseId, sourceCommit, hostIdentity, bootId, native executable/version, available operation sets and UI/administration profile. Never return credential material or unrestricted native configuration.
+Keep authenticated loopback /pi WebSocket with request/result/error envelopes. Require v2 hello before other calls; report release/source, hostIdentity, bootId, native version/executable and contextual operation sets without credentials. Core compatibility requires native sessions/catalog/read/prompt lifecycle, not global provider administration or MCP. Replace broad Administration gates and hardcoded operation flags.
 
-Requests are strict JSON objects with numeric positive safe-integer id, a non-empty method and object params. Do not coerce strings/booleans to IDs. Invalid JSON closes 1007; invalid envelope/handshake closes 1008; oversized messages close 1009; exceeded send-buffer budget closes 1013. Unknown well-formed methods receive method-not-found. Resource conflicts, stale revisions and unavailable capabilities have typed errors, not successful empty arrays.
+Host requests require object envelope, positive safe-integer ID, nonempty method and object params. Invalid JSON closes 1007; invalid envelope/handshake or duplicate in-flight host ID closes 1008; oversized input closes 1009; exceeded output budget closes 1013. Well-formed unknown methods receive method-not-found. Resource/revision conflicts, unavailable capabilities, delivery uncertainty and persistence uncertainty have explicit typed errors.
 
-For v2, a duplicate in-flight request ID closes 1008 rather than sending two conflicting outcomes for one ID. This is an intentional v2 change; preserve v1 behavior only in its compatibility adapter. An ordinary completed operation can be retried with a new requestId and the same mutationId. Validate payload fingerprint; same mutationId with different input is a conflict.
+Do not apply host-ID rules to the browser/native protocols. A retry uses a new transport ID plus the original mutationId and fingerprint. Different content under the same mutationId conflicts. Lost transport response does not authorize an unrecorded fresh operation.
 
-Advertise operation sets in context, not a single `Administration` boolean. Core compatibility requires sessions/catalog/read/prompt lifecycle only. Provider login, global preferences, inventory/configuration, native MCP administration and optional modules negotiate independently. Rewrite `PiClient.initialize`, its operation projection, `CallPiUntilDone` and UI availability checks accordingly. No hardcoded true operation flags from the mere presence of `sessions`.
-
-Author the method inventory in `package/contracts` before implementation. For every current browser, controller and assistant method record caller, owning service, request/result schema, native/bridge route, required capability, idempotency and coverage ID. Check generated Go/TS bindings and exhaustive dispatch coverage in CI. Keep unknown native payload fields as raw data; strict Pixie envelopes do not mean discarding unknown native entries.
+API-01 authors the exhaustive catalog in package/contracts from actual browser/controller/host dispatchers and callers, including methods missing from constant lists. Record schemas, operation owner, profile, native/bridge route, effects, authorization, timeout, completion point and FC row. Generate/check bindings without making assistant compilation depend on frontend assets. Preserve bounded unknown native payload fields independently of strict Pixie envelope validation.
 
 ## Native framing and events
 
-One reader and serialized writer per child. Stdout is native protocol; stderr is independently drained bounded diagnostics. Split on LF only, accept an optional preceding CR and preserve Unicode line separators inside strings. Reject oversize whole records; never truncate JSON or treat log pollution as an event. Reader progress must not depend on a browser consuming output.
+One reader and serialized writer per child correlate native calls. LF delimits JSONL; optional preceding CR is accepted, Unicode separators inside strings are not delimiters. Bound records and writes; never truncate JSON, interleave records or treat logs as events. Drain stderr independently. A slow client must not block native stdout indefinitely.
 
-Wrap projected events with sessionKey, bootId, childGeneration and monotonically increasing sequence. Scope every checkpoint to those fields. Native request IDs, tool-call IDs, entry IDs and content indexes keep their own meaning.
+Wrap projected events with sessionKey, bootId, childGeneration and monotonic sequence. Final native messages are authoritative; partial blocks use native content indexes/tool IDs. Preserve images, visible custom entries, summaries, errors and unknown usage; hidden context stays hidden. Partial tool arguments do not prove tool execution.
 
-Final native message bodies are authoritative. Partial text/thinking/tool arguments are projections. Tool execution is not established by incomplete tool-call arguments. Apply final reconciliation without duplicating streamed tails. Preserve images, visible custom entries, summaries, usage and hidden-record exclusion.
+Snapshot/checkpoint and subsequent buffered events share an owner. Several native queries are not an atomic snapshot: reconcile leaf/history against intervening events before ready. Test initialization, compaction, fork/clone and concurrent attach. Native whole-history allocation is an upstream constraint; use bounded read-only disk indexing for old history and supported native incremental queries where available. Oversized records produce a limit/degraded result without deleting or repairing source.
 
-Capture a snapshot and its event checkpoint under one owner; buffer only subsequent events for that attachment. A bootstrap assembled from several native queries is not automatically atomic: reconcile active leaf/history against events before declaring ready. Race-test initialization, fork/clone, compaction, concurrent attach and events during history loading.
+Apply aggregate serialized-byte admission to reading, queued requests, replay and outbound buffers as well as per-frame/count limits. Reserve incrementally before accumulating large bodies, release on every terminal path, and bound decoded structures separately. Do not read/parse an entire large message and only then check the concurrent-request cap.
 
-Native get_messages/get_entries can materialize large responses. Go-side chunking cannot remove that upstream allocation. Use bounded read-only on-disk indexing for catalog/older history, and get_entries cursors where appropriate for incremental resident updates. If a native record exceeds the supported bound, return a specific limit/degraded-state error and preserve its source file; never promise unbounded history or silently skip the record. Do not break one native entry into invented messages.
+Reserve a small independently admitted control lane for Stop, UI cancellation and service draining. Large history/data work cannot consume it. This does not bypass authentication/schema checks or interleave a partial native JSONL record. Bound slow/incomplete readers and stalled writers; if a partially dispatched native request cannot be recovered, preserve its uncertain outcome and tear down safely instead of resending. Control admission is a bounded-latency property, not a promise to bypass network head-of-line blocking instantly.
 
 ## Prompt, outbox and Stop state machines
 
-Use `prepared -> dispatching -> accepted -> settled` for a delivery, with explicit `rejected`, `uncertain` and `interrupted` outcomes. Persist a dispatch claim before sending. Native prompt success acknowledges acceptance/queueing/handling, not complete agent settlement. Record native failure after acceptance through events, not a second acceptance reply.
+A delivery transitions prepared -> dispatching -> accepted -> settled, or explicit rejected/uncertain/interrupted outcomes. Persist its dispatch claim before sending. Native prompt success means accepted/queued/handled, not a complete turn. Native failure after acceptance is an event/result state, not a second acceptance reply.
 
-One mutation/delivery can be native-runnable only once. Once handed off, it is no longer a runnable controller outbox item. Losing the channel during dispatch is uncertain; reconnect or service restart never resends automatically. A repeated mutation ID returns its known status/result. A user may explicitly resolve uncertainty after inspecting the transcript; confirmation is not a claim of exactly-once execution.
+The controller owns runnable work before native handoff; Pi owns it afterward. An item cannot be runnable in both places. Losing dispatch acknowledgment is uncertain. Retrying a known mutation returns its status; reconnect/restart must not resend it. Retain attachment and delivery identity, not only text. Explicit user resolution of uncertainty does not imply exactly-once external effects.
 
-Use native agent_settled and known command completion semantics, not the first agent_end or a quiet timer. Commands that perform no LLM turn need a tested handled result; extension-triggered/background work cannot be assumed complete because prompt returned. Failure to determine settlement is visible and blocks automatic follow-up dispatch for that delivery. Capture actual native traces for each command family.
-
-Pi owns native steer/follow_up/clear_queue modes. The controller's durable outbox owns only not-yet-handed-off work. Keep source text, file/image attachment references and mutation identity on outbox items; repeated identical text is not a deduplication key.
-
-Define UI actions explicitly:
+Settlement follows native agent_settled and tested command-specific behavior, not the first agent_end or a quiet timer. No-LLM commands and extension-triggered work have their own traces. Unknown settlement blocks automatic follow-up dispatch. There is no blanket two-minute limit on a valid coding run.
 
 | Action | Effect |
 | --- | --- |
-| Hide/collapse/focus | Presentation/subscriptions only; preserve session, draft, outbox and accepted work. |
-| Close secondary resource | Clear right selection and apply that module's resource policy; does not stop Pi. |
-| Close conversation view | Clear selection, retain native session and its runtime while work is active. |
-| Stop | Stop current generation and native continuations; freeze controller dispatch first, clear native continuation before abort, preserve unsent durable items as paused. Never automatically resume after Stop. |
-| Clear queued messages | Explicitly remove selected not-yet-dispatched items; do not report native-dispatched work as removed. |
-| Archive | Metadata only. Reject while active work is unsettled unless the user first explicitly stops it. |
-| Delete | Confirm native file deletion and owned Canvas cleanup; durably tombstone before teardown/removal; preserve unrelated sessions, Design and projects. |
-| Release to TUI | Require idle/settled and no pending dialogs/outbox dispatch, terminate the managed child, release ownership, then provide native resume information. |
+| Hide/collapse/focus | Presentation/subscriptions only; retain draft, session and accepted work |
+| Close secondary resource | Clear right selection and apply that module's explicit lease/resource policy; never Stop Pi implicitly |
+| Close conversation view | Clear selection, retain native session and active runtime |
+| Stop | Freeze controller dispatch first, clear native continuation and cancel pending UI, request native abort, then verify generation quiescence |
+| Clear queued items | Explicitly remove selected not-yet-dispatched items; never claim accepted native work was removed |
+| Archive | Metadata only; require unsettled work to be explicitly stopped first |
+| Delete | Confirm native deletion and Canvas cleanup, persist tombstone, then teardown/remove under verified identity |
+| Release idle runtime | Verify settled/no pending work or liveness pins, terminate managed child and free residence while retaining history, draft, selection and metadata |
+| Release to TUI | Same verified idle termination plus an explicit handoff/resume instruction; independent TUI still does not share a live writer |
 
-Stop releases pending native dialogs first, awaits bounded native abort, then reports whether termination was graceful or forced. A request timeout is not proof a tool's external side effects were cancelled. No blanket two-minute timeout on a valid coding run.
+Stop retains unsent outbox items paused. Restoring native queue text creates an explicit draft proposal, never automatic submission. Resume/discard is a user decision. If detached work or queued continuation cannot be verified cancelled through the supported profile, finish Stop by terminating that managed generation within the shutdown bounds. Report forced termination and interrupted/uncertain external effects; killing a local process does not undo a remote job or tool side effect.
+
+The service reports stopping, graceful/forced stopped and any uncertainty distinctly. A forwarded abort/UI response is not evidence that native code accepted it. Prevent late old-generation callbacks from restoring activity after teardown. At the finite resident cap expose Release idle runtime for eligible residents; do not make Close delete sessions, silently evict unknown background work or require restarting the whole service to use session 17.
+
+All application subprocess wrappers, including Git and Browser helpers, bound descendant termination and inherited-pipe draining. A context deadline alone is insufficient. Use a managed group and finite wait/drain escalation with tests; inspect the final Docker entrypoint's reaping rather than assuming host systemd applies there. Never terminate independent user processes.
+
+## Persistence outcomes
+
+The persistence contract distinguishes known-uncommitted, installed/committed, and durability/outcome-uncertain. A function may return an error after rename made a primary visible. Do not infer unchanged disk from err != nil or promise rollback by preserving only the old in-memory map.
+
+Validate/reserve/stage first. Publish the primary at the declared commit point, complete required file/directory synchronization, then acknowledge success. Return enough internal outcome information for callers to distinguish a known pre-publication failure from an installed-but-unconfirmed outcome. After the latter, retain mutation identity and reconcile the validated primary before accepting dependent mutations or triggering unsafe effects. Report uncertainty until durability/state is established. Do not overwrite a visible candidate with an old backup to manufacture a failed-no-change result.
+
+Module disable/deletion revokes new authority before unsafe continuation once publication is known or uncertain; enable must not start a new privileged runtime on an unconfirmed commit. Reconcile persisted intent separately from actual readiness. Queues/schedules do not dispatch an uncertain claim; tombstones never resurrect through fallback. Crash recovery cannot make an old execution ledger authoritative over later effects. Test errors at staging, backup rename, primary rename, directory sync and reply loss.
 
 ## Session catalog, grouping and metadata migration
 
-The authoritative session association is `(authorityBindingId, sessionKey)` with optional projectId and native cwd. Replace project-required queue/deletion/session keys with that association. Do not fabricate a hidden project or admit an entire filesystem to make ungrouped sessions pass old validators. Schedules remain explicitly project-scoped.
+Use authority/session associations with optional projectId and native cwd. Migrate project-required queue/deletion records; do not invent a hidden all-files project. Schedules remain project-scoped. Read-only discovery outside admitted roots does not authorize Files/Git or launch native extensions. New conversations remain drafts until native persistence; no synthetic headers. Fork/clone ownership transfers only after native success, preserving independently reopenable source.
 
-Metadata-only discovery works outside admitted roots; files/Git remain unavailable until independent root admission. A read-only catalog scan handles incomplete final JSONL lines, external replacement, duplicate IDs, missing files and unknown entries. It does not launch native extensions, run provider checks or rewrite transcripts.
+Inventory all controller config/projects/session associations, objective/task/queue/schedule/deletion ledgers, old assistant archive/parent/identity metadata, MCP memberships, Browser leases and browser drafts/layout. Native versus legacy Pixie MCP schemas must be detected explicitly. Unknown source files remain untouched. Give each conversion schema versions, verified pairing/path mapping, repeatable phases and rollback evidence.
 
-A new conversation is a draft until Pi persists native identity. Reconcile exactly once after persistence; never synthesize a header. Clone current position and fork earlier user message are distinct native operations. After native identity changes, transfer the child association and reopen the original independently when selected again.
+Migrate under stopped admission with restrictive backups and a durable receipt. Multi-file conversion needs explicit checkpoints, not a claim that one rename makes it atomic. Reconcile post-backup dispatch/deletion effects before rollback; old binary plus old JSON is not sufficient. Missing/corrupt authority fails its mutations closed while safe diagnostics/readable areas remain available. Topology switching/uninstall does not move or delete native Pi state or authored module documents.
 
-Migration inventory must include controller config/projects/session associations, queues, schedule execution claims, deletion journal, assistant catalog/archive/parent metadata, MCP memberships, browser panel ownership, local layout and drafts. Give each schema a version, source/destination ownership, repeatable conversion and rollback test. Preserve unknown fields where the source contract permits them; never copy raw secrets into controller or browser stores.
+## Read-only Git inspection
 
-Convert project-keyed records to session associations only with verified host/native identities; preserve projectId as optional presentation metadata. Import archive/parent metadata from the old assistant catalog without moving native files. Tombstones and execution/deletion claims cannot fall back to older backups. On corruption, fail the affected mutation/runner closed while preserving diagnostics and unrelated readable state. Do not label unreadable data empty.
+Read-only includes no repository-configured code execution, network fetch, or mutation of admitted/native state. Disabling hooks, external diff and textconv does not disable clean/process filters. Do not inherit arbitrary user Git environment or accept executable/config paths from a browser request.
 
-A migration is a maintenance operation with admission stopped, backup and explicit rollback policy. Mode switching does not move Pi state. Uninstall is not consent to delete native or authored module data.
+Use a verified non-executing path for commit/index metadata and bounded raw worktree comparison. Audit every Git command against local/included config, attributes, worktree/submodule links and object lookup. A raw-byte view may differ from LFS/clean/encoding conversions; label that difference or make the affected conversion-dependent view unavailable. Do not silently claim native conversion fidelity or execute a helper in the controller to obtain it. A fully converted view needs an independently contained tested implementation or separately approved limitation.
+
+Preserve multi-repository discovery, commit/branch/review identity and ordinary diffs. Root-relative file checks, output bounds and process deadlines remain necessary even when conversions are disabled. No new IDE, Git mutation controls or automatic worktrees. FIX-11 acceptance exercises the real endpoint with harmless configured filter markers.
 
 ## UI navigation and persistence
 
-Use one route driver and schema version for layout. Keep session runtime/drafts independent of Svelte component lifetime. Left and right selections are separate discriminated unions with instance/project/session context. All server operations reauthorize those fields; routes are not authority.
+One route driver and reducer own primary/secondary selection and layout. Use `#/v2/chats/<sessionKey>`, archive/session, schedules/schedule and settings/section routes. Encode bounded namespaced secondary identities/context as query data, never secrets/content. Hash-route v2 does not negotiate any wire protocol. Back/forward changes selection without reissuing mutations.
 
-Use hash routes to work identically in embedded/static deployments: `#/v2/chats/<sessionKey>`, `#/v2/archive/<sessionKey>`, `#/v2/schedules/<scheduleId>`, `#/v2/settings/<sectionId>`. Serialize optional secondary selection as encoded, namespaced query parameters containing opaque resource IDs and context, never credentials or raw content. The router validates the complete schema, size and context before requesting data. Back/forward changes selection without reissuing mutations.
+Remember last valid selections per area/context. Settings hides incompatible session inspectors and restores only valid context on return. Same-project files may survive session switches; session-scoped modules may not change owner invisibly. Design remains labelled instance-wide. A selected missing/unauthorized/unavailable item gets its own state, not an unrelated project-empty view. A late create may add a session to the catalog but cannot steal focus after newer navigation.
 
-Remember the last valid primary selection per area and right selection per compatible context. Entering Settings hides a stale session inspector; returning restores the prior valid session. Same-project files may survive session changes; session-scoped modules cannot. Instance-scoped Design remains explicitly instance-scoped. Missing/unauthorized resources show their own recovery state, not an unrelated project home.
+Runtime, pending dialogs and drafts live outside Svelte component lifetime. Persist bounded layout preferences, not full transcripts or response credentials. Each browser owns its draft/revision keyed by sessionKey; native editor text applies automatically only to an unchanged empty originating draft. Otherwise offer explicit insert/replace, never auto-send. Native editor() dialogs have separate draft/expiry state.
 
-Persist layout/schema/width preferences locally, bounded by these defaults: 48px rails, 48px aligned headers, 256px sidebars (200–400px), 360px minimum content panes, initial 50/50 split. Auto-collapse the right sidebar then left sidebar when minimum content widths do not fit; after both are collapsed use single-content focus. Preserve the user's saved widths/collapse choices and restore them on widening. Narrow navigation uses accessible drawers. Do not persist auto-collapse as a user choice.
+Use 48 px rails/headers, 256 px sidebars bounded 200–400 px, 360 px content minima and initial 50/50 split. Collapse right sidebar then left before single-content focus when space is insufficient. Responsive collapse does not overwrite user preference. Narrow drawers preserve the same selection model and focus restoration. Grouped Chats shows five recent items plus selected/running sessions, with paging for more. Migrate old tabs without keeping a second active state machine.
 
-Grouped Chats initially show five recent sessions per project and always include the selected/running session; Show more is paged. Flat/ungrouped views use the same catalog. Closing is not archiving. Migrate valid legacy tabs into independent selections, preserve drafts and ignore invalid obsolete keys. Do not keep the old tab state as a second active state machine.
-
-Each browser owns its local draft; use a revision and sessionKey. Native set_editor_text is applied automatically only to an empty unchanged originating draft; otherwise show an explicit insert/replace action. It never submits text. Another browser's unsent draft is not implicitly synchronized or overwritten. Native editor() dialogs have separate draft/expiry ownership.
+On deployment update, compare browser protocol/capabilities independently of build hash and host v2. Unsupported peers stop new mutations and present explicit refresh/recovery. Preserve drafts/selection before reload; unavailable storage must not silently discard unsaved input. Reconcile acknowledged/uncertain operations with their original mutation IDs, never resend as fresh work. Old lazy-asset 404s need an actionable recovery state rather than blank content or an infinite reload loop. Test both topologies and keep retained old assets bounded.
 
 ## Configuration and initial bounds
 
-Precedence: explicit CLI flags, documented environment values, explicit JSON config, built-in defaults. Full-host config embeds the same assistant section; controller-only rejects local-assistant execution settings. Read-only doctor reports resolved redacted configuration and missing dependencies without prompting, downloading or loading project extensions. An active probe is a separate opt-in command with declared effects.
+Precedence remains explicit CLI > documented environment > explicit JSON config > defaults. Normalize once; full-host embeds the shared assistant section and controller-only rejects local-assistant execution settings. Read-only doctor reports redacted values without installation, model calls, native writes or project-extension loading. Active probes are explicitly opt-in.
 
-The selected Pi executable is an absolute resolved file, configured first or found on the service PATH; aliases/login-shell initialization do not apply. piArgs is an operator-controlled argv array, never a shell command. Reserve mode/session/resume/continue/print/no-session/cwd behavior for the supervisor, including aliases and --flag=value forms. Do not accept arbitrary startup argv from an agent or web request.
+Resolve explicit Pi or service PATH to an absolute executable. Preserve native HOME/PATH/cwd/agentDir/provider/proxy/tool environment after removing Pixie service credentials. Native argv is an operator array; reject reserved mode/session/resume/continue/print/no-session/cwd controls including aliases/equals forms. No arbitrary startup argv from model/web calls. Scoped native integration credentials use the private bridge channel.
 
-Preserve intended native HOME, PATH, agentDir, proxy/provider/tool variables and cwd. Remove Pixie service/control credentials before exec. Module-specific credentials reach only the explicitly enabled native integration through its private channel. Existing native user extensions remain operator-owned, not filtered away to simplify tests.
-
-| Bound | Initial value / behavior |
+| Bound | Initial contract |
 | --- | --- |
-| Host/native JSON record, host request or send buffer | 32 MiB each; validate actual encoded bytes |
-| In-flight host requests | 128 per connection, 256 per engine; excess is explicit busy |
-| Managed Pi children / launching / actively dispatched turns | 16 / 4 / 8; count before startup, never evict active work to admit another |
-| Automatic idle eviction | Disabled initially; unknown detached extension work must not be mistaken for idle. Explicit runtime release is available; enable safe timed eviction only behind tested liveness support. |
-| Hello / ordinary administrative request | 10s / 30s; long-running accepted turns use events, not this deadline |
-| OAuth/API-key interaction | 10 minutes, cancellable and bound to requesting client |
-| Native abort grace / TERM-to-KILL fallback | 10s / 2s; all within service drain deadline |
-| Application drain / systemd stop | 25s / 30s |
-| Pending UI requests / default lifetime | 16 per session / 30 minutes or shorter native deadline |
-| Passive UI keys / update rate | 16 status + 16 widgets; 64 updates/s; removals/settlement are never silently rate-dropped |
-| Native input | At most 8 images; 4 MiB text; 24 MiB base64 per image, also subject to the aggregate 32 MiB encoded request. Reject before dispatch; never truncate a prompt. |
-| Diagnostic retention | 64 KiB bounded ring per child/worker; redacted, no transcript/secrets by default |
-| Catalog/history page | 100 entries plus explicit byte limit/cursor; never allocate an unbounded response because count is small |
+| Host/native record and browser/host frame | 32 MiB serialized UTF-8 each; not an allocation budget |
+| Ordinary in-flight host requests | 128/connection, 256/engine, additionally constrained by aggregate bytes |
+| Aggregate buffered transport data | 64 MiB per controller process and per assistant engine initially, across ordinary input/output/replay; account copies and bound decoded structures separately |
+| Reserved control admission | 8 small operations/engine, at most 64 KiB each and 1 MiB reserved serialized storage; normal traffic cannot consume it |
+| Managed children / launching / actively dispatched turns | 16 / 4 / 8, reserved before startup |
+| Automatic idle eviction | Disabled until generic liveness is proved; explicit eligible-runtime release provided |
+| Hello / ordinary admin / auth interaction | 10s / 30s / 10 minutes; auth scoped to initiating client |
+| Native abort grace / TERM-to-KILL | 10s / 2s, within overall service drain |
+| Application drain / systemd stop | 25s / 30s, including creation, admin, extensions and pipe cleanup |
+| Pending UI / default lifetime | 16/session / 30 minutes or shorter native deadline |
+| Passive UI | 16 status and 16 widget keys; 64 updates/s; clears/settlement cannot be silently dropped |
+| Image input | At most 8; 4.5 MiB base64 per image, 24 MiB aggregate base64, plus whole-frame and decoded validation |
+| Text input | Initial 4 MiB UTF-8 target; compare legacy exposed behavior/attachment limits first; any reduction needs FC04 approval, never truncation |
+| Diagnostic ring | 64 KiB per child/worker, redacted |
+| Catalog/history page | 100 entries and explicit serialized byte cap/cursor; count alone is insufficient |
+| Generic persisted JSON | Keep existing 16 MiB ceiling for metadata/ledgers |
 
-Publish effective limits in diagnostics. Test byte boundaries with escaping/base64 and Unicode. Amend defaults only with measured evidence and matching contract/test updates; changing a supported input limit is a disclosed behavior change, not cleanup.
+Serialized admission budgets are not total-RSS guarantees: track decoded structures, retained projections, image pixels and native process memory separately. Preserve current per-text-attachment and aggregate resource limits through the same cross-boundary inventory rather than replacing them with the prompt cap. Base64 length is not decoded-image memory. Publish effective units/bounds and test escaping, Unicode and boundary values before changing a supported input envelope.
+
+Design's normalized index has a separate 64 MiB artifact limit. Stage it as an immutable bounded file/index artifact, validate through a dedicated path and publish small metadata last. Do not pass it to generic persist.Write, inline it in a host/browser frame, or raise all shared caps. Worker messages carry validated operation/artifact identity, counts and hashes, never arbitrary output paths. Queries remain paged/bounded and index retention/decoded-cache memory are independently limited.
 
 ## Worker boundaries and module defaults
 
-Native Pi retains user authority. Untrusted Browser pages, Canvas HTML and Design files use a separate optional worker boundary. The initial Linux launcher profile is a private mount/PID/user namespace enclosure with a delegated cgroup-v2 resource limit. A tested bubblewrap-based launcher can supply the namespace portion; namespaces alone are not a memory cap. Do not grant privileged daemon sockets or require a privileged main controller.
+Native Pi retains its intentional host-user authority. Worker controls apply to untrusted application processing, not to Pi tools. Same-UID subprocess separation, changed HOME or read-only project mounts alone are not containment.
 
-Declare the exact supported launcher/runtime paths and pinned dependency set in packaging. Full-host uses a configured user-level enclosure; Docker needs explicitly supported delegation/enclosure or a separately configured restricted worker service. If the required boundary cannot be established, the module is unavailable and doctor explains which prerequisite failed. Do not silently run unrestricted on the host or substitute a whole-controller memory limit for worker-only containment. Establish this profile in SEC-02 before CAN/FIG implementation; test actual flags on both architectures.
+During migration the existing Docker Browser profile may remain with its explicit non-isolation warning. It is not contained-browser evidence and must not be silently reused under the Pi owner's direct-host account. Core Browser acceptance must name/test the actual profile in each deployment; a trusted-only exception needs explicit recorded approval. No exception is preapproved here. Canvas/Design always require their contained profile, regardless of the older Browser posture. Basic chat requires none of these optional workers.
 
-Worker input contains only immutable authorized job data. Mount executable/runtime libraries and approved fonts read-only, input read-only and one bounded private output/temp area writable. No Pi HOME/auth, projects, application databases, broad host mounts or service bearer. Browser may use the explicitly configured browsing network policy; Canvas/Design have no external/host network. For their optional asset server use only a job-local namespace listener with no parent credentials. IPC carries bounded job/output messages, not an arbitrary command interface.
+The initial contained Linux candidate uses private mount/PID/user namespaces and delegated cgroup-v2 limits; a tested bubblewrap launcher may supply namespaces. Verify host support and place the process under its limits before any untrusted input executes. Docker needs tested delegation or a separately provisioned restricted worker service. No privileged controller, Docker socket or automatic host-policy changes. Missing requirements make processing unavailable with diagnostics; retained metadata/removal remain accessible.
 
-| Resource | Canvas default | Design default |
+Mount only verified runtime/libraries/approved fonts and immutable input read-only, with a job-private bounded writable temp/output area. No broad HOME, controller/Pi/project data, user D-Bus/runtime sockets, sibling jobs or writable cgroup tree. Preserve only required IPC; verify unintended inherited descriptors are closed. Browser has its declared browsing egress policy; Canvas/Design have no external/host network. Any local asset server stays inside the job enclosure without service credentials.
+
+Enforce scratch bytes and inode bounds as well as memory/swap, CPU, PIDs, output and wall time. A delegated cgroup alone does not limit ordinary disk files. Use bounded tmpfs or a quota-backed job area; reserve output/staging space before admission. Worker OOM/cleanup cannot take down the controller/Pi or consume a shared sibling allowance. Verify failure before start, during transfer and after cancellation; kill/reap matching jobs and reject late artifacts.
+
+| Resource | Canvas | Design |
 | --- | --- | --- |
-| Active heavy jobs / queued jobs | 1 / 2 globally; coalesce obsolete automatic previews, explicit jobs get busy rather than unbounded queue | 1 / 1; second source upload conflicts |
-| Worker memory / process ceiling | 1 GiB / 256 | 512 MiB / 64 |
-| Worker wall deadline | 30s | 30s parse; 30s optional render |
-| Viewport / pixel cap | 1280x800, DPR 1; at most 2048 per dimension and 4,194,304 pixels | Same pre-allocation render/image pixel cap |
-| Input | 512 KiB HTML/write | 50 MiB source; 256 MiB declared ZIP expansion; 4,096 entries |
-| Structured output | Selector at most 512 characters, 4,096 matched nodes, 64 KiB returned text/DOM with truncation | 100,000 indexed nodes, depth 128, 64 MiB index; query pages 100 nodes, 256 KiB response |
-| Image content | 2 MiB encoded image bytes before MCP base64 | Same; label cover versus rendered frame |
-| Storage | 64 MiB globally, including authored revisions/cache; evict caches only, otherwise reject new write | Retain source; derived preview cache 128 MiB; no automatic source eviction |
+| Active / queued heavy jobs | 1 / 2 globally; coalesce stale automatic refresh, explicit overload is busy | 1 / 1; second active/pending upload conflicts |
+| Worker memory / PIDs | 1 GiB / 256 | 512 MiB / 64 |
+| Wall time | 30s | 30s parse; 30s render |
+| Viewport/pixels | 1280x800 DPR 1; max 2048/dimension and 4,194,304 pixels | Same checked image/render bound |
+| Input | 512 KiB HTML/write | 50 MiB source; 256 MiB declared ZIP expansion; 4,096 archive entries; actual expansion bounded independently |
+| Structured output | Selector 512 characters, 4,096 matches, 64 KiB returned text/DOM | 100,000 nodes/depth 128; 64 MiB stored index; query 100 nodes/256 KiB |
+| Image content | 2 MiB compressed image bytes before base64, decoded pixels bounded separately | Same; explicit cover/frame kind |
+| Storage | 64 MiB global authored revisions/cache; evict regenerable cache only or reject | Retain source; derived preview cache 128 MiB; no source eviction |
+| Scratch | 128 MiB / 8,192 inodes per job initially, included in reservation and measured working set | 384 MiB / 8,192 inodes per job initially; memory-backed scratch counts against worker memory |
 | Diagnostics | 64 KiB | 64 KiB |
 
-Module plans' initial budgets refer to this table. These are enforceable starting defaults, not successful capacity measurements. Hard worker failure must leave the controller, assistant and other modules usable. Validate actual archive/chunk expansion and output, not only metadata. Do not rely on V8 heap settings as total-memory enforcement.
+Validate these starting budgets with representative/hostile fixtures; do not call them measured capacity. Adjust documented scratch/working-set budgets together when justified rather than defeating the memory limit. Whole-controller limits are not a substitute for worker-only bounds. Unknown/invalid restrictive module configuration does not fall back to permissive defaults.
 
-Canvas captures version at admission; raster-first live viewing executes no generated script in the user's browser. Delete native session includes explicit Canvas tombstoning; archive retains it. Design source remains instance-wide until human removal, independent of chat/project deletion. Cancelled/incomplete uploads do not claim the persistent slot: keep a bounded upload-operation status, cancel on interrupted transfer; after complete transfer/index admission report its operation ID and allow explicit cancellation/status lookup without duplicate upload.
+Canvas captures version/generation at admission; raster-first UI executes no generated scripts in the user's browser. Native-session deletion includes Canvas tombstoning; archive retains it. Design's instance-wide source is independent of chat/project deletion. Interrupted uploads release their reservation and retain bounded operation status; after complete transfer, report an operation ID so status/cancel/retry is explicit. No stale job, backup or remove/recreate race can restore a revoked generation.
 
 ## Required cross-boundary tests
 
-Pin schemas/fixtures for old and new host contracts. Test exact identity and capability transitions, duplicate/lost requests, Stop/native continuation, pending UI invalidation, readonly discovery, ungrouped metadata migration, recovery-blocked deletes, both composition modes and all release identities. Run the covered native APIs on independent Pi, not only mocks.
-
-No blanket assertion of completeness can replace these gates. Unknown upstream behavior has an owner, reproduction and explicit release consequence in feature-coverage.md; it is never silently inferred from source-language compatibility.
+Run [acceptance.md](acceptance.md) together with FC01–FC33 and the feature-specific suites. Pin old/new protocol fixtures and test actual selected Pi, assembled HTTP router, final service/container entrypoints and released archives. Compilation, simulated native events and review probes are different evidence. Record unresolved public API/renderer boundaries with owner, reproduction and release consequence; do not infer them from the assistant's implementation language.
