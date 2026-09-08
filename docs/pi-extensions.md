@@ -1,17 +1,6 @@
 # Pi extensions
 
-The assistant loads normal Pi resources through `DefaultResourceLoader`. Install packages using Pi's native package commands and configure them through Pi settings. File extensions, package resources and project resources need no Pixie wrapper or marker to execute. Optional application services require a supported API, but ordinary tools and `ctx.ui` calls do not.
-
-| Optional native package or resource | Added functionality |
-| --- | --- |
-| `pi-mcp-adapter` | Native MCP proxy, with optional Pixie administration through public runtime events |
-| `@juicesharp/rpiv-todo` | `todo` tool and `/todos` command |
-| `@juicesharp/rpiv-web-tools` | `web_search` and `web_fetch` |
-| `@juicesharp/rpiv-ask-user-question` | `ask_user_question` using generic UI dialogs |
-| Signet managed file | Native memory tools and lifecycle hooks |
-| `@mjakl/pi-subagent` | Native `subagent` execution |
-
-These are optional examples tested by the repository, not an installation bundle. A different extension can execute without being added to this table.
+The assistant loads normal Pi resources through `DefaultResourceLoader`. Install packages using Pi's native package commands and configure them through Pi settings. File extensions, package resources and project resources need no Pixie wrapper or marker to execute. Optional application services require a supported API, but ordinary tools and `ctx.ui` calls do not. Any extension can execute without being listed or cataloged here; the assistant stays extension-agnostic.
 
 Project trust follows native Pi: project-local resources load only when the project has no trust-requiring resources or the trust store explicitly trusts it (`ProjectTrustStore`, same default-deny as Pi without an interactive prompt). Untrusted project extensions never execute, while user and global extensions load normally; the Extensions screen reports the trust state. Recording trust and reopening the session picks it up with no other configuration change.
 
@@ -33,7 +22,7 @@ The public `SettingsManager.fromStorage()` boundary supplies a locked compare-an
 
 Saving is not loading. A successful save reports `saved: true`, `loaded: false` and `reload: deferred`. A save with an unconfirmed transport outcome requires inventory refresh before retry. A later native load failure does not silently roll back the saved configuration. Inventory shows the failure separately. Disabling a loaded extension does not remove its current tools, MCP registrations, dialogs or passive UI from existing sessions.
 
-Configured changes apply when a session reopens, or everywhere at once through the whole-host reload ([deployment](deployment.md)). In-process per-session reload is retired: the pinned SDK resets API providers process-globally and its loader resolves packages without an install policy, so a safe per-session path would need an upstream change ([session reload](session-reload.md)).
+Configured changes apply when a session reopens, or everywhere at once through the whole-host reload ([deployment](deployment.md)). In-process per-session reload is retired: the pinned SDK resets API providers process-globally and its loader resolves packages without an install policy, so a safe per-session path would need an upstream change ([roadmap](roadmap.md)).
 
 ## Extension UI bridge
 
@@ -47,15 +36,9 @@ Status entries remain keyed and separate from working messages. Extension titles
 
 Composer get/set/paste APIs report unsupported and never overwrite unsent drafts. The multiline `editor` dialog owns a separate draft. Custom TUI factories and widget component factories also report unsupported without executing their factories. An extension may handle an unavailable custom result and supply its own generic-dialog fallback, but this is not guaranteed for every extension.
 
-Stop unwinds blocked UI on every path (prompt cancel, archive, delete, shutdown): the controller dismisses the modal and the host settles the awaiting call, so no run hangs and no orphan modal survives. Extension-owned background work after prompt idle registers generic per-session liveness, which only delays inactive-projection eviction; explicit lifecycle operations still win. Child subagent sessions stay headless: their dialogs never open nested top-level modals in the parent, and progress arrives through normal tool events.
-
-The optional upstream `ask_user_question` tool uses sequential `select`/`input` dialogs in RPC mode and returns its native answer envelope. The host needs no questionnaire-specific event forwarding.
-
-The optional native subagent extension owns child execution and execution-time discovery. Its project definitions apply only when the project is trusted and override user ones. Progress updates and final details project through the generic tool path onto the child-run card, including parallel calls. Pixie owns only Markdown authoring.
+Stop unwinds blocked UI on every path (prompt cancel, archive, delete, shutdown): the controller dismisses the modal and the host settles the awaiting call, so no run hangs and no orphan modal survives. Extension-owned background work after prompt idle registers generic per-session liveness, which only delays inactive-projection eviction; explicit lifecycle operations still win.
 
 Additive application services can register through `pixie:capability:v1`, defined in `assistant/src/capabilities.ts`. This is separate from native tool discovery and is not required to execute an extension.
-
-The `rpiv-web` search backend is operator-owned external configuration. Provider selection, API keys, and the SearXNG endpoint live in `~/.config/rpiv-web-tools/config.json` and provider environment variables (`WEB_SEARCH_PROVIDER`, `SEARXNG_URL`, per-provider `*_API_KEY`); the default is self-hosted SearXNG at `http://localhost:8080`. Pixie never reads or writes this config. The upstream `web_fetch` SSRF guard refuses loopback and private targets, so it cannot reach Docker-local loopback services; this protection is retained, not weakened.
 
 Global MCP changes apply on subsequent session initialization. Session membership is stored separately. Removing a connection removes only its tools. Unavailable connections are reported without replacing Pi's core tools.
 

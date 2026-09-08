@@ -28,7 +28,7 @@ x86-64 numbers are recorded ([security](security.md) for Browser open/snapshot/c
 
 ### 3. Upstream patch contribution
 
-Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](https://github.com/mjakl/pi-subagent) with the known-agent child regression from [subagent child verification](subagent-child-verification.md). The patch lives in the workspace agent layer and the standalone agent distribution; the assistant stays extension-agnostic and ships no extension-specific patch. No submission has been made. Do not publish any contribution without signoff. Once an upstream release passes the child tests, drop the local patch in `agent/extensions/local-patches/`.
+Propose the Bun-specific public RPC-entry resolution to [mjakl/pi-subagent](https://github.com/mjakl/pi-subagent). Without it, a Bun parent launches the child without a script and the child fails with `Script not found "rpc"`; the local patch resolves the SDK's public `rpc-entry` export and passes its path as the child script. The patch lives in the workspace agent layer; the assistant stays extension-agnostic and ships no extension-specific patch. No submission has been made. Do not publish any contribution without signoff. Once an upstream release passes the real-child tests in `package/tests/pi-native-parity/subagent-child.test.ts`, drop the local patch in `agent/extensions/local-patches/`.
 
 ### 4. SDK built-in extension export proposal
 
@@ -37,6 +37,10 @@ The pinned Pi SDK loads its built-in llama.cpp extension only inside the CLI (`-
 ### 5. Right-rail module tabs
 
 Surface each in-process MCP module as a tab on the right rail of the Web UI shell, with the Browser icon opening the Browser module panel (design reference: the operator's shell mockup). The MCP module catalog and registry surfaces already exist ([MCP publisher](mcp.md)); this is a Web UI presentation item on the shell redesign stream, not a new protocol surface. Keep the focused tab set; do not turn the rail into a generic plugin marketplace.
+
+### 6. Session reload upstream proposal (optional)
+
+Shelved: the whole-host reload covers the current need ([extensions](pi-extensions.md)). If non-disruptive per-session reload ever becomes a requirement, propose two small additive SDK changes: scope provider reset to the reloading session (or a re-entrant variant of the process-global provider reset), and accept an install-policy callback on the loader's reload path so preflight can forbid mid-reload package installation. Submission requires the [publication signoff](#final-architecture-review-gate); until then, configured changes apply on session reopen or through the whole-host reload.
 
 ### Host state (complete)
 
