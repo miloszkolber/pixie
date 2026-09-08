@@ -20,7 +20,7 @@ import { registerCapability } from "../capabilities.ts";
 // The import degrades to "unavailable" when the patch is absent so installs
 // never break, while a requested `--llama` profile fails loudly at startup
 // instead of silently dropping the provider. Exporting the barrel from the
-// SDK index itself is the upstream contribution tracked in docs/roadmap.md;
+// SDK index itself is the upstream contribution tracked in roadmap/compatibility.md;
 // once upstream exports it, this file needs no local patch.
 //
 // Headless note: the extension's `/llama` management command renders through
@@ -49,7 +49,7 @@ const upstreamLlama: ExtensionFactory | undefined = await import(
 	.catch(() => undefined);
 
 // Loud failure at host startup when --llama is requested but the pinned SDK
-// does not expose its built-in factory through the public export.
+// does not expose its built-in llama.cpp extension through the public export.
 export function llamaFactory(): ExtensionFactory {
 	if (!upstreamLlama)
 		throw new Error(

@@ -1,0 +1,57 @@
+# Second-pass review
+
+Reviewed on 8 September 2026. Runtime baseline remains `f63d0d5bcb7f6e342058734b2e741ad2619d8867`. The two roadmap commits `d8f73c35ae5fd286c557fff88d5868bde0d3c3ab` and `71590cac48925b31b9d5d3c7d1746ee94b351772` describe the same direction with different file structures; this revision consolidates them into the unnumbered roadmap without modifying main.
+
+This pass checked the release plan against workflows/packaging, retained features against assistant and controller callers, native extension context against the proposed bridge, durable metadata boundaries, and plan-to-task coverage. It is not a second successful run of the application or a claim that every source line was audited. The previously reported CI success applies to its original code/fixtures, not to new implementation requirements.
+
+## Findings and disposition
+
+| ID | Finding | Classification | Required work |
+| --- | --- | --- | --- |
+| R2-01 | Release identity was not fully specified and the Docker image was not consistently a required matching release output. Floating image package inputs and partial publication were unaddressed. | Plan gap, now specified | PKG-02/04: one sha-12 ID, full revision checks, four archives plus two image platforms, immutable retries, frozen inputs and draft-first publication. |
+| R2-02 | The basic model picker calls provider administration, which native RPC alone does not supply in the same form. | Confirmed source coupling; migration blocker | API-01, GO-03: native get_available_models/current-model path independent of CP-07 administration. |
+| R2-03 | MCP integration relies on synchronous Pi event-bus responses and live JS registration/dispose handles. Spawning native RPC does not automatically preserve that administration surface. | Confirmed integration boundary | API-03/EXT-04: generic opt-in native bridge with tested scoped IPC and adapter ownership; no second MCP client. |
+| R2-04 | The public native extension context does not expose the entire AgentSession/ModelRuntime used by the old assistant. A generic bridge was proposed without proving those missing interfaces. | Confirmed API mismatch; feasibility still unverified | Early API-03 spike against actual independent Pi distributions. Missing public operations block managed parity; exact upstream proposal or separately approved reduction, never deep-import assumptions. |
+| R2-05 | Agent-definition create uses an existence check followed by replacement; updates/deletes have no expected-revision contract. Controller-local serialization does not coordinate native/external writers. | Confirmed compare-and-set/no-clobber gap; no race exploit run | FIX-06/CP-10: no-clobber create, revision-checked update/delete, unknown-field preservation and path/descriptor revalidation. |
+| R2-06 | Global thinking preference validation hardcodes values only through xhigh, while the reviewed native RPC supports max on appropriate models. Session configuration already queries supported levels. | Confirmed inconsistent validation | FIX-07/CP-06/08: native-supported values and explicit default-versus-session semantics; no silent clamping by stale enum. |
+| R2-07 | Schedule methods exist in the typed method map and controller, but are absent from the WS_METHODS constant list. An inventory generated from that list alone would miss them. | Confirmed catalog coverage gap, not absent scheduling | API-01 inventories all dispatchers/maps/callers, including schedule APIs. Preserve existing schedule runner/UI-model tests. |
+| R2-08 | Pixie catalog/identity/MCP metadata lives partly beneath agentDir. Previous broad state-ownership guidance did not define how to preserve it or map deletion authority across topology changes. | Confirmed locations; migration design gap | MIG-01–04 and migration.md specify owners, native schema collision checks, receipt/backup and no ledger rewind. |
+| R2-09 | Browser configuration parsing falls back to defaults after an invalid override, potentially discarding restrictive operator settings. | Confirmed fallback branch; no abuse reproduced | FIX-08: invalid configuration makes that module unavailable and leaves core/siblings usable. Test mixed valid restrictive and invalid inputs. |
+| R2-10 | The final Docker ENTRYPOINT replaces the earlier tini entrypoint, so installing/inheriting tini does not establish final-image reaping. | Confirmed packaging behavior; orphaning not reproduced | BUILD-05/PKG-03: inspect effective image command and verify subreaping/SIGTERM/descendants in final images. |
+| R2-11 | npm packaging checks expect files no longer shipped; manual development-version packing conflicts with its later guard. Container CI does not validate that publication path. | Confirmed source mismatch; workflow failure not rerun | Classify legacy transition support. Repair only if another legacy release is needed; retire new npm publication after Go cutover. |
+| R2-12 | “Fallback or approved deferral” could be read as permission to call lost Web UI functionality parity. Several gaps were left as families rather than release-blocking rows. | Plan ambiguity, now resolved | compatibility.md defines CP-01–17 and no preapproved reductions. TUI guidance is degraded UX, not a completed replacement. |
+| R2-13 | Multiple roadmap copies and redirect stubs could leave agents with conflicting release/ownership instructions. | Documentation consistency gap | Canonical unnumbered set, root guidance, delete the three superseded docs and repair live references. |
+
+P1 release/cutover blockers are R2-01–06, R2-08–12 when their affected surface is enabled/supported. R2-07/13 are contract/documentation fixes required before an agent relies on the inventory. These priorities are not vulnerability severity scores.
+
+## Source evidence
+
+R2-02: [pi_admin.go](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/pi_admin.go) routes Models through providers/readProviders and pi.providers.list. [Pi RPC](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/rpc.md) provides native available-model/current-model operations; do not make optional credential administration a prerequisite for them.
+
+R2-03/04: [mcp-admin-bridge.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/extensions/mcp-admin-bridge.ts), [mcp-connections.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/extensions/mcp-connections.ts) and the [public Pi extension types](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/extensions/types.ts). Compatibility must be demonstrated through supported native operations, not inferred from the existence of an extension API.
+
+R2-05: [agents.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/agents.ts) and [atomicWrite/JsonStore](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/storage.ts). Atomic replacement protects file completeness; it does not by itself prevent a lost concurrent edit or a check-then-create race. Existing realpath-then-open code also needs adversarial replacement tests; this pass did not demonstrate a path escape.
+
+R2-06/07: [providers.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/providers.ts), [browser method map](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/contracts/src/ws-protocol.ts) and [controller dispatcher](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/handler.go). Native version-specific thinking support is not an invitation to accept arbitrary strings without validation.
+
+R2-08: [assistant sidecar](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/sessions.ts), [MCP stores](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/extensions/mcp-connections.ts), [deletion journal](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/session_deletions.go), [queue ledger](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/session_queues.go) and [connection binding](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/pi_client.go).
+
+R2-01/09/10/11: [registry.go](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/mcpserver/registry.go), [Dockerfile](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/Dockerfile), [container workflow](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/.github/workflows/container-images.yml), [npm workflow](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/.github/workflows/npm-publish.yml) and [assistant package](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/package.json).
+
+The first review remains in repository-review.md. Its findings are not erased when a later plan defines their fix. The native input/queue/session cases and Browser shared-UID exposure retain their original evidence qualifications.
+
+## Decisions completed by this pass
+
+The release scheme is sha-12, including Docker; full commit/digest/provenance establish identity. All four host archives and both image platforms are mandatory. Build/test precedes public release, incomplete uploads remain draft and retries do not overwrite.
+
+The full-host binary has one service and the same assistant engine. Missing Pi/provider does not erase its shell; invalid private configuration or conflicting ownership still fails safely. Default Stop pauses dispatch, clears native continuations and aborts, preserving unsent work for explicit recovery.
+
+Vanilla and managed compatibility are separate tested profiles. No feature loss is approved. Native APIs first, generic explicit native bridge for API gaps, existing scoped agent-file authoring in Go where appropriate, unchanged controller-owned services. Bridge feasibility is deliberately early, not a surprise at cutover.
+
+Migration has a named state inventory and no execution-ledger rewind. Current operational docs remain; only superseded plans are deleted. Canvas and Design reuse the common module/worker foundation and remain the last feature stages.
+
+## Evidence still required
+
+The blank-content screenshot needs a reproducible state/route fixture; duplicate-create admission is a separate confirmed issue. The managed bridge needs a real proof on independent Pi distributions. Worker enforcement needs an actual selected/provisioned boundary and failure tests in both deployments. Openfig frame rendering needs a supported upstream artifact, offline assets and visual comparisons. Performance gains require measured full topologies.
+
+These are explicit implementation gates with owners in execution.md and tests in acceptance.md. They are not claims of impossibility and do not stop independent work. A comprehensive roadmap reduces ambiguity; it cannot prove that unimplemented code or untested integrations are correct.

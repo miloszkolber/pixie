@@ -1,103 +1,131 @@
 # Repository review
 
-Baseline: `miloszkolber/pixie` at `f63d0d5bcb7f6e342058734b2e741ad2619d8867`. Review date: 8 September 2026. [Sources](sources.md) contain pinned repository references and external contracts.
+Reviewed baseline: `miloszkolber/pixie` at `f63d0d5bcb7f6e342058734b2e741ad2619d8867`, 8 September 2026. Inputs include the supplied UI screenshot/five wireframes, pi-web, Mewa and Pi RPC. [Source appendix](sources.md).
 
 ## Verification scope
 
-The review covered assistant entrypoints, session implementation and transport; controller connection and durable queues; MCP registry; workspace shell/state; Mewa integration; representative tests; deployment, documentation and workflows. It was not an independent line-by-line audit of every file.
+Source review covered runtime entrypoints, most assistant session implementation, host transport, controller connection/queues, MCP registry, shell/state/styles/adapters, representative acceptance tests, deployment, documentation and CI. It is not an independent line-by-line audit of every file.
 
-GitHub Actions run `34226327666` reported success for source validation, browser acceptance, native SDK-host compatibility on amd64/arm64 and image publication. Those results were inspected, not rerun in this review. The supplied blank-content screenshot was not reproduced. Security findings below identify exposure, not demonstrated exploitation. The Openfig draft's timing and renderer experiments are inherited research, not new test executions.
+The reviewed commit's Actions run `34226327666` reported successful source, browser, amd64/arm64 native-host and image-publication jobs. Those results were inspected; the application/tests were not independently run during the review. The supplied empty-content state was not reproduced. Security observations are source findings, not demonstrated exploits. [CI evidence](sources.md#documentation-and-validation).
 
-P1 means resolve or explicitly accept before the relevant cutover; P2 means foundation work. These are planning priorities, not vulnerability scores.
+P1 means resolve or explicitly accept before the relevant cutover; P2 belongs in foundation work. These are planning priorities, not security severity scores. Confirmed means evident in inspected source; gap means a target requirement is missing; risk requires runtime/compatibility evidence. Recheck each finding against the actual checkout.
 
 ## Retain
 
-Keep the Go controller boundary, native session identity/persistence, bounded transport, reconnect generations, pending tools/dialogs, explicit uncertain delivery, scoped authorization, read-only project inspection, Mewa integrity checks and existing acceptance coverage. The browser fixture already tests streaming after view closure, transcript deduplication, keyboard/narrow layouts and Mewa cleanup. Rewrite owners, not all working components.
+The Go controller boundary, native session identity/persistence, bounded transport/replay, authenticated loopback connection, scoped UI requests, ambiguous-delivery state, read-only inspection, Mewa integrity and substantial tests are useful foundations. Browser acceptance already checks streaming after view closure, reconnect deduplication, keyboard/narrow layouts and Mewa cleanup. Keep those behaviors while replacing ownership and layout; a green old suite does not establish the new architecture.
 
 ## Findings
 
-### F01 — Host-installed Pi is not the runtime authority
+### F01 — Installed Pi is not the runtime authority
 
-**P1; confirmed architecture mismatch.** assistant/package.json installs pinned SDK dependencies, sessions.ts creates SDK sessions, and server.ts reports that embedded SDK version. Sharing the user's state directory does not select the user's executable. SDK embedding is not inherently wrong, but conflicts with the requested installation-parity model. Launch the selected Pi through native RPC and test outside the checkout. [Assistant sources](sources.md#assistant-and-pi).
+**P1, confirmed architecture mismatch.** The assistant installs pinned SDK dependencies and directly creates SDK sessions; its server reports that embedded version. Sharing the user's agent directory is not selecting their installed executable/runtime. SDK embedding is not inherently wrong, but differs from the requested native-installation/Go direction.
+
+Launch the selected native `pi` and test outside the checkout. Both release variants must use the same implementation and actual installation. [A1–A4](sources.md#assistant-and-native-pi).
 
 ### F02 — Production restart has no termination callback
 
-**P1; confirmed source defect.** runtime.restart closes peers and calls optional options.onRestart. main.ts does not supply that callback and the server supplies no default despite its comment. The injected-callback test does not cover the production entrypoint. The request can succeed without ending the process, leaving restartPending set. Share bounded shutdown/exit with ordinary termination and test the executable and new boot identity. [Assistant sources](sources.md#assistant-and-pi).
+**P1, confirmed defect.** `runtime.restart` closes peers and calls optional `options.onRestart?.()`. Production `main.ts` supplies no callback, and the server installs no default despite its interface comment. The test injects a callback.
 
-### F03 — Failed module persistence changes effective state
+An enabled restart can acknowledge/disconnect without exiting; `restartPending` stays set. Use bounded shutdown and executable-level exit/new-boot tests. In the full-host build the composition root must drain and restart the complete service, not exit from a library. [A3–A5](sources.md#assistant-and-native-pi).
 
-**P1; confirmed source defect.** Registry.SetEnabled changes r.enabled before persist.Write. Failure leaves memory, disk and runtime inconsistent; routes and health read the changed map. Persist a candidate map before publishing committed configuration, and keep runtime readiness distinct. Exercise write failure and restart. [Registry source](sources.md#modules-and-deployment).
+### F03 — Failed module persistence changes live enablement
 
-### F04 — Duplicate enable restarts Browser
+**P1, confirmed defect.** `Registry.SetEnabled` updates `r.enabled` before `persist.Write`, then returns on failure without restoring the map. Catalog/health/routes read that map while disk/runtime may retain prior state.
 
-**P1; confirmed source defect.** SetEnabled always invokes startLocked; the enabled path constructs a replacement and shuts down the existing Browser. Add an unchanged-value no-op and a separate explicit Restart operation. Verify the same active Browser handle survives a retried enable. Test shared-storage lifecycle overlap. [Registry source](sources.md#modules-and-deployment).
+Persist a candidate before publication and distinguish desired state from readiness. Test failed writes, effective availability and subsequent restart. [E1](sources.md#extensions-and-deployment).
+
+### F04 — Repeated enable restarts Browser
+
+**P1, confirmed defect.** `SetEnabled` always calls `startLocked`; its enabled path constructs a new service and shuts down the previous one. There is no unchanged-value guard.
+
+Make duplicate enable a no-op and Restart explicit. Verify active handles survive retries and shared-storage startup/shutdown order is safe. [E1](sources.md#extensions-and-deployment).
 
 ### F05 — Method reference and validation are not an exact contract
 
-**P1; confirmed gap.** docs/pi-protocol.md mixes operation names that do not match host dispatchers: implemented examples include session.cancel, pi.session.steer and session.configure. Number(request.id) also accepts some strings/booleans before integer validation. Inventory the actual callers/dispatchers, separate controller and host surfaces, and validate typed envelopes without coercion. Preserve unknown native payload fields independently of envelope strictness. [Assistant sources](sources.md#assistant-and-pi).
+**P1, confirmed gap.** The protocol document lists names/families inconsistent with the host dispatcher; actual examples include `session.cancel`, `pi.session.steer` and `session.configure`. The server coerces IDs with `Number(request.id)` before validation, admitting some strings/booleans under a numeric-ID contract.
 
-### F06 — One content slot mixes left and right navigation
+Inventory browser/controller/host methods separately, validate strict envelopes and generate exact reference details from a shared schema. Preserve forward-compatible native payload fields. [Host](sources.md#assistant-and-native-pi), [documentation](sources.md#documentation-and-validation).
 
-**P1; confirmed target gap.** project-work-area.svelte selects one ContentTab for chat, file, diff or Browser. Files replace the conversation; the sidebar is hard-coded to Files/Changes. Replace this ownership model with independent primary/secondary selections and six slots. Styling the tab strip does not implement the target. [Workspace sources](sources.md#workspace-and-mewa).
+### F06 — One content slot owns both sides of navigation
 
-### F07 — Duplicate create and the empty screenshot need separate tests
+**P1, confirmed design gap.** `project-work-area.svelte` selects one ContentTab for chat/file/diff/Browser, so a file replaces a conversation. The right area is hard-coded to Files/Changes.
 
-**P1; missing local guard confirmed; screenshot cause unverified.** The view create handler has no local in-flight guard. Repeated activation can issue multiple creates. However, openChatSession normally activates the returned session. Do not claim the screenshot proves activation is absent or that every repeated Chat title is accidental. Add a guarded action; capture route, IDs, persisted-state version and request generation to reproduce restoration/stale-selection failures. A selected item must resolve to its own loading/content/error/missing state. [Workspace sources](sources.md#workspace-and-mewa).
+Introduce independent primary/secondary selections and six slots. Remove the mixed-content tab strip as the shell model; styling cannot correct ownership. [U1–U3](sources.md#workspace-and-mewa).
 
-### F08 — Two visual foundations coexist
+### F07 — Create guard and screenshot diagnosis are separate
 
-**P1; confirmed ownership gap.** Mewa is loaded alongside Pixie's independent palette, generated colors, generated typography and structural tokens. Pixie describes rounded defaults and its own spacing scale; Mewa specifies square geometry and library primitives. Correct Button mappings already exist. No computed-style audit was run, so do not invent a specific cascade failure. Retain correct wrappers/integrity checks, migrate foundations to Mewa and test composed browser styles. [Workspace sources](sources.md#workspace-and-mewa).
+**P1, missing guard confirmed; screenshot cause unverified.** The create handler has no local in-flight guard, so repeated activation can issue repeated requests. That does not prove repeated Chat labels in the screenshot are accidental.
 
-### F09 — Provider/connection state replaces the workspace
+The screenshot also shows chat tabs with a project-ready empty panel. `openChatSession` normally activates its result, so “activation is never set” is not a supported diagnosis. Add a guarded action and a fixture capturing route/selected IDs/restoration/request generation. Selected items always resolve to their own loading/error/content state. [U2–U3](sources.md#workspace-and-mewa).
 
-**P2; confirmed UX gap.** shell.svelte gates the workspace through global availability and launches Settings as a modal. Keep navigation, safe readable content and recovery reachable; disable unsupported operations locally. Move Settings to the primary area. Distinguish stale cached data from authoritative current state. [Workspace sources](sources.md#workspace-and-mewa).
+### F08 — Two visual foundation systems coexist
 
-### F10 — UI translation omits native editor text
+**P1, confirmed ownership gap.** Mewa styles coexist with independent Pixie palette/color/typography generators and rounded/spacing tokens. Each subsystem claims single ownership internally, while the application has both. Some wrappers, including Button, already match Mewa and should stay.
 
-**P2; confirmed parity gap.** The custom bridge marks composer APIs unsupported while native RPC documents set_editor_text. Preserve working dialogs/widgets and add session-owned editor proposals with newer-draft conflict handling. Native confirmation uses confirmed, not the current bridge's generic value shape. Arbitrary TUI factories remain unsupported rather than fabricated as HTML. [Assistant sources](sources.md#assistant-and-pi).
+No computed-style audit was run, so do not blame a specific cascade collision without evidence. Map consumers to one Mewa foundation, limit Pixie tokens to product geometry and test composed styles/lifecycle. [U4–U9](sources.md#workspace-and-mewa).
 
-### F11 — The registry remains Browser-specific
+### F09 — Availability replaces the workspace
 
-**P2; confirmed target gap.** Validation, health, lifecycle, catalog and routes accept only Browser, and UI paths hard-code it. Introduce a bounded compile-time registry plus frontend contribution contract. Browser, Canvas and Design must share it; a simple MCP connection is not automatically a rich UI. No arbitrary remote code or marketplace is required. [Registry source](sources.md#modules-and-deployment).
+**P2, confirmed UX gap.** Global provider/connection gating in `shell.svelte` replaces the workspace and Settings is modal. Missing agent functionality should not remove navigation/diagnostics.
 
-### F12 — Browser shares controller authority
+Keep shell availability separate from action availability; mark stale readable content and disable live actions appropriately. Move Settings into the primary area model. [U1](sources.md#workspace-and-mewa).
 
-**P1; confirmed exposure, no exploit demonstrated.** The documented Chromium configuration disables its sandbox; Browser/controller share UID 1000; Compose uses host networking; Browser state sits beneath controller data. Sanitized environment/HOME/TMP values do not enforce file or network isolation. Preserve artifact checks and credential filtering, state limitations accurately, and test a stronger optional deployment before claiming containment. Pi's intentional host-tool authority is a different boundary. [Deployment sources](sources.md#modules-and-deployment).
+### F10 — Native editor-text parity is missing
+
+**P2, confirmed capability gap.** The custom bridge marks editor/composer APIs unsupported, while inspected native RPC includes `set_editor_text`. Existing dialogs/string widgets remain useful.
+
+Map supported requests with originating session/process and draft-conflict semantics. Native confirmation uses `confirmed`; arbitrary TUI factories are not browser components. [A6–A7](sources.md#assistant-and-native-pi).
+
+### F11 — Module code is Browser-specific
+
+**P2, confirmed design gap.** The backend accepts only Browser in validation, health, lifecycle and catalog, and UI contains Browser-specific integration.
+
+Add one bounded contribution boundary using Browser plus fixtures, then Canvas/Design. Separate generic MCP data from rich local adapters. No remote-code marketplace or growing shell branches by module name. [E1](sources.md#extensions-and-deployment), [U2](sources.md#workspace-and-mewa).
+
+### F12 — Browser shares controller security context
+
+**P1, confirmed exposure; no exploit demonstrated.** Browser/controller share UID 1000 and host networking; Chromium sandbox is disabled; Browser roots sit below controller data. HOME/TMP/environment filtering does not prevent same-UID access to other permitted files or local services.
+
+Document actual boundaries and test stronger worker isolation end to end. Native Pi's intentional user authority is different from untrusted page authority. Full-host mode makes unrestricted worker access especially consequential; do not inherit this posture silently. [E1–E4](sources.md#extensions-and-deployment).
 
 ### F13 — Hardening claims exceed supplied Compose flags
 
-**P2; confirmed mismatch.** Compose sets UID, read-only root and tmpfs, but omits capability-drop, no-new-privileges, memory and PID limits mentioned around the deployment. Add/test intended flags with realistic Browser budgets or remove the claim. Do not apply Browser restrictions blindly to host Pi. [Deployment sources](sources.md#modules-and-deployment).
+**P2, confirmed mismatch.** Compose has non-root/read-only/tmpfs but lacks capability-drop, no-new-privileges, memory and PID limits discussed around it.
 
-### F14 — Publication is coupled to routine validation
+Add/test intended flags or remove the claim. Keep host Pi tool behavior separate from Browser restrictions. Runtime flags, not image comments, determine deployed limits. [E2–E4](sources.md#extensions-and-deployment).
 
-**P1; confirmed workflow behavior; external protections not audited.** Container builds publish on non-PR events, including main pushes and schedule runs, and can promote latest. Separate CI artifacts from approved publication. Enforce the agreed approval policy in workflows rather than relying solely on prose. An assistant binary release must not inherit automatic publication accidentally. [Workflow sources](sources.md#documentation-and-validation).
+### F14 — Routine validation can publish
 
-### F15 — SDK-host CI is not host-executable compatibility
+**P1, confirmed workflow behavior.** Non-PR events including main pushes and scheduled runs publish images and may promote latest, while prose describes exact-source approval. The workflow does not express the same separate approval step; protections outside it were not comprehensively audited.
 
-**P1; confirmed test-scope gap.** Current official-Pi jobs install the workspace and exercise its native SDK host on two architectures. Retain them, but add released-artifact tests against independent installations, service PATH/HOME, custom directories, absent extensions and incompatible versions. Existing success is not proof of arbitrary Pi compatibility. [Workflow sources](sources.md#documentation-and-validation).
+Separate validation from publication and enforce the approved release set. Every new-pipeline release includes assistant-only and full-host builds on each supported architecture. Keep previous releases immutable. [D1–D2](sources.md#documentation-and-validation).
 
-### F16 — History is eagerly materialized before chunking
+### F15 — Compatibility jobs do not prove independent-installation parity
 
-**P2; confirmed optimization opportunity, not measured failure.** Large histories can be chunked, but are assembled and serialized in full first to determine size. Use bounded iteration/encoding and test single oversized entries as well as many messages. Preserve snapshot ordering. Measure simultaneous attaches and image-heavy histories, including Pi child memory. [Assistant sources](sources.md#assistant-and-pi).
+**P1, confirmed test gap.** Existing official-Pi jobs install the workspace and test its SDK host on two architectures. This is not an independently installed Pi with different PATH/version/extensions under the final service artifact.
 
-### F17 — Durable delivery needs one owner
+Retain those tests and add independent installations, optional packages absent, custom directories, incompatible versions, separate TUI sessions and final artifacts. Both required deployment variants need the matrix. [D1, D4](sources.md#documentation-and-validation).
 
-**P1; migration concern, not proof of current duplicate execution.** The controller has durable follow-ups and delivery-uncertain state; native RPC also provides queues. A naive adapter can enqueue twice or settle on acceptance. Define each delivery stage, preserve uncertainty after dispatch without acknowledgment, and test Stop semantics. Do not promise exactly-once tool execution across crashes. [Queue and RPC sources](sources.md#assistant-and-pi).
+### F16 — History is chunked after eager materialization
 
-### F18 — Documentation contains obsolete paths and operator history
+**P2, confirmed optimization opportunity, not observed memory failure.** Large history is split for transport, but snapshot/history is assembled and the entire message array serialized to test its size before chunking. Large entries and concurrent attaches remain important cases.
 
-**P2; confirmed defects.** Agent instructions refer to absent pi/ and pixie/ source roots. Deployment includes machine paths/backups, a Browser mount absent from Compose, and --build for a service without build configuration. Security's benchmark passes an entire dotenv file as a bearer and describes interactive App HTML despite roadmap exclusions. Replace these with current, tested instructions. Keep audit evidence here rather than in quick-start prose. [Documentation sources](sources.md#documentation-and-validation).
+Use bounded iteration/incremental encoding while preserving checkpoint ordering. Measure cold/warm attaches with images/custom entries and total Pi-child memory. Do not claim all history is forced into one frame. [A2–A3](sources.md#assistant-and-native-pi).
 
-### F19 — npm pack checks reference absent package paths
+### F17 — Durable/native queue ownership is a porting hazard
 
-**P1 for a legacy npm release; confirmed source mismatch, not a reproduced workflow failure.** npm-publish.yml expects scripts/apply-patches.mjs and patches/pi-subagent-3.0.1-bun-rpc-entry.patch, while the assistant ships patches/apply-patches.mjs and an SDK export patch; the subagent patch is workspace-owned. Its manual path stamps a development version that a later pack guard rejects. Reconcile legacy dry-run checks if that release path is retained; retire it deliberately after Go cutover. Main container CI does not establish npm release readiness. [Workflow sources](sources.md#documentation-and-validation).
+**P1, confirmed dual-boundary concern, not a claim of current duplicate execution.** The controller retains durable follow-ups and uncertainty; native RPC also has steering/follow-up queues. A naive port could admit one item to both or treat acceptance as completion.
 
-## Draft review decisions
+One owner per delivery stage. Preserve uncertainty after lost acknowledgment and test exact Stop behavior. Do not promise exactly-once execution across process failure or deployment-mode switching. [A7](sources.md#assistant-and-native-pi), [C2](sources.md#controller).
 
-Canvas's one-session scope, full-document CAS writes, immutable versions and screenshot feedback are retained. Its raw-HTML serving proposal does not establish network denial: default-src alone also prevents intended inline code unless a complete policy is defined, while allow-scripts plus CSP is not an OS network boundary. A bare iframe cannot send an arbitrary bearer header, a screenshot URL needs separate authentication, and a shared MCP token does not authenticate a claimed session ID. [08-canvas.md](08-canvas.md) specifies scoped credentials, isolated render jobs, version-bound images and a safe live viewer instead.
+### F18 — Documentation contains obsolete paths and operational history
 
-Openfig's parser-first/read-only scope is retained, including the explicitly instance-wide single-document slot and user-only upload/removal. Its paths and two-module assumption are updated for assistant/ + package/ and Browser + Canvas + Design. A saved cover remains distinct from a rendered frame. The worker needs actual filesystem/network/memory enclosure, not only a process or V8 heap limit. [09-openfig.md](09-openfig.md) preserves the tool contracts, budgets, normalization, shared focus, removal and separate renderer gate. Draft experiment numbers are not release capacity guarantees.
+**P2, confirmed defects.** Docs/agent instructions reference absent paths, mix completed milestones with remaining work, include host-specific paths/backups and contradictory mount/isolation claims. Deployment describes a Browser mount absent from Compose and uses build for a service without a build definition. Security's benchmark reads an entire dotenv file as a bearer and describes interactive App HTML despite roadmap exclusions.
 
-## Sequencing
+Rewrite by responsibility; test examples in disposable environments. Keep audit evidence here, not quick-start prose. Update root agent instructions early. The former non-Docker two-process package instructions must become the required full-host single-binary installation when it ships. [D3–D7](sources.md#documentation-and-validation).
 
-Start FIX-01–04 and the F07 reproduction while agreeing contracts and auditing Mewa. Then deliver native Go chat and Chat + File vertical slices, continuity, Browser contributions, deployment and cutover. Only afterward implement Canvas and finally Design. Keep unresolved evidence explicit; do not replace a known limitation with an unsupported claim.
+## Limitations and sequence
+
+Separate Pi processes do not coordinate same-session writes; a Pixie-only lock cannot compel vanilla TUI cooperation. Native RPC exposes less administration than direct SDK embedding, so every retained feature needs a disposition rather than an automatic syntax port. An empty-shell screenshot or green old suite does not establish the new content-filled design.
+
+Fix F02–F05 and isolate F07 first. In parallel agree contracts and inventory Mewa. Build one independent native conversation and one Chat+File split, then continuity/optional integration and both build variants. Complete deployment/docs before final Canvas and Openfig integration. Preserve one owner per concern throughout.

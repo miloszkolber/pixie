@@ -1,25 +1,22 @@
 # Pixie
 
-Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). Pi runs on the host; Pixie with its embedded Browser MCP publisher runs in Docker.
+Pixie is a self-hosted web interface for [Pi](https://github.com/earendil-works/pi). The current assistant runs on the host using Pi's SDK; the interface, controller and optional Browser MCP module run in Docker.
 
-- Persistent concurrent chats, streaming, images and text attachments, steering, queues, search and forks.
-- Project directories with read-only files, image previews and Git diffs.
-- Native Pi provider, credential, model and thinking-level management.
-- Optional defined subagents, plans, MCP tools, Browser and Signet memory.
-- Pixie-owned goals, tasks, questions and schedules.
+Pixie supports persistent chats, streaming, images and text attachments, queues, search and forks. Projects provide read-only file previews and Git diffs. Provider configuration uses Pi's native APIs. Plans, delegation, MCP tools and Signet use optional native integrations; goals, questions and schedules are Pixie features.
 
-Optional controls appear when a compatible extension is available. The baseline uses the pinned Pi SDK and its normal tools and settings.
+Host integration lives in `assistant/`; the application and interface live in `package/`. Pixie is intended for one trusted user.
 
-Pi source and configuration examples live in [`pi/`](pi/README.md); the application lives in `pixie/`.
-
-Follow [deployment](docs/deployment.md) to configure the host service, secrets, state and project mounts, then run:
+Follow [deployment](docs/deployment.md) to configure the host service, credentials, state and read-only project mounts. For the prebuilt Compose image:
 
 ```sh
-docker compose --env-file .pixie up -d --build
+docker compose --env-file .pixie pull
+docker compose --env-file .pixie up -d --no-build
 ```
 
-Open <http://127.0.0.1:7312>. Pixie is intended for one trusted user.
+Open <http://127.0.0.1:7312>.
 
-[Architecture](docs/architecture.md) · [Pi integration](docs/pi.md) · [Extensions](docs/pi-extensions.md) · [MCP publisher](docs/mcp.md) · [Development](docs/development.md) · [Security](docs/security.md)
+The [implementation roadmap](roadmap/README.md) covers the Go assistant, six-column workspace, dual host builds and optional Canvas/Design modules. These are implementation plans, not claims that the new release artifacts are already available.
+
+[Architecture](docs/architecture.md) · [Pi integration](docs/pi.md) · [Extensions](docs/pi-extensions.md) · [MCP](docs/mcp.md) · [Development](docs/development.md) · [Security](docs/security.md)
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).

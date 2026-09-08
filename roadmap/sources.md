@@ -1,54 +1,84 @@
-# Sources and verification
+# Sources and verification scope
 
-Repository baseline: [Pixie f63d0d5bcb7f6e342058734b2e741ad2619d8867](https://github.com/miloszkolber/pixie/commit/f63d0d5bcb7f6e342058734b2e741ad2619d8867), reviewed 8 September 2026. This directory consolidates the supplied review and implementation plans, reviews the two repository MCP drafts, and incorporates the user's requirement for assistant-only and all-in-one builds in every release.
+Pixie baseline: `f63d0d5bcb7f6e342058734b2e741ad2619d8867`, reviewed on 8 September 2026. References below preserve the evidence behind the plans; they are not instructions to depend on a moving default branch.
 
-The earlier review inspected source and GitHub CI results, not an independently executed full suite or deployed UI reproduction. Draft Openfig timings/renderer experiments remain attributed to the original draft; reproduce them before treating them as engineering evidence. The new plans describe proposed behavior, not completed implementation.
+The review inspected source and reported CI results. It did not independently run Pixie, reproduce the supplied empty-content screenshot, benchmark the Go rewrite, or execute the Openfig draft's parsing experiments. The latter measurements are attributed to the existing draft and must be reproduced before implementation relies on them.
 
-## Assistant and Pi
+The five supplied wireframes and current-UI screenshot are user-provided design inputs. Their behavior is transcribed into `workspace-ui.md` so an agent can implement the plan without recovering conversation attachments. Wireframe dimensions are approximate layout references, not immutable CSS values.
 
-- [Assistant package](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/package.json): pinned embedded SDK and distribution dependencies.
-- [Main](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/main.ts) and [server](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/server.ts): startup, optional restart callback, dispatch, request coercion, limits and history chunking.
-- [Sessions](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/sessions.ts): SDK construction, catalog, lifecycle, prompt completion and projections.
-- [UI bridge](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/extensions/ui-bridge.ts) and [restart test](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/tests/pixie-assistant/runtime-restart.test.ts): supported primitives and injected-callback coverage.
-- [Pi client](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/pi_client.go) and [durable queues](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/session_queues.go): connection generation and uncertain-delivery state.
-- [Current host protocol](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/pi-protocol.md) and [Pi integration](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/pi.md): documented ownership and concurrent-writer limitation; check method names against code.
-- [Pi v0.85.1 RPC](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/rpc.md): candidate native baseline for JSONL, accepted prompt responses, queues/abort, settlement, entries/tree, clone/fork and native UI including editor text.
-- [pi-web README](https://github.com/agegr/pi-web/blob/main/README.md): installation/session-sharing inspiration, not a requirement to copy Next.js or direct SDK embedding. This is a moving reference, not a pinned Pixie dependency.
+## Assistant and native Pi
+
+| ID | Source | Supports |
+| --- | --- | --- |
+| A1 | [assistant/package.json](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/package.json) | Bundled SDK, Bun runtime and current distribution |
+| A2 | [assistant/src/sessions.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/sessions.ts) | Direct SDK sessions, lifecycle, catalog, history and prompt settlement |
+| A3 | [assistant/src/server.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/server.ts) | Dispatch, restart callback, ID coercion, attachment buffering and chunking |
+| A4 | [assistant/src/main.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/main.ts) | Production startup and termination wiring |
+| A5 | [runtime-restart.test.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/tests/pixie-assistant/runtime-restart.test.ts) | Injected restart callback coverage |
+| A6 | [ui-bridge.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/assistant/src/extensions/ui-bridge.ts) | Dialog ownership and current composer limitations |
+| A7 | [Pi 0.85.1 RPC reference](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/rpc.md) | JSONL, prompt acceptance, agent_settled, queues, clone/fork, entries and native UI |
+| A8 | [Pi package at inspected upstream revision](https://github.com/earendil-works/pi/blob/f53ac1135149f03fd1e2a5bfd29861120eaf5b96/packages/coding-agent/package.json) | Public package/CLI surface; not an arbitrary-version guarantee |
+| A9 | [pi-web README](https://github.com/agegr/pi-web/blob/main/README.md) | User-specified reference for shared native configuration/sessions; moving reference, not a dependency pin |
+
+## Controller
+
+| ID | Source | Supports |
+| --- | --- | --- |
+| C1 | [pi_client.go](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/pi_client.go) | Host connection, loopback configuration and connection generations |
+| C2 | [session_queues.go](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/controller/session_queues.go) | Durable follow-ups and delivery uncertainty |
+| C3 | [Pi integration](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/pi.md) | Current ownership and separate-process same-session write limitation |
 
 ## Workspace and Mewa
 
-- [Shell](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/workspace/shell.svelte) and [project view](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/workspace/views/project-work-area.svelte): availability gating, generic content slots and Browser ownership.
-- [Workspace session state](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/workspace/store/session-state.ts): activation, lifecycle, retained drafts/runtime.
-- [CSS entry](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/index.css), [tokens](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/styles/tokens.css), [Mewa imports](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/mewa.css) and [Button](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/components/button.svelte): competing foundations and reusable correct wrappers.
-- [Vendor lock](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/vendor/mewa.lock.json): Mewa 0.1.2, revision and asset hashes.
-- [Mewa design contract](https://github.com/miloszkolber/mewa_ui/blob/master/library/DESIGN.md) and [Svelte integration](https://github.com/miloszkolber/mewa_ui/blob/master/library/adapters/svelte/README.md): appearance, composition and lifecycle. These upstream docs move; compare to the vendor pin before implementing or upgrading.
+| ID | Source | Supports |
+| --- | --- | --- |
+| U1 | [shell.svelte](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/workspace/shell.svelte) | Global availability gating and modal Settings |
+| U2 | [project-work-area.svelte](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/workspace/views/project-work-area.svelte) | Shared content slot, repeated create admission and Browser-specific integration |
+| U3 | [session-state.ts](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/workspace/store/session-state.ts) | Normal activation, runtime ownership and restoration complexity |
+| U4 | [index.css](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/index.css) and [mewa.css](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/mewa.css) | Parallel foundation imports |
+| U5 | [Pixie structural tokens](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/styles/tokens.css) | Independent spacing/radius definitions |
+| U6 | [vendor lock](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/vendor/mewa.lock.json) | Mewa 0.1.2 revision and verified assets |
+| U7 | [Button adapter](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/src/components/button.svelte) and [pinned Button CSS](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/webui/vendor/mewa-ui/css/components/button.css) | Existing correct wrapper worth retaining |
+| U8 | [Mewa design contract](https://github.com/miloszkolber/mewa_ui/blob/master/library/DESIGN.md) | Library appearance/semantics versus product composition; verify the installed release before implementation |
+| U9 | [Mewa Svelte integration](https://github.com/miloszkolber/mewa_ui/blob/master/library/adapters/svelte/README.md) | One lifecycle owner, scoped attachments and cleanup |
 
-The user supplied a current UI screenshot and five desktop wireframes. Their slot/mode/behavior requirements are transcribed into [03-workspace-ui.md](03-workspace-ui.md), so execution does not depend on private attachment links. Starting geometry values are proposals, not shipped-UI measurements.
+## Extensions and deployment
 
-## Modules and deployment
-
-- [Registry](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/mcpserver/registry.go): Browser-only lifecycle/catalog, state-before-persistence, duplicate-enable restart and data-root derivation.
-- [Compose](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docker-compose.yaml), [Dockerfile](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/Dockerfile) and [Browser config](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/browser/config.json): actual process/filesystem/network assumptions.
-- [Security document](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/security.md): source boundary findings and inherited smoke measurements, not a verified sandbox.
+| ID | Source | Supports |
+| --- | --- | --- |
+| E1 | [MCP registry](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/internal/mcpserver/registry.go) | Browser-only registry, persistence ordering, repeated startup, storage roots |
+| E2 | [Compose](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docker-compose.yaml) | Actual mounts, UID, host networking and runtime flags |
+| E3 | [Dockerfile](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/Dockerfile) | Browser/controller packaging and runtime contents |
+| E4 | [Security documentation](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/security.md) | Documented shared-UID/no-sandbox posture, evidence and overclaims to reconcile |
+| E5 | [MCP documentation](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/mcp.md) | Existing module publication model |
 
 ## Documentation and validation
 
-- [CI](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/.github/workflows/ci.yml), [container publication](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/.github/workflows/container-images.yml) and [npm publication](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/.github/workflows/npm-publish.yml): validation scope, publication triggers and stale pack checks.
-- [Observed CI run](https://github.com/miloszkolber/pixie/actions/runs/34226327666) and [UI fixture](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/tests/ui/run.sh): reported success and existing coverage, not a new test run.
-- [Baseline AGENTS.md](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/AGENTS.md), [architecture](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/architecture.md), [deployment](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/deployment.md) and [old roadmap](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/roadmap.md): source of documentation corrections and retained compatibility/approval requirements. Completed host relocation and history rewriting are not new tasks.
+| ID | Source | Supports |
+| --- | --- | --- |
+| D1 | [CI workflow](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/.github/workflows/ci.yml) | Workspace/native-host and architecture-specific checks |
+| D2 | [Container workflow](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/.github/workflows/container-images.yml) | Validation/publication coupling and push path filters |
+| D3 | [Assistant protocol](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/pi-protocol.md) | Method documentation requiring dispatcher reconciliation |
+| D4 | [Browser acceptance](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/package/tests/ui/run.sh) and [reported CI run](https://github.com/miloszkolber/pixie/actions/runs/34226327666) | Existing continuity/keyboard/lifecycle tests and reported successful run |
+| D5 | [Deployment](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/deployment.md) | Examples, host-specific details and mount contradictions |
+| D6 | [Agent instructions](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/AGENTS.md) and [architecture](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/architecture.md) | Source/ownership inconsistencies |
+| D7 | [Previous roadmap](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/roadmap.md) | Carry-forward items and publication boundaries |
 
-## Canvas and Openfig
+## Canvas and Openfig drafts
 
-- [Canvas draft](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/mcp-draft-canvas.md): session scope, six tools, CAS versions, budgets and live iteration. Stage 08 resolves its missing authentication/network-isolation details and specifies a renderer-backed live viewer.
-- [Openfig draft](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/mcp-draft-openfig.md): instance-wide slot, five tools, normalization/limits, research and separate structure/frame completions. Its timing/fidelity results are not newly reproduced here.
-- [Researched core parser](https://github.com/OpenFig-org/openfig-core/blob/f9f10d0fc7e6ad3dd7ce94fe3e3da3ffb5eec5d6/src/parser.ts), [exports](https://github.com/OpenFig-org/openfig-core/blob/f9f10d0fc7e6ad3dd7ce94fe3e3da3ffb5eec5d6/src/index.ts) and [types](https://github.com/OpenFig-org/openfig-core/blob/f9f10d0fc7e6ad3dd7ce94fe3e3da3ffb5eec5d6/src/types.ts): public parsing, synchronous expansion, schema compilation, raw node maps and cover extraction.
-- [Researched CLI package](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/package.json), [SVG builder](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/lib/rasterizer/svg-builder.mjs), [rasterizer](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/lib/rasterizer/deck-rasterizer.mjs), [font resolver](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/lib/rasterizer/font-resolver.mjs) and [export command](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/bin/commands/export.mjs): reproduce the draft's export/assets/font limitations before selecting a renderer. These are evidence links, not an instruction to deep-import private code.
+- [Canvas draft](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/mcp-draft-canvas.md): six tools, session scope, revisions, quotas and proposed iframe rendering. Reviewed and superseded for implementation by `canvas.md`.
+- [Openfig draft](https://github.com/miloszkolber/pixie/blob/f63d0d5bcb7f6e342058734b2e741ad2619d8867/docs/mcp-draft-openfig.md): instance-wide slot, parser findings, worker constraints, read-only tools and renderer gate. Reviewed and superseded for implementation by `openfig.md`.
+- [openfig-core 0.4.1 package](https://github.com/OpenFig-org/openfig-core/blob/f9f10d0fc7e6ad3dd7ce94fe3e3da3ffb5eec5d6/package.json), [parser](https://github.com/OpenFig-org/openfig-core/blob/f9f10d0fc7e6ad3dd7ce94fe3e3da3ffb5eec5d6/src/parser.ts), and [types](https://github.com/OpenFig-org/openfig-core/blob/f9f10d0fc7e6ad3dd7ce94fe3e3da3ffb5eec5d6/src/types.ts): public parsing, synchronous expansion/schema compilation, unsorted children, and returned data.
+- [openfig-cli 0.6.0 package](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/package.json): exports and dependency tree. The inspected export map does not export its internal Design rasterizers.
+- [Design SVG builder](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/lib/rasterizer/svg-builder.mjs), [WASM rasterizer](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/lib/rasterizer/deck-rasterizer.mjs), [export command](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/bin/commands/export.mjs), and [font resolver](https://github.com/OpenFig-org/openfig-cli/blob/0d74102f0cba4139ca14ba2e0f31664139744154/lib/rasterizer/font-resolver.mjs): original draft's renderer investigation references, not permission to deep-import them.
+- [Upstream fixture directory](https://github.com/OpenFig-org/openfig-cli/tree/0d74102f0cba4139ca14ba2e0f31664139744154/test/fixtures/figs/reference): provenance must be established before copying fixtures into permanent tests. Source-code licensing does not establish rights to every fixture or bundled font.
 
 ## External contracts
 
-- [Go module reference](https://go.dev/doc/modules/gomod-ref): public module dependencies and local replacement for exact-checkout combined builds. The public facade and build matrix are proposed source organization, not existing code.
-- [systemd.service](https://www.freedesktop.org/software/systemd/man/systemd.service.html) and [systemd.kill](https://www.freedesktop.org/software/systemd/man/systemd.kill.html): service startup, restart and termination semantics to validate against supported hosts. The proposed units have not been installed or executed by this roadmap commit.
-- [MCP 2026-07-28 transports](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports) and [changes](https://modelcontextprotocol.io/specification/2026-07-28/changelog): current protocol distinctions, including removal of protocol-level transport sessions. Do not confuse those with Pi conversation identity or rely on a transport session ID as authorization. Record the actual locked SDK/native-client protocol matrix rather than assuming latest support or making an upgrade a shell prerequisite.
-- [W3C CSP Level 3](https://www.w3.org/TR/CSP3/): document policy/sandbox directives are not an OS-level file or network enclosure. Canvas's isolated renderer and trusted image viewer are the proposed way to uphold network denial without executing untrusted scripts in the user's application browser.
+- [Pi RPC](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/docs/rpc.md): version-tested candidate baseline, not a promise of support for arbitrary Pi releases.
+- [systemd.service](https://www.freedesktop.org/software/systemd/man/systemd.service.html), [systemd.kill](https://www.freedesktop.org/software/systemd/man/systemd.kill.html), and [systemd.exec](https://www.freedesktop.org/software/systemd/man/systemd.exec.html): service restart, readiness distinction, process termination and sandbox options. Check the target host's supported directives.
+- [MCP 2025-11-25 transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) and [2026-07-28 Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http): transport revisions differ. Test the revision supported by the locked SDK/native adapter. Neither an MCP transport session ID nor a caller-provided field establishes Pixie session authorization.
+- [W3C CSP Level 3](https://www.w3.org/TR/CSP3/): browser content policy and sandbox directives are defense in depth, not an OS/network enclosure for arbitrary renderer processes.
+- [W3C CSP Embedded Enforcement](https://www.w3.org/TR/csp-embedded-enforcement/): an additional embedding policy proposal, not a compatibility guarantee for every supported browser. Do not make an unverified browser feature the only Canvas egress control.
 
-Check actual installed/released versions again at implementation time. Keep source inspection, unit/native tests, deployment tests and performance measurements separate in the completion report. No filenames, URLs or behavior here imply permission to access live credentials or publish an upstream change.
+External reference pages may evolve. Pin packages and record actual tested protocol/runtime versions during implementation. Proposed limits and defaults in the plans are design budgets, not measured guarantees.
