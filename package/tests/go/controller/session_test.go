@@ -145,7 +145,7 @@ func TestUserObjectiveAndThinkingMutationsPublishAuthoritativeState(t *testing.T
 	}
 	assertPublishedObjective(t, nextPublishedEvent(t, events, "session.objectiveChanged"), cleared)
 
-	if err := manager.SetThinking(ctx, "chat", "high"); err != nil {
+	if err := manager.SetThinking(ctx, "chat", "max"); err != nil {
 		t.Fatal(err)
 	}
 	thinking := nextPublishedEvent(t, events, "agent.event")

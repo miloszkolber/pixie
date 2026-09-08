@@ -422,16 +422,29 @@ func (m *SessionManager) ClampThinking(sessionID, requested string) (string, err
 			return requested, nil
 		}
 	}
-	scale := []string{"off", "minimal", "low", "medium", "high", "xhigh"}
+	scale := []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 	requestedIndex := stringIndex(scale, requested)
 	if requestedIndex < 0 {
-		requestedIndex = 0
+		return current, nil
 	}
-	closest := values[0]
-	for _, value := range values[1:] {
-		if absolute(stringIndex(scale, value)-requestedIndex) < absolute(stringIndex(scale, closest)-requestedIndex) {
-			closest = value
+	if stringIndex(scale, current) < 0 {
+		return current, nil
+	}
+	closest := ""
+	closestDistance := 0
+	for _, value := range values {
+		valueIndex := stringIndex(scale, value)
+		if valueIndex < 0 {
+			continue
 		}
+		distance := absolute(valueIndex - requestedIndex)
+		if closest == "" || distance < closestDistance {
+			closest = value
+			closestDistance = distance
+		}
+	}
+	if closest == "" {
+		return current, nil
 	}
 	return closest, nil
 }

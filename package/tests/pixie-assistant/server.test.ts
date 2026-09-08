@@ -90,12 +90,12 @@ test("host authenticates transport and routes native provider prompts to the own
 	await a.call("pi.preferences.save", {
 		values: [
 			{ key: "compactionReserveTokens", value: 16384 },
-			{ key: "piThinkingEffort", value: "high" },
+			{ key: "piThinkingEffort", value: "max" },
 		],
 	});
 	expect(await a.call("pi.preferences.read")).toEqual({
 		values: [
-			{ key: "piThinkingEffort", value: "high" },
+			{ key: "piThinkingEffort", value: "max" },
 			{ key: "compactionReserveTokens", value: 16384 },
 		],
 	});

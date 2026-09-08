@@ -449,7 +449,7 @@ export interface AgentMentionInfo {
 /** The focused, allowlisted Pi preference projection. */
 export interface PiPreferences {
 	compactionReserveTokens?: number;
-	piThinkingEffort?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	piThinkingEffort?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 /** Pi's global provider/model default, never persisted by Pixie. */
