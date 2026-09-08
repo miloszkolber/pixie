@@ -1,57 +1,57 @@
 # Documentation plan
 
-User docs describe shipped behavior; this directory describes implementation work. Track DOC tasks in [execution.md](execution.md). Factual corrections can land before runtime/UI cutover.
+Current behavior belongs in docs/. Implementation requirements and evidence belong in roadmap/. [execution.md](execution.md) tracks DOC tasks. Never describe planned Go/UI/module behavior as shipped before its tests pass.
 
-## File responsibilities
+## Ownership
 
-| File | Keep |
+| File | Responsibility |
 | --- | --- |
-| Root README.md | Purpose, prerequisites, two build choices, one short path for each and links |
-| docs/deployment.md | Install/configure/diagnose/upgrade/rollback/remove for assistant-only + Docker and full-host |
-| docs/pi.md | Native ownership, compatibility, supported behavior and TUI handoff limits |
-| docs/pi-protocol.md | Exact methods, schemas, events, framing, capabilities and errors |
-| docs/pi-extensions.md | Native extension integration and Web UI translation |
-| docs/mcp.md | Module endpoints, configuration, scope, availability and trust |
-| docs/architecture.md | Logical ownership plus split/full-host process composition |
-| docs/security.md | Actual assumptions, credentials, boundaries and residual risks for both modes |
-| roadmap/README.md and linked plans | Unfinished outcomes, implementation order and acceptance |
-| roadmap/execution.md | One task ledger and concise evidence |
-| Root AGENTS.md | Real paths, invariants, commands, ownership and approvals |
+| Root README.md | Purpose, prerequisites, currently available install path and links |
+| docs/deployment.md | Tested install/configure/diagnose/upgrade/rollback/uninstall for both target modes when shipped |
+| docs/pi.md | Native ownership, supported Pi profiles and same-session handoff limits |
+| docs/pi-protocol.md | Exact generated method/event/schema details and concise transport explanation |
+| docs/pi-extensions.md | Native inventory/configuration, optional bridge and UI mapping actually available |
+| docs/mcp.md | Module endpoints, scopes, configuration and trust |
+| docs/architecture.md | Actual logical/state/process ownership |
+| docs/security.md | Real assumptions, credentials, enforcement and residual risks |
+| roadmap/README.md | Implementation entry point |
+| roadmap/execution.md | One task/dependency/evidence ledger |
+| roadmap/contracts.md | Target identities, defaults, transitions and migrations |
+| roadmap/feature-coverage.md | Retained-feature inventory and cutover evidence |
+| Root AGENTS.md | Paths, invariants, test/commit rules and roadmap authority |
 
-Convert `docs/roadmap.md` to a short link to `../roadmap/README.md`. Replace both MCP draft files with links to their reviewed plans once this task lands. Pinned originals remain in `roadmap/sources.md`; do not maintain competing live plans or append the audit to quick-start prose.
+Remove docs/roadmap.md, docs/mcp-draft-canvas.md and docs/mcp-draft-openfig.md entirely; do not keep redirect stubs or parallel draft copies. Their reviewed requirements live here. Pinned historical source links in sources.md remain valid evidence. Keep architecture, deployment, protocol and security documentation: operating the current product is different from implementing its replacement.
 
-Avoid repeated feature lists. Link to the owner of each fact. Generate exact method details from the schema; review introductory explanations by hand.
+Update all live links and source-comment references to the deleted paths, including root guidance and docs/pi-extensions.md. Preserve only explicitly pinned historical URLs. Validate the entire Markdown tree, not just new files.
 
-## Editorial rules
+## Writing
 
-Write short factual paragraphs. Say what a command does, needs and reports on failure. Examples prevent operational mistakes. Comments explain constraints or non-obvious reasons, not the next line's obvious action.
+Use short factual paragraphs and direct examples. One fact has one home. Describe what a command needs and how failure is diagnosed. Comments explain non-obvious constraints, not the next line's action.
 
-Remove operator paths, dated backups, one-off timings, release history, completed milestones, unexplained audit labels, migration essays and absent directories. Do not create another user-facing archive to retain all that debris.
+Remove machine-specific paths/backups, one-off timings, repeated feature lists, completed operations, release diaries, obsolete source names and unverified security language. Review evidence belongs in the roadmap review files, not quick starts. Keep essential constraints and actionable failure information.
 
-Retain necessary constraints: independent processes do not coordinate same-session writes; Pi has host-user authority; MCP requires native integration; Browser/worker isolation depends on actual deployment; uncertain delivery is not automatically retried; Canvas is session-scoped; Design is instance-wide; removal cannot erase already exported copies.
+After cutover the introduction can read:
 
-Proposed opening after cutover:
+> Pixie is a web workspace for Pi. It uses your installed Pi, its configuration and its native sessions. Use pixie-assistant with the Docker interface, or run the complete workspace with the pixie host binary.
 
-> Pixie is a web workspace for Pi. It uses your installed Pi, its configuration, and its native sessions. The interface combines conversations, read-only files and Git views, schedules, and optional workspace tools.
->
-> Use pixie-assistant with the Docker interface, or run the complete workspace with the pixie host binary. Optional Pi extensions add tools and supported UI interactions; basic chat needs none.
+Explain that Pi's own runtime and optional isolated workers remain separate requirements. The full-host build is one binary/service, not an unsupported alternative or two executables managed separately. Base chat needs no native extension; advanced web administration requires the capability profile in feature-coverage.md. Never describe a TUI fallback as equivalent web functionality.
 
-Avoid “any Pi version” and “attaches to a running TUI” without qualification. State tested support and session-sharing behavior. Both releases are mandatory as defined in [builds-and-releases.md](builds-and-releases.md), not Docker-primary versus an unsupported host fallback.
+Release/download instructions use the exact sha-<12> identity from builds-and-releases.md for GitHub assets and Docker. The full commit/image digest is available for verification. Do not require semantic versions, compare hashes as versions or present latest as immutable.
 
-The full-host binary includes assistant/controller/UI and needs no separate assistant or asset directory. It does not eliminate Pi's own runtime or optional isolated rendering/parsing dependencies. State this near installation, not hidden in troubleshooting.
+## Corrections and migration documentation
 
-## Concrete corrections
+Fix existing invalid source links and absent mount descriptions. A Compose service without a build definition should not be documented as locally built. Read an actual environment key rather than the entire dotenv file for authentication examples. Distinguish container runtime flags, filesystem access and real worker isolation.
 
-Deployment describes a Browser mount absent from Compose and invokes build without a Compose build definition. Security's benchmark reads an entire dotenv file as a bearer. Roadmap/agent guidance mixes current behavior, obsolete paths and completed operations. Reconcile against clean installs rather than the author's machine. [Evidence](sources.md#documentation-and-validation).
+Update root guidance for assistant/ and package/, shared Go composition, independent selections, optional bridges and colocated Go unit tests. Do not keep instructions that forbid the implementation explicitly requested here.
 
-Update root instructions early for this roadmap, actual assistant/package paths, the shared Go facade and colocated unit tests. Do not leave requirements forcing bundled SDK execution or the old mixed-content tabs. Preserve publication boundaries and narrow product scope.
+Document exact flag/config/environment precedence; first-run pairing for Docker and internal pairing for full-host; native ownership conflicts; state locations; corrupt-state diagnostics; supported release profiles; and safe mode switching. Include recovery of uncertain delivery and pending deletion authority, not only happy-path binary replacement.
 
-Replace non-Docker two-process instructions with the tested full-host unit/CLI when implemented. Give Docker its explicit controller-only startup. Document mode switching, native ownership conflicts, metadata locations and rollback without pretending binary replacement always reverses a schema migration.
+Explain Canvas's session scope and raster-first live preview, Design's instance-wide scope, actual worker requirements and the difference between saved cover images and frame rendering. Do not imply deletion can erase content already copied to transcripts/downloads.
 
-Keep review evidence out of normal deployment prose. Do not describe Canvas/Design as shipped while unimplemented. Label saved document thumbnails distinctly from frame previews and state Canvas's actual offline rendering boundary.
+## Validation and completion
 
-## Validation
+Add a Markdown link/anchor checker that understands local relative links, case, encoded paths, duplicate heading anchors and pinned external source URLs. Test deleted-path references separately; exclude pinned historical URLs only, not arbitrary stale prose. Check code examples, source paths and task IDs as well as Markdown links.
 
-Check Markdown links, anchors and mentioned existing paths in CI. Run both installation/health/upgrade/rollback examples in disposable environments with dummy credentials. Verify flag/env precedence, placeholders, architecture choice, mode conflict and optional-dependency behavior. Future proposed paths must be labelled as such until created.
+Run both install/health/upgrade/rollback/mode-switch examples in disposable environments using final artifacts and dummy credentials. Run docs-only validation independently of source/image publication; a roadmap edit must not accidentally publish a container.
 
-Review every paragraph: true now, needed here, and owned here? Update docs with the relevant behavior, not ahead of it. Human review of wording and installed behavior complements linting; lint alone does not establish factual accuracy.
+DOC is complete when examples work, current docs match shipped features, all live links resolve and the three duplicate planning files are absent. Human factual review complements linting; passing a link check does not prove runtime behavior.

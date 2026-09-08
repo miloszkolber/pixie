@@ -1,160 +1,86 @@
 # Pixie implementation roadmap
 
-Start here. This directory is the coding-agent handoff for the Go assistant, workspace rebuild, two release builds, documentation cleanup, and final Canvas/Openfig modules. Read [execution.md](execution.md) before editing code, then the assigned plan.
+Start with this file, [execution.md](execution.md), [contracts.md](contracts.md) and [feature-coverage.md](feature-coverage.md). Then read the assigned implementation plan. This directory is sufficient task input; the agent does not need the conversation or its attachments to recover requirements.
 
-The review baseline is `f63d0d5bcb7f6e342058734b2e741ad2619d8867`; recheck against the checkout. These are implementation directions, not claims of shipped functionality. For this task they supersede planning directions in `docs/roadmap.md`, `docs/mcp-draft-canvas.md` and `docs/mcp-draft-openfig.md`. The documentation work replaces those with links here; pinned originals remain in [sources.md](sources.md).
+Implement the work, not another proposal. Use the specified defaults, preserve retained behavior, add regression tests, and keep the execution ledger current. Continue independent work when an external dependency is blocked. Do not silently reduce scope or mark a blocked capability complete.
 
-## Product and ownership
+These are target requirements, not claims of shipped functionality. The second-pass baseline is `71590cac48925b31b9d5d3c7d1746ee94b351772`; its runtime sources match the first review's `f63d0d5bcb7f6e342058734b2e741ad2619d8867`. Reconcile with the checkout before editing. Read the [first review](repository-review.md), [second pass](second-pass-review.md), [draft review](draft-review.md) and [source appendix](sources.md) as evidence, not additional competing task lists.
 
-Pixie is a lightweight web workspace for an existing Pi installation. Pi owns the agent workflow. Pixie owns navigation, conversation views, read-only project inspection, schedules and optional workspace tools.
+## Product
 
-The assistant launches the selected host Pi executable. It does not install a second SDK, copy native configuration, prescribe extensions or implement another agent loop. Basic chat needs no optional extension. Native credentials/models/settings/tools/retries/compaction/branches remain Pi-owned.
+Pixie is a lightweight web workspace around an existing Pi installation. Pi owns execution, transcripts, providers, credentials, models, native settings, tools, extensions, retry and compaction. Pixie owns presentation, navigation, read-only project inspection, archive/grouping, schedules and optional workspace modules. Basic chat requires no optional native extension.
 
-“Attach” means use that installation and reopen its sessions, not take control of an arbitrary running TUI process. Simultaneous TUI/Web work uses separate sessions unless Pi provides a tested shared-process mechanism. A Pixie-only lock cannot coordinate an unrelated TUI.
+The Go assistant launches the selected host Pi. It does not install a second Pi SDK, copy native configuration, supply another agent loop, replace prompts or implement another MCP client. An optional native administration bridge may use that installation's public APIs; its exact boundary and coverage gates are in [feature-coverage.md](feature-coverage.md).
 
-Projects organize sessions but are not mandatory session identities. Grouping/archive metadata must not move transcripts or change cwd. File browsing requires an admitted root independently of session discovery. Files/Git remain inspection tools, not an IDE.
+Sharing an installation is not live attachment to an arbitrary running TUI. Separate processes must not write one session concurrently. Use different sessions, or explicit idle handoff that terminates the managed owner before native resume. A Pixie-only lock cannot coordinate an unrelated TUI.
 
-The shell has independent left/right selections. Mewa owns shared UI foundations; Pixie owns composition. Native Pi extensions, native MCP integration and workspace modules are separate systems.
+Projects organize sessions; they are not mandatory session identities. Native cwd, grouping and filesystem admission are different fields. Removing a project does not delete native conversations. Files and Git stay read-only; no editor, terminal, automatic worktrees or model-routing framework.
 
-## Required release builds
+## Every release
 
-Every release includes both variants on Linux amd64 and arm64:
+Each release uses one immutable source-commit identity: `sha-<first 12 lowercase hex characters of the full commit SHA>`. That exact value names the Git tag, GitHub Release and Docker image tag. The full 40-character revision remains authoritative in the manifest, binary metadata and OCI labels. Do not introduce a separate semantic version or run-number counter.
 
-| Build | Deployment |
+For example, a release built from `71590cac48925b31b9d5d3c7d1746ee94b351772` would use `sha-71590cac4892`. This is an example, not a release created by this documentation change.
+
+| Required build | Deployment |
 | --- | --- |
-| `pixie-assistant` | Assistant-only host service, used by a Docker Pixie controller/interface |
-| `pixie` | One host binary/service containing the assistant, controller and embedded Pixie interface; no separate assistant installation or Docker required |
+| `pixie-assistant` | One Go host assistant binary/service used by the Dockerized Pixie controller/interface |
+| `pixie` | One Go host binary/service containing the same assistant engine, controller, module registry and embedded web UI; no separate assistant installation |
 
-Both use the same assistant source and installed Pi. The full build is not two separately managed binaries in an archive. The Docker controller explicitly runs without starting a local assistant. Pi's own runtime and optional isolated module workers remain separate documented dependencies.
+Both variants ship for Linux amd64 and arm64: four host archives per release. The matching Docker multi-architecture image uses `ghcr.io/miloszkolber/pixie:sha-<12>` and explicitly runs controller-only mode. Neither Pi nor an assistant is started inside that container. A release is incomplete without both binary variants and the matching Docker image.
 
-The four required archives share one release version/revision and must all pass before release promotion. See [builds-and-releases.md](builds-and-releases.md) for composition, services, build targets, artifact matrix and migration.
+Optional Browser/Canvas/Design workers are separately declared dependencies, not requirements for basic chat. The full build is not two executables hidden in one archive. Read [builds-and-releases.md](builds-and-releases.md) for exact artifacts, triggers, immutable retries, provenance, systemd and mode switching.
 
-## Reading map
+## Plan ownership
 
-| File | Purpose |
+| Document | Owns |
 | --- | --- |
-| [execution.md](execution.md) | Task ledger, dependencies, parallel ownership and completion evidence |
-| [repository-review.md](repository-review.md) | Eighteen source findings and verification limits |
-| [assistant-go.md](assistant-go.md) | Native discovery/RPC, supervision, catalog, compatibility and service lifecycle |
-| [workspace-ui.md](workspace-ui.md) | Six-slot shell, state, views, Mewa and responsive acceptance |
-| [extensions.md](extensions.md) | Native UI translation, module contract, Browser and scoped MCP authority |
-| [builds-and-releases.md](builds-and-releases.md) | Required assistant-only/full-host builds and release gates |
-| [security-and-validation.md](security-and-validation.md) | Failure tests, real deployment boundaries, artifacts and performance |
-| [documentation.md](documentation.md) | File responsibilities, concrete corrections and editorial rules |
-| [draft-review.md](draft-review.md) | Canvas/Openfig draft decisions, corrections and evidence |
-| [canvas.md](canvas.md) | Penultimate feature: session-scoped HTML drafting and screenshots |
-| [openfig.md](openfig.md) | Last feature: local .fig inspection and separate frame-preview milestone |
-| [sources.md](sources.md) | Pinned references, external contracts and evidence qualifications |
+| [execution.md](execution.md) | Task IDs, dependencies, parallel ownership, gates and evidence |
+| [contracts.md](contracts.md) | Exact identities, protocol semantics, lifecycle, migration rules and initial bounds |
+| [feature-coverage.md](feature-coverage.md) | Every retained feature, native/bridge implementation route, limitations and cutover evidence |
+| [assistant-go.md](assistant-go.md) | Native discovery/RPC, reusable Go engine, supervision and host service |
+| [workspace-ui.md](workspace-ui.md) | Six-slot composition, Mewa, views, responsiveness and interactions |
+| [extensions.md](extensions.md) | Native UI mapping, workspace contributions, Browser and scoped module authority |
+| [security-and-validation.md](security-and-validation.md) | Threats, worker enforcement and layered runtime/artifact tests |
+| [builds-and-releases.md](builds-and-releases.md) | Commit-named releases, both builds, Docker tags, installation and rollback |
+| [documentation.md](documentation.md) | Short factual current-state documentation and example validation |
+| [canvas.md](canvas.md) | Penultimate feature: session-scoped HTML drafts and isolated screenshot feedback |
+| [openfig.md](openfig.md) | Final feature: offline Design inspection and separately verified frame previews |
 
-## 1. Repair reliability defects
+Each fact has one owner. Contracts own numeric defaults and state transitions; feature coverage owns migration completeness; the build plan owns release naming/publication. Feature plans compose those contracts rather than inventing alternative values or fallback policies.
 
-Fix production assistant restart, transactional/idempotent MCP enablement, duplicate-create admission and strict host request validation. Add a reproduction for the supplied selected-chat/project-empty screenshot; do not assume its cause from the image.
-
-Preserve bounded replay, connection generations, pending dialogs, read-only filesystem checks and uncertain-delivery behavior. Write failing regressions before fixes and carry executable restart/transport fixtures into the Go runtime.
-
-**Exit:** confirmed defects have tests/fixes. The screenshot scenario is reproduced/fixed or explicitly isolated as unresolved, not silently marked solved. See F02–F05/F07 in the [review](repository-review.md).
-
-## 2. Establish shared contracts
-
-Inventory actual browser/controller/assistant/native methods. Define strict envelopes and one schema owner in `package/contracts`, with generated bindings where useful. Keep native request IDs, session/entry IDs, delivery IDs, boot epochs and selection generations distinct.
-
-Agree on host capabilities, primary/secondary selections, module contributions and two-build composition before parallel implementation. Capabilities describe complete usable operation sets in context, not package presence. Missing administration/MCP must not make core chat incompatible.
-
-Every retained feature needs a supported native API, optional bridge, explicit TUI fallback or approved deferral. Do not remove difficult features as cleanup. One owner handles each delivery stage.
-
-**Exit:** common protocol fixtures, fake-transport shell, sidebar-only/viewer-only module fixtures, explicit unsupported behavior and shared assistant facade exist as agreed contracts. See [execution](execution.md) and [assistant compatibility](assistant-go.md#8-capability-disposition-and-compatibility).
-
-## 3. Implement the shared Go assistant
-
-Use `assistant/` as a separate Go module and retain the application module under `package/`. The standalone entrypoint and full-host entrypoint use one narrow public assistant facade; internals remain independent of controller/UI. Do not copy RPC/supervisor code or combine this with a repository-wide move.
-
-Resolve the operator's Pi executable, run native JSONL RPC under the right environment/cwd, supervise children and adapt events. Preserve native files/unknown records and use native operations for reopen/rename/model/thinking/clone/fork/compaction. A draft without a persisted native identity remains a draft.
-
-Separate acceptance from settlement and do not resend uncertain work. Keep accepted runs alive when views disappear; bound shutdown/residence/output; restore valid partials/dialogs by process epoch. Native SDK administration gaps require tested dispositions, not a new Go provider system.
-
-**Exit:** vanilla/configured independent Pi installs pass outside the checkout, optional packages can be absent, native identity and rollback survive, and both executable compositions use the same runtime. See [assistant-go.md](assistant-go.md).
-
-## 4. Build the six-column workspace
+## Workspace
 
 | Column | Responsibility |
 | --- | --- |
 | 1 | Primary rail: Chats, Archive, Schedules, Settings |
-| 2 | Sidebar for the primary area |
-| 3 | Selected left-side item: session, schedule or settings section |
-| 4 | Selected right-side item: file, diff, Browser or module viewer |
-| 5 | Sidebar for the secondary area |
-| 6 | Secondary rail: details, files, Git and optional modules |
+| 2 | Sidebar for the selected primary area |
+| 3 | Selected left-side item: conversation, schedule or settings section |
+| 4 | Selected right-side item: file, diff, Browser or optional module viewer |
+| 5 | Sidebar for the selected secondary area |
+| 6 | Secondary rail: session details, Files, Git and optional module contributions |
 
-Column 4 is absent without a right selection. Sidebars collapse independently. Secondary focus hides primary content temporarily while preserving selection/draft. Close, Hide, Archive, Delete and Stop are distinct actions.
+Primary and secondary selections are independent. Column 4 disappears when there is no selection. Sidebars collapse independently. Secondary focus preserves the hidden conversation, draft and runtime. Hide, Close, Archive, Delete and Stop are different operations.
 
-Replace mixed chat/file/Browser tabs with the two-selection model. Chats has grouped/flat catalogs and ungrouped sessions; Archive is not closed-tab history. Schedules and Settings have sidebar/detail views. Resolve session/project/instance context explicitly.
+Implement the five reference modes: split; secondary focus; primary with right context; primary with left sidebar; primary focus. On narrow screens retain the same selection model but show one usable content surface. Mewa owns shared appearance and control semantics; Pixie owns layout and domain state.
 
-Keep the shell available during Pi/provider failure. A selection resolves to content/loading/unavailable/missing/error, never an unrelated empty screen. Label stale readable data and disable authority-dependent actions until revalidated.
+## Integration order
 
-**Exit:** split, secondary focus, primary with context, primary with sidebar and primary focus all work with actual content, back/forward, independent scrolling, focus restoration, mobile navigation and stale-response rejection. See [workspace-ui.md](workspace-ui.md).
+1. Fix confirmed reliability defects and capture legacy fixtures. Establish contracts, feature dispositions and shared composition boundaries.
+2. In parallel, implement one real vanilla Pi conversation through Go and one content-filled Chat + File split through the new shell.
+3. Complete native lifecycle/recovery, retained feature coverage, Mewa, Archive/Schedules/Settings and registered Browser.
+4. Validate both binary variants and Docker on amd64/arm64, migrations, systemd, security and documentation. Remove legacy implementation only after core cutover gates pass.
+5. Implement Canvas after core acceptance, including real session authority and offline worker enforcement.
+6. Implement Openfig last. Verify structure independently from actual frame rendering. A saved cover image does not complete frame previews.
 
-## 5. Make Mewa the visual foundation
+Unpublished but fully tested core artifacts satisfy the engineering dependency for Canvas; waiting for publication approval does not block local module implementation. Mandatory runtime/API gaps block their affected cutover milestone, not unrelated work.
 
-Retain the pinned release/integrity checks and correct adapters. Mewa owns shared colors, typography, spacing primitives, geometry, borders, appearance and interaction contracts; Pixie owns shell dimensions and feature composition.
+## Approval and completion
 
-Migrate independent Pixie generators through a temporary mapping, then remove obsolete generators/imports/tests together. Useful layout utilities can remain; framework removal is not another prerequisite.
+The implementation request authorizes local coding, tests and coherent local commits. Remote writes, enabling publication workflows, upstream submissions and changes to live services/native state require their respective authorization. The approved future continuous-release workflow can publish automatically under its recorded policy; this documentation commit does not enable it or authorize a live deployment.
 
-Use square continuous surfaces and structural borders. Follow Geist/Geist Mono roles rather than uppercase monospace everywhere. Reserve color for status; avoid nested decorative cards and repeated chrome.
-
-**Exit:** content-filled light/dark fixtures pass keyboard/zoom/overflow/focus/lifecycle checks, with one owner for every visual foundation. See [Mewa integration](workspace-ui.md#6-mewa-integration).
-
-## 6. Complete the extension foundation
-
-Translate supported native dialogs, notifications, text widgets, status/title and editor-text requests. Preserve ownership/deadlines, single settlement and draft safety. Report terminal-only component limits honestly.
-
-Register Browser first. Controls go in slot 5 and view in slot 4, reusing leases, quotas, artifact mediation/cancellation and existing transport. Duplicate enable is a no-op; Restart is explicit.
-
-Generalize the backend once for Browser, Canvas and Design. Use a small compile-time contribution boundary, not remote code discovery. A generic MCP connection is not automatically a rich renderer. Canvas requires authenticated session scope, not a tool-supplied session ID; Design explicitly uses broader instance scope.
-
-**Exit:** vanilla chat works without MCP, UI/tool availability is distinct, fixture modules need no shell branches, failures stay local and scoped authority is tested. See [extensions.md](extensions.md).
-
-## 7. Deliver both builds and validate deployment
-
-Build assistant-only and full-host variants from the exact same revision on amd64/arm64. Assistant-only serves the Docker instance over authenticated loopback. Full-host mode embeds assistant/controller/UI in one executable/user service, with no separate assistant or asset installation.
-
-Give the Docker controller an explicit controller-only entrypoint so it never launches a second Pi owner. Both host variants share lock/identity, detect conflicting ownership and preserve native files during upgrades or mode switches. In-process libraries return lifecycle signals; entrypoints own complete shutdown/restart.
-
-Test final archives, private configuration, diagnostics, units, descendant cleanup, upgrade/rollback and mode switching. Separate validation from publication. Publish neither a missing-variant release nor development fallback versions.
-
-Verify the real Browser/worker boundary in both deployments. Same UID, environment filtering, host networking and read-only roots are not isolation. Canvas/Design workers stay optional but their promised containment is mandatory before use. Measure assistant plus Pi children, not supervisor RSS alone.
-
-**Exit:** all four required archives pass clean installation and the two-mode test matrix; docs match behavior; exact-source publication awaits separate approval. Artifact readiness does not block later local feature work while that approval is pending. See [builds-and-releases.md](builds-and-releases.md) and [security-and-validation.md](security-and-validation.md).
-
-## 8. Rewrite documentation
-
-Keep one home per fact. Remove operator paths/backups, one-off timings, release history, completed operations, obsolete source paths and false mount/isolation claims from user docs. Retain constraints needed for correct operation.
-
-Update root agent guidance early for actual paths, shared Go composition, test placement and this roadmap. Convert the old roadmap/drafts to concise links when the documentation task lands. Explain the two build choices directly. Future behavior becomes present tense only when shipped.
-
-**Exit:** examples run in disposable environments, links resolve, method docs match contracts, both install paths are tested and normal user documentation stays brief/factual. See [documentation.md](documentation.md).
-
-## 9. Add Canvas
-
-After core Gate 5, add `canvas` / `pixie-canvas` at `/mcp/canvas`, disabled by default. One canvas per native chat, full-document optimistic revisions, retry identity, durable deletion, bounded storage and module-owned rendering sessions.
-
-Prove session authority and actual offline renderer isolation. The draft's iframe/CSP-only scheme is insufficient for that promise. Use version-aware safe live previews and actual bounded screenshot content without borrowing Browser sessions or exposing credentials. [Draft corrections](draft-review.md).
-
-**Exit:** create/write/stale-write rejection/read/screenshot/iterate/remove works for the same draft the human sees. Cross-session, egress, stale render and restart resurrection tests pass in both deployments. See [canvas.md](canvas.md).
-
-## 10. Add Openfig Design inspection
-
-The final feature is `design` / `pixie-design` at `/mcp/design`, disabled by default. Retain the explicitly labelled instance-wide single-document scope, not inferred project privacy.
-
-Use a bounded optional application-side worker with a pinned public `openfig-core` API. Persist original .fig until removal. Deliver pages/layers/frame candidates/direct text, a valid saved cover, bounded MCP queries and explicit shared focus without Figma or a live browser tab.
-
-Frame previews are independent: recheck released public upstream APIs, offline fonts/assets, rights and fidelity. A cover is not a frame render. Structure remains usable while a verified renderer API gap blocks only that milestone.
-
-**Exit:** structure and its failure/authority matrix pass in both deployments; real frame previews are independently verified or explicitly blocked, never implied complete. See [openfig.md](openfig.md).
-
-## Completion
-
-Update [execution.md](execution.md) as tasks land with implemented behavior, changed contracts, migrations, tests actually run, UI/process/artifact evidence and limitations. Do not mark the roadmap complete while mandatory gates or an explicitly required milestone remain unresolved.
+A feature is complete only when its coverage row and execution gate include actual evidence. Tests to be written are not passing tests. Report an exact external dependency when necessary; do not manufacture certainty about an unavailable upstream API.
 
 Suggested agent instruction:
 
-> Implement roadmap/README.md using roadmap/execution.md. Follow the dependency gates and parallel ownership, preserve native Pi state, and record completion evidence. Every release must contain assistant-only and full-host builds. Canvas and Openfig are the last feature phases. Do not publish releases or change the live deployment without approval.
+> Implement roadmap/README.md. Follow execution.md, contracts.md and feature-coverage.md; continue through all unblocked tasks and record verification. Preserve installed Pi and retained features. Publish both binary variants and the Docker image under the same source-commit release ID when publication is authorized. Canvas and Openfig are the last feature phases.
