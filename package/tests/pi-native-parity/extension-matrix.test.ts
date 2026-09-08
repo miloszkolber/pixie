@@ -193,6 +193,7 @@ test("agent definitions survive CRUD through pi.sources operations", async () =>
 	expect(
 		((await entry.capabilities.call("pi.agent-mentions.list", {}, ctx)) as any).agents,
 	).toMatchObject([{ mention: "@Reviewer" }]);
+	const listed = ((await entry.capabilities.call("pi.sources.list", {}, ctx)) as any).sources[0];
 	await entry.capabilities.call(
 		"pi.sources.update",
 		{
@@ -200,13 +201,15 @@ test("agent definitions survive CRUD through pi.sources operations", async () =>
 			description: "Review twice",
 			content: "Review carefully",
 			properties: {},
-			path: ((await entry.capabilities.call("pi.sources.list", {}, ctx)) as any).sources[0].path,
+			path: listed.path,
+			expectedRevision: listed.revision,
 		},
 		ctx,
 	);
+	const updated = ((await entry.capabilities.call("pi.sources.list", {}, ctx)) as any).sources[0];
 	await entry.capabilities.call(
 		"pi.sources.delete",
-		{ path: ((await entry.capabilities.call("pi.sources.list", {}, ctx)) as any).sources[0].path },
+		{ path: updated.path, expectedRevision: updated.revision },
 		ctx,
 	);
 	expect(((await entry.capabilities.call("pi.sources.list", {}, ctx)) as any).sources).toHaveLength(

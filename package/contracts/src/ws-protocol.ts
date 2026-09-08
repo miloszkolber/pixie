@@ -414,6 +414,7 @@ export interface WsMethodMap {
 	"pi.agentUpdate": {
 		params: {
 			id: string;
+			revision: string;
 			name: string;
 			description: string;
 			instructions: string;
@@ -424,7 +425,7 @@ export interface WsMethodMap {
 		result: PiAgentCatalogEntry;
 	};
 	"pi.agentDelete": {
-		params: { id: string; projectId?: string; root?: string };
+		params: { id: string; revision: string; projectId?: string; root?: string };
 		result: Ack;
 	};
 	"provider.status": { params: Record<string, never>; result: ProviderStatusReport };

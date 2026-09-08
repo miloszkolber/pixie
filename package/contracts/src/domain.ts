@@ -461,6 +461,8 @@ export interface PiProviderDefaults {
 /** Opaque catalog identity. Paths and arbitrary source properties never cross this boundary. */
 export interface PiAgentCatalogEntry {
 	id: string;
+	/** Opaque source revision required for conditional update/delete. */
+	revision: string;
 	name: string;
 	description: string;
 	instructions: string;

@@ -10,9 +10,9 @@ import (
 )
 
 type piAgentSource struct {
-	path, name, description, content string
-	global, writable                 bool
-	properties                       map[string]any
+	path, revision, name, description, content string
+	global, writable                           bool
+	properties                                 map[string]any
 }
 
 func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[string]any) (any, error) {
@@ -73,11 +73,16 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 		if !source.writable {
 			return nil, fmt.Errorf("agent is unavailable or read-only")
 		}
+		revision, err := agentText(request["revision"], "revision", 128, false)
+		if err != nil {
+			return nil, err
+		}
 		params["path"] = source.path
+		params["expectedRevision"] = revision
 	}
 	if method == "pi.agentDelete" {
 		if err := a.call(ctx, "pi.sources.delete", params, nil); err != nil {
-			return nil, fmt.Errorf("couldn't remove Pi agent")
+			return nil, fmt.Errorf("couldn't remove Pi agent: %w", err)
 		}
 		return ack(nil)
 	}
@@ -126,7 +131,7 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 	}
 	response, err := a.objectCall(ctx, "pi.sources."+action, params)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't save Pi agent")
+		return nil, fmt.Errorf("couldn't save Pi agent: %w", err)
 	}
 	updated, err := parseAgentSource(response["source"])
 	if err != nil {
@@ -169,15 +174,16 @@ func parseAgentSource(value any) (piAgentSource, error) {
 	description, descriptionOK := raw["description"].(string)
 	content, contentOK := raw["content"].(string)
 	path, pathOK := raw["path"].(string)
+	revision, revisionOK := raw["revision"].(string)
 	properties := map[string]any{}
 	propertiesOK := true
 	if raw["properties"] != nil {
 		properties, propertiesOK = raw["properties"].(map[string]any)
 	}
-	if raw["type"] != "agent" || !globalOK || !writableOK || !nameOK || name == "" || !descriptionOK || !contentOK || !pathOK || path == "" || !propertiesOK {
+	if raw["type"] != "agent" || !globalOK || !writableOK || !nameOK || name == "" || !descriptionOK || !contentOK || !pathOK || path == "" || !revisionOK || revision == "" || !propertiesOK {
 		return piAgentSource{}, fmt.Errorf("Pi returned an invalid agent source")
 	}
-	return piAgentSource{path: path, name: name, description: description, content: content, global: global, writable: writable, properties: properties}, nil
+	return piAgentSource{path: path, revision: revision, name: name, description: description, content: content, global: global, writable: writable, properties: properties}, nil
 }
 
 func (s piAgentSource) id() string {
@@ -209,7 +215,7 @@ func (s piAgentSource) project() map[string]any {
 	if s.global {
 		scope = "global"
 	}
-	result := map[string]any{"id": s.id(), "name": name, "description": description, "instructions": content, "scope": scope, "writable": s.writable}
+	result := map[string]any{"id": s.id(), "revision": s.revision, "name": name, "description": description, "instructions": content, "scope": scope, "writable": s.writable}
 	if model, err := agentText(s.properties["model"], "model", 256, false); err == nil {
 		result["modelId"] = model
 	}
