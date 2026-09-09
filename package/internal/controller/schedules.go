@@ -76,6 +76,15 @@ type Schedules struct {
 	stop            chan struct{}
 	started, closed bool
 	work            sync.WaitGroup
+	publishFaults   persist.PublishFaults
+}
+
+// SetPublishFaults injects deterministic post-rename faults into schedule
+// publication for X04 coverage. Production code leaves it zero-valued.
+func (s *Schedules) SetPublishFaults(faults persist.PublishFaults) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.publishFaults = faults
 }
 
 func scheduleNext(job Schedule, now time.Time) (time.Time, error) {
@@ -163,7 +172,7 @@ func NewSchedules(store persist.Store, validateRoot func(string, string) (string
 		s.jobs[id] = j
 	}
 	if changed {
-		if err := s.write(nil); err != nil {
+		if _, err := s.write(nil); err != nil {
 			return nil, err
 		}
 	}
@@ -172,19 +181,25 @@ func NewSchedules(store persist.Store, validateRoot func(string, string) (string
 func (s *Schedules) save(job Schedule) error {
 	previous, exists := s.jobs[job.ID]
 	s.jobs[job.ID] = job
-	if err := s.write(job); err != nil {
-		if exists {
-			s.jobs[job.ID] = previous
-		} else {
-			delete(s.jobs, job.ID)
+	outcome, err := s.write(job)
+	if err != nil {
+		// An uncertain primary stays visible for reconciliation, so the
+		// candidate is retained with its mutation identity. Only a
+		// known-uncommitted failure restores the prior commit.
+		if outcome.Kind != persist.OutcomeDurabilityUncertain {
+			if exists {
+				s.jobs[job.ID] = previous
+			} else {
+				delete(s.jobs, job.ID)
+			}
 		}
 		return err
 	}
 	return nil
 }
-func (s *Schedules) write(result any) error {
+func (s *Schedules) write(result any) (persist.PublishOutcome, error) {
 	if s.jobs == nil || len(s.jobs) > 1000 {
-		return fmt.Errorf("too many schedules")
+		return persist.PublishOutcome{Kind: persist.OutcomeKnownUncommitted, Stage: persist.StageValidate}, fmt.Errorf("too many schedules")
 	}
 	operations := slices.Clone(s.operations)
 	if s.operation != nil {
@@ -194,7 +209,7 @@ func (s *Schedules) write(result any) error {
 		}
 		raw, err := json.Marshal(result)
 		if err != nil {
-			return err
+			return persist.PublishOutcome{Kind: persist.OutcomeKnownUncommitted, Stage: persist.StageValidate}, err
 		}
 		op.Result = raw
 		operations = append(operations, op)
@@ -202,11 +217,23 @@ func (s *Schedules) write(result any) error {
 			operations = operations[len(operations)-512:]
 		}
 	}
-	if err := persist.Write(s.store, "schedules.json", scheduleDisk{1, s.jobs, operations}, nil); err != nil {
-		return err
+	outcome, err := persist.WriteWithOutcome(s.store, "schedules.json", scheduleDisk{1, s.jobs, operations}, nil, s.publishFaults)
+	decision := DecideSchedulePublish(outcome)
+	if decision.MayDispatch {
+		s.operations = operations
+		return outcome, nil
 	}
-	s.operations = operations
-	return nil
+	if outcome.Kind == persist.OutcomeDurabilityUncertain {
+		// Retain the mutation identity so an identical retry reconciles the
+		// original operation instead of duplicating work, then reconcile the
+		// validated primary without ever restoring the older backup.
+		s.operations = operations
+		if _, reconcileErr := ReconcileScheduleAfterPublish(s.store, outcome); reconcileErr != nil {
+			return outcome, fmt.Errorf("uncertain schedule publish remains unresolved: %w", errors.Join(err, reconcileErr))
+		}
+		return outcome, err
+	}
+	return outcome, err
 }
 func (s *Schedules) next(job Schedule, now time.Time) (time.Time, error) {
 	if job.Timezone == "" {
@@ -538,8 +565,13 @@ func (s *Schedules) Handle(ctx context.Context, method string, p map[string]any)
 			return nil, fmt.Errorf("stop the running schedule before deleting it")
 		}
 		delete(s.jobs, id)
-		if err := s.write(nil); err != nil {
-			s.jobs[id] = j
+		if outcome, err := s.write(nil); err != nil {
+			// An uncertain delete stays applied after reconciling the
+			// validated primary; only a known-uncommitted failure restores
+			// the prior entry.
+			if outcome.Kind != persist.OutcomeDurabilityUncertain {
+				s.jobs[id] = j
+			}
 			return nil, err
 		}
 		delete(s.compiled, id)
@@ -555,7 +587,7 @@ func (s *Schedules) Handle(ctx context.Context, method string, p map[string]any)
 		// the paused flag, so future automatic dispatch stays held.
 		return ack(s.startLocked(id, time.Now()))
 	case "schedule.stop":
-		if err := s.write(nil); err != nil {
+		if _, err := s.write(nil); err != nil {
 			return nil, err
 		}
 		if cancel := s.running[id]; cancel != nil {

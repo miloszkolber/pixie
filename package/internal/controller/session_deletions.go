@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,12 +32,21 @@ type storedSessionDeletions struct {
 // SessionDeletions is a fail-closed journal. Its primary file is the only
 // deletion authority: an older backup must never resurrect a completed delete.
 type SessionDeletions struct {
-	mu    sync.Mutex
-	store persist.Store
+	mu            sync.Mutex
+	store         persist.Store
+	publishFaults persist.PublishFaults
 }
 
 func NewSessionDeletions(store persist.Store) *SessionDeletions {
 	return &SessionDeletions{store: store}
+}
+
+// SetPublishFaults injects deterministic post-rename faults into deletion
+// publication for X04 coverage. Production code leaves it zero-valued.
+func (deletions *SessionDeletions) SetPublishFaults(faults persist.PublishFaults) {
+	deletions.mu.Lock()
+	defer deletions.mu.Unlock()
+	deletions.publishFaults = faults
 }
 
 func (deletions *SessionDeletions) List() ([]sessionDeletion, error) {
@@ -130,7 +140,21 @@ func (deletions *SessionDeletions) save(records []sessionDeletion) error {
 	if records == nil {
 		records = []sessionDeletion{}
 	}
-	return persist.Write(deletions.store, "pi-session-deletions.json", storedSessionDeletions{Version: 1, Engine: "pi", Records: records}, validateStoredSessionDeletions)
+	outcome, err := persist.WriteWithOutcome(deletions.store, "pi-session-deletions.json", storedSessionDeletions{Version: 1, Engine: "pi", Records: records}, validateStoredSessionDeletions, deletions.publishFaults)
+	decision := DecideDeletionPublish(outcome)
+	if decision.MayDispatch {
+		return nil
+	}
+	if outcome.Kind == persist.OutcomeDurabilityUncertain {
+		// The candidate tombstone stays visible. Reconcile the validated
+		// primary without resurrecting an older backup, and keep the delete
+		// blocked from replay against a new endpoint until resolved.
+		if _, reconcileErr := ReconcileDeletionAfterPublish(deletions.store, outcome); reconcileErr != nil {
+			return fmt.Errorf("uncertain deletion publish remains unresolved: %w", errors.Join(err, reconcileErr))
+		}
+		return err
+	}
+	return err
 }
 
 func validateStoredSessionDeletions(value storedSessionDeletions) error {
