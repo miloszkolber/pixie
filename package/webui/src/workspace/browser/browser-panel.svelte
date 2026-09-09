@@ -161,7 +161,7 @@ function open(event: SubmitEvent): void {
 			<div class="callout-content"><p class="callout-description">Controller disconnected. Browser controls will recover after reconnection.</p></div>
 		</div>
 		{:else if expired}
-			<div role="alert" class="callout shrink-0" data-variant="warning">
+			<div role="alert" data-testid="browser-lease-expired" class="callout shrink-0" data-variant="warning">
 				<div class="callout-content flex items-center justify-between gap-sm">
 					<p class="callout-description">This browser session ended while Pixie was disconnected.</p>
 					<Button variant="outline" size="sm" disabled={restartInFlight} onclick={() => void restart()}>Restart browser</Button>

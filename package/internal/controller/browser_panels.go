@@ -32,7 +32,7 @@ const (
 var (
 	browserPanelIDPattern  = regexp.MustCompile(`^b-[a-f0-9]{18}$`)
 	browserSnapshotRef     = regexp.MustCompile(`^@[A-Za-z0-9_-]{1,128}$`)
-	browserArtifactURLPath = regexp.MustCompile(`^/v1/artifacts/[A-Za-z0-9_-]{1,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,126}\.(?:png|jpe?g|webp)$`)
+	browserArtifactURLPath = regexp.MustCompile(`(?i)^/v1/artifacts/[A-Za-z0-9_-]{1,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,126}\.(?:png|jpe?g|webp)$`)
 )
 
 type browserPanel struct {
