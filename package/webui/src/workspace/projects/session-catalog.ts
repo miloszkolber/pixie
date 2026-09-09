@@ -18,6 +18,41 @@ export const SESSION_CATALOG_RECENT_LIMIT = 6;
 /** Explicit fallback for native titles that are missing or blank. */
 export const UNTITLED_SESSION_TITLE = "Untitled chat";
 
+/** Nullable host-side project key. Null means ungrouped; never a hidden all-files project. */
+export type HostProjectKey = string | null;
+
+/**
+ * Catalog session with a nullable host-side project key plus the optional
+ * host association. `SessionSummary` stays assignable: a plain `projectId`
+ * string narrows to `string | null` and `hostId` is optional.
+ */
+export type CatalogSession = Omit<SessionSummary, "projectId"> & {
+	projectId: string | null;
+	hostId?: string | null;
+};
+
+/** True for null/undefined/empty project keys. There is no hidden all-files project. */
+export function isUngroupedProjectKey(projectId: unknown): boolean {
+	return projectId === null || projectId === undefined || projectId === "";
+}
+
+/** Normalize an unknown project reference to a nullable host-side key. */
+export function normalizeHostProjectKey(projectId: unknown): HostProjectKey {
+	if (projectId === null || projectId === undefined) return null;
+	if (typeof projectId !== "string") return null;
+	if (projectId === "") return null;
+	return projectId;
+}
+
+/**
+ * Stable host/session association key. Duplicate native session IDs across
+ * hosts never collapse by first match.
+ */
+export function sessionHostKey(session: { hostId?: unknown; sessionId: string }): string {
+	const host = typeof session.hostId === "string" ? session.hostId : "";
+	return `${host}\0${session.sessionId}`;
+}
+
 export type SessionCatalogView = "grouped" | "flat";
 
 export function parseCatalogView(value: unknown): SessionCatalogView {
@@ -87,46 +122,51 @@ export function selectRecentSubset<T extends Pick<SessionSummary, "sessionId" | 
 
 export interface SessionCatalogGroup {
 	project: Project;
-	sessions: SessionSummary[];
+	sessions: CatalogSession[];
 }
 
 export interface SessionCatalog {
 	groups: SessionCatalogGroup[];
-	ungrouped: SessionSummary[];
-	flat: SessionSummary[];
+	ungrouped: CatalogSession[];
+	flat: CatalogSession[];
 }
 
 /**
- * Build grouped/flat/ungrouped views from one catalog.
+ * Build grouped/flat/ungrouped views from one host/session-keyed catalog.
  *
  * Inputs mirror the existing fixture transport: one `session.list` result per
  * known project plus an optional explicit ungrouped list (empty against the
  * current project-required transport; populated by future host/session-keyed
- * metadata). Sessions whose `projectId` has no open project are treated as
- * ungrouped rather than hidden. Archived sessions stay out of the Chats
- * catalog; read them through `filterArchivedSessions`.
+ * metadata). Sessions carry nullable host-side project keys: null/empty or a
+ * `projectId` with no open project lands in `ungrouped` rather than hiding.
+ * Duplicate native session IDs across hosts are kept by their host/session
+ * key. Archived sessions stay out of the Chats catalog; read them through
+ * `filterArchivedSessions`. The catalog never invents a hidden all-files
+ * project.
  */
 export function buildSessionCatalog(
 	projects: readonly Project[],
-	sessionsByProject: Readonly<Record<string, readonly SessionSummary[]>>,
-	ungroupedSessions: readonly SessionSummary[] = [],
+	sessionsByProject: Readonly<Record<string, readonly CatalogSession[]>>,
+	ungroupedSessions: readonly CatalogSession[] = [],
 ): SessionCatalog {
 	const known = new Set(projects.map((project) => project.id));
 	const seen = new Set<string>();
-	const groupedByProject = new Map<string, SessionSummary[]>();
-	const ungroupedById = new Map<string, SessionSummary>();
+	const groupedByProject = new Map<string, CatalogSession[]>();
+	const ungroupedById = new Map<string, CatalogSession>();
 
-	const place = (session: SessionSummary): void => {
-		if (seen.has(session.sessionId)) return;
-		seen.add(session.sessionId);
+	const place = (session: CatalogSession): void => {
+		const key = sessionHostKey(session);
+		if (seen.has(key)) return;
+		seen.add(key);
 		if (session.archived === true) return;
-		if (known.has(session.projectId)) {
-			const list = groupedByProject.get(session.projectId) ?? [];
+		const projectKey = (session as { projectId?: unknown }).projectId;
+		if (typeof projectKey === "string" && projectKey !== "" && known.has(projectKey)) {
+			const list = groupedByProject.get(projectKey) ?? [];
 			list.push(session);
-			groupedByProject.set(session.projectId, list);
+			groupedByProject.set(projectKey, list);
 			return;
 		}
-		ungroupedById.set(session.sessionId, session);
+		ungroupedById.set(key, session);
 	};
 
 	for (const project of projects) {

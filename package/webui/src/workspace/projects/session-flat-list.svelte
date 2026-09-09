@@ -8,6 +8,7 @@ import { openChatInTab } from "../navigation/open-chat";
 import {
 	buildSessionCatalog,
 	displaySessionTitle,
+	sessionHostKey,
 	sessionRowAccessibleLabel,
 } from "./session-catalog";
 import { shortSessionAge } from "./session-age";
@@ -19,6 +20,10 @@ interface Props {
 
 let { projects, activeSessionId = null }: Props = $props();
 let sessionsByProject = $state<Record<string, SessionSummary[]>>({});
+// Host/session-keyed ungrouped metadata. Empty against the current
+// project-required `session.list` transport; future host metadata populates
+// it without a hidden all-files project.
+let ungroupedSessions = $state<SessionSummary[]>([]);
 let failed = $state(false);
 let navigationSequence = 0;
 let connectionStatus = $derived($appStore.status);
@@ -26,11 +31,11 @@ let connectionGeneration = $derived($appStore.connectionGeneration);
 let catalogVersions = $derived($appStore.sessionCatalogVersionByProjectArea);
 let projectIds = $derived(projects.map((project) => project.id).join("\0"));
 
-let catalog = $derived(buildSessionCatalog(projects, sessionsByProject));
+let catalog = $derived(buildSessionCatalog(projects, sessionsByProject, ungroupedSessions));
 let projectNameBySession = $derived.by(() => {
 	const names = new Map<string, string>();
 	for (const group of catalog.groups) {
-		for (const session of group.sessions) names.set(session.sessionId, group.project.name);
+		for (const session of group.sessions) names.set(sessionHostKey(session), group.project.name);
 	}
 	return names;
 });
@@ -42,6 +47,7 @@ $effect(() => {
 	if (connectionStatus !== "connected") return;
 	if (projects.length === 0) {
 		sessionsByProject = {};
+		ungroupedSessions = [];
 		failed = false;
 		return;
 	}
@@ -89,20 +95,21 @@ async function openSession(projectId: string, sessionId: string): Promise<void> 
 
 <div class="flex flex-col gap-sm">
 	<ul data-testid="session-catalog-flat" class="tree-group flex flex-col gap-2xs">
-		{#each catalog.flat as session (session.sessionId)}
+		{#each catalog.flat as session (sessionHostKey(session))}
 			{@const active = activeSessionId === session.sessionId}
-			{@const projectName = projectNameBySession.get(session.sessionId) ?? "Ungrouped"}
+			{@const projectName = projectNameBySession.get(sessionHostKey(session)) ?? "Ungrouped"}
+			{@const projectKey = session.projectId ?? ""}
 			<li class="tree-item">
 				<button
 					type="button"
 					data-testid="catalog-flat-row"
 					data-active={active || undefined}
-					data-project-id={session.projectId}
+					data-project-id={projectKey}
 					title={displaySessionTitle(session.title)}
 					aria-label={`${sessionRowAccessibleLabel(session)} in ${projectName}`}
 					aria-current={active || undefined}
 					class={`tree-leaf min-w-0 tr-text-metadata ${active ? "bg-control-bg-selected" : ""}`}
-					onclick={() => void openSession(session.projectId, session.sessionId)}
+					onclick={() => void openSession(projectKey, session.sessionId)}
 				>
 					{#if session.isStreaming}
 						<Icon name="loader-circle" size={12} class="shrink-0 animate-spin motion-reduce:animate-none" />
