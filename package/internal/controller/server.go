@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
 
@@ -43,6 +44,12 @@ type HTTPHandler struct {
 	Ready         http.HandlerFunc
 	MCPRegistry   http.Handler
 	browserClient *http.Client
+	// MODULE-01 module/scope wiring: scope authority plus trusted
+	// descriptors gate module resource requests before any module service
+	// delegation. Host/Origin/proxy handling stays untouched.
+	ModuleScopes      *mcpserver.ScopeAuthority
+	ModuleDescriptors map[string]mcpserver.FrontendDescriptor
+	ModuleService     http.Handler
 }
 
 // inProcessBrowserHandler exposes the merged publisher's Browser REST surface
@@ -58,6 +65,10 @@ func (h *HTTPHandler) inProcessBrowserHandler() http.Handler {
 
 func NewHTTPHandler(webSocket *WebSocketServer, objective ObjectiveHandler, projects *workspace.Projects, files *workspace.Files, authConfig AuthConfig, staticDir string, ready http.HandlerFunc) (*HTTPHandler, error) {
 	result := &HTTPHandler{WebSocket: webSocket, Objective: objective, Projects: projects, Files: files, Auth: authConfig, StaticDir: staticDir, static: resolveStaticFiles(staticDir), Ready: ready, browserClient: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	// MODULE-01 module/scope wiring: default to the committed descriptor
+	// fixtures with a fresh in-memory scope authority.
+	result.ModuleScopes = mcpserver.NewScopeAuthority()
+	result.ModuleDescriptors = mcpserver.DefaultModuleDescriptors()
 	if authConfig.Enabled {
 		auth, err := NewAuth(authConfig.ControllerToken)
 		if err != nil {
@@ -115,6 +126,8 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		h.serveProjectImage(response, request)
 	case strings.HasPrefix(route, "/v1/artifacts/"):
 		h.serveBrowserArtifact(response, request)
+	case mcpserver.IsModuleResourceRoute(route):
+		h.serveModuleResource(response, request)
 	case reservedAPIMCPRoute(route):
 		writeAuthJSON(response, http.StatusNotFound, map[string]string{"error": "not found"})
 	default:
@@ -498,6 +511,42 @@ func inlineScriptHashes(document []byte) []string {
 		result = append(result, "'sha256-"+base64.StdEncoding.EncodeToString(digest[:])+"'")
 	}
 	return result
+}
+
+// MODULE-01 module/scope wiring: trusted contribution boundary for module
+// resource requests. Scope tokens must be bound to the exact
+// module/resource/session/generation tuple; forged, mismatched, expired, or
+// revoked tokens fail closed here without delegating to the module service.
+// Sidebar-only versus viewer-only declarations are enforced via the explicit
+// surface parameter before any delegation.
+func (h *HTTPHandler) serveModuleResource(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		methodNotAllowed(response, http.MethodGet)
+		return
+	}
+	route := "/"
+	if request.URL != nil {
+		route = normalizeRoutePath(request.URL.Path)
+	}
+	moduleID, ok := mcpserver.ModuleIDFromRoute(route)
+	if !ok {
+		writeAuthJSON(response, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	descriptors := h.ModuleDescriptors
+	if descriptors == nil {
+		descriptors = mcpserver.DefaultModuleDescriptors()
+	}
+	scoped, _, status, err := mcpserver.AuthorizeModuleHTTPRequest(h.ModuleScopes, descriptors, moduleID, request)
+	if err != nil {
+		writeAuthJSON(response, status, map[string]string{"error": err.Error()})
+		return
+	}
+	if h.ModuleService != nil {
+		h.ModuleService.ServeHTTP(response, request)
+		return
+	}
+	writeAuthJSON(response, http.StatusOK, map[string]string{"moduleId": scoped.ModuleID, "resource": scoped.ResourceID, "surface": scoped.Surface})
 }
 
 func immutableStaticAsset(requested string) bool {
