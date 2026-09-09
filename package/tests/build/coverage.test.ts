@@ -67,6 +67,18 @@ test("coverage rejects forged, unknown and duplicate FC/X evidence mappings", ()
 	expect(output).toContain("unknown FC/X row");
 });
 
+test("coverage requires a named native/deployment profile for live evidence", () => {
+	const evidence = passingEvidence();
+	const first = evidence[0];
+	if (first === undefined) throw new Error("coverage fixture is empty");
+	const { profile: _profile, ...withoutProfile } = first;
+	evidence[0] = withoutProfile;
+	const report = inspectCoverage({ evidence });
+
+	expect(report.ok).toBe(false);
+	expect(report.violations.join("\n")).toContain("deployment/native profile is required");
+});
+
 test("the checked-in roadmap has no fabricated native or deployment coverage", async () => {
 	const { collectCoverageInput } = await import("../../scripts/check-coverage.ts");
 	const report = inspectCoverage(await collectCoverageInput());

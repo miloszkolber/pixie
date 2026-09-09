@@ -68,6 +68,8 @@ export interface CoverageEvidence {
 	kind: CoverageEvidenceKind;
 	source: string;
 	test?: string;
+	/** The independently exercised deployment/native profile. Static prose is
+	 * never a substitute for a named profile. */
 	profile?: string;
 	actual?: boolean;
 	live?: boolean;
@@ -189,6 +191,10 @@ function reportCoverage(input: CoverageInput): CoverageReport {
 		}
 		if (!evidence.source?.trim()) {
 			violations.push(`evidence ${evidence.id}: source is required`);
+			continue;
+		}
+		if (!evidence.profile?.trim()) {
+			violations.push(`evidence ${evidence.id}: deployment/native profile is required`);
 			continue;
 		}
 		if (evidence.test !== undefined && !evidence.test.trim()) {
@@ -320,6 +326,11 @@ export function inspectCutover(input: CutoverInput): CutoverReport {
 		if (gate.live !== true) {
 			gateStatus[gateID] = "not-live";
 			addMissingLive(missingLiveEvidence, gateID, "a live gate result is required");
+			continue;
+		}
+		if (!gate.profile?.trim()) {
+			gateStatus[gateID] = "failed";
+			violations.push(`${gateID}: deployment profile is required`);
 			continue;
 		}
 		if (!gate.source?.trim()) {

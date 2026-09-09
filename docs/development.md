@@ -9,6 +9,8 @@ From `pixie/`:
 ```sh
 bun install --frozen-lockfile
 bun run check:deps
+bun run check:docs
+bun run check:coverage
 bun run lint
 bun run typecheck
 bun run test
@@ -37,3 +39,5 @@ docker build -f package/Dockerfile --target pixie -t pixie .
 Mount `/artifacts` to retain browser evidence. The container-image workflow runs one shared validation graph before publishing the image. Acceptance covers short viewport composer access, file/Git views, attachments, streaming/reconnect, provider setup, keyboard focus and both themes at narrow and wide sizes. Apple Container validates Linux processes and images; it does not establish Docker Compose host-network behavior.
 
 `bun run dev:web` uses the same frontend entry and Linux Go fixture. Builds verify vendored Mewa assets and enforce the initial JavaScript budget. Keep WebUI and contract tests under `package/tests/`; new Go unit tests may be colocated; use regression cases for observable behavior and realistic failure modes.
+
+`bun run --cwd package scripts/check-performance.ts` validates an operator-supplied `performance-evidence.json` record. It intentionally fails when that live artifact is absent; static fixtures and cross-compilation do not establish PERF-01 on either architecture.

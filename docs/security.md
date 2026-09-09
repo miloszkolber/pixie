@@ -28,6 +28,8 @@ Residual risks and smallest practical hardening (no privileged machinery): a com
 
 Existing fixtures: `package/tests/performance/main.go` is a controller comparison harness (project.list, file_1MiB, PNG-over-HTTP workloads with p50/p95 and a 5% budget), not a Browser harness; `package/tests/performance/transcript.ts` explicitly does not measure browser paint or deployment-host latency. There is no Browser task-latency fixture in the tree.
 
+`package/scripts/check-performance.ts` is the PERF-01 evidence checker. A complete record needs repeated fresh-process measurements for assistant and full-host on amd64 and arm64, a named artifact/profile and full source commit, complete process-tree RSS, separate decoded/buffer memory, content-filled UI, and worker resource fields. The checker fails when the record is missing, partial, synthetic, or not marked as live; this checkout contains no such live record.
+
 | Configuration | Browser task latency, open+snapshot+close over `POST :7312/mcp/browser` (`tools/call browser_command`) |
 | --- | --- |
 | Merged `pixie` image, x86-64, Browser module enabled, measured live 2026-09-07 against `https://example.com` (agent-browser 0.34.0 per `package/Dockerfile`, Chromium bundled in image) | open 859 ms, snapshot 19 ms, close 263 ms (single round trip, wall clock, bearer-authenticated loopback) |
@@ -46,8 +48,8 @@ docker logs pixie --since 10m | grep -i -E 'browser|ready|listen'
 # Browser task latency: one bounded open+snapshot+close round trip via the
 # in-process module (MCP tools/call, bearer required when auth is enabled).
 python3 -c "
-import json, time, urllib.request
-tok = open('/home/core/docker/pixie/.pixie').read()  # parse PIXIE_MCP_TOKEN
+import json, os, time, urllib.request
+tok = os.environ['PIXIE_MCP_TOKEN']
 def call(args, i):
     body = json.dumps({'jsonrpc':'2.0','id':i,'method':'tools/call',
         'params':{'name':'browser_command','arguments':args}}).encode()

@@ -18,6 +18,7 @@ function passingCoverage(): CoverageInput {
 			kind: kinds[index % kinds.length] ?? "native",
 			source: `fixture/${id.toLowerCase()}.json`,
 			test: `${id.toLowerCase()}-live`,
+			profile: index % 2 === 0 ? "vanilla" : "combined",
 			actual: true,
 			live: true,
 		})),
@@ -72,4 +73,19 @@ test("cutover refuses a reduction without named approval", () => {
 	expect(report.ok).toBe(false);
 	expect(report.removalAllowed).toBe(false);
 	expect(report.violations.join("\n")).toContain("explicit approval");
+});
+
+test("cutover refuses a live core gate without a deployment profile", () => {
+	const input = passingCutover();
+	const first = input.gates?.[0];
+	if (first === undefined) throw new Error("core gate fixture is empty");
+	const { profile: _profile, ...withoutProfile } = first;
+	const report = inspectCutover({
+		...input,
+		gates: [withoutProfile, ...(input.gates ?? []).slice(1)],
+	});
+
+	expect(report.ok).toBe(false);
+	expect(report.removalAllowed).toBe(false);
+	expect(report.violations.join("\n")).toContain("Gate 1: deployment profile is required");
 });

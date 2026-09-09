@@ -80,16 +80,16 @@ test("upgrade recovery never loses drafts when storage is unavailable", () => {
 	expect(throwing.storageAvailable).toBeFalse();
 	expect(throwing.unsavedWarning).toContain("kept in memory");
 
-	let saved: Record<string, string> | null = null;
+	const saved = { value: null as Record<string, string> | null };
 	const stored = preserveDraftsForRecovery(drafts, {
 		save: (next) => {
-			saved = next;
+			saved.value = next;
 		},
 	});
 	expect(stored.preserved).toEqual(drafts);
 	expect(stored.storageAvailable).toBeTrue();
 	expect(stored.unsavedWarning).toBeNull();
-	expect(saved).toEqual(drafts);
+	expect(saved.value).toEqual(drafts);
 });
 
 test("upgrade recovery restores drafts without empty overwriting non-empty", () => {
