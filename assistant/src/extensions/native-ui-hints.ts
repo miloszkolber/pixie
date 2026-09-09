@@ -8,6 +8,8 @@
 // cancellation forwards require the exact request identity while reporting the
 // native outcome as unknown. Nothing here fabricates an acknowledgment.
 
+import { NATIVE_UI_BOUNDS } from "./native-ui-mapping.ts";
+
 export const NATIVE_BASELINE = {
 	distribution: "Pi 0.85.1",
 	rpcImplementation: "packages/coding-agent/src/modes/rpc/rpc-mode.ts",
@@ -29,7 +31,8 @@ export interface UpstreamBlocker {
 export const FC15_WORKING_BLOCKER: UpstreamBlocker = {
 	fcId: "FC15",
 	distribution: "npm and standalone Pi 0.85.1",
-	missingPublicSymbol: "Observable working-message hook with exact request identity (RPC setWorkingMessage)",
+	missingPublicSymbol:
+		"Observable working-message hook with exact request identity (RPC setWorkingMessage)",
 	reproduction:
 		"Call ctx.ui.setWorkingMessage('working') in an extension bound with mode rpc on Pi 0.85.1; observe rpc-mode.ts setWorkingMessage is an empty body and no extension_ui_request frame is emitted.",
 	attemptedAlternatives: [
@@ -47,7 +50,8 @@ export const FC15_WORKING_BLOCKER: UpstreamBlocker = {
 export const FC15_CANCELLATION_BLOCKER: UpstreamBlocker = {
 	fcId: "FC15",
 	distribution: "npm and standalone Pi 0.85.1",
-	missingPublicSymbol: "Request-specific dialog cancellation frame for aborted/timed-out extension_ui_request",
+	missingPublicSymbol:
+		"Request-specific dialog cancellation frame for aborted/timed-out extension_ui_request",
 	reproduction:
 		"Open ctx.ui.select/input/confirm/editor with an AbortSignal or timeout in rpc mode, abort it, and observe the pending map entry is deleted locally with no request-specific cancellation output; the host only resolves the default value.",
 	attemptedAlternatives: [
@@ -82,7 +86,7 @@ export interface WorkingHint {
 /** Create an honest working hint. Always marks native acceptance as false. */
 export function createWorkingHint(input: { sessionId: string; message?: string }): WorkingHint {
 	if (!input.sessionId) throw new Error("Working hint requires a session identity");
-	const trimmed = input.message?.slice(0, 2000);
+	const trimmed = input.message?.slice(0, NATIVE_UI_BOUNDS.maxTextChars);
 	return {
 		kind: "pixie-local-working-hint",
 		sessionId: input.sessionId,

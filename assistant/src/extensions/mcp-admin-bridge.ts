@@ -1,28 +1,27 @@
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { registerCapability } from "../capabilities.ts";
 import type { RecordValue } from "../storage.ts";
+import {
+	ADAPTER_RUNTIME_REGISTER_EVENT,
+	ADAPTER_RUNTIME_REGISTER_VERSION,
+	ADAPTER_RUNTIME_SNAPSHOT_EVENT,
+	ADAPTER_STATUS_EVENT,
+	blockedPiToolsCall,
+	emitRuntimeRegister,
+	PI_MCP_ADAPTER_TESTED_VERSION,
+	readAdapterStatusSnapshot,
+} from "./adapter-mcp.ts";
 import { mcpConnectionsBridge } from "./mcp-connections.ts";
 
 // Application administration only. Pi loads the operator-installed adapter.
 // The public snapshot request discovers its runtime without registering a
 // server, initializing a transport, or importing another adapter factory.
 
-export const PI_MCP_ADAPTER_VERSION = "2.32.1";
-export const PI_MCP_ADAPTER_STATUS_EVENT = "pi-mcp-adapter/status/v1";
-export const PI_MCP_ADAPTER_REGISTER_EVENT = "pi-mcp-adapter:runtime-register:v1";
-export const PI_MCP_ADAPTER_REGISTER_VERSION = 1;
+export const PI_MCP_ADAPTER_VERSION = PI_MCP_ADAPTER_TESTED_VERSION;
+export const PI_MCP_ADAPTER_STATUS_EVENT = ADAPTER_STATUS_EVENT;
+export const PI_MCP_ADAPTER_REGISTER_EVENT = ADAPTER_RUNTIME_REGISTER_EVENT;
+export const PI_MCP_ADAPTER_REGISTER_VERSION = ADAPTER_RUNTIME_REGISTER_VERSION;
 export const PIXIE_BROWSER_RUNTIME_NAME = "pixie-browser";
-
-interface RuntimeRegistration {
-	dispose(): Promise<void>;
-}
-
-interface RuntimeRegisterRequest extends Record<string, unknown> {
-	version: typeof PI_MCP_ADAPTER_REGISTER_VERSION;
-	name: string;
-	definition: Record<string, unknown>;
-	result?: { ok: true; registration: RuntimeRegistration } | { ok: false; error: Error };
-}
 
 export function pixieBrowserDefinition(endpoint: string, token?: string): Record<string, unknown> {
 	const definition: Record<string, unknown> = { url: endpoint };
@@ -36,20 +35,12 @@ export function pixieBrowserDefinition(endpoint: string, token?: string): Record
 // proxy-only, synchronous `request.result`, first-wins, fail-closed on
 // duplicate names. Throws when the adapter is not installed for this Pi
 // instance or when the name is already registered.
-export function registerPixieBrowser(
-	pi: ExtensionAPI,
-	endpoint: string,
-	token?: string,
-): RuntimeRegistration {
-	const request: RuntimeRegisterRequest = {
-		version: PI_MCP_ADAPTER_REGISTER_VERSION,
-		name: PIXIE_BROWSER_RUNTIME_NAME,
-		definition: pixieBrowserDefinition(endpoint, token),
-	};
-	pi.events.emit(PI_MCP_ADAPTER_REGISTER_EVENT, request);
-	if (!request.result) throw new Error("pi-mcp-adapter is not installed for this Pi instance");
-	if (!request.result.ok) throw request.result.error;
-	return request.result.registration;
+export function registerPixieBrowser(pi: ExtensionAPI, endpoint: string, token?: string) {
+	return emitRuntimeRegister(
+		(channel, data) => pi.events.emit(channel, data),
+		PIXIE_BROWSER_RUNTIME_NAME,
+		pixieBrowserDefinition(endpoint, token),
+	);
 }
 
 function text(value: unknown): string {
@@ -70,13 +61,14 @@ export function mcpAdminBridgeWithConfig(options?: {
 			version: 1,
 			name: PIXIE_BROWSER_RUNTIME_NAME,
 		};
-		pi.events.emit("pi-mcp-adapter:runtime-snapshot:v1", probe);
+		pi.events.emit(ADAPTER_RUNTIME_SNAPSHOT_EVENT, probe);
 		if (typeof probe.result?.ok !== "boolean") return;
 		const bridge = mcpConnectionsBridge(pi, options?.agentDir ?? getAgentDir());
 
 		let snapshot: RecordValue | null = null;
 		pi.events.on(PI_MCP_ADAPTER_STATUS_EVENT, (value: unknown) => {
-			if (value && typeof value === "object") snapshot = value as RecordValue;
+			const status = readAdapterStatusSnapshot(value);
+			if (status) snapshot = status as unknown as RecordValue;
 		});
 
 		// Browser registration is explicit only (adapter.registerBrowser or
@@ -90,6 +82,11 @@ export function mcpAdminBridgeWithConfig(options?: {
 			close: bridge.close,
 			operations: {
 				...bridge.operations,
+				// The installed adapter exposes registration, snapshot, and status
+				// APIs, but no public programmatic tool executor. Keep the retained
+				// operation visible as an honest blocker rather than reaching into a
+				// live AgentSession tool array.
+				"pi.tools.call": (_params, _ctx) => blockedPiToolsCall(),
 				"adapter.status": () => ({
 					engine: "pi-mcp-adapter",
 					// The public runtime protocol does not report package version.
