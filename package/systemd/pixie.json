@@ -1,0 +1,6 @@
+{
+	"host": "127.0.0.1",
+	"port": 7312,
+	"dataDir": "~/.local/share/pixie",
+	"mode": "full-host"
+}

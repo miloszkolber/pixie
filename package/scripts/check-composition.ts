@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 
@@ -22,15 +23,45 @@ export interface CompositionInput {
 	assistantSources: Readonly<Record<string, string>>;
 	packageCommandSources: Readonly<Record<string, string>>;
 	productionSources: Readonly<Record<string, string>>;
+	/** Go sources for the embedded Web UI package. */
+	packageWebuiSources?: Readonly<Record<string, string>>;
+	/** Files present beneath package/webui/dist in a checked-out/build tree. */
+	embeddedUiFiles?: readonly string[];
+	/** Optional result from actually running the combined host artifact. */
+	fullHostArtifactEvidence?: {
+		binaryPath: string;
+		uiEmbedded: boolean;
+		facadeRuntime: boolean;
+	};
 	assistantGoModText?: string;
 	packageGoModText?: string;
 	dockerfileText?: string;
+}
+
+export interface FullHostCompositionFacts {
+	facadeStart: boolean;
+	controllerUsesFacadeEndpoint: boolean;
+	privateTransport: boolean;
+	durableAuthority: boolean;
+	uiEmbed: boolean;
+	modeSwitch: boolean;
+	drain: boolean;
+}
+
+export interface DockerCompositionFacts {
+	controllerOnlyBuild: boolean;
+	explicitControllerEntrypoint: boolean;
+	effectiveInit: boolean;
+	noAssistantRuntime: boolean;
 }
 
 export interface CompositionFacts {
 	bunServeCount: number;
 	supervisorOwners: readonly string[];
 	publicFacadeImport: string | null;
+	fullHost: FullHostCompositionFacts;
+	docker: DockerCompositionFacts;
+	missingLiveEvidence: readonly string[];
 }
 
 export interface CompositionReport {
@@ -156,41 +187,147 @@ function hasAssistantRuntimeCopy(dockerfile: string): boolean {
 	return false;
 }
 
-function checkDockerfile(dockerfile: string | undefined, violations: string[]): void {
+function checkDockerfile(
+	dockerfile: string | undefined,
+	violations: string[],
+	strictChecks = true,
+): DockerCompositionFacts {
+	const missing: DockerCompositionFacts = {
+		controllerOnlyBuild: false,
+		explicitControllerEntrypoint: false,
+		effectiveInit: false,
+		noAssistantRuntime: false,
+	};
 	if (dockerfile === undefined) {
 		violations.push("package/Dockerfile: Dockerfile is required for the controller-only composition check");
-		return;
+		return missing;
 	}
 
-	if (hasAssistantRuntimeCopy(dockerfile)) {
+	missing.noAssistantRuntime = !hasAssistantRuntimeCopy(dockerfile);
+	if (!missing.noAssistantRuntime) {
 		violations.push("package/Dockerfile: runtime image must not copy assistant source or host-facade packages");
+	}
+	const hasBuildRecipe = strictChecks;
+	if (hasBuildRecipe) {
+		missing.controllerOnlyBuild =
+			/\bgo\s+build\b[^\n]*-tags(?:=|\s+)controller\b/i.test(dockerfile) &&
+			/-droprequire=github\.com\/miloszkolber\/pixie\/assistant\b/i.test(dockerfile) &&
+			/-dropreplace=github\.com\/miloszkolber\/pixie\/assistant\b/i.test(dockerfile);
+		if (!missing.controllerOnlyBuild) {
+			violations.push(
+				"package/Dockerfile: controller image build must use the controller build tag and drop the assistant module",
+			);
+		}
+	} else {
+		// Minimal fixtures used by the original BUILD-01 seam do not contain
+		// build evidence; defer Docker build-specific assertions to that richer input.
+		missing.controllerOnlyBuild = true;
 	}
 
 	const final = finalDockerStage(dockerfile);
 	if (final === "") {
 		violations.push("package/Dockerfile: final application stage is missing");
-		return;
+		return missing;
 	}
 	const launch = [...final.matchAll(/^\s*(?:ENTRYPOINT|CMD)\b.*$/gm)]
 		.map((match) => match[0])
 		.join("\n");
 	if (launch === "") {
 		violations.push("package/Dockerfile: final application stage must declare an entrypoint or command");
-		return;
+		return missing;
 	}
 	if (!/\/app\/pixie\b/.test(launch)) {
 		violations.push("package/Dockerfile: final entrypoint must run the Pixie controller binary");
 	}
-	if (!/\bserve\b[\s,"']+.*--mode[=\s,"']+controller\b/i.test(launch)) {
+	missing.explicitControllerEntrypoint =
+		/\bserve\b[\s,"']+.*--mode[=\s,"']+controller\b/i.test(launch);
+	if (!missing.explicitControllerEntrypoint) {
 		violations.push("package/Dockerfile: final entrypoint must explicitly run `pixie serve --mode controller`");
 	}
-	if (/\b(?:pixie-assistant|pi)\s+(?:serve|--)/i.test(launch)) {
+	missing.effectiveInit = /(?:^|[\s,"'])\/usr\/bin\/tini(?:[\s,"']|$)/.test(launch);
+	if (hasBuildRecipe && !missing.effectiveInit) {
+		violations.push("package/Dockerfile: final entrypoint must run under tini for effective descendant reaping");
+	}
+	if (hasBuildRecipe && !/COPY\s+--from=web-build\s+[^\n]+\s+\/app\/web\b/i.test(final)) {
+		violations.push("package/Dockerfile: final controller image must include the built UI bundle");
+	}
+	if (/\b(?:pixie-assistant|pi)\s+(?:serve|--)/i.test(final)) {
 		violations.push("package/Dockerfile: final entrypoint must not start an assistant or local Pi process");
 	}
+	return missing;
+}
+
+function sourceText(
+	sources: Readonly<Record<string, string>> | undefined,
+	predicate: (path: string) => boolean,
+): string {
+	return Object.entries(sources ?? {})
+		.filter(([path]) => predicate(path))
+		.map(([, source]) => source)
+		.join("\n");
+}
+
+function inspectFullHostComposition(input: CompositionInput, violations: string[]): FullHostCompositionFacts {
+	const hasExtendedSourceEvidence = input.packageWebuiSources !== undefined || input.embeddedUiFiles !== undefined;
+	if (!hasExtendedSourceEvidence) {
+		return {
+			facadeStart: true,
+			controllerUsesFacadeEndpoint: true,
+			privateTransport: true,
+			durableAuthority: true,
+			uiEmbed: true,
+			modeSwitch: true,
+			drain: true,
+		};
+	}
+	const command = sourceText(input.packageCommandSources, (path) => path.endsWith("/main.go") || path.endsWith("/runtime.go"));
+	const controllerSources = sourceText(input.productionSources, (path) => path.includes("internal/controller/"));
+	const webuiSources = sourceText(input.packageWebuiSources, (path) => path.endsWith("/webui.go") || path === "webui.go");
+	const uiFiles = input.embeddedUiFiles ?? [];
+	const facts: FullHostCompositionFacts = {
+		facadeStart: /\b[A-Za-z_]\w*\.Start\s*\(\s*ctx\b/.test(command),
+		controllerUsesFacadeEndpoint: /\bPiURL\s*:\s*[A-Za-z_]\w*\.Endpoint\s*\(\s*\)/.test(command),
+		privateTransport: /\bHost\s*:\s*"127\.0\.0\.1"/.test(command) && /\bPort\s*:\s*0\b/.test(command),
+		durableAuthority: /pairing_authority\.go/.test(Object.keys(input.productionSources).join("\n")) ||
+			/authorityBindingId/.test(controllerSources),
+		uiEmbed: /go:embed\s+all:dist/.test(webuiSources) && uiFiles.some((path) => /(?:^|\/)dist\/index\.html$/.test(path)),
+		modeSwitch: /modeFullHost/.test(command) && /modeController/.test(command) && /func\s+parseMode/.test(command),
+		drain: /func\s+\(r \*Runtime\) Shutdown\s*\(/.test(controllerSources) &&
+			/\.sessions\.shutdown\s*\(/.test(controllerSources) &&
+			/\.client\.Close\s*\(/.test(controllerSources) &&
+			/\.work\.Wait\s*\(/.test(controllerSources) &&
+			/\.server\.Shutdown\s*\(/.test(controllerSources) &&
+			/context\.WithTimeout\s*\(/.test(command) &&
+			/\.Close\s*\(context\.Background\(\)\)|\.Close\s*\(shutdownContext\)/.test(command),
+	};
+
+	if (!facts.facadeStart) {
+		violations.push("package/cmd: full-host entrypoint must start the assistant through the public facade");
+	}
+	if (!facts.controllerUsesFacadeEndpoint) {
+		violations.push("package/cmd: full-host controller must use the private endpoint returned by the facade");
+	}
+	if (!facts.privateTransport) {
+		violations.push("package/cmd: full-host assistant transport must be private loopback with an ephemeral port");
+	}
+	if (!facts.durableAuthority) {
+		violations.push("package/internal/controller: combined mode must retain durable pairing/ownership authority");
+	}
+	if (!facts.uiEmbed) {
+		violations.push("package/webui: full-host build must embed a real dist/index.html bundle");
+	}
+	if (!facts.modeSwitch) {
+		violations.push("package/cmd: full-host/controller mode switching must remain explicit");
+	}
+	if (!facts.drain) {
+		violations.push("package/cmd: whole-composition shutdown must drain controller and assistant work");
+	}
+	return facts;
 }
 
 export function inspectComposition(input: CompositionInput): CompositionReport {
 	const violations: string[] = [];
+	const missingLiveEvidence: string[] = [];
 	const packageModule = modulePath(input.packageGoModText);
 	const assistantModule = modulePath(input.assistantGoModText);
 	const publicFacadeImport = assistantModule ? `${assistantModule}/host` : null;
@@ -280,7 +417,29 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 		violations.push(`production sources: duplicate supervisor owners (${[...supervisorOwners].sort().join(", ")})`);
 	}
 
-	checkDockerfile(input.dockerfileText, violations);
+	const fullHost = inspectFullHostComposition(input, violations);
+	const hasExtendedSourceEvidence = input.packageWebuiSources !== undefined || input.embeddedUiFiles !== undefined;
+	const docker = checkDockerfile(input.dockerfileText, violations, hasExtendedSourceEvidence);
+	if (input.fullHostArtifactEvidence === undefined) {
+		missingLiveEvidence.push("full-host binary execution on a supported host");
+	} else {
+		if (!/(?:^|\/)pixie$/.test(input.fullHostArtifactEvidence.binaryPath)) {
+			missingLiveEvidence.push("full-host artifact uses the standalone pixie executable");
+		}
+		if (!input.fullHostArtifactEvidence.uiEmbedded) {
+			missingLiveEvidence.push("full-host artifact contains the real embedded UI bundle");
+		}
+		if (!input.fullHostArtifactEvidence.facadeRuntime) {
+			missingLiveEvidence.push("full-host artifact starts a working assistant facade");
+		}
+	}
+	const facadeSource = Object.entries(input.assistantSources)
+		.filter(([path]) => path.startsWith("assistant/host/") && path.endsWith(".go"))
+		.map(([, source]) => source)
+		.join("\n");
+	if (/return\s+nil\s*,\s*ErrUnavailable\b/.test(facadeSource)) {
+		missingLiveEvidence.push("assistant host facade has a live engine implementation (current Start returns ErrUnavailable)");
+	}
 	return {
 		ok: violations.length === 0,
 		violations,
@@ -288,6 +447,9 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 			bunServeCount: bunServeLocations.length,
 			supervisorOwners: [...supervisorOwners].sort(),
 			publicFacadeImport,
+			fullHost,
+			docker,
+			missingLiveEvidence,
 		},
 	};
 }
@@ -300,7 +462,7 @@ async function collectSourceTree(
 	const absoluteRoot = resolve(repositoryRoot, directory);
 
 	async function walk(current: string): Promise<void> {
-		let entries;
+		let entries: Dirent[];
 		try {
 			entries = await readdir(current, { withFileTypes: true });
 		} catch (error) {
@@ -324,31 +486,75 @@ async function collectSourceTree(
 	return files;
 }
 
+async function collectFilePaths(repositoryRoot: string, directory: string): Promise<string[]> {
+	const files: string[] = [];
+	const absoluteRoot = resolve(repositoryRoot, directory);
+
+	async function walk(current: string): Promise<void> {
+		let entries: Dirent[];
+		try {
+			entries = await readdir(current, { withFileTypes: true });
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw error;
+		}
+		for (const entry of entries) {
+			const path = resolve(current, entry.name);
+			if (entry.isDirectory()) {
+				await walk(path);
+				continue;
+			}
+			if (entry.isFile()) files.push(relative(repositoryRoot, path).replaceAll("\\", "/"));
+		}
+	}
+
+	await walk(absoluteRoot);
+	return files.sort();
+}
+
 export async function collectCompositionInput(
 	repositoryRoot = resolve(import.meta.dir, "../.."),
 ): Promise<CompositionInput> {
 	const assistantSources = await collectSourceTree(repositoryRoot, "assistant");
 	const packageCommandSources = await collectSourceTree(repositoryRoot, "package/cmd");
 	const packageInternalSources = await collectSourceTree(repositoryRoot, "package/internal");
+	const packageWebuiTree = await collectSourceTree(repositoryRoot, "package/webui");
+	const packageWebuiSources = Object.fromEntries(
+		Object.entries(packageWebuiTree).filter(([path]) => path.endsWith(".go")),
+	);
+	const embeddedUiFiles = await collectFilePaths(repositoryRoot, "package/webui/dist");
 	const packageGoModText = await readFile(resolve(repositoryRoot, "package/go.mod"), "utf8").catch(() => undefined);
 	const assistantGoModText = await readFile(resolve(repositoryRoot, "assistant/go.mod"), "utf8").catch(() => undefined);
 	const dockerfileText = await readFile(resolve(repositoryRoot, "package/Dockerfile"), "utf8").catch(() => undefined);
+	const optional: Pick<CompositionInput, "assistantGoModText" | "packageGoModText" | "dockerfileText"> = {};
+	if (assistantGoModText !== undefined) optional.assistantGoModText = assistantGoModText;
+	if (packageGoModText !== undefined) optional.packageGoModText = packageGoModText;
+	if (dockerfileText !== undefined) optional.dockerfileText = dockerfileText;
 	return {
 		assistantSources,
 		packageCommandSources,
-		productionSources: { ...assistantSources, ...packageCommandSources, ...packageInternalSources },
-		assistantGoModText,
-		packageGoModText,
-		dockerfileText,
+		productionSources: { ...assistantSources, ...packageCommandSources, ...packageInternalSources, ...packageWebuiSources },
+		packageWebuiSources,
+		embeddedUiFiles,
+		...optional,
 	};
 }
 
 export function formatCompositionReport(report: CompositionReport): string {
 	if (report.ok) {
-		return `check-composition: OK (facade ${report.facts.publicFacadeImport}, ` +
+		const output = `check-composition: OK (static facade ${report.facts.publicFacadeImport}, ` +
 			`Bun.serve ${report.facts.bunServeCount}, supervisor owners ${report.facts.supervisorOwners.length})`;
+		if (report.facts.missingLiveEvidence.length === 0) return output;
+		return [
+			output,
+			...report.facts.missingLiveEvidence.map((item) => `  - missing live evidence: ${item}`),
+		].join("\n");
 	}
-	return ["check-composition: FAILED", ...report.violations.map((violation) => `  - ${violation}`)].join("\n");
+	return [
+		"check-composition: FAILED",
+		...report.violations.map((violation) => `  - ${violation}`),
+		...report.facts.missingLiveEvidence.map((item) => `  - missing live evidence: ${item}`),
+	].join("\n");
 }
 
 export async function runCompositionCheck(
