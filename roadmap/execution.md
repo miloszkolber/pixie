@@ -69,7 +69,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 
 ### Shared assistant and retained features
 
-- [ ] GO-01 — B: separate module/facade, CLI/config/discovery/read-only doctor and independent Pi installations.
+- [x] GO-01 — B: separate module/facade, CLI/config/discovery/read-only doctor and independent Pi installations. Evidence: [CHANGELOG.md](CHANGELOG.md#go-01--separate-module-with-discovery-and-staged-compatibility).
 - [ ] GO-02 — B: bounded native JSONL, writer/correlation/admission/backpressure, child exit and stalled-pipe handling.
 - [ ] GO-03 — B: vanilla create/prompt/images/model/thinking/abort/reopen with native resource/trust semantics.
 - [ ] GO-04 — B/F: clone/fork identity/cancellation, drafts, bounded read-only catalog/history, unknown entries and external replacement.

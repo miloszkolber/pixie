@@ -240,4 +240,17 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 
 ### Committed slices with tasks left open (2026-09-09, fifth batch)
 
-- **Assistant facade and doctor (`fc3b4fb`, `GO-01` remains open):** single public assistant/host surface with config precedence, argv/Pi-executable validation, and a read-only doctor that never mutates state. Verified by 13 new assistant tests passing and assistant typecheck clean; staged compatibility, dual-build gates, and live Pi evidence remain open.
+- **Assistant facade and doctor (`fc3b4fb`, superseded by `GO-01` below).**
+
+### GO-01 — Separate module with discovery and staged compatibility
+
+- **Implementation:** `fc3b4fb` provides the single public facade (config precedence, argv/Pi validation) and read-only doctor; `70172c5` adds static import-surface enforcement (no controller-internal or obsolete roots), Pi discovery across npm/standalone installations with independent version reporting, and staged legacy compatibility with schema-aware rollback hooks.
+- **Behavior evidence:** 27 new assistant regressions cover boundary scans of the live checkout, exact local replacement, discovery classification and version parsing, staged decisions, rollback no-rewind guarantees, and doctor read-only behavior.
+- **Verification:** focused assistant runs (27 pass) plus assistant typecheck clean; `git diff --check` clean.
+- **Remaining boundary:** facade/discovery wiring, Go module split, dual-build gates, live Pi installations, and both-architecture install evidence remain later-stage work.
+
+### Committed slices with tasks left open (2026-09-09, sixth batch)
+
+- **Bounded native JSONL transport (`a728344`, `GO-02` remains open):** 32 MiB framed records, 64 MiB aggregate admission with control reserve, correlation, exit draining, and explicit stall timeouts in Go plus a TS mirror. Verified by 27 transport tests passing; live child supervision, handshake integration, and replay/outbox settlement remain open.
+- **Native UI rows over public adapter (`a47ba78`, `EXT-01`/`BRIDGE-02`/`BRIDGE-03` remain open):** 10-row mapping with exact limitations and single final-response settlement, 12-operation public-bus routing with `pi.tools.call` explicitly blocked, and honest FC15 working/cancellation blockers. Verified by 13 tests passing; live-runtime wiring and upstream hook fidelity remain open.
+- **Layout probes and upgrade recovery (`2092396`, `MEWA-03`/`UI-07` remain open):** five content-filled light/dark layout fixtures and pure upgrade-recovery helpers preserving drafts and mutation identity. Verified by 21 tests passing with web typecheck clean; cascade wiring, view/shell connection, screenshots, and old-browser evidence remain open.
