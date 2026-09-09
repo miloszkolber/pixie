@@ -17,6 +17,9 @@ import {
 } from "./lifecycle.ts";
 import { Providers } from "./providers.ts";
 import { buildEventFrame, serializeFrame } from "./serialize.ts";
+import { RuntimeWiring } from "./runtime-wiring.ts";
+import { UncertainPromptError } from "./session-runtime.ts";
+import type { PromptBlock } from "./session/types.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
 import {
 	validateAssistantHost,
@@ -24,6 +27,7 @@ import {
 	validateAssistantSecret,
 } from "./startup.ts";
 import { HostError, object, type RecordValue, required, serviceStore, text } from "./storage.ts";
+import { redactSecrets } from "./session/validation.ts";
 
 export interface HostOptions {
 	agentDir: string;
@@ -175,11 +179,14 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 	// Fail loudly before the service starts when --llama is requested but the
 	// pinned SDK does not expose its built-in factory through the public export.
 	if (options.llama) llamaFactory();
+	let runtimeWiring: RuntimeWiring;
 	const sessions = new Sessions(
 		agentDir,
 		options.llama ? [llama] : [],
 		(sessionId, event, sequence) => {
-			const frame = buildEventFrame(sessionId, event, sequence);
+			const safeEvent = redactSecrets(event) as RecordValue;
+			runtimeWiring.onEvent(sessionId, safeEvent);
+			const frame = buildEventFrame(sessionId, safeEvent, sequence);
 			for (const peer of peers) {
 				const loading = peer.data.loading.get(sessionId);
 				if (loading) {
@@ -192,12 +199,16 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			}
 		},
 	);
+	runtimeWiring = new RuntimeWiring({ agentDir, bootId, sessions });
 	let control: ManagedSession;
 	try {
+		if (startup) await startup.race(runtimeWiring.ready(), "Assistant runtime wiring startup");
+		else await runtimeWiring.ready();
 		const pending = sessions.control(agentDir);
 		control = startup ? await startup.race(pending, "Pi control session startup") : await pending;
 	} catch (error) {
 		await sessions.close(startup).catch(() => {});
+		await runtimeWiring.close().catch(() => {});
 		throw error;
 	}
 	const providers = new Providers(
@@ -224,6 +235,8 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 				sessions.context(entry, signal),
 			);
 	};
+	const runtimeSnapshot = (entry: ManagedSession, p: RecordValue) =>
+		runtimeWiring.snapshot(entry.session.sessionId, text(p.clientId));
 	const dispatch = async (
 		method: string,
 		p: RecordValue,
@@ -314,6 +327,8 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 		)
 			return providers.call(method, p);
 		if (method === "session.create" || method === "session.fork") {
+			const capacity = runtimeWiring.canCreate();
+			if (!capacity.ok) throw new HostError(capacity.error.message, -32000);
 			const entry = await sessions.create(
 				required(p.cwd, "project"),
 				method === "session.fork" ? required(p.sessionId, "session") : undefined,
@@ -324,20 +339,33 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			} finally {
 				entry.refs--;
 			}
+			await runtimeWiring.bind(entry);
 			peer.data.attachments.set(entry.session.sessionId, { params: p, entry: new WeakRef(entry) });
 			peer.data.sessions.add(entry.session.sessionId);
-			return sessions.snapshot(entry);
+			return { ...sessions.snapshot(entry), runtime: runtimeSnapshot(entry, p) };
+		}
+		if (method === "runtime.release" || method === "session.release" || method === "runtime.releaseToTui") {
+			const id = required(p.sessionId, "session");
+			const entry = await sessions.get(id, text(p.cwd) || undefined);
+			const released = await runtimeWiring.release(
+				entry,
+				method === "runtime.releaseToTui",
+				text(p.instruction) || (method === "runtime.releaseToTui" ? `Resume ${id} in the native TUI` : ""),
+			);
+			if (!released.ok) throw new HostError(released.error.message, -32000);
+			return { ok: true };
 		}
 		if (text(p.sessionId)) {
 			return sessions.use(text(p.sessionId), text(p.cwd) || undefined, async (entry) => {
 				if (method === "session.load") {
 					await attach(entry, p, signal);
+					await runtimeWiring.bind(entry);
 					peer.data.attachments.set(entry.session.sessionId, {
 						params: p,
 						entry: new WeakRef(entry),
 					});
 					peer.data.sessions.add(entry.session.sessionId);
-					return sessions.snapshot(entry, true);
+					return { ...sessions.snapshot(entry, true), runtime: runtimeSnapshot(entry, p) };
 				}
 				if (
 					!peer.data.sessions.has(entry.session.sessionId) &&
@@ -351,6 +379,36 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 				if (attachment && attachment.entry.deref() !== entry) {
 					await attach(entry, attachment.params, signal);
 					attachment.entry = new WeakRef(entry);
+				}
+				if (method === "session.prompt") {
+					if (!Array.isArray(p.content)) throw new HostError("Prompt content must be an array", -32000);
+					return runtimeWiring.prompt(
+						entry,
+						{
+							content: p.content as PromptBlock[],
+							...(typeof p.mutationId === "string" ? { mutationId: p.mutationId } : {}),
+							...(typeof p.deliveryId === "string" ? { deliveryId: p.deliveryId } : {}),
+							...(typeof p.runId === "string" ? { runId: p.runId } : {}),
+						},
+						(request) => sessions.call("session.prompt", { ...p, content: request.content }, signal),
+					);
+				}
+				if (method === "session.cancel") {
+					return runtimeWiring.cancel(
+						entry,
+						text(p.requestId) || randomUUID(),
+						() => sessions.call(method, p, signal),
+					);
+				}
+				if (method === "session.configure") {
+					const result = await sessions.call(method, p, signal);
+					const configId = text(p.configId);
+					const configured =
+						configId === "thinking"
+							? await runtimeWiring.configureThinking(entry, text(p.value))
+							: await runtimeWiring.configureModel(entry, entry.session.model as never);
+					if (!configured.ok) throw new HostError(configured.error.message, -32000);
+					return result;
 				}
 				return sessions.call(method, p, signal);
 			});
@@ -515,7 +573,8 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 									peer.data.handshakePending = false;
 									peer.data.handshaken = true;
 								}
-								const snapshot = object(result);
+								let safeResult = redactSecrets(result);
+								const snapshot = object(safeResult);
 								if (
 									loading &&
 									Array.isArray(snapshot.messages) &&
@@ -541,18 +600,21 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 											method: "session.history",
 											params: { sessionId, messages: chunk },
 										});
-									result = { ...snapshot, messages: [] };
+									safeResult = { ...snapshot, messages: [] };
 								}
-								send(peer, { id, result: result ?? null });
-								flush(Number(object(result).eventSequence ?? -1));
+								send(peer, { id, result: safeResult ?? null });
+								flush(Number(object(safeResult).eventSequence ?? -1));
 							},
 							(error) => {
 								if (handshaking) peer.data.handshakePending = false;
+								const uncertain = error instanceof UncertainPromptError;
 								send(peer, {
 									id,
 									error: {
-										code: error instanceof HostError ? error.code : -32000,
-										message: error instanceof Error ? error.message : "Pi request failed",
+										code: uncertain ? -32003 : error instanceof HostError ? error.code : -32000,
+										message: uncertain
+											? error.message
+											: error instanceof Error ? error.message : "Pi request failed",
 									},
 								});
 								flush();
@@ -579,7 +641,7 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 				options.drainDeadlineMs ?? DEFAULT_SERVICE_DRAIN_DEADLINE_MS,
 				"Assistant startup cleanup",
 			);
-		await Promise.allSettled([sessions.close(cleanupDeadline), control.close(cleanupDeadline)]);
+		await Promise.allSettled([sessions.close(cleanupDeadline), control.close(cleanupDeadline), runtimeWiring.close()]);
 		if (!startup) cleanupDeadline.dispose();
 		throw error;
 	}
@@ -610,6 +672,7 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			const cleanup = Promise.allSettled([
 				sessions.close(deadline),
 				control.close(deadline),
+				runtimeWiring.close(),
 				stopped,
 				...inflight,
 			]);
