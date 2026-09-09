@@ -213,6 +213,31 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Verification:** focused controller Browser run (pass, existing suites included); integrated six-package Go run (all ok); `gofmt` clean; `git diff --check` clean.
 - **Remaining boundary:** live Browser deployment profile, full race suite, and both-architecture runs remain later-stage work.
 
+### API-03 — Durable paired authority independent of dialing
+
+- **Implementation:** `31c0a3c` adds a durable pairing store (binding ID, host identity, storage key, verifier hash only — never endpoints, ports, boot IDs, or credentials) with explicit pair/verify/rotate/revoke ceremony guards; recovery requires stored pairing plus host/storage match, and deletion binding v2 digests the durable tuple instead of endpoint/secret state.
+- **Behavior evidence:** 12 new regressions cover restart durability independent of dialing, unauthenticated-claim rejection, legacy recovery blocked with actionable remedy, rotation preserving binding, revocation until explicit re-pair, and deterministic session-scoped v2 digests.
+- **Verification:** focused pairing run (12 pass) plus full `CGO_ENABLED=0 go test -count=1 ./internal/persist ./tests/go/persist ./internal/controller ./tests/go/controller` (all ok); `gofmt` clean; `git diff --check` clean.
+- **Remaining boundary:** wiring v2 binding into live deletion recovery, full race suite, live services, and both-architecture runs remain later-stage work.
+
+### UI-03 — Grouped/flat/ungrouped catalog with Archive
+
+- **Implementation:** `6aa48c4` delivers grouped/flat views with recent-first order, selected/running pinning, native titles, and metadata-only Archive restore; `2c1563e` adds host/session-keyed metadata with nullable project keys so ungrouped sessions partition without a hidden all-files project.
+- **Behavior evidence:** 26 catalog regressions cover grouping, Archive restore without cloning, removal keeping chats, nullable keys, host-key dedupe, ungrouped partition, and ordering/pinning/titles.
+- **Verification:** `bun test tests/webui/workspace` (86 pass at the time, plus 8 ungrouped); web typecheck with zero errors; `git diff --check` clean.
+- **Remaining boundary:** ungrouped rows still open through existing project navigation until host metadata flows over `session.list`; full suite, production build, and browser QA remain later-stage work.
+
+### SEC-01 — Verified HTTP/auth/CSRF/filesystem/Browser posture
+
+- **Implementation:** `bd18a29` proves posture through the real handler in both no-auth LAN and authenticated modes: exact-origin mutations, cross-origin and unapproved-Host rejection, CSRF denial without Origin on auth/WS surfaces, auth-gated files/artifacts, traversal containment, and Browser-unavailable fail-closed.
+- **Behavior evidence:** 11 new posture/CSRF regressions plus existing artifact/origin/authority suites passing against the assembled handler.
+- **Verification:** focused posture run (pass) plus full controller package run (ok); `gofmt` clean; `git diff --check` clean.
+- **Remaining boundary:** live deployment evidence in both modes, both-architecture runs, full race suite, and launcher/delegation tests (`SEC-02`) remain later-stage work.
+
 ### Committed slices with tasks left open (2026-09-09, fourth batch)
 
 - **Operating docs accuracy (`a69f9d2`, `DOC-01`/`DOC-02` remain open):** architecture, deployment, development, security, and README synced to shipped behavior with verified local links and examples; remaining doc files and checker tooling stay open.
+
+### Committed slices with tasks left open (2026-09-09, fifth batch)
+
+- **Assistant facade and doctor (`fc3b4fb`, `GO-01` remains open):** single public assistant/host surface with config precedence, argv/Pi-executable validation, and a read-only doctor that never mutates state. Verified by 13 new assistant tests passing and assistant typecheck clean; staged compatibility, dual-build gates, and live Pi evidence remain open.
