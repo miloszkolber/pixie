@@ -25,7 +25,7 @@
 	"scripts": {
 		"start": "bun dist/main.js",
 		"typecheck": "tsc --noEmit",
-		"build": "bun build src/main.ts src/doctor.ts src/capabilities.ts src/extensions/mcp-admin-bridge.ts --target=bun --outdir=dist",
+		"build": "bun build src/main.ts src/server.ts src/doctor.ts src/capabilities.ts src/extensions/mcp-admin-bridge.ts --target=bun --outdir=dist",
 		"postinstall": "node patches/apply-patches.mjs"
 	},
 	"dependencies": {

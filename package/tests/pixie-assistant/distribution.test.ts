@@ -34,7 +34,7 @@ test("packed source starts with production dependencies and no optional packages
 			}),
 		);
 		await run([process.execPath, "install", "--production", "--ignore-scripts"], root);
-		const entry = join(root, "node_modules", "@pixie_ai", "pixie-assistant", "src", "main.ts");
+		const entry = join(root, "node_modules", "@pixie_ai", "pixie-assistant", "dist", "main.js");
 		const manifest = JSON.parse(
 			await Bun.file(new URL("../../../assistant/package.json", import.meta.url).pathname).text(),
 		);
@@ -44,7 +44,7 @@ test("packed source starts with production dependencies and no optional packages
 		);
 		const probe = `
 			import { createRequire } from "node:module";
-			import { startHost } from ${JSON.stringify(entry.replace("main.ts", "server.ts"))};
+			import { startHost } from ${JSON.stringify(entry.replace("main.js", "server.js"))};
 			const require = createRequire(${JSON.stringify(entry)});
 			for (const name of ["pi-mcp-adapter", "@mjakl/pi-subagent", "@signetai/connector-pi", "@juicesharp/rpiv-todo", "@juicesharp/rpiv-web-tools", "@juicesharp/rpiv-ask-user-question"]) {
 				let present = false;
