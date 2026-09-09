@@ -254,11 +254,59 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Bounded native JSONL transport (`a728344`, `GO-02` remains open):** 32 MiB framed records, 64 MiB aggregate admission with control reserve, correlation, exit draining, and explicit stall timeouts in Go plus a TS mirror. Verified by 27 transport tests passing; live child supervision, handshake integration, and replay/outbox settlement remain open.
 - **Native UI rows over public adapter (`a47ba78`, `EXT-01`/`BRIDGE-02`/`BRIDGE-03` remain open):** 10-row mapping with exact limitations and single final-response settlement, 12-operation public-bus routing with `pi.tools.call` explicitly blocked, and honest FC15 working/cancellation blockers. Verified by 13 tests passing; live-runtime wiring and upstream hook fidelity remain open.
 - **Layout probes and upgrade recovery (`2092396`, `MEWA-03`/`UI-07` remain open):** five content-filled light/dark layout fixtures and pure upgrade-recovery helpers preserving drafts and mutation identity. Verified by 21 tests passing with web typecheck clean; cascade wiring, view/shell connection, screenshots, and old-browser evidence remain open.
-- **Native session flow contracts (`dcd9fbd`, `GO-03` remains open):** create/prompt/images/model/thinking/abort/reopen validation with native resource/trust semantics, supported `max` thinking, and generation-safe reopen. Verified by 42 assistant tests and assistant typecheck; runtime/native wiring remains open.
-- **Bounded history and draft continuity (`49ebd15`, `GO-04` remains open):** identity-preserving clone/fork helpers, bounded read-only catalog/history, unknown-record preservation, versioned drafts, and external-replacement conflict handling. Verified by 12 assistant tests and typecheck; runtime persistence wiring remains open.
-- **Identity-safe outbox contracts (`509e578`, `GO-05` remains open):** prepared/dispatching/accepted/settled/uncertain state machine, retry/compaction/continuation gates, duplicate-uncertain blocking, Stop retention, and explicit disposition. Verified by 8 assistant tests and typecheck; runtime/native persistence wiring remains open.
-- **Generation-safe native UI state (`1e901e5`, `GO-06` remains open):** passive state and draft replay helpers scoped by session/generation with explicit conflicts and honest unsupported controls. Verified by 5 assistant tests and typecheck; extension/session integration remains open.
-- **Bounded residency and idle handoff (`f01f5db`, `GO-07` remains open):** bounded admission, detached-work disposition, generation guards, explicit release and TUI handoff states, with no forced release of active or unknown work. Verified by focused assistant tests and typecheck; host residency integration remains open.
+- **Native session flow contracts (`dcd9fbd`, superseded by `GO-03` below).**
+- **Bounded history and draft continuity (`49ebd15`, superseded by `GO-04` below).**
+- **Identity-safe outbox contracts (`509e578`, superseded by `GO-05` below).**
+- **Generation-safe native UI state (`1e901e5`, superseded by `GO-06` below).**
+- **Bounded residency and idle handoff (`f01f5db`, superseded by `GO-07` below).**
 - **Public bridge feasibility (`45ca73e`, `BRIDGE-01` remains open):** npm/standalone capability discovery, explicit asset opt-in and bounded private-channel checks, with unsupported APIs reported as blockers rather than mocked. Verified by 9 bridge tests and typecheck; live installation probes remain open.
 - **Fail-closed launcher posture checks (`a7a5146`, `SEC-02` remains open):** pure validation for pre-exec placement, namespaces, scratch/inode, egress, descriptors, descendants, supported architectures, and direct-host/shared-UID rejection. Verified by focused Go security tests and `gofmt`; launcher wiring and live architecture evidence remain open.
-- **Composition boundary checks (`6e97cc6`, `BUILD-01` remains open):** static checker and fixture tests cover public-facade wiring, forbidden imports, duplicate supervisors, and controller-only Docker entrypoints. Fixture checks pass; the checked-in composition intentionally reports missing `assistant/go.mod`, facade wiring, and explicit controller-mode entrypoint as remaining gaps.
+- **Composition boundary checks (`6e97cc6`, superseded by `BUILD-01` below).**
+
+### GO-03 — Native session flow contracts and runtime wiring
+
+- **Implementation:** `dcd9fbd` adds create/prompt/images/model/thinking/abort/reopen validation; `3fb04fb` wires session flow, bounded outbox, drafts/history, passive UI state, residency/release, mutation dedupe, generations, and redacted runtime snapshots into the existing Pi-owned runtime without a second agent loop.
+- **Verification:** 42 session/flow tests plus 42 runtime/outbox/session tests pass; assistant typecheck clean; `git diff --check` clean.
+- **Remaining boundary:** live Pi/native resource and trust evidence, full build, and dual-architecture runs remain later-stage work.
+
+### GO-04 — Bounded history and draft continuity
+
+- **Implementation:** `49ebd15` adds identity-preserving clone/fork, bounded read-only catalog/history, unknown-record preservation, versioned drafts, and external-replacement conflict handling; runtime wiring is included in `3fb04fb`.
+- **Verification:** focused history/draft/runtime tests pass and assistant typecheck is clean.
+- **Remaining boundary:** live native catalog/clone and restart/upgrade evidence remain later-stage work.
+
+### GO-05 — Identity-safe outbox and continuation
+
+- **Implementation:** `509e578` adds the prepared/dispatching/accepted/settled/uncertain state machine with retry/compaction/continuation gates, duplicate-uncertain blocking, Stop retention, and explicit disposition; `3fb04fb` persists bounded runtime wiring and mutation identities.
+- **Verification:** outbox/session/runtime tests pass and assistant typecheck is clean.
+- **Remaining boundary:** child transport handshake, native persistence fault injection, and live Pi settlement remain later-stage work.
+
+### GO-06 — Generation-safe native UI state
+
+- **Implementation:** `1e901e5` adds generation-scoped passive state, draft conflicts, and honest unsupported controls; `3fb04fb` projects it through the runtime snapshot.
+- **Verification:** UI-state and runtime tests pass; assistant typecheck clean.
+- **Remaining boundary:** upstream native UI hooks and live replay evidence remain later-stage work.
+
+### GO-07 — Bounded residency and idle handoff
+
+- **Implementation:** `f01f5db` adds bounded admission, detached-work disposition, generation guards, explicit release/TUI handoff states, and no forced release of active or unknown work.
+- **Verification:** focused residency and runtime tests pass; assistant typecheck clean.
+- **Remaining boundary:** host process residency, descendant termination, and live idle-TUI handoff remain later-stage work.
+
+### BUILD-01 — Separate assistant and controller compositions
+
+- **Implementation:** `aaa4809` adds `assistant/go.mod`, public `assistant/host`, assistant command, exact local replacement, full-host public-facade wiring, controller-only Docker mode, and assistant runtime packaging; `6e97cc6`/`03a7e15` provide static composition and assistant-build boundary checks.
+- **Verification:** 16 build tests pass, assistant and controller Go commands compile with `CGO_ENABLED=0`, assistant typecheck passes, and `git diff --check` is clean.
+- **Remaining boundary:** native Go engine implementation, complete runtime closure, production artifacts, and both-architecture builds remain later-stage work.
+
+### BUILD-02 — Assistant-only build boundary
+
+- **Implementation:** `aaa4809` configures assistant runtime files/dist packaging independently; `03a7e15` checks runtime-only files and forbidden controller/UI/worker closure.
+- **Verification:** assistant build boundary tests pass and assistant typecheck passes.
+- **Remaining boundary:** actual production bundle and independent runtime execution remain later-stage work.
+
+### BUILD/REL static release evidence
+
+- **Implementation:** `2942bf7` adds commit-named release identity checks and `docs/builds/release-checklist.md`; the checker intentionally reports absent workflows/artifacts/digests rather than claiming release readiness.
+- **Verification:** 8 release identity tests pass and documented links resolve.
+- **Remaining boundary:** REL-01 through REL-04, complete artifacts, provenance, immutable retries, and publication policy remain open.

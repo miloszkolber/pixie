@@ -71,11 +71,11 @@ Every task below remains open until implementation evidence is recorded. FC01–
 
 - [x] GO-01 — B: separate module/facade, CLI/config/discovery/read-only doctor and independent Pi installations. Evidence: [CHANGELOG.md](CHANGELOG.md#go-01--separate-module-with-discovery-and-staged-compatibility).
 - [ ] GO-02 — B: bounded native JSONL, writer/correlation/admission/backpressure, child exit and stalled-pipe handling.
-- [ ] GO-03 — B: vanilla create/prompt/images/model/thinking/abort/reopen with native resource/trust semantics.
-- [ ] GO-04 — B/F: clone/fork identity/cancellation, drafts, bounded read-only catalog/history, unknown entries and external replacement.
-- [ ] GO-05 — B/A/F: prepared/dispatching/accepted/settled/uncertain outbox, retry/compaction/continuation and verified Stop.
-- [ ] GO-06 — B/E: supported native UI/latest passive state, draft conflicts and generation-safe replay.
-- [ ] GO-07 — B/F: residency/capacity, detached-work disposition, explicit runtime release, descendants and idle TUI handoff.
+- [x] GO-03 — B: vanilla create/prompt/images/model/thinking/abort/reopen with native resource/trust semantics. Evidence: [CHANGELOG.md](CHANGELOG.md#go-03--native-session-flow-contracts).
+- [x] GO-04 — B/F: clone/fork identity/cancellation, drafts, bounded read-only catalog/history, unknown entries and external replacement. Evidence: [CHANGELOG.md](CHANGELOG.md#go-04--bounded-history-and-draft-continuity).
+- [x] GO-05 — B/A/F: prepared/dispatching/accepted/settled/uncertain outbox, retry/compaction/continuation and verified Stop. Evidence: [CHANGELOG.md](CHANGELOG.md#go-05--identity-safe-outbox-contracts).
+- [x] GO-06 — B/E: supported native UI/latest passive state, draft conflicts and generation-safe replay. Evidence: [CHANGELOG.md](CHANGELOG.md#go-06--generation-safe-native-ui-state).
+- [x] GO-07 — B/F: residency/capacity, detached-work disposition, explicit runtime release, descendants and idle TUI handoff. Evidence: [CHANGELOG.md](CHANGELOG.md#go-07--bounded-residency-and-idle-handoff).
 - [ ] BRIDGE-01 — B/E/A: public installed import/context/storage feasibility on npm/standalone Pi, private bounded channel and explicit asset opt-in.
 - [ ] BRIDGE-02 — E/B: every retained MCP admin operation uses a supported adapter API, not private AgentSession tool access (F28).
 - [ ] BRIDGE-03 — E/B: exact native UI cancellation/working hints or precise FC15 upstream blocker, without fabricated acknowledgments (F24).
@@ -84,8 +84,8 @@ Every task below remains open until implementation evidence is recorded. FC01–
 
 ### Builds and release pipeline
 
-- [ ] BUILD-01 — A/B/G: one public assistant/host facade/lifecycle; no copied implementation or forbidden internal imports.
-- [ ] BUILD-02 — B/G: assistant-only independently builds/runs without controller/UI/worker closure.
+- [x] BUILD-01 — A/B/G: one public assistant/host facade/lifecycle; no copied implementation or forbidden internal imports. Evidence: [CHANGELOG.md](CHANGELOG.md#build-01--separate-assistant-and-controller-compositions).
+- [x] BUILD-02 — B/G: assistant-only independently builds/runs without controller/UI/worker closure. Evidence: [CHANGELOG.md](CHANGELOG.md#build-02--assistant-only-build-boundary).
 - [ ] BUILD-03 — G/B: one full-host binary/service embeds engine/controller/real UI; no separate assistant/assets/Docker for core.
 - [ ] BUILD-04 — G/A: Docker explicitly controller-only, never starts Pi; combined private transport/pairing/ownership tested.
 - [ ] BUILD-05 — G/F: whole-composition drain/restart, both unit choices, effective final-container init/descendant handling and mode switch (F40).
