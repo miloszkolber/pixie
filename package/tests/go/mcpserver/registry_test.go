@@ -287,3 +287,74 @@ func TestRegistryIgnoresRetiredEnvironmentSelection(t *testing.T) {
 		t.Fatal("retired PIXIE_MCP_DISABLED_MODULES fallback disabled the module")
 	}
 }
+
+func TestRegistryUnknownMCPRoutesReturnNotFound(t *testing.T) {
+	registry := testRegistry(t, nil)
+	host := "127.0.0.1:17871"
+	// Control: the owned Browser sub-route delegates to the module service.
+	if response := serve(registry, http.MethodGet, "/mcp/browser/readyz", "", host, nil); response.Code != http.StatusOK {
+		t.Fatalf("owned Browser route status = %d body = %s", response.Code, response.Body.String())
+	}
+	// Unknown and overlapping /mcp/* paths stay registry-owned not_found JSON.
+	// They must not delegate to the Browser service (which uses an outcome
+	// envelope) and must never return the SPA document. Assembled-handler SPA
+	// fallback coverage stays with the controller owner.
+	unknownRoutes := []string{
+		"/mcp/unknown",
+		"/mcp/browser-evil",
+		"/mcp/browserfoo",
+		"/mcp/browserfoo/bar",
+		"/mcp/BROWSER",
+		"/mcp/",
+		"/mcp",
+		"/api/mcp/unknown",
+		"/api/mcp/modules/extra",
+		"/api/unknown",
+	}
+	for _, path := range unknownRoutes {
+		response := serve(registry, http.MethodGet, path, "", host, nil)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("unknown route %q status = %d body = %s", path, response.Code, response.Body.String())
+		}
+		if contentType := response.Header().Get("Content-Type"); contentType != "application/json; charset=utf-8" {
+			t.Fatalf("unknown route %q content type = %q", path, contentType)
+		}
+		if cache := response.Header().Get("Cache-Control"); cache != "no-store" {
+			t.Fatalf("unknown route %q cache policy = %q", path, cache)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatalf("unknown route %q body is not JSON: %v (%q)", path, err, response.Body.String())
+		}
+		if body["code"] != "not_found" {
+			t.Fatalf("unknown route %q body = %#v", path, body)
+		}
+		if _, delegated := body["outcome"]; delegated {
+			t.Fatalf("unknown route %q delegated to Browser service: %#v", path, body)
+		}
+		if raw := response.Body.String(); strings.Contains(raw, "<main>") || strings.Contains(strings.ToLower(raw), "<!doctype") {
+			t.Fatalf("unknown route %q returned SPA document: %q", path, raw)
+		}
+	}
+	if response := serve(registry, http.MethodPost, "/mcp/unknown", `{"jsonrpc":"2.0","id":1,"method":"initialize"}`, host, map[string]string{"Content-Type": "application/json"}); response.Code != http.StatusNotFound {
+		t.Fatalf("unknown POST route status = %d body = %s", response.Code, response.Body.String())
+	}
+	// Ownership errors are not auth errors at registry level: a token-guarded
+	// registry still reports unknown /mcp/* as not_found without credentials,
+	// while metadata routes keep their bearer boundary.
+	tokenRegistry := testRegistry(t, func(config *mcpserver.Config) { config.Token = registryTestToken })
+	for _, path := range []string{"/mcp/unknown", "/mcp/browser-evil"} {
+		response := serve(tokenRegistry, http.MethodGet, path, "", host, nil)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("token-guarded unknown route %q status = %d body = %s", path, response.Code, response.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || body["code"] != "not_found" {
+			t.Fatalf("token-guarded unknown route %q body = %q err = %v", path, response.Body.String(), err)
+		}
+	}
+	authorized := map[string]string{"Authorization": "Bearer " + registryTestToken}
+	if response := serve(tokenRegistry, http.MethodGet, "/api/mcp/modules/extra", "", host, authorized); response.Code != http.StatusNotFound {
+		t.Fatalf("metadata overlap status = %d body = %s", response.Code, response.Body.String())
+	}
+}
