@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/miloszkolber/pixie/internal/identifier"
 )
 
 type connectionGenerationKey struct{}
 type recognizedPiConnectionKey struct{}
+
+const (
+	detachedWorkNone      = "none"
+	detachedWorkActive    = "active"
+	detachedWorkUncertain = "uncertain"
+)
 
 // sessionOperationGate keeps Pi calls serialized per session while allowing
 // a request that has not entered the session yet to stop waiting when canceled.
@@ -181,6 +189,9 @@ func idleStateEligibleLocked(entry *sessionEntry) (bool, string) {
 	if entry.streaming || entry.promptActive || entry.runID != "" {
 		return false, "session still running"
 	}
+	if entry.detachedWork != "" && entry.detachedWork != detachedWorkNone {
+		return false, "detached work outcome is uncertain"
+	}
 	if entry.queue.Dispatch != nil || entry.queue.Blocked != nil {
 		return false, "delivery still uncertain or dispatching"
 	}
@@ -210,4 +221,61 @@ func (m *SessionManager) lockEntryForSettlement(sessionID string, entry *session
 		return fmt.Errorf("session changed while waiting for an operation")
 	}
 	return nil
+}
+
+// forceTerminateGeneration invalidates a generation whose native cancellation
+// could not be verified. Reset drops the managed host connection (and therefore
+// fences every callback from that generation); the projection is then marked
+// blocked or uncertain before the lifecycle freeze is released. This is only a
+// transport-generation fence: PiClient does not own the remote assistant
+// process, so callers must not present it as proof that that process exited.
+// No queued work is resumed automatically after this path.
+func (m *SessionManager) forceTerminateGeneration(sessionID string, entry *sessionEntry, generation uint64) (uint64, int, error) {
+	if m.client != nil {
+		m.client.Reset()
+	}
+	// Reset fences the managed transport generation. Revoke native MCP
+	// credentials before the interrupted projection can be reused.
+	m.revokeNativeMCPSession(sessionID)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := entry.op.LockContext(ctx); err != nil {
+		entry.state.Lock()
+		paused := pausedOutboxCount(entry.queue)
+		entry.state.Unlock()
+		return generation, paused, err
+	}
+	defer entry.op.Unlock()
+
+	entry.state.Lock()
+	defer entry.state.Unlock()
+	// A settlement callback may have won the race after Reset. It is still safe
+	// to advance the generation: any callback carrying the old value is stale.
+	if entry.promptGeneration <= generation {
+		entry.promptGeneration = generation + 1
+	}
+	entry.promptActive = false
+	entry.streaming = false
+	entry.runID = ""
+	entry.detachedWork = detachedWorkUncertain
+	entry.attached = 0
+	entry.drainScheduled = false
+	if entry.drainRetry != nil {
+		entry.drainRetry.Stop()
+		entry.drainRetry = nil
+	}
+	entry.settlement = &SessionSettlement{StopReason: "interrupted", ErrorMessage: "The managed Pi generation was terminated before Stop could be verified; check the transcript before retrying."}
+	var saveErr error
+	if entry.queue.Dispatch != nil {
+		next := entry.queue.clone()
+		item := queuedFollowUp{ID: next.Dispatch.ID, Text: next.Dispatch.Text}
+		next.Dispatch = nil
+		next.Blocked = &item
+		next.Revision = identifier.New()
+		saveErr = m.saveQueueLocked(sessionID, entry, next)
+		if saveErr == nil {
+			m.emitQueue(sessionID, entry)
+		}
+	}
+	return entry.promptGeneration, pausedOutboxCount(entry.queue), saveErr
 }

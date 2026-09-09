@@ -156,6 +156,10 @@ func (m *SessionManager) Archive(ctx context.Context, projectID, sessionID, cwd 
 		return err
 	}
 	defer finish()
+	// Archiving removes the live resident from the controller. Revoke native
+	// MCP credentials before any native lifecycle continuation; unarchiving must
+	// establish a fresh binding.
+	m.revokeNativeMCPSession(sessionID)
 	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
 		return err
 	}
@@ -231,6 +235,9 @@ func (m *SessionManager) Delete(ctx context.Context, projectID, sessionID, cwd s
 			finish()
 		}
 	}()
+	// Deletion is a lifecycle boundary even if the native delete later reports
+	// an uncertain outcome. Old credentials must not survive the request.
+	m.revokeNativeMCPSession(sessionID)
 	generation, profile, err := m.client.Profile(ctx)
 	if err != nil {
 		return err
@@ -625,9 +632,16 @@ func (m *SessionManager) ReleaseIdleRuntime(ctx context.Context, sessionID strin
 		m.mu.Unlock()
 		return fmt.Errorf("session is not idle: %s", reason)
 	}
+	// Invalidate the resident generation before dropping the projection. Late
+	// native callbacks must not revive a runtime that the user explicitly
+	// released; the durable association and transcript remain available for a
+	// later load.
+	entry.attached = 0
+	entry.promptGeneration++
 	delete(m.sessions, sessionID)
 	entry.state.Unlock()
 	m.mu.Unlock()
+	m.revokeNativeMCPSession(sessionID)
 	m.emit("session.lifecycleChanged", map[string]any{"sessionId": sessionID, "operation": "idle-released"})
 	return nil
 }

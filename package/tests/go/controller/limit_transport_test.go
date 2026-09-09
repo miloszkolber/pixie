@@ -157,6 +157,37 @@ func TestBrowserAdmissionAggregateCapAndControlReserve(t *testing.T) {
 	}
 }
 
+func TestAggregateBudgetIsSharedWithReplayRetention(t *testing.T) {
+	budget := controller.NewAggregateByteAdmission(10, 4)
+	if !budget.TryAcquireOrdinary(5) {
+		t.Fatal("input reservation rejected")
+	}
+	cache := controller.NewReplayCacheWithAdmission(budget)
+	if _, err := cache.Run(context.Background(), "client", "request", "fingerprint", func() ([]byte, error) {
+		return []byte("12345"), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := budget.OrdinaryBytes(); got != 10 {
+		t.Fatalf("replay retention bypassed shared budget: %d", got)
+	}
+	if _, err := cache.Run(context.Background(), "client", "request-2", "fingerprint", func() ([]byte, error) {
+		return []byte("67890"), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cache.Run(context.Background(), "client", "request-2", "fingerprint", func() ([]byte, error) {
+		return nil, nil
+	}); err == nil {
+		t.Fatal("retry unexpectedly repeated a response that exceeded shared retention")
+	}
+	budget.ReleaseOrdinary(5)
+	cache.Acknowledge("client", []string{"request"})
+	if got := budget.OrdinaryBytes(); got != 0 {
+		t.Fatalf("shared budget reservation leaked: %d", got)
+	}
+}
+
 func TestBrowserInflightCapRejectsOrdinaryOverflow(t *testing.T) {
 	handler := &limitBlockAllHandler{release: make(chan struct{})}
 	server, err := controller.NewWebSocketServer(handler, nil, controller.AuthConfig{})

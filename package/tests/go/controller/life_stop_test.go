@@ -2,6 +2,7 @@ package controller_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -117,12 +118,24 @@ func TestStopQuiescenceUncertainOnTimeout(t *testing.T) {
 	if outcome.Status != controller.StopStatusUncertain {
 		t.Fatalf("Stop status = %q, want uncertain", outcome.Status)
 	}
+	if !outcome.ForcedTermination {
+		t.Fatal("uncertain Stop did not report forced managed-generation teardown")
+	}
+	if outcome.Generation == 0 {
+		t.Fatal("forced Stop did not advance the managed generation")
+	}
+	if releaseErr := manager.ReleaseIdleRuntime(context.Background(), "chat"); releaseErr == nil || !strings.Contains(releaseErr.Error(), "uncertain") {
+		t.Fatalf("uncertain detached work was reported idle: %v", releaseErr)
+	}
 	if outcome.Reason == "" {
 		t.Fatal("uncertain Stop reported no reason")
 	}
 	uncertain := nextAgentEventOfType(t, events, "stop_uncertain")
 	if uncertain == nil {
 		t.Fatal("missing stop_uncertain event")
+	}
+	if generation, ok := uncertain["generation"].(uint64); !ok || generation != outcome.Generation {
+		t.Fatalf("stop_uncertain generation = %#v, want %d", uncertain["generation"], outcome.Generation)
 	}
 }
 
@@ -261,6 +274,42 @@ func TestIdleReleaseRetainsHistoryAndReloads(t *testing.T) {
 	}
 	if reloaded["messages"] == nil {
 		t.Fatal("reloaded snapshot has no messages")
+	}
+}
+
+func TestSessionReleaseTransportReleasesRuntime(t *testing.T) {
+	manager, _, project, _ := newSessionManagerWithPublisher(t, nil)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatal(err)
+	}
+	handler := controller.CoreHandler{Sessions: manager}
+	result, err := handler.Handle(ctx, "session.release", json.RawMessage(`{"projectId":"`+project.ID+`","sessionId":"chat"}`), "client-a")
+	if err != nil {
+		t.Fatalf("session.release failed: %v", err)
+	}
+	if acknowledged, ok := result.(map[string]bool); !ok || !acknowledged["ok"] {
+		t.Fatalf("unexpected session.release result: %#v", result)
+	}
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatalf("released session did not reload: %v", err)
+	}
+}
+
+func TestSessionReleaseRequiresLeaseOwner(t *testing.T) {
+	manager, _, project, _ := newSessionManagerWithPublisher(t, nil)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatal(err)
+	}
+	handler := controller.CoreHandler{Sessions: manager}
+	if _, err := handler.Handle(ctx, "session.release", json.RawMessage(`{"projectId":"`+project.ID+`","sessionId":"chat"}`), "client-b"); err == nil {
+		t.Fatal("session.release succeeded for a client without the session lease")
+	}
+	if _, err := handler.Handle(ctx, "session.release", json.RawMessage(`{"projectId":"`+project.ID+`","sessionId":"chat"}`), "client-a"); err != nil {
+		t.Fatalf("session owner could not release runtime: %v", err)
 	}
 }
 

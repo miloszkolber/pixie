@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/miloszkolber/pixie/internal/identifier"
+	"github.com/miloszkolber/pixie/internal/mcpserver"
 	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
@@ -20,6 +20,9 @@ import (
 const (
 	maxQueuedMessages          = 20
 	maxQueueRecoveryWorkers    = 4
+	maxManagedResidents        = 16
+	maxManagedLaunching        = 4
+	maxManagedActiveWork       = 8
 	inactiveProjectionMaxCount = 24
 	inactiveProjectionMaxBytes = 8 * 1024 * 1024
 	maxPendingCommandCatalogs  = 32
@@ -28,6 +31,14 @@ const (
 var errAgentIdentityChanged = errors.New("connected Pi agent identity changed")
 
 type SessionPublisher func(channel string, data any)
+
+// nativeMCPRevoker is the narrow lifecycle seam between controller sessions
+// and the in-process publisher. Registration issuance/authorization remains
+// owned by mcpserver.Registry; sessions only revoke credentials when their
+// native identity is deleted or replaced.
+type nativeMCPRevoker interface {
+	RevokeSession(string) int
+}
 
 type sessionEntry struct {
 	capabilities map[string]int
@@ -54,6 +65,7 @@ type sessionEntry struct {
 	messageUsage       map[string]messageUsage
 	queue              sessionQueueState
 	runID              string
+	detachedWork       string
 	objectiveToken     string
 	attached           uint64
 	replay             *sessionEntry
@@ -112,11 +124,13 @@ type SessionManager struct {
 	dialogs         map[dialogKey]*pendingDialog
 	liveness        map[string]map[uint64]sessionLivenessProvider
 	creating        int
+	activeWork      int
 	pendingCommands map[string]pendingCommandCatalog
 	publish         SessionPublisher
 	now             func() time.Time
 	deviceCode      func(map[string]any)
 	history         *HistoryIndex
+	nativeMCP       nativeMCPRevoker
 }
 
 type pendingCommandCatalog struct {
@@ -136,6 +150,17 @@ func NewSessionManager(projects *workspace.Projects, policy *workspace.PathPolic
 
 func (m *SessionManager) SetClient(client *PiClient)     { m.client = client }
 func (m *SessionManager) SetSettings(settings *Settings) { m.settings = settings }
+
+// SetMCPRegistry attaches the live publisher's instance-owned scope registry.
+// The narrow interface keeps session lifecycle code from issuing or
+// authorizing native MCP credentials itself.
+func (m *SessionManager) SetMCPRegistry(registry *mcpserver.Registry) { m.nativeMCP = registry }
+
+func (m *SessionManager) revokeNativeMCPSession(sessionID string) {
+	if m.nativeMCP != nil && sessionID != "" {
+		m.nativeMCP.RevokeSession(sessionID)
+	}
+}
 
 func (m *SessionManager) SetObjectiveURL(url string) { m.objectiveURL = url }
 
@@ -188,6 +213,14 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 	if m.closed {
 		m.mu.Unlock()
 		return nil, nil, fmt.Errorf("session manager has been shut down")
+	}
+	if len(m.sessions)+m.creating >= maxManagedResidents {
+		m.mu.Unlock()
+		return nil, nil, fmt.Errorf("managed runtime resident capacity is full; release an eligible idle runtime")
+	}
+	if m.creating >= maxManagedLaunching {
+		m.mu.Unlock()
+		return nil, nil, fmt.Errorf("managed runtime launch capacity is full")
 	}
 	m.creating++
 	m.mu.Unlock()
@@ -374,11 +407,18 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		entry.state.Unlock()
 		return fmt.Errorf("%w; reopen this chat only after restoring the original agent", errAgentIdentityChanged)
 	}
-	alreadyAttached := entry.attached == generation
+	previousGeneration := entry.attached
+	alreadyAttached := previousGeneration == generation
 	entry.state.Unlock()
 	if alreadyAttached {
 		m.scheduleFollowUp(sessionID, entry)
 		return nil
+	}
+	if previousGeneration != 0 && previousGeneration != generation {
+		// A replacement Pi connection invalidates every native MCP binding for
+		// this session. The new session load below must register fresh bindings;
+		// do not let an old credential cross the transport generation boundary.
+		m.revokeNativeMCPSession(sessionID)
 	}
 	// Pending dialogs survive re-attachment on purpose: the host keeps the
 	// matching promise and re-publishes unresolved requests on session.load
@@ -448,6 +488,7 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 	entry.capabilities = replay.capabilities
 	entry.planState = replay.planState
 	entry.agentIdentity = replay.agentIdentity
+	entry.detachedWork = detachedWorkNone
 	entry.attached = replay.attached
 	entry.projectionID = replay.projectionID
 	entry.replay = nil
@@ -822,12 +863,21 @@ func (m *SessionManager) retainWork(sessionID string, entry *sessionEntry) error
 	if m.closed || m.sessions[sessionID] != entry || m.lifecycle[sessionID] {
 		return fmt.Errorf("session changed while starting background work")
 	}
+	if m.activeWork >= maxManagedActiveWork {
+		return fmt.Errorf("managed active-work capacity is full")
+	}
 	entry.refs++
+	m.activeWork++
 	m.work.Add(1)
 	return nil
 }
 
 func (m *SessionManager) releaseWork(entry *sessionEntry) {
+	m.mu.Lock()
+	if m.activeWork > 0 {
+		m.activeWork--
+	}
+	m.mu.Unlock()
 	m.releaseEntry(entry)
 	m.work.Done()
 }
@@ -932,6 +982,15 @@ func (m *SessionManager) SetLeases(clientKey string, revision uint64, requested 
 		}
 		next.sessions[lease.SessionID] = lease.ProjectID
 	}
+	newResidents := 0
+	for sessionID := range next.sessions {
+		if m.sessions[sessionID] == nil && !m.lifecycle[sessionID] {
+			newResidents++
+		}
+	}
+	if len(m.sessions)+m.creating+newResidents > maxManagedResidents {
+		return fmt.Errorf("managed runtime resident capacity is full; release an eligible idle runtime")
+	}
 	if m.leases == nil {
 		m.leases = make(map[string]*clientSessionLeases)
 	}
@@ -973,6 +1032,27 @@ func (m *SessionManager) Release(sessionID, projectID, cwd, clientKey string) {
 	}
 	m.evictLocked()
 	m.mu.Unlock()
+}
+
+// ReleaseIdleRuntimeForClient requires the caller to own the session lease
+// before allowing an idle resident to be released. The lease check stays
+// separate from Release so an idle-runtime action cannot silently change view
+// selection ownership.
+func (m *SessionManager) ReleaseIdleRuntimeForClient(ctx context.Context, sessionID, projectID, clientKey string) error {
+	if strings.TrimSpace(clientKey) == "" {
+		return fmt.Errorf("session release requires caller ownership")
+	}
+	m.mu.Lock()
+	leases := m.leases[clientKey]
+	owned := leases != nil && leases.sessions[sessionID] == projectID
+	m.mu.Unlock()
+	if !owned {
+		return fmt.Errorf("session release requires caller ownership")
+	}
+	if _, err := m.RecordedCWD(projectID, sessionID); err != nil {
+		return err
+	}
+	return m.ReleaseIdleRuntime(ctx, sessionID)
 }
 
 func (m *SessionManager) isLeasedLocked(sessionID string) bool {
@@ -1022,83 +1102,31 @@ func (m *SessionManager) summaryLocked(sessionID string, entry *sessionEntry) Se
 }
 
 func (m *SessionManager) evictLocked() {
-	type candidate struct {
-		id    string
-		at    time.Time
-		bytes int
-	}
-	var candidates []candidate
-	total := 0
-	leased := make(map[string]bool)
-	for _, client := range m.leases {
-		for sessionID := range client.sessions {
-			leased[sessionID] = true
-		}
-	}
+	// Automatic idle eviction is deliberately disabled. A resident may own
+	// detached native/extension work that cannot be proven from a cheap local
+	// probe. Capacity pressure is surfaced through ReleaseIdleRuntime, which
+	// verifies settled state and lets the caller choose which runtime to free.
+	// History-only ephemeral projections are the exception: they are not user
+	// residents and may be discarded once their indexing operation releases its
+	// reference.
 	for id, entry := range m.sessions {
-		if entry.refs > 0 {
+		if !entry.ephemeral || entry.refs > 0 || m.isLeasedLocked(id) || m.hasActiveLivenessLocked(id) {
 			continue
-		}
-		// Liveness probes must stay trivial and non-blocking: they run while
-		// the manager lock is held and never schedule work themselves.
-		if leased[id] || m.hasActiveLivenessLocked(id) {
-			entry.state.Lock()
-			entry.inactiveAt = time.Time{}
-			entry.state.Unlock()
-			continue
-		}
-		hasDialogs := false
-		for key := range m.dialogs {
-			if key.sessionID == id {
-				hasDialogs = true
-				break
-			}
 		}
 		entry.state.Lock()
-		memoryOnlyQueue := m.queues == nil && queuedFollowUpCount(entry.queue) > 0
-		if hasDialogs || entry.streaming || entry.promptActive || entry.runID != "" || len(entry.queue.Steering) > 0 || memoryOnlyQueue || entry.drainScheduled || entry.drainRetry != nil || entry.replay != nil {
-			entry.inactiveAt = time.Time{}
-			entry.state.Unlock()
-			continue
-		}
-		if entry.ephemeral {
-			delete(m.sessions, id)
-			entry.state.Unlock()
-			continue
-		}
-		if entry.inactiveAt.IsZero() {
-			entry.inactiveAt = m.now()
-		}
-		if entry.inactiveBytes == 0 {
-			encoded, err := json.Marshal([]any{entry.messages, entry.pendingToolOutputs, entry.planState})
-			if err != nil {
-				// A projection that cannot be measured must not bypass the budget.
-				delete(m.sessions, id)
-				entry.state.Unlock()
-				continue
-			}
-			entry.inactiveBytes = len(encoded)
-		}
-		candidates = append(candidates, candidate{id: id, at: entry.inactiveAt, bytes: entry.inactiveBytes})
-		total += entry.inactiveBytes
+		removable := !entry.streaming && !entry.promptActive && entry.runID == "" &&
+			(entry.detachedWork == "" || entry.detachedWork == detachedWorkNone) &&
+			entry.queue.Dispatch == nil && entry.queue.Blocked == nil && len(entry.queue.FollowUp) == 0 &&
+			len(entry.queue.Steering) == 0 && !entry.drainScheduled && entry.drainRetry == nil && entry.replay == nil
 		entry.state.Unlock()
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].at.Equal(candidates[j].at) {
-			return candidates[i].id < candidates[j].id
+		if removable {
+			delete(m.sessions, id)
 		}
-		return candidates[i].at.Before(candidates[j].at)
-	})
-	for len(candidates) > inactiveProjectionMaxCount || total > inactiveProjectionMaxBytes {
-		item := candidates[0]
-		delete(m.sessions, item.id)
-		total -= item.bytes
-		candidates = candidates[1:]
 	}
 }
 
 func newSessionEntry(sessionID, projectID, cwd, parent, token string) *sessionEntry {
-	return &sessionEntry{projectID: projectID, cwd: cwd, parentSessionID: parent, title: "Chat", thinkingLevel: "off", messages: []any{}, commands: []map[string]any{}, stats: SessionStats{SessionID: sessionID, Reported: map[string]bool{}}, queue: newSessionQueueState(), objectiveToken: token, projectionID: identifier.New()}
+	return &sessionEntry{projectID: projectID, cwd: cwd, parentSessionID: parent, title: "Chat", thinkingLevel: "off", messages: []any{}, commands: []map[string]any{}, stats: SessionStats{SessionID: sessionID, Reported: map[string]bool{}}, queue: newSessionQueueState(), detachedWork: detachedWorkNone, objectiveToken: token, projectionID: identifier.New()}
 }
 
 func agentProfileIdentity(profile AgentProfile, generation uint64) string {

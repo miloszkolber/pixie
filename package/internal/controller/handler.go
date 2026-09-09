@@ -379,12 +379,9 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		if h.Sessions == nil || decodeParams(raw, &request) != nil {
 			return nil, fmt.Errorf("malformed session request")
 		}
-		cwd, err := h.Sessions.RecordedCWD(request.ProjectID, request.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		h.Sessions.Release(request.SessionID, request.ProjectID, cwd, clientKey)
-		return map[string]bool{"ok": true}, nil
+		// session.release is the explicit idle-runtime action. Require the
+		// caller's session lease so another browser cannot evict its resident.
+		return ack(h.Sessions.ReleaseIdleRuntimeForClient(ctx, request.SessionID, request.ProjectID, clientKey))
 	case "session.rename", "session.archive", "session.delete":
 		var request struct {
 			ProjectID string `json:"projectId"`

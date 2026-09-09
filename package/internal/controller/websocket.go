@@ -178,14 +178,23 @@ type BrowserAdmission struct {
 	limits           BrowserAdmissionLimits
 	perConn          map[string]int
 	ordinaryInflight int
-	ordinaryBytes    int
 	controlInflight  int
-	controlBytes     int
+	aggregate        *AggregateByteAdmission
 }
 
 // NewBrowserAdmission creates an admission tracker; zero limit fields select
 // contract defaults.
 func NewBrowserAdmission(limits BrowserAdmissionLimits) *BrowserAdmission {
+	return newBrowserAdmission(limits, nil)
+}
+
+// NewBrowserAdmissionWithAggregate shares one process-wide byte budget with
+// replay retention and socket output queues.
+func NewBrowserAdmissionWithAggregate(limits BrowserAdmissionLimits, aggregate *AggregateByteAdmission) *BrowserAdmission {
+	return newBrowserAdmission(limits, aggregate)
+}
+
+func newBrowserAdmission(limits BrowserAdmissionLimits, aggregate *AggregateByteAdmission) *BrowserAdmission {
 	def := DefaultBrowserAdmissionLimits()
 	if limits.OrdinaryPerEngine <= 0 {
 		limits.OrdinaryPerEngine = def.OrdinaryPerEngine
@@ -205,7 +214,10 @@ func NewBrowserAdmission(limits BrowserAdmissionLimits) *BrowserAdmission {
 	if limits.ControlReserveBytes <= 0 {
 		limits.ControlReserveBytes = def.ControlReserveBytes
 	}
-	return &BrowserAdmission{limits: limits, perConn: make(map[string]int)}
+	if aggregate == nil {
+		aggregate = NewAggregateByteAdmission(limits.AggregateMaxBytes, limits.ControlReserveBytes)
+	}
+	return &BrowserAdmission{limits: limits, perConn: make(map[string]int), aggregate: aggregate}
 }
 
 // TryAcquireOrdinary reserves one ordinary slot plus size serialized bytes.
@@ -222,12 +234,11 @@ func (a *BrowserAdmission) TryAcquireOrdinary(clientKey string, size int) bool {
 	if a.perConn[clientKey] >= a.limits.OrdinaryPerConnection {
 		return false
 	}
-	if a.ordinaryBytes+size > a.limits.AggregateMaxBytes {
+	if !a.aggregate.TryAcquireOrdinary(size) {
 		return false
 	}
 	a.ordinaryInflight++
 	a.perConn[clientKey]++
-	a.ordinaryBytes += size
 	return true
 }
 
@@ -246,10 +257,7 @@ func (a *BrowserAdmission) ReleaseOrdinary(clientKey string, size int) {
 	} else {
 		a.perConn[clientKey] = count - 1
 	}
-	a.ordinaryBytes -= size
-	if a.ordinaryBytes < 0 {
-		a.ordinaryBytes = 0
-	}
+	a.aggregate.ReleaseOrdinary(size)
 }
 
 // TryAcquireControl reserves one control slot plus size bytes from the
@@ -263,11 +271,10 @@ func (a *BrowserAdmission) TryAcquireControl(size int) bool {
 	if a.controlInflight >= a.limits.ControlMax {
 		return false
 	}
-	if a.controlBytes+size > a.limits.ControlReserveBytes {
+	if !a.aggregate.TryAcquireControl(size) {
 		return false
 	}
 	a.controlInflight++
-	a.controlBytes += size
 	return true
 }
 
@@ -281,10 +288,7 @@ func (a *BrowserAdmission) ReleaseControl(size int) {
 	if a.controlInflight > 0 {
 		a.controlInflight--
 	}
-	a.controlBytes -= size
-	if a.controlBytes < 0 {
-		a.controlBytes = 0
-	}
+	a.aggregate.ReleaseControl(size)
 }
 
 // TryAcquire reserves admission by method kind.
@@ -325,6 +329,7 @@ type WebSocketServer struct {
 	reapTimers      map[string]*time.Timer
 	inflight        chan struct{}
 	admission       *BrowserAdmission
+	aggregate       *AggregateByteAdmission
 	handlers        sync.WaitGroup
 }
 
@@ -336,7 +341,9 @@ type browserSocket struct {
 
 func NewWebSocketServer(handler Handler, welcome Welcome, config AuthConfig) (*WebSocketServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	server := &WebSocketServer{Handler: handler, Welcome: welcome, Auth: config, replay: NewReplayCache(), ctx: ctx, cancel: cancel, sockets: make(map[string]browserSocket), reapTimers: make(map[string]*time.Timer), inflight: make(chan struct{}, maxConcurrentWSRequests), admission: NewBrowserAdmission(BrowserAdmissionLimits{})}
+	aggregate := NewAggregateByteAdmission(BrowserAggregateMaxBytes, BrowserControlReserveBytes)
+	server := &WebSocketServer{Handler: handler, Welcome: welcome, Auth: config, replay: NewReplayCacheWithAdmission(aggregate), ctx: ctx, cancel: cancel, sockets: make(map[string]browserSocket), reapTimers: make(map[string]*time.Timer), inflight: make(chan struct{}, maxConcurrentWSRequests), aggregate: aggregate}
+	server.admission = NewBrowserAdmissionWithAggregate(BrowserAdmissionLimits{}, aggregate)
 	if config.Enabled {
 		auth, err := NewAuth(config.ControllerToken)
 		if err != nil {
@@ -388,7 +395,7 @@ func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.
 	if !clientKeyPattern.MatchString(clientKey) {
 		clientKey = "anon-" + identifier.New()
 	}
-	output := newSocketOutput(connection)
+	output := newSocketOutput(connection, s.aggregate)
 	defer output.stop()
 	if !s.replace(clientKey, browserSocket{connection: connection, expiresAt: expiresAt, output: output}) {
 		return
@@ -401,6 +408,7 @@ func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.
 		connectionContext, cancel = context.WithDeadline(connectionContext, expiresAt)
 		defer cancel()
 	}
+	go output.run(connectionContext)
 
 	if s.Welcome != nil {
 		welcome, welcomeErr := s.Welcome(connectionContext)
@@ -408,18 +416,25 @@ func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.
 			connection.Close(websocket.StatusInternalError, "welcome unavailable")
 			return
 		}
-		if err := writeJSON(connectionContext, connection, map[string]any{"channel": "server.welcome", "data": welcome}); err != nil {
+		payload, marshalErr := json.Marshal(map[string]any{"channel": "server.welcome", "data": welcome})
+		if marshalErr != nil {
+			return
+		}
+		if err := output.enqueue(connectionContext, payload); err != nil {
 			return
 		}
 	}
 	if s.LoginSnapshot != nil {
 		if snapshot := s.LoginSnapshot(clientKey); snapshot != nil {
-			if err := writeJSON(connectionContext, connection, map[string]any{"channel": "provider.login", "data": snapshot}); err != nil {
+			payload, marshalErr := json.Marshal(map[string]any{"channel": "provider.login", "data": snapshot})
+			if marshalErr != nil {
+				return
+			}
+			if err := output.enqueue(connectionContext, payload); err != nil {
 				return
 			}
 		}
 	}
-	go output.run(connectionContext)
 	for {
 		messageType, payload, readErr := connection.Read(connectionContext)
 		if readErr != nil {
@@ -522,7 +537,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		if err != nil {
 			response, _ = json.Marshal(map[string]any{"id": id, "ok": false, "error": err.Error()})
 		}
-		_ = output.enqueue(ctx, response)
+		_ = output.enqueueWithLane(ctx, response, IsBrowserControlMethod(method))
 		if after != nil {
 			after()
 		}

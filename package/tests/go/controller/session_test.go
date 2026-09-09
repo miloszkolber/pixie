@@ -16,6 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/miloszkolber/pixie/internal/controller"
+	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/persist"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
@@ -156,6 +157,46 @@ func TestUserObjectiveAndThinkingMutationsPublishAuthoritativeState(t *testing.T
 	event, ok := payload["event"].(map[string]any)
 	if !ok || event["type"] != "config" {
 		t.Fatalf("thinking event: %#v", payload["event"])
+	}
+}
+
+func TestIdleSessionReleaseRevokesLiveNativeMCPRegistration(t *testing.T) {
+	manager, _, project, _ := newSessionManager(t, nil, nil)
+	registry := testInProcessRegistry(t)
+	manager.SetMCPRegistry(registry)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatal(err)
+	}
+	registration, err := registry.Register(mcpserver.NativeMCPRegistrationRequest{
+		ModuleID: "browser", ServerID: "server-a", SessionID: "chat", Generation: 1, TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Authorize(mcpserver.NativeMCPAuthorization{
+		RegistrationID: registration.RegistrationID,
+		Credential:     registration.Credential,
+		ModuleID:       registration.ModuleID,
+		ServerID:       registration.ServerID,
+		SessionID:      registration.SessionID,
+		Generation:     registration.Generation,
+	}); err != nil {
+		t.Fatalf("live native MCP registration rejected: %v", err)
+	}
+	if err := manager.ReleaseIdleRuntimeForClient(ctx, "chat", project.ID, "client-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Authorize(mcpserver.NativeMCPAuthorization{
+		RegistrationID: registration.RegistrationID,
+		Credential:     registration.Credential,
+		ModuleID:       registration.ModuleID,
+		ServerID:       registration.ServerID,
+		SessionID:      registration.SessionID,
+		Generation:     registration.Generation,
+	}); err == nil {
+		t.Fatal("idle runtime release left a native MCP registration usable")
 	}
 }
 

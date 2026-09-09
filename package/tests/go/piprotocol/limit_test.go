@@ -73,3 +73,21 @@ func TestPromptTextBoundCountsUTF8Bytes(t *testing.T) {
 		t.Fatalf("boundary text rejected: %v", err)
 	}
 }
+
+func TestPromptResourceAndBlockBoundsRejectBeforeDispatch(t *testing.T) {
+	resourceText := strings.Repeat("x", piwire.PromptTextResourceMaxBytes+1)
+	resource := piwire.ResourceBlock(piwire.EmbeddedResourceResource{TextResourceContents: &piwire.TextResourceContents{
+		Uri: "pixie://attachment/file.txt", Text: resourceText,
+	}})
+	request := piwire.PromptRequest{SessionId: "session", Prompt: []piwire.ContentBlock{piwire.TextBlock("hello"), resource}}
+	if err := request.Validate(); err == nil {
+		t.Fatal("oversize text resource was admitted")
+	}
+	blocks := make([]piwire.ContentBlock, 0, piwire.PromptMaxBlocks+1)
+	for i := 0; i < piwire.PromptMaxBlocks+1; i++ {
+		blocks = append(blocks, piwire.TextBlock("x"))
+	}
+	if err := (piwire.PromptRequest{SessionId: "session", Prompt: blocks}).Validate(); err == nil {
+		t.Fatal("oversize decoded block structure was admitted")
+	}
+}

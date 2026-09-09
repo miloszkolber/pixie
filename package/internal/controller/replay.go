@@ -17,6 +17,7 @@ type replayEntry struct {
 	result      *replayResult
 	settled     bool
 	weight      int
+	reserved    int
 }
 
 type replayNamespace struct {
@@ -29,10 +30,17 @@ type ReplayCache struct {
 	clients     map[string]*replayNamespace
 	maxRequests int
 	maxWeight   int
+	aggregate   *AggregateByteAdmission
 }
 
 func NewReplayCache() *ReplayCache {
-	return &ReplayCache{clients: make(map[string]*replayNamespace), maxRequests: 512, maxWeight: 16 * 1024 * 1024}
+	return NewReplayCacheWithAdmission(nil)
+}
+
+// NewReplayCacheWithAdmission shares retained response accounting with the
+// controller aggregate transport budget when one is supplied.
+func NewReplayCacheWithAdmission(aggregate *AggregateByteAdmission) *ReplayCache {
+	return &ReplayCache{clients: make(map[string]*replayNamespace), maxRequests: 512, maxWeight: 16 * 1024 * 1024, aggregate: aggregate}
 }
 
 // Run retains the bytes transferred by execute. Neither execute nor callers may
@@ -79,12 +87,13 @@ func (c *ReplayCache) Run(ctx context.Context, client, id, fingerprint string, e
 	if err == nil {
 		weight = len(value)
 	}
-	if namespace.weight+weight > c.maxWeight {
+	if namespace.weight+weight > c.maxWeight || c.aggregate != nil && !c.aggregate.TryAcquireOrdinary(weight) {
 		// Existing waiters own the in-flight result. Keep only its fingerprint in
 		// the cache so later retries cannot repeat an already executed mutation.
 		entry.result = nil
 	} else {
 		entry.weight = weight
+		entry.reserved = weight
 		namespace.weight += weight
 	}
 	close(result.done)
@@ -104,6 +113,7 @@ func (c *ReplayCache) Acknowledge(client string, ids []string) {
 		if entry != nil && entry.settled {
 			delete(namespace.requests, id)
 			namespace.weight -= entry.weight
+			c.release(entry)
 		}
 	}
 }
@@ -123,6 +133,7 @@ func (c *ReplayCache) Retain(client string, ids []string) {
 		if !keep[id] && entry.settled {
 			delete(namespace.requests, id)
 			namespace.weight -= entry.weight
+			c.release(entry)
 		}
 	}
 }
@@ -140,5 +151,15 @@ func (c *ReplayCache) ClearClient(client string) bool {
 		}
 	}
 	delete(c.clients, client)
+	for _, entry := range namespace.requests {
+		c.release(entry)
+	}
 	return true
+}
+
+func (c *ReplayCache) release(entry *replayEntry) {
+	if c.aggregate != nil && entry.reserved > 0 {
+		c.aggregate.ReleaseOrdinary(entry.reserved)
+		entry.reserved = 0
+	}
 }
