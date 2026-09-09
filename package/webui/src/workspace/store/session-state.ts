@@ -23,7 +23,12 @@ import {
 	contentSessionId,
 	type RouteChatTarget,
 } from "./model";
-import { clearPrimary, selectPrimary, workspaceReducer } from "./selection-state";
+import {
+	bumpWorkspaceNavigationGeneration,
+	clearPrimary,
+	selectPrimary,
+	workspaceReducer,
+} from "./selection-state";
 import { type HistoryTarget, selectProjectAreaTick } from "./selectors";
 
 export interface SessionWorkspaceState {
@@ -123,6 +128,7 @@ function clearChatWorkspace(state: AppState, projectAreaId: string, sessionId: s
 	}
 	return {
 		workspaceSelection: workspaceReducer(state.workspaceSelection, clearPrimary()),
+		workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
 	};
 }
 
@@ -199,6 +205,9 @@ function withoutChat(
 					navTickByProjectArea: countNavigation
 						? bumpProjectAreaNavigation(state, projectAreaId)
 						: state.navTickByProjectArea,
+					workspaceNavigationGeneration: countNavigation
+						? bumpWorkspaceNavigationGeneration(state)
+						: state.workspaceNavigationGeneration,
 				}
 			: {}),
 		...(inHistory
@@ -240,7 +249,14 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 			return { routeChatTarget: { ...target, validated: true } };
 		}),
 	clearRouteChatTarget: () =>
-		set((state) => (state.routeChatTarget ? { routeChatTarget: null } : state)),
+		set((state) =>
+			state.routeChatTarget
+				? {
+						routeChatTarget: null,
+						workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
+					}
+				: state,
+		),
 	markSkillsSynced: (sessionId, syncedTick) =>
 		set((state) => {
 			if (!state.sessions[sessionId]) return {};
@@ -285,6 +301,9 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 					options.activate === false
 						? state.activeTabByProjectArea
 						: { ...state.activeTabByProjectArea, [projectAreaId]: id },
+				...(options.activate === false
+					? {}
+					: { workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state) }),
 				...(options.activate === false ? {} : selectChatWorkspace(state, projectAreaId, sessionId)),
 				navTickByProjectArea:
 					options.activate === false
@@ -359,6 +378,9 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 					wasActive && countNavigation
 						? bumpProjectAreaNavigation(state, currentProjectAreaId)
 						: state.navTickByProjectArea,
+				...(wasActive && countNavigation
+					? { workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state) }
+					: {}),
 				activeTabByProjectArea: {
 					...state.activeTabByProjectArea,
 					[currentProjectAreaId]: wasActive
@@ -526,6 +548,10 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 					options.activate === false
 						? state.activeTabByProjectArea
 						: { ...state.activeTabByProjectArea, [projectAreaId]: id },
+				...(options.activate === false
+					? {}
+					: { workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state) }),
+				...(options.activate === false ? {} : selectChatWorkspace(state, projectAreaId, sessionId)),
 				navTickByProjectArea:
 					options.activate === false
 						? state.navTickByProjectArea
@@ -623,6 +649,9 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 				activeTabByProjectArea: takesFocus
 					? { ...state.activeTabByProjectArea, [projectAreaId]: id }
 					: state.activeTabByProjectArea,
+				...(takesFocus
+					? { workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state) }
+					: {}),
 				...(takesFocus ? selectChatWorkspace(state, projectAreaId, summary.sessionId) : {}),
 				navTickByProjectArea: takesFocus
 					? bumpProjectAreaNavigation(state, projectAreaId)
@@ -647,9 +676,18 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 				chatLocationRequest: request,
 				selectedProjectId: request.projectId,
 				activeProjectAreaId: request.projectAreaId,
+				workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
 			};
 		}),
-	clearChatLocation: () => set({ chatLocationRequest: null }),
+	clearChatLocation: () =>
+		set((state) =>
+			state.chatLocationRequest
+				? {
+						chatLocationRequest: null,
+						workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
+					}
+				: state,
+		),
 	requestHistoryOpen: (target) =>
 		set((state) => {
 			if (
@@ -670,8 +708,19 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 				activeTabByProjectArea: cached
 					? { ...state.activeTabByProjectArea, [target.projectAreaId]: cached.id }
 					: state.activeTabByProjectArea,
+				...(cached
+					? { workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state) }
+					: {}),
 				...(cached ? selectChatWorkspace(state, target.projectAreaId, target.sessionId) : {}),
 			};
 		}),
-	clearHistoryOpen: () => set({ historyOpenRequest: null }),
+	clearHistoryOpen: () =>
+		set((state) =>
+			state.historyOpenRequest
+				? {
+						historyOpenRequest: null,
+						workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
+					}
+				: state,
+		),
 });

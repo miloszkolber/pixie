@@ -1,6 +1,11 @@
 import { messagesToRuntime } from "../../chat/runtime/hydrate";
 import { errorText, getTransport } from "../../connection";
 import { appStoreApi, chatTabId, selectProjectAreaById, toast } from "../../store";
+import {
+	captureNavigationOwner,
+	navigationOwnerIsCurrent,
+	navigationOwnerProjectIsCurrent,
+} from "./ownership";
 
 /** Open a session in the fixed editor strip. */
 export async function openChatInTab(
@@ -15,6 +20,7 @@ export async function openChatInTab(
 	);
 	const requestConnectionGeneration =
 		initial.status === "connected" ? initial.connectionGeneration : null;
+	const navigation = captureNavigationOwner(initial, projectAreaId, projectId);
 	if (
 		!initial.projects.some((project) => project.id === projectId) ||
 		initial.removedProjectAreaIds[projectAreaId] ||
@@ -58,7 +64,7 @@ export async function openChatInTab(
 		const { summary, messages, pendingTools, pendingDialogs, commands, planState, page } = response;
 		const current = appStoreApi.getState();
 		if (
-			!current.projects.some((project) => project.id === projectId) ||
+			!navigationOwnerProjectIsCurrent(current, navigation) ||
 			current.closedChatsByProjectArea[projectAreaId]?.find(
 				(chat) => chat.sessionId === sessionId,
 			) !== closedChat
@@ -71,8 +77,16 @@ export async function openChatInTab(
 			!current.removedProjectAreaIds[projectAreaId] &&
 			!current.deletedSessionsByProjectArea[projectAreaId]?.[sessionId]
 		) {
-			return openChatInTab(projectAreaId, sessionId, background);
+			if (
+				!background &&
+				navigationOwnerIsCurrent(current, navigation, "primary", {
+					checkConnection: false,
+				})
+			)
+				return openChatInTab(projectAreaId, sessionId, background);
+			return;
 		}
+		const activate = !background && navigationOwnerIsCurrent(current, navigation, "primary");
 		current.hydrateSession(
 			summary,
 			messagesToRuntime(messages, {
@@ -82,9 +96,9 @@ export async function openChatInTab(
 				isStreaming: summary.isStreaming,
 			}),
 			planState,
-			!background,
+			activate,
 			undefined,
-			options,
+			{ activate },
 		);
 		appStoreApi.getState().setCommands(sessionId, commands);
 		appStoreApi.getState().reconcileUiDialogs(sessionId, pendingDialogs ?? []);
@@ -96,7 +110,7 @@ export async function openChatInTab(
 			);
 		if (
 			!installed &&
-			!background &&
+			activate &&
 			!settled.removedProjectAreaIds[projectAreaId] &&
 			!settled.deletedSessionsByProjectArea[projectAreaId]?.[sessionId]
 		) {
@@ -106,6 +120,7 @@ export async function openChatInTab(
 		const current = appStoreApi.getState();
 		if (
 			!background &&
+			navigationOwnerIsCurrent(current, navigation, "primary") &&
 			!current.removedProjectAreaIds[projectAreaId] &&
 			!current.deletedSessionsByProjectArea[projectAreaId]?.[sessionId]
 		) {

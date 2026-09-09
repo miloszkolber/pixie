@@ -27,6 +27,7 @@ let ignoreWhitespace = $derived(tab.ignoreWhitespace ?? false);
 let unavailable = $derived(diffIsUnavailable(tab));
 let notice = $derived(diffUnavailableNotice(tab));
 let pathParts = $derived(splitPath(tab.path));
+let rawPreviewNotice = $derived(!unavailable && tab.message ? tab.message : "");
 let diff = $derived(
 	unavailable
 		? ""
@@ -142,7 +143,7 @@ onDestroy(() => {
 });
 </script>
 
-<div data-testid="diff-pane" class="app-content flex h-full min-h-0 flex-col">
+<div data-testid="diff-pane" class="app-content flex min-h-0 flex-1 flex-col">
 	{#if refreshError}
 		<div
 			data-testid="diff-refresh-error"
@@ -158,6 +159,15 @@ onDestroy(() => {
 				data-variant="ghost"
 				data-size="sm"
 			>Retry</button>
+		</div>
+	{/if}
+	{#if rawPreviewNotice}
+		<div
+			data-testid="diff-raw-notice"
+			role="status"
+			class="shrink-0 border-border-muted border-b bg-feedback-warning-subtle px-sm py-xs text-feedback-warning tr-text-metadata"
+		>
+			{rawPreviewNotice}
 		</div>
 	{/if}
 	<div class="toolbar flex h-8 shrink-0 items-center gap-xs border-border-default border-b bg-container-header-bg px-sm">

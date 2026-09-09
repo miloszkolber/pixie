@@ -181,7 +181,7 @@ onDestroy(() => {
 			disabled={!connected || loading}
 			onclick={() => void load()}
 		>
-			<Icon name="refresh-cw" size={14} class={loading ? "animate-spin" : ""} />
+			<Icon name="refresh-cw" size={14} class={loading ? "animate-spin motion-reduce:animate-none" : ""} />
 			{loading ? "Refreshing…" : "Refresh"}
 		</Button>
 	</div>

@@ -372,6 +372,7 @@ export interface GitRepository {
 	clean: boolean;
 	changes: GitFileChange[];
 	comparisonId?: string;
+	warnings?: string[];
 }
 
 export interface GitRepositoryList {

@@ -3,7 +3,7 @@ import type { AppState } from "@/store/app-store";
 import type { StateCreator } from "@/store/external-store";
 import { omitKey } from "@/store/record";
 import type { ProjectArea } from "./model";
-import { workspaceSelectionForProject } from "./selection-state";
+import { bumpWorkspaceNavigationGeneration, workspaceSelectionForProject } from "./selection-state";
 import {
 	selectActiveProjectAreaProjectId,
 	selectProjectAreaNavTick,
@@ -204,6 +204,7 @@ export const createProjectWorkspaceState: StateCreator<AppState, [], [], Project
 		set((state) => ({
 			selectedProjectId,
 			activeProjectAreaId: null,
+			workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
 			workspaceSelection: workspaceSelectionForProject(state.workspaceSelection, selectedProjectId),
 			...(options?.reveal
 				? {
@@ -231,6 +232,7 @@ export const createProjectWorkspaceState: StateCreator<AppState, [], [], Project
 			selectedProjectId: null,
 			activeProjectAreaId: null,
 			routeChatTarget: null,
+			workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
 			workspaceSelection: workspaceSelectionForProject(state.workspaceSelection, null),
 		})),
 	activateProjectArea: (projectArea) =>
@@ -240,6 +242,7 @@ export const createProjectWorkspaceState: StateCreator<AppState, [], [], Project
 				: {
 						selectedProjectId: projectArea.projectId,
 						activeProjectAreaId: projectArea.id,
+						workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
 						workspaceSelection: workspaceSelectionForProject(
 							state.workspaceSelection,
 							projectArea.projectId,
@@ -253,6 +256,7 @@ export const createProjectWorkspaceState: StateCreator<AppState, [], [], Project
 			return {
 				selectedProjectId: projectArea.projectId,
 				activeProjectAreaId: projectArea.id,
+				workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state),
 				workspaceSelection: workspaceSelectionForProject(
 					state.workspaceSelection,
 					projectArea.projectId,

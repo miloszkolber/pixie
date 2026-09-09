@@ -96,7 +96,7 @@ function open(event: SubmitEvent): void {
 <div
 	data-testid="browser-panel"
 	data-state={screenState}
-	class="app-content flex h-full min-h-0 flex-col"
+	class="app-content flex min-h-0 flex-1 flex-col"
 >
 	<form onsubmit={open} class="toolbar flex shrink-0 flex-wrap items-center gap-xs border-b p-sm">
 		<Button variant="ghost" size="icon-sm" aria-label="Back" disabled={controlsDisabled} onclick={() => void runWithScreenshot({ type: "back" })}>
@@ -151,7 +151,7 @@ function open(event: SubmitEvent): void {
 		<Button variant="outline" size="sm" disabled={controlsDisabled} onclick={() => void command({ type: "viewport", ...panel.viewport })}>Apply</Button>
 		{#if panel.loading}
 			<span role="status" class="inline-flex items-center gap-xs text-text-muted tr-text-metadata">
-				<Icon name="loader-circle" size={14} class="animate-spin" /> Working…
+				<Icon name="loader-circle" size={14} class="animate-spin motion-reduce:animate-none" /> Working…
 			</span>
 		{/if}
 	</div>

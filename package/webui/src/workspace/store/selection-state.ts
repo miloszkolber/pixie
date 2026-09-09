@@ -57,12 +57,25 @@ export function isPrimaryArea(value: unknown): value is PrimaryArea {
 	return value === "chats" || value === "archive" || value === "schedules" || value === "settings";
 }
 
+function isValidModuleId(value: string): boolean {
+	return (
+		value.length > 0 &&
+		value.length <= 512 &&
+		!Array.from(value).some((character) => {
+			const code = character.codePointAt(0) ?? 0;
+			return code < 0x20 || code === 0x7f;
+		})
+	);
+}
+
 export function isSecondaryArea(value: unknown): value is SecondaryArea {
 	return (
 		value === "details" ||
 		value === "files" ||
 		value === "git" ||
-		(typeof value === "string" && value.startsWith("module:"))
+		(typeof value === "string" &&
+			value.startsWith("module:") &&
+			isValidModuleId(value.slice("module:".length)))
 	);
 }
 
@@ -300,7 +313,15 @@ export const selectionReducer = workspaceReducer;
 
 export interface WorkspaceSelectionState {
 	workspaceSelection: WorkspaceSelectionSnapshot;
+	/** Monotonic owner token for async navigation and activation guards. */
+	workspaceNavigationGeneration: number;
 	dispatchWorkspaceSelection: (action: WorkspaceAction) => void;
+}
+
+export function bumpWorkspaceNavigationGeneration(
+	state: Pick<WorkspaceSelectionState, "workspaceNavigationGeneration">,
+): number {
+	return state.workspaceNavigationGeneration + 1;
 }
 
 export const createWorkspaceSelectionState: StateCreator<
@@ -310,9 +331,17 @@ export const createWorkspaceSelectionState: StateCreator<
 	WorkspaceSelectionState
 > = (set) => ({
 	workspaceSelection: createInitialWorkspaceState(),
+	workspaceNavigationGeneration: 0,
 	dispatchWorkspaceSelection: (action) =>
 		set((state) => {
 			const workspaceSelection = workspaceReducer(state.workspaceSelection, action);
-			return workspaceSelection === state.workspaceSelection ? {} : { workspaceSelection };
+			if (workspaceSelection === state.workspaceSelection) return {};
+			const changesNavigation = action.type !== "set-layout" && action.type !== "reset-layout";
+			return {
+				workspaceSelection,
+				...(changesNavigation
+					? { workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state) }
+					: {}),
+			};
 		}),
 });

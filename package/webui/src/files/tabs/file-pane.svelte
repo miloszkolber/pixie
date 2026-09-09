@@ -114,11 +114,11 @@ function retryRefresh(): void {
 {#snippet readOnlyToolbar()}
 	<div class="toolbar flex h-8 shrink-0 items-center gap-sm border-border-default border-b bg-container-header-bg px-sm">
 		<span class="min-w-0 flex-1 truncate text-text-muted tr-text-metadata" title={tab.path}>{tab.path}</span>
-		<span class="text-text-subtle tr-text-metadata">Read-only</span>
+		<span class="shrink-0 text-text-subtle tr-text-metadata">Read-only</span>
 	</div>
 {/snippet}
 
-<div class="app-content flex h-full min-h-0 flex-col">
+<div class="app-content flex min-h-0 flex-1 flex-col">
 	{#if refreshError}
 		<div
 			data-testid="file-refresh-error"
@@ -144,7 +144,7 @@ function retryRefresh(): void {
 			class="toolbar flex h-8 shrink-0 items-center gap-xs border-border-default border-b bg-container-header-bg px-sm"
 		>
 			<span class="mr-auto min-w-0 truncate text-text-muted tr-text-metadata" title={tab.path}>{tab.path}</span>
-			<span class="text-text-subtle tr-text-metadata">Read-only</span>
+			<span class="shrink-0 text-text-subtle tr-text-metadata">Read-only</span>
 			<ToggleSegment
 				testid="md-toggle-preview"
 				label="Preview"

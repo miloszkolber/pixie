@@ -53,7 +53,11 @@ $effect(() => {
 });
 
 let activeArea = $derived(selectActiveProjectArea($appStore));
-let activeTab = $derived(activeArea ? selectActiveContentTab($appStore, activeArea.id) : null);
+let activeTab = $derived(
+	$appStore.workspaceSelection.primaryArea === "chats" && activeArea
+		? selectActiveContentTab($appStore, activeArea.id)
+		: null,
+);
 let sessionCapabilities = $derived(
 	activeTab?.kind === "chat" ? $appStore.sessions[activeTab.sessionId]?.capabilities : undefined,
 );

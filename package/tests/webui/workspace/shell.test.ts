@@ -140,13 +140,15 @@ test("the Svelte shell keeps one responsive activity surface and every blocked s
 		"Controller disconnected",
 		'data-testid="project-shell"',
 		'id="activity-panel"',
-		`data-testid={\`tab-\${item}\`}`,
-		'aria-label="Mobile panes"',
+		'data-testid="mobile-pane-navigation"',
+		'data-testid="workspace-grid"',
+		'data-slot="primary-view"',
+		'data-slot="secondary-view"',
+		'data-testid="secondary-sidebar"',
 		'aria-label="Sign out"',
 	]) {
 		expect(source).toContain(contract);
 	}
-	expect(source).toContain('["files", "changes"]');
 	expect(source).toContain(".catch(() => {");
 	expect(source).toContain("Couldn't open settings");
 	expect(source).toContain("closeSettings()");

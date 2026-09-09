@@ -2,9 +2,9 @@
 import { initTransport, resetTransport } from "./connection";
 import ControllerAccess from "./connection/controller-access.svelte";
 import { appStoreApi } from "./store";
-import { initNavigation } from "./workspace/navigation";
 import { initSessionLeases } from "./workspace/navigation/session-leases";
 import { initProjectExpansionPersistence } from "./workspace/projects/project-expansion";
+import { initShellLayoutPersistence } from "./workspace/shell-layout";
 import Shell from "./workspace/shell.svelte";
 
 let authenticated = $state(false);
@@ -28,11 +28,19 @@ $effect(() => {
 	if (!authenticated) return;
 	initTransport();
 	const stopExpansionPersistence = initProjectExpansionPersistence();
-	const stopNavigation = initNavigation();
+	const stopShellLayoutPersistence = initShellLayoutPersistence();
+	let stopNavigation: (() => void) | null = null;
+	let navigationStopped = false;
+	// Keep the v2 codec and restore path out of the bootstrap bundle.
+	void import("./workspace/navigation").then(({ initNavigation }) => {
+		if (!navigationStopped) stopNavigation = initNavigation();
+	});
 	const stopSessionLeases = initSessionLeases();
 	return () => {
+		navigationStopped = true;
+		stopNavigation?.();
 		stopSessionLeases();
-		stopNavigation();
+		stopShellLayoutPersistence();
 		stopExpansionPersistence();
 	};
 });

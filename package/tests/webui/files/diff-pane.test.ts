@@ -7,6 +7,12 @@ import { simpleUnifiedDiff } from "@/files/changes/line-diff";
 import { openDiffInTab } from "@/files/tabs/open-tabs";
 import { appStoreApi, type DiffTab } from "@/store";
 
+const webuiRoot = new URL("../../../webui/src/", import.meta.url);
+
+async function source(path: string): Promise<string> {
+	return Bun.file(new URL(path, webuiRoot)).text();
+}
+
 afterEach(() => {
 	resetTransport();
 	appStoreApi.setState(appStoreApi.getInitialState(), true);
@@ -118,4 +124,35 @@ test("refreshed diff notices replace each other and clear when text becomes avai
 	);
 	expect(diff).toContain("--- a/old.txt");
 	expect(diff).toContain("+++ b/new.txt");
+});
+
+test("successful raw previews retain a visible conversion notice", async () => {
+	const sourceText = await source("files/changes/diff-pane.svelte");
+	expect(sourceText).toContain('data-testid="diff-raw-notice"');
+	expect(sourceText).toContain("!unavailable && tab.message");
+
+	const initial: DiffTab = {
+		kind: "diff",
+		id: "raw-diff",
+		projectAreaId: "project",
+		repository: "/repo",
+		path: "file.txt",
+		name: "file.txt",
+		scope: { kind: "uncommitted" },
+		loadedTarget: "",
+		original: "before\n",
+		modified: "after\n",
+	};
+	appStoreApi.getState().openTab(initial, "keep");
+	appStoreApi.getState().updateDiffTabContent(
+		"project",
+		initial.id,
+		{ original: "before\n", modified: "after\n", message: "Showing raw worktree bytes" },
+		1,
+		"",
+	);
+	const tab = appStoreApi.getState().tabsByProjectArea.project?.[0];
+	if (tab?.kind !== "diff") throw new Error("diff tab missing");
+	expect(diffIsUnavailable(tab)).toBe(false);
+	expect(tab.message).toBe("Showing raw worktree bytes");
 });

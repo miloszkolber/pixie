@@ -1,21 +1,18 @@
 import { errorText, getTransport } from "../../connection";
-import { appStoreApi, isConnectedGeneration, selectProjectAreaById, toast } from "../../store";
+import { appStoreApi, selectProjectAreaById, toast } from "../../store";
+import {
+	captureNavigationOwner,
+	navigationOwnerIsCurrent,
+	navigationOwnerProjectIsCurrent,
+} from "./ownership";
 
 const createFlights = new Map<string, Promise<boolean>>();
 
 function createTargetIsAvailable(
 	state: ReturnType<typeof appStoreApi.getState>,
-	projectAreaId: string,
-	projectId: string,
-	connectionGeneration: number | null,
+	navigation: ReturnType<typeof captureNavigationOwner>,
 ): boolean {
-	return (
-		state.status === "connected" &&
-		(connectionGeneration === null || isConnectedGeneration(state, connectionGeneration)) &&
-		state.activeProjectAreaId === projectAreaId &&
-		state.projects.some((project) => project.id === projectId) &&
-		!state.removedProjectAreaIds[projectAreaId]
-	);
+	return state.status === "connected" && navigationOwnerIsCurrent(state, navigation, "primary");
 }
 
 /** Create one chat for the selected project area and ignore stale replies. */
@@ -31,7 +28,7 @@ export function startChatSession(projectAreaId: string): Promise<boolean> {
 		initial.removedProjectAreaIds[projectAreaId]
 	)
 		return Promise.resolve(false);
-	const connectionGeneration = initial.status === "connected" ? initial.connectionGeneration : null;
+	const navigation = captureNavigationOwner(initial, projectAreaId, projectId);
 	const navigationGeneration = initial.navTickByProjectArea[projectAreaId] ?? 0;
 	const routeGeneration = initial.routeChatTargetGeneration;
 	const request = getTransport()
@@ -42,7 +39,7 @@ export function startChatSession(projectAreaId: string): Promise<boolean> {
 		.then((result) => {
 			const current = appStoreApi.getState();
 			if (
-				!createTargetIsAvailable(current, projectAreaId, projectId, connectionGeneration) ||
+				!createTargetIsAvailable(current, navigation) ||
 				(current.navTickByProjectArea[projectAreaId] ?? 0) !== navigationGeneration ||
 				current.routeChatTargetGeneration !== routeGeneration
 			)
@@ -61,10 +58,8 @@ export function startChatSession(projectAreaId: string): Promise<boolean> {
 		.catch((cause: unknown) => {
 			const current = appStoreApi.getState();
 			if (
-				current.status === "connected" &&
-				(connectionGeneration === null || isConnectedGeneration(current, connectionGeneration)) &&
-				current.projects.some((project) => project.id === projectId) &&
-				!current.removedProjectAreaIds[projectAreaId]
+				createTargetIsAvailable(current, navigation) &&
+				navigationOwnerProjectIsCurrent(current, navigation)
 			)
 				toast.error(errorText(cause), "Couldn't start the chat");
 			return false;

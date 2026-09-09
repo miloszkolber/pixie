@@ -274,7 +274,7 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 				disabled={refreshing || bulkBusy || busyModel !== null}
 				onclick={() => void load(true)}
 			>
-				<Icon name="refresh-cw" size={14} class={refreshing ? "animate-spin" : ""} />
+				<Icon name="refresh-cw" size={14} class={refreshing ? "animate-spin motion-reduce:animate-none" : ""} />
 				Refresh
 			</Button>
 		</div>

@@ -3,6 +3,8 @@ import { appStoreApi, type ContentTab } from "@/store";
 import {
 	clearSecondary,
 	initialWorkspaceState,
+	isSecondaryArea,
+	normalizeSecondaryArea,
 	normalizeWorkspaceLayout,
 	type SecondarySelection,
 	selectPrimary,
@@ -125,6 +127,16 @@ test("layout normalization clamps bounds and invalid focus", () => {
 		focus: "secondary",
 	});
 	expect(WORKSPACE_PRIMARY_FRACTION_MIN).toBe(0.2);
+});
+
+test("secondary module areas require a bounded module identity", () => {
+	expect(isSecondaryArea("details")).toBeTrue();
+	expect(isSecondaryArea("module:browser")).toBeTrue();
+	expect(isSecondaryArea("module:")).toBeFalse();
+	expect(isSecondaryArea(`module:${"b".repeat(513)}`)).toBeFalse();
+	expect(isSecondaryArea("module:bad\u0001id")).toBeFalse();
+	expect(normalizeSecondaryArea("module:")).toBe("details");
+	expect(normalizeSecondaryArea("module:browser")).toBe("module:browser");
 });
 
 test("content activation bridges to independent primary and secondary selections", () => {

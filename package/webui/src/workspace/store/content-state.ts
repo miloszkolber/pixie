@@ -13,6 +13,7 @@ import {
 	type TabIntent,
 } from "./model";
 import {
+	bumpWorkspaceNavigationGeneration,
 	clearPrimary,
 	clearSecondary,
 	selectPrimary,
@@ -176,7 +177,7 @@ function selectionMatchesTab(
 
 function selectContentTab(state: AppState, tab: ContentTab): Partial<AppState> {
 	const workspaceSelection = workspaceReducer(state.workspaceSelection, selectionActionForTab(tab));
-	return workspaceSelection === state.workspaceSelection ? {} : { workspaceSelection };
+	return workspaceSelectionPatch(state, workspaceSelection);
 }
 
 function clearContentTabSelection(state: AppState, tab: ContentTab): Partial<AppState> {
@@ -186,7 +187,7 @@ function clearContentTabSelection(state: AppState, tab: ContentTab): Partial<App
 		state.workspaceSelection,
 		side === "primary" ? clearPrimary() : clearSecondary(),
 	);
-	return workspaceSelection === state.workspaceSelection ? {} : { workspaceSelection };
+	return workspaceSelectionPatch(state, workspaceSelection);
 }
 
 function clearProjectAreaContentSelection(
@@ -212,11 +213,24 @@ function clearProjectAreaContentSelection(
 					? secondary.context.projectId === projectAreaId
 					: false);
 	if (belongsToProject) workspaceSelection = workspaceReducer(workspaceSelection, clearSecondary());
-	return workspaceSelection === state.workspaceSelection ? {} : { workspaceSelection };
+	return workspaceSelectionPatch(state, workspaceSelection);
 }
 
 function secondaryAreaForActivity(activity: ProjectAreaActivity): "files" | "git" {
 	return activity === "changes" ? "git" : "files";
+}
+
+function navigationPatch(state: Pick<AppState, "workspaceNavigationGeneration">) {
+	return { workspaceNavigationGeneration: bumpWorkspaceNavigationGeneration(state) };
+}
+
+function workspaceSelectionPatch(
+	state: AppState,
+	workspaceSelection: ReturnType<typeof workspaceReducer>,
+): Partial<AppState> {
+	return workspaceSelection === state.workspaceSelection
+		? {}
+		: { workspaceSelection, ...navigationPatch(state) };
 }
 
 export function bumpProjectAreaNavigation(
@@ -261,6 +275,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 			const claimPreview = previewCompatible && options.claimPreview === true;
 			const preview = state.previewTabByProjectArea[projectAreaId];
 			const selection = options.activate === false ? {} : selectContentTab(state, resolvedTab);
+			const navigation = options.activate === false ? {} : navigationPatch(state);
 			const activeTabByProjectArea =
 				options.activate === false
 					? state.activeTabByProjectArea
@@ -278,6 +293,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 								},
 					activeTabByProjectArea,
 					...selection,
+					...navigation,
 					previewTabByProjectArea:
 						effectiveIntent === "keep" &&
 						(preview === resolvedTab.id || (claimPreview && preview !== undefined))
@@ -296,6 +312,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 				},
 				activeTabByProjectArea,
 				...selection,
+				...navigation,
 				previewTabByProjectArea:
 					effectiveIntent === "preview"
 						? { ...state.previewTabByProjectArea, [projectAreaId]: resolvedTab.id }
@@ -328,6 +345,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 					wasActive && countNavigation
 						? bumpProjectAreaNavigation(state, currentProjectAreaId)
 						: state.navTickByProjectArea,
+				...(wasActive && countNavigation ? navigationPatch(state) : {}),
 				...(closedTab ? clearContentTabSelection(state, closedTab) : {}),
 				...(state.previewTabByProjectArea[currentProjectAreaId] === id
 					? {
@@ -349,6 +367,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 			return {
 				activeTabByProjectArea: { ...state.activeTabByProjectArea, [projectAreaId]: id },
 				navTickByProjectArea: bumpProjectAreaNavigation(state, projectAreaId),
+				...navigationPatch(state),
 				...(tab ? selectContentTab(state, tab) : {}),
 				...(intent === "keep" && state.previewTabByProjectArea[projectAreaId] === id
 					? {
@@ -361,7 +380,10 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 		set((state) =>
 			state.removedProjectAreaIds[projectAreaId]
 				? {}
-				: { navTickByProjectArea: bumpProjectAreaNavigation(state, projectAreaId) },
+				: {
+						navTickByProjectArea: bumpProjectAreaNavigation(state, projectAreaId),
+						...navigationPatch(state),
+					},
 		),
 	setFileTabView: (id, view) =>
 		set((state) => {
@@ -535,47 +557,51 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 			};
 		}),
 	setActiveActivity: (projectAreaId, activity) =>
-		set((state) =>
-			state.removedProjectAreaIds[projectAreaId]
-				? {}
-				: {
-						activeActivityByProjectArea: {
-							...state.activeActivityByProjectArea,
-							[projectAreaId]: activity,
-						},
-						shellRightView: activity,
-						workspaceSelection: workspaceReducer(
-							state.workspaceSelection,
-							selectSecondaryArea(secondaryAreaForActivity(activity)),
-						),
-					},
-		),
+		set((state) => {
+			if (state.removedProjectAreaIds[projectAreaId]) return {};
+			const workspaceSelection = workspaceReducer(
+				state.workspaceSelection,
+				selectSecondaryArea(secondaryAreaForActivity(activity)),
+			);
+			return {
+				activeActivityByProjectArea: {
+					...state.activeActivityByProjectArea,
+					[projectAreaId]: activity,
+				},
+				shellRightView: activity,
+				...workspaceSelectionPatch(state, workspaceSelection),
+			};
+		}),
 	requestToolView: (projectAreaId, tool) =>
-		set((state) =>
-			state.removedProjectAreaIds[projectAreaId]
-				? {}
-				: {
-						activeActivityByProjectArea: {
-							...state.activeActivityByProjectArea,
-							[projectAreaId]: tool === "changes" ? "changes" : "files",
-						},
-						shellRightView: tool === "changes" ? "changes" : "files",
-						workspaceSelection: workspaceReducer(
-							state.workspaceSelection,
-							selectSecondaryArea(tool === "changes" ? "git" : "files"),
-						),
-					},
-		),
+		set((state) => {
+			if (state.removedProjectAreaIds[projectAreaId]) return {};
+			const workspaceSelection = workspaceReducer(
+				state.workspaceSelection,
+				selectSecondaryArea(tool === "changes" ? "git" : "files"),
+			);
+			return {
+				activeActivityByProjectArea: {
+					...state.activeActivityByProjectArea,
+					[projectAreaId]: tool === "changes" ? "changes" : "files",
+				},
+				shellRightView: tool === "changes" ? "changes" : "files",
+				...workspaceSelectionPatch(state, workspaceSelection),
+			};
+		}),
 	requestChangesView: (projectAreaId, path) =>
 		set((state) => {
 			if (state.removedProjectAreaIds[projectAreaId]) return {};
+			const workspaceSelection = workspaceReducer(
+				state.workspaceSelection,
+				selectSecondaryArea("git"),
+			);
 			return {
 				activeActivityByProjectArea: {
 					...state.activeActivityByProjectArea,
 					[projectAreaId]: "changes",
 				},
 				shellRightView: "changes",
-				workspaceSelection: workspaceReducer(state.workspaceSelection, selectSecondaryArea("git")),
+				...workspaceSelectionPatch(state, workspaceSelection),
 				changesRequest: {
 					projectAreaId,
 					path,

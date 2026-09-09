@@ -4,6 +4,7 @@
 @import "./styles/generated/colors.css";
 @import "./styles/tokens.css";
 @import "./styles/global.css";
+@import "./styles/shell.css";
 
 /*
  * Map the pixie design tokens (tokens.css) onto Tailwind's theme namespaces. `inline` makes the

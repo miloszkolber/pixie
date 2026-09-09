@@ -5,6 +5,7 @@ import { SettingsSection } from "../../store";
 </script>
 
 <main
+	id="main-content"
 	data-testid="no-provider-welcome"
 	class="app-content flex h-full min-h-0 min-w-0 flex-col items-center justify-center gap-md px-xl py-xl text-center"
 >

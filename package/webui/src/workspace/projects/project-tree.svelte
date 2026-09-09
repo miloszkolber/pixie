@@ -18,8 +18,25 @@ interface ProjectOpener {
 	pickAndOpen: () => void;
 }
 
+interface Props {
+	chrome?: "full" | "bare";
+	activeSessionId?: string | null;
+	filter?: string;
+}
+
+let { chrome = "full", activeSessionId = null, filter = "" }: Props = $props();
 let opener = $state<ProjectOpener>();
 let customizeProject = $state<Project | null>(null);
+let query = $derived(filter.trim().toLowerCase());
+let visibleProjects = $derived(
+	query
+		? $appStore.projects.filter(
+				(project) =>
+					project.name.toLowerCase().includes(query) ||
+					project.roots.some((root) => root.toLowerCase().includes(query)),
+			)
+		: $appStore.projects,
+);
 
 async function selectProject(project: Project): Promise<void> {
 	appStoreApi.getState().selectProject(project.id);
@@ -33,33 +50,9 @@ function closeProject(project: Project): void {
 }
 </script>
 
-<nav class="tree flex flex-col gap-sm" aria-label="Projects">
-	<header class="flex h-7 items-center justify-between pr-xs pl-sm">
-		<span class="tr-text-eyebrow text-text-muted">Projects</span>
-		{#snippet addTrigger(menuId: string)}
-			<Button
-				variant="ghost"
-				size="icon"
-				data-testid="add-project-menu"
-				data-dropdown-menu-trigger={menuId}
-				aria-haspopup="menu"
-				aria-controls={menuId}
-				aria-expanded="false"
-				aria-label="Add project"
-			>
-				<Icon name="plus" size={16} />
-			</Button>
-		{/snippet}
-		<AddProjectMenu
-			recentProjects={$appStore.recentProjects}
-			onOpen={() => opener?.pickAndOpen()}
-			onOpenRecent={(path) => void opener?.openProject(path)}
-			trigger={addTrigger}
-		/>
-	</header>
-
+{#snippet projectList()}
 	<ul class="tree-group flex flex-col gap-2xs">
-		{#each $appStore.projects as project (project.id)}
+		{#each visibleProjects as project (project.id)}
 			{@const selected = $appStore.selectedProjectId === project.id}
 			<li class="tree-item group flex min-w-0 flex-col">
 				<div class="flex w-full min-w-0 items-center">
@@ -104,9 +97,9 @@ function closeProject(project: Project): void {
 					</Button>
 				</div>
 				{#if selected}
-					<ul class="tree-group flex w-full flex-col gap-2xs py-2xs pl-lg">
+					<ul class="tree-group pixie-guide flex w-full flex-col gap-2xs py-2xs pl-md">
 						<li class="tree-item"><button type="button" class="tree-leaf tr-text-metadata" onclick={(event) => openSettingsFrom(event.currentTarget, SettingsSection.Schedules)}>Schedules</button></li>
-						<ProjectSessions {project} />
+						<ProjectSessions {project} {activeSessionId} />
 					</ul>
 				{/if}
 			</li>
@@ -114,10 +107,47 @@ function closeProject(project: Project): void {
 	</ul>
 	{#if $appStore.projects.length === 0}
 		<p class="px-sm py-xs tr-text-metadata text-text-muted">Open a directory to start a project.</p>
+	{:else if visibleProjects.length === 0}
+		<p class="px-sm py-xs tr-text-metadata text-text-muted">No projects match this filter.</p>
 	{/if}
-</nav>
+{/snippet}
 
-<OpenProjectDialogs bind:this={opener} onOpened={selectProject} />
+{#if chrome === "full"}
+	<nav class="tree flex flex-col gap-sm" aria-label="Projects">
+		<header class="flex h-7 items-center justify-between pr-xs pl-sm">
+			<span class="tr-text-eyebrow text-text-muted">Projects</span>
+			{#snippet addTrigger(menuId: string)}
+				<Button
+					variant="ghost"
+					size="icon"
+					data-testid="add-project-menu"
+					data-dropdown-menu-trigger={menuId}
+					aria-haspopup="menu"
+					aria-controls={menuId}
+					aria-expanded="false"
+					aria-label="Add project"
+				>
+					<Icon name="plus" size={16} />
+				</Button>
+			{/snippet}
+			<AddProjectMenu
+				recentProjects={$appStore.recentProjects}
+				onOpen={() => opener?.pickAndOpen()}
+				onOpenRecent={(path) => void opener?.openProject(path)}
+				trigger={addTrigger}
+			/>
+		</header>
+		{@render projectList()}
+	</nav>
+{:else}
+	<div class="tree flex flex-col gap-sm">
+		{@render projectList()}
+	</div>
+{/if}
+
+{#if chrome === "full"}
+	<OpenProjectDialogs bind:this={opener} onOpened={selectProject} />
+{/if}
 {#if customizeProject}
 	<ProjectCustomizationDialog
 		project={customizeProject}

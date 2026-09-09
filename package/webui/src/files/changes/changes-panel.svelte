@@ -5,11 +5,10 @@ import ToggleSegment from "../../components/toggle-segment.svelte";
 import { errorText, getTransport } from "../../connection";
 import { tupleKey } from "../../lib";
 import {
-	appStore,
-	appStoreApi,
-	matchesChangePath,
-	selectActiveContentTab,
-	selectDiffScope,
+		appStore,
+		appStoreApi,
+		matchesChangePath,
+		selectDiffScope,
 	selectProjectAreaTick,
 	type TabIntent,
 } from "../../store";
@@ -58,9 +57,14 @@ let loadingScope = $derived(
 );
 let loadingRepositories = $derived(catalog?.projectAreaId !== projectAreaId && error === null);
 let changesView = $derived($appStore.changesView);
+let visibleWarnings = $derived([...warnings, ...(status?.warnings ?? [])]);
 let projectTick = $derived(selectProjectAreaTick($appStore, projectAreaId));
 let activeDiffTab = $derived.by(() => {
-	const tab = selectActiveContentTab($appStore, projectAreaId);
+	const selection = $appStore.workspaceSelection.secondarySelection;
+	if (selection?.kind !== "diff" || selection.projectId !== projectAreaId) return null;
+	const tab = ($appStore.tabsByProjectArea[projectAreaId] ?? []).find(
+		(candidate) => candidate.kind === "diff" && candidate.id === selection.resourceId,
+	);
 	return tab?.kind === "diff" &&
 		tab.repository === repository?.root &&
 		scopeKey(tab.scope) === scopeKey(scope)
@@ -269,9 +273,9 @@ function isActive(path: string): boolean {
 		</div>
 	{/if}
 	<div class="min-h-0 flex-1 overflow-auto">
-		{#if warnings.length > 0}
+		{#if visibleWarnings.length > 0}
 			<p role="status" class="border-border-muted border-b px-sm py-xs tr-text-metadata text-feedback-warning">
-				{warnings.join(" ")}
+				{visibleWarnings.join(" ")}
 			</p>
 		{/if}
 		{#if visibleError}

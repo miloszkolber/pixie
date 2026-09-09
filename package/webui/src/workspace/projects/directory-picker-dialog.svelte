@@ -114,7 +114,7 @@ $effect(() => {
 		>
 			{#if loading}
 				<div role="status" class="app-empty app-empty--compact min-h-40">
-					<Icon name="loader-circle" size={16} class="animate-spin" /> Loading directories…
+					<Icon name="loader-circle" size={16} class="animate-spin motion-reduce:animate-none" /> Loading directories…
 				</div>
 			{:else if error}
 				<div role="alert" class="app-empty app-empty--compact min-h-40 text-feedback-error">
