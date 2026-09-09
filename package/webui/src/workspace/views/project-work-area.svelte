@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { Component } from "svelte";
 import type { Project, RuntimeStatusReport } from "@pixie/contracts";
 import ChatView from "../../chat/chat-view.svelte";
 import SessionLifecycleMenu from "../../chat/session/session-lifecycle-controls.svelte";
@@ -10,7 +11,12 @@ import ChangesPanel from "../../files/changes/changes-panel.svelte";
 import DiffPane from "../../files/changes/diff-pane.svelte";
 import FilePane from "../../files/tabs/file-pane.svelte";
 import FileTree from "../../files/tree/file-tree.svelte";
+import ScheduleDetail from "../../schedules/schedule-detail.svelte";
+import ScheduleList from "../../schedules/schedule-list.svelte";
+import { resolveWorkspaceSettingsSection } from "../../schedules/schedules-workspace";
+import AgentSettings from "../../settings/sections/agent-settings.svelte";
 import { openSettingsFrom } from "../../settings/open-settings";
+import { resolveSettingsSection, settingsTabs } from "../../settings/settings-dialog";
 import { SettingsSection } from "../../settings/state";
 import {
 	appStore,
@@ -25,6 +31,7 @@ import {
 	toast,
 } from "../../store";
 import {
+	selectPrimary as selectPrimaryAction,
 	selectPrimaryArea as selectPrimaryAreaAction,
 	selectSecondaryArea as selectSecondaryAreaAction,
 	setLayout as setWorkspaceLayout,
@@ -172,6 +179,70 @@ let secondaryTitle = $derived(
 					? "Git"
 					: secondaryArea.slice("module:".length)),
 );
+let schedulesProject = $derived(contextProject);
+let settingsAgentProfile = $derived($appStore.agentProfile);
+let settingsProfilePending = $derived(settingsAgentProfile === null);
+let settingsGenericAgent = $derived(
+	!settingsProfilePending &&
+		(!settingsAgentProfile?.pi || settingsAgentProfile.operations.administration === false),
+);
+let settingsFallbackSection = $derived(
+	resolveSettingsSection($appStore.settingsSection, settingsAgentProfile),
+);
+let settingsActiveSection = $derived(
+	resolveWorkspaceSettingsSection(primarySelection, settingsFallbackSection),
+);
+let settingsTabList = $derived(
+	settingsTabs(settingsGenericAgent, settingsProfilePending, settingsAgentProfile),
+);
+const settingsSectionLoaders: Partial<
+	Record<SettingsSection, () => Promise<{ default: Component<any> }>>
+> = {
+	pi: () => import("../../settings/sections/pi-settings.svelte"),
+	tools: () => import("../../settings/sections/pi-tools-settings.svelte"),
+	extensions: () => import("../../settings/sections/extensions-settings.svelte"),
+	models: () => import("../../settings/sections/models-settings.svelte"),
+	providers: () => import("../../settings/sections/providers-settings.svelte"),
+	system: () => import("../../settings/sections/system-settings.svelte"),
+	schedules: () => import("../../settings/sections/schedules-section.svelte"),
+};
+let settingsVisited = $state<SettingsSection[]>([]);
+let settingsModules = $state.raw<Partial<Record<SettingsSection, Component<any>>>>({});
+let settingsSectionPending = $state<Partial<Record<SettingsSection, boolean>>>({});
+let settingsLoadErrors = $state<Partial<Record<SettingsSection, boolean>>>({});
+let settingsLoadGeneration = 0;
+async function loadSettingsSection(section: SettingsSection): Promise<void> {
+	const loader = settingsSectionLoaders[section];
+	if (!loader || settingsModules[section] || settingsSectionPending[section]) return;
+	const current = settingsLoadGeneration;
+	settingsSectionPending = { ...settingsSectionPending, [section]: true };
+	settingsLoadErrors = { ...settingsLoadErrors, [section]: false };
+	try {
+		const module = await loader();
+		if (current === settingsLoadGeneration)
+			settingsModules = { ...settingsModules, [section]: module.default };
+	} catch {
+		if (current === settingsLoadGeneration)
+			settingsLoadErrors = { ...settingsLoadErrors, [section]: true };
+	} finally {
+		if (current === settingsLoadGeneration)
+			settingsSectionPending = { ...settingsSectionPending, [section]: false };
+	}
+}
+
+$effect(() => {
+	if (primaryArea !== "settings") return;
+	if (!settingsVisited.includes(settingsActiveSection))
+		settingsVisited = [...settingsVisited, settingsActiveSection];
+	if (!settingsLoadErrors[settingsActiveSection]) void loadSettingsSection(settingsActiveSection);
+});
+
+function selectSettingsSection(section: SettingsSection): void {
+	appStoreApi
+		.getState()
+		.dispatchWorkspaceSelection(selectPrimaryAction({ kind: "settings", sectionId: section }, "settings"));
+	appStoreApi.getState().setSettingsSection(section);
+}
 
 $effect(() => initProjectAreaChatReconciliation(projectAreaId));
 
@@ -659,9 +730,32 @@ function signOut(): void {
 							</section>
 						</div>
 					{:else if primaryArea === "schedules"}
-						<div data-testid="schedules-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">Schedule definitions and run history are available in Settings.</p><Button class="mt-sm" variant="outline" size="sm" onclick={(event) => openSettings(event, SettingsSection.Schedules)}>Open schedules</Button></div>
+						<div data-testid="schedules-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm">
+							{#if schedulesProject}
+								{#key schedulesProject.id}<ErrorBoundary label="schedules"><ScheduleList project={schedulesProject} /></ErrorBoundary>{/key}
+							{:else}
+								<p class="tr-text-metadata text-text-muted">Select a project to manage its schedules. Schedules remain project-scoped.</p>
+							{/if}
+						</div>
 					{:else}
-						<div data-testid="settings-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">Choose a settings section to inspect the current connection and workspace configuration.</p><Button class="mt-sm" variant="outline" size="sm" onclick={(event) => openSettings(event)}>Open settings</Button></div>
+						<div data-testid="settings-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm">
+							<ul aria-label="Settings sections" class="flex flex-col gap-2xs">
+								{#each settingsTabList as tab (tab.section)}
+									<li>
+										<button
+											type="button"
+											data-testid="settings-section-row"
+											class={`tree-leaf w-full text-left tr-text-ui ${settingsActiveSection === tab.section ? "tree-leaf-active" : ""}`}
+											aria-current={settingsActiveSection === tab.section ? "page" : undefined}
+											onclick={() => selectSettingsSection(tab.section)}
+										>
+											{tab.label}
+										</button>
+									</li>
+								{/each}
+							</ul>
+							<p class="mt-sm tr-text-metadata text-text-muted">Settings is a primary area. Sections show configured, supported, connected and available state without inventing pages.</p>
+						</div>
 					{/if}
 				</div>
 			{/if}
@@ -702,9 +796,44 @@ function signOut(): void {
 					{:else if primaryArea === "archive"}
 						<div data-testid="archive-detail" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Archive</span><p class="tr-text-ui text-text-muted">Restore keeps the same archived chat; it never clones it. Closing a view is separate from archiving, and deleting is separate from both.</p><p class="tr-text-metadata text-text-muted">Select an archived chat in the primary sidebar to restore it.</p></div>
 					{:else if primaryArea === "schedules"}
-						<div data-testid="schedule-detail" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Schedule details</span><p class="tr-text-ui text-text-muted">Schedule definitions and run history are available in Settings.</p></div>
+						<div data-testid="schedules-detail" class="flex min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+							{#if schedulesProject}
+								{#key schedulesProject.id}<ErrorBoundary label="schedule details"><ScheduleDetail project={schedulesProject} /></ErrorBoundary>{/key}
+							{:else}
+								<div class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Schedule details</span><p class="tr-text-ui text-text-muted">Select a project to inspect its schedules. Definitions and run sessions keep separate identities.</p></div>
+							{/if}
+						</div>
 					{:else}
-						<div data-testid="settings-detail" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Settings</span><p class="tr-text-ui text-text-muted">Use the settings sections in the primary sidebar.</p></div>
+						<div data-testid="settings-detail" class="flex min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+							{#each settingsVisited as section (section)}
+								{#if section === settingsActiveSection}
+									<div id={`settings-panel-${section}`} role="tabpanel" class="min-w-0 flex-1">
+										{#if section === SettingsSection.Agent && $appStore.agentProfile}
+											<AgentSettings profile={$appStore.agentProfile} />
+										{:else if section === SettingsSection.Schedules}
+											{#if schedulesProject}
+												{#key schedulesProject.id}
+													{#if settingsModules[section]}
+														{@const Section = settingsModules[section]!}<Section project={schedulesProject} />
+													{:else if settingsLoadErrors[section]}
+														<p role="alert" class="tr-text-ui text-feedback-error">Couldn't load this settings section. Your open form drafts are retained.</p>
+														<Button variant="outline" onclick={() => void loadSettingsSection(section)}>Retry loading</Button>
+													{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+												{/key}
+											{:else}
+												<p class="tr-text-ui text-text-muted">Select a project to manage its schedules.</p>
+											{/if}
+										{:else if settingsModules[section]}
+											{@const Section = settingsModules[section]!}<Section />
+										{:else if settingsLoadErrors[section]}
+											<p role="alert" class="tr-text-ui text-feedback-error">Couldn't load this settings section. Your open form drafts are retained.</p>
+											<Button variant="outline" onclick={() => void loadSettingsSection(section)}>Retry loading</Button>
+										{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+									</div>
+								{/if}
+							{/each}
+							{#if settingsVisited.length === 0}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+						</div>
 					{/if}
 				</div>
 			</div>
