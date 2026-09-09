@@ -53,8 +53,8 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] FIX-07 — B/F: agent content revisions, exclusive create, rooted identity and stale/external-edit handling with explicit writer assumptions (F23). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-07--agent-revisions-exclusive-create-and-rooted-edits).
 - [x] FIX-08 — B/F: literal-loopback assistant bind and validated startup inputs (F26). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-08--assistant-loopback-binding-and-startup-validation).
 - [x] FIX-09 — B/G/F: service deadline encloses creation/admin/extensions/in-flight teardown, not just provider abort (F27). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-09--bounded-assistant-lifecycle-deadlines).
-- [ ] FIX-10 — F/A: configured Host allowlist plus separately checked normalized Origin/proxy policy across real routes; X01 (F29).
-- [ ] FIX-11 — F/A: non-executing Git inspection, harmless clean/process-filter endpoint regressions and explicit raw-conversion semantics; X02 (F30).
+- [x] FIX-10 — F/A: configured Host allowlist plus separately checked normalized Origin/proxy policy across real routes; X01 (F29). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-10--controller-host-authority-and-mcp-routing).
+- [x] FIX-11 — F/A: non-executing Git inspection, harmless clean/process-filter endpoint regressions and explicit raw-conversion semantics; X02 (F30). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-11--read-only-git-inspection-and-termination).
 - [ ] FIX-12 — F/G: controller child-group termination and finite pipe draining, including Git and final container reaping; X03 (F31/F40).
 - [ ] FIX-13 — F/A/E: typed publication/durability outcomes, reconciliation and post-rename fault injection; X04 (F32).
 - [ ] API-01 — A: exhaustive browser/controller/host/native catalog and FC mapping, including schedule methods absent from constant lists and removal of broad Administration/provider assumptions (F20/F41).
