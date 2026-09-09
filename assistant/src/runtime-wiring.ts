@@ -32,6 +32,11 @@ import type { NativeModel, NativeResource, NativeThinkingLevel, PromptRequest, S
 import type { DraftMutation, DraftState } from "./drafts/continuity.ts";
 import type { OutboxState } from "./outbox/types.ts";
 import type { PassiveReplay } from "./ui-state/passive-state.ts";
+import {
+	NativeJsonlTransport,
+	type NativeRequestOptions,
+	type NativeTransportFailure,
+} from "./transport/jsonl-transport.ts";
 
 export const RUNTIME_WIRING_VERSION = 1 as const;
 export const DEFAULT_RUNTIME_OUTBOX_ENTRIES = 128;
@@ -46,6 +51,8 @@ export interface RuntimeWiringOptions {
 	readonly maxOutboxEntries?: number;
 	readonly maxOutboxBytes?: number;
 	readonly persist?: boolean;
+	/** Optional real child-backed native control transport. */
+	readonly nativeTransport?: NativeJsonlTransport;
 }
 
 interface StoredRuntimeSession {
@@ -108,6 +115,8 @@ export class RuntimeWiring {
 	private loading?: Promise<void>;
 	private closed = false;
 	private _residency: ResidencyState;
+	private readonly nativeTransport?: NativeJsonlTransport;
+	private readonly removeTransportFailure?: () => void;
 
 	constructor(readonly options: RuntimeWiringOptions) {
 		this.limits = {
@@ -115,6 +124,11 @@ export class RuntimeWiring {
 			maxOutboxBytes: validPositive(options.maxOutboxBytes, DEFAULT_RUNTIME_OUTBOX_BYTES),
 		};
 		this._residency = createResidencyState(options.residencyLimits);
+		this.nativeTransport = options.nativeTransport;
+		if (this.nativeTransport)
+			this.removeTransportFailure = this.nativeTransport.onFailure((failure) => {
+				void this.handleTransportFailure(failure);
+			});
 		if (options.persist !== false)
 			this.store = new JsonStore(`${options.agentDir}/pixie/runtime-wiring.json`, () => ({ version: RUNTIME_WIRING_VERSION, sessions: {} }));
 	}
@@ -130,6 +144,10 @@ export class RuntimeWiring {
 	async ready(): Promise<void> {
 		if (this.loaded) return;
 		this.loading ??= (async () => {
+			// Startup owns the real child-backed transport handshake. A runtime with
+			// no configured native child keeps the existing SDK-owned Sessions path;
+			// it never creates a second Pi owner merely to satisfy this adapter.
+			if (this.nativeTransport) await this.nativeTransport.start();
 			if (this.store) {
 				const state = await this.store.read();
 				if (state.version !== RUNTIME_WIRING_VERSION || !state.sessions || Array.isArray(state.sessions))
@@ -141,6 +159,34 @@ export class RuntimeWiring {
 			this.loaded = true;
 		})();
 		await this.loading;
+	}
+
+	/**
+	 * Send one bounded control-plane operation to the managed native child.
+	 * Payloads are caller-owned and are not retained or replayed by this class.
+	 */
+	async nativeRequest(
+		method: string,
+		params: unknown = {},
+		options: NativeRequestOptions = {},
+	): Promise<unknown> {
+		if (!this.nativeTransport) throw new HostError("Native transport is unavailable", -32004);
+		await this.ready();
+		return this.nativeTransport.request(method, params, options);
+	}
+
+	private async handleTransportFailure(failure: NativeTransportFailure): Promise<void> {
+		// A lost native callback is not proof that no work happened. Advance only
+		// runtimes with active/accepted outbox entries so they become uncertain and
+		// automatic continuation remains blocked until explicit reconciliation.
+		for (const [id, runtime] of this.runtimes) {
+			if (!runtime.outbox.entries.some((entry) => entry.status === "dispatching" || entry.status === "accepted"))
+				continue;
+			const nextGeneration = runtime.identity.childGeneration + 1;
+			const reconnected = runtime.reconnectGeneration(nextGeneration);
+			if (reconnected.ok) await this.persistRuntime(id, runtime).catch(() => {});
+		}
+		void failure;
 	}
 
 	private async inspect(entry: ManagedSession): Promise<NativeSessionDetails> {
@@ -327,6 +373,32 @@ export class RuntimeWiring {
 		try {
 			const value = await runtime.executePrompt(input, async (request) => {
 				await this.persistRuntime(entry.session.sessionId, runtime);
+				if (this.nativeTransport) {
+					const delivery = runtime.outbox.entries.find(
+						(candidate) => candidate.deliveryId === request.deliveryId,
+					);
+					// The child receives delivery identity only. Prompt content and native
+					// credentials stay with the sole Sessions/Pi owner and are never
+					// replayed by transport recovery.
+					await this.nativeTransport.request(
+						"delivery.claim",
+						{
+							sessionKey: runtime.identity.sessionKey,
+							generation: runtime.identity.childGeneration,
+							mutationId: delivery?.mutationId,
+							deliveryId: delivery?.deliveryId,
+							runId: request.runId,
+						},
+						{
+							delivery: {
+							sessionKey: runtime.identity.sessionKey,
+							generation: runtime.identity.childGeneration,
+							mutationId: delivery?.mutationId,
+								deliveryId: request.deliveryId,
+							},
+						},
+					);
+				}
 				return invoke(request);
 			});
 			await this.persistRuntime(entry.session.sessionId, runtime);
@@ -341,7 +413,19 @@ export class RuntimeWiring {
 
 	async cancel(entry: ManagedSession, requestId: string, invoke: () => Promise<unknown>): Promise<RuntimeAbortResult> {
 		const runtime = await this.bind(entry);
-		const value = await runtime.executeAbort(requestId, invoke);
+		const value = await runtime.executeAbort(requestId, async () => {
+			if (this.nativeTransport)
+				await this.nativeTransport.request(
+					"delivery.abort",
+					{
+						sessionKey: runtime.identity.sessionKey,
+						generation: runtime.identity.childGeneration,
+						requestId,
+					},
+					{ lane: "control" },
+				);
+			return invoke();
+		});
 		await this.persistRuntime(entry.session.sessionId, runtime);
 		return value;
 	}
@@ -450,9 +534,11 @@ export class RuntimeWiring {
 
 	async close(): Promise<void> {
 		this.closed = true;
+		this.removeTransportFailure?.();
 		if (this.store) {
 			for (const [id, runtime] of this.runtimes) await this.persistRuntime(id, runtime).catch(() => {});
 		}
+		await this.nativeTransport?.close();
 	}
 }
 

@@ -6,6 +6,7 @@ import manifest from "../package.json" with { type: "json" };
 import { DEFAULT_SERVICE_DRAIN_DEADLINE_MS } from "./lifecycle.ts";
 import { startHost } from "./server.ts";
 import { parseAssistantPort, validateAssistantHost, validateAssistantSecret } from "./startup.ts";
+import { NativeJsonlTransport, spawnNativeChild } from "./transport/jsonl-transport.ts";
 
 const { values } = parseArgs({
 	options: {
@@ -13,6 +14,8 @@ const { values } = parseArgs({
 		host: { type: "string" },
 		port: { type: "string" },
 		llama: { type: "boolean" },
+		"native-transport": { type: "string" },
+		"native-arg": { type: "string", multiple: true },
 		version: { type: "boolean" },
 	},
 });
@@ -31,6 +34,26 @@ const agentDir = resolve(values["agent-dir"] ?? getAgentDir());
 // owns one agent directory, including when selected through the CLI flag.
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.MCP_UI_VIEWER ??= "none";
+
+const nativeTransportCommand = values["native-transport"] ?? process.env.PIXIE_NATIVE_TRANSPORT_COMMAND;
+const nativeTransportArgs = values["native-arg"] ?? [];
+const nativeTransport = nativeTransportCommand
+	? new NativeJsonlTransport({
+			child: () =>
+				spawnNativeChild({
+					command: nativeTransportCommand,
+					args: nativeTransportArgs,
+					cwd: agentDir,
+					// Do not inherit PIXIE_* or provider credentials. Native Pi
+					// state remains owned by the selected agent directory.
+					env: {
+						...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+						...(process.env.HOME ? { HOME: process.env.HOME } : {}),
+						PI_CODING_AGENT_DIR: agentDir,
+					},
+				}),
+		})
+	: undefined;
 
 const requestedRestartExitCode = 75;
 const drainDeadlineMs = DEFAULT_SERVICE_DRAIN_DEADLINE_MS;
@@ -67,6 +90,7 @@ host = await startHost({
 	port,
 	llama: values.llama,
 	secret,
+	nativeTransport,
 	allowSelfRestart: process.env.PIXIE_ALLOW_SELF_RESTART === "1",
 	onRestart: () => close(requestedRestartExitCode),
 });

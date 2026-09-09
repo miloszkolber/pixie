@@ -28,6 +28,7 @@ import {
 } from "./startup.ts";
 import { HostError, object, type RecordValue, required, serviceStore, text } from "./storage.ts";
 import { redactSecrets } from "./session/validation.ts";
+import { NativeJsonlTransport } from "./transport/jsonl-transport.ts";
 
 export interface HostOptions {
 	agentDir: string;
@@ -45,6 +46,8 @@ export interface HostOptions {
 	adminDeadlineMs?: number;
 	/** Bound the complete service drain, including construction and teardown. */
 	drainDeadlineMs?: number;
+	/** Optional real child-backed JSONL transport for native control handoff. */
+	nativeTransport?: NativeJsonlTransport;
 }
 
 // The host reports the SDK it actually embeds; the protocol contract defines
@@ -199,7 +202,7 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			}
 		},
 	);
-	runtimeWiring = new RuntimeWiring({ agentDir, bootId, sessions });
+	runtimeWiring = new RuntimeWiring({ agentDir, bootId, sessions, nativeTransport: options.nativeTransport });
 	let control: ManagedSession;
 	try {
 		if (startup) await startup.race(runtimeWiring.ready(), "Assistant runtime wiring startup");
@@ -648,6 +651,7 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 	return {
 		server,
 		bootId,
+		nativeTransport: options.nativeTransport,
 		sessions,
 		control,
 		capabilities: capabilitySnapshot(),

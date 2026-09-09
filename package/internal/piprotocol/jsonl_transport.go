@@ -16,6 +16,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -222,14 +223,14 @@ func (b *NativeAggregateBudget) ControlOps() int {
 // growing without bound.
 type NativePendingTable struct {
 	mu  sync.Mutex
-	ids map[NativeCorrelationID]struct{}
+	ids map[NativeCorrelationID]bool
 	max int
 }
 
 // NewNativePendingTable returns an empty correlation table.
 func NewNativePendingTable(config NativeTransportConfig) *NativePendingTable {
 	config = config.withDefaults()
-	return &NativePendingTable{ids: make(map[NativeCorrelationID]struct{}), max: config.MaxPending}
+	return &NativePendingTable{ids: make(map[NativeCorrelationID]bool), max: config.MaxPending}
 }
 
 // Add admits one native correlation. Zero (absent) never correlates;
@@ -241,7 +242,7 @@ func (t *NativePendingTable) Add(id NativeCorrelationID) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.ids == nil {
-		t.ids = make(map[NativeCorrelationID]struct{})
+		t.ids = make(map[NativeCorrelationID]bool)
 	}
 	if _, exists := t.ids[id]; exists {
 		return NewNativeTransportError(NativeTransportDuplicate, "native correlation is already in flight")
@@ -249,8 +250,18 @@ func (t *NativePendingTable) Add(id NativeCorrelationID) error {
 	if len(t.ids) >= t.max {
 		return NewNativeTransportError(NativeTransportBackpressure, "too many pending native calls")
 	}
-	t.ids[id] = struct{}{}
+	t.ids[id] = false
 	return nil
+}
+
+// MarkAccepted records the native acknowledgement for one pending call. A
+// later child exit then reports interrupted rather than uncertain delivery.
+func (t *NativePendingTable) MarkAccepted(id NativeCorrelationID) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, exists := t.ids[id]; exists {
+		t.ids[id] = true
+	}
 }
 
 // Remove releases one correlation. Unknown IDs are ignored.
@@ -278,8 +289,27 @@ func (t *NativePendingTable) DrainOnExit() []NativeCorrelationID {
 	for id := range t.ids {
 		drained = append(drained, id)
 	}
-	t.ids = make(map[NativeCorrelationID]struct{})
+	t.ids = make(map[NativeCorrelationID]bool)
 	return drained
+}
+
+// NativePendingOutcome is the explicit terminal result of one callback when a
+// child exits. No outcome authorizes an automatic resend.
+type NativePendingOutcome struct {
+	ID      NativeCorrelationID
+	Outcome HostV2DeliveryState
+}
+
+// DrainOnExitOutcomes drains pending calls while preserving acceptance state.
+func (t *NativePendingTable) DrainOnExitOutcomes() []NativePendingOutcome {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	outcomes := make([]NativePendingOutcome, 0, len(t.ids))
+	for id, accepted := range t.ids {
+		outcomes = append(outcomes, NativePendingOutcome{ID: id, Outcome: NativeUnsettledOutcome(accepted)})
+	}
+	t.ids = make(map[NativeCorrelationID]bool)
+	return outcomes
 }
 
 // NativeUnsettledOutcome maps child-exit timing to durable delivery state.
@@ -301,6 +331,7 @@ type NativeWriter struct {
 	writer   io.Writer
 	timeout  time.Duration
 	maxBytes int
+	failed   error
 }
 
 // NewNativeWriter returns a serialized writer over one child stdin pipe.
@@ -322,19 +353,29 @@ func (w *NativeWriter) WriteRecord(record []byte) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.failed != nil {
+		return w.failed
+	}
 	type result struct{ err error }
 	done := make(chan result, 1)
 	go func() {
-		_, err := w.writer.Write(record)
+		written, err := w.writer.Write(record)
+		if err == nil && written != len(record) {
+			err = NewNativeTransportError(NativeTransportStalled, "native write completed only partially")
+		}
 		done <- result{err: err}
 	}()
 	timer := time.NewTimer(w.timeout)
 	defer timer.Stop()
 	select {
 	case outcome := <-done:
+		if outcome.err != nil {
+			w.failed = outcome.err
+		}
 		return outcome.err
 	case <-timer.C:
-		return NewNativeStalledError("native write", w.timeout)
+		w.failed = NewNativeStalledError("native write", w.timeout)
+		return w.failed
 	}
 }
 
@@ -351,7 +392,21 @@ func ReadNativeRecord(
 	timeout time.Duration,
 	done <-chan struct{},
 ) (json.RawMessage, func(), error) {
-	return readNativeRecord(reader, budget, ordinary, timeout, done)
+	return readNativeRecord(reader, budget, ordinary, timeout, done, DefaultNativeTransportConfig())
+}
+
+// ReadNativeRecordWithConfig is the configurable reader used by transports
+// that lower limits for a fixture or a managed child. It retains the same
+// terminal release contract as ReadNativeRecord.
+func ReadNativeRecordWithConfig(
+	reader *bufio.Reader,
+	budget *NativeAggregateBudget,
+	ordinary bool,
+	timeout time.Duration,
+	done <-chan struct{},
+	config NativeTransportConfig,
+) (json.RawMessage, func(), error) {
+	return readNativeRecord(reader, budget, ordinary, timeout, done, config.withDefaults())
 }
 
 // readNativeRecord owns the bounded accumulation loop: each chunk is admitted
@@ -362,6 +417,7 @@ func readNativeRecord(
 	ordinary bool,
 	timeout time.Duration,
 	done <-chan struct{},
+	config NativeTransportConfig,
 ) (json.RawMessage, func(), error) {
 	type outcome struct {
 		record  []byte
@@ -393,7 +449,7 @@ func readNativeRecord(
 			}
 		}()
 		for {
-			chunk, err := reader.ReadBytes('\n')
+			chunk, err := reader.ReadSlice('\n')
 			if len(chunk) > 0 {
 				// Reserve incrementally before accumulating so a large body
 				// cannot bypass the concurrent-request cap.
@@ -407,10 +463,10 @@ func readNativeRecord(
 					return
 				}
 				reserved += len(chunk)
-				if reserved > NativeJSONLMaxRecordBytes+1 {
+				if reserved > config.MaxRecordBytes+1 {
 					doneCh <- outcome{err: NewNativeTransportError(
 						NativeTransportTooBig,
-						fmt.Sprintf("native record exceeds the %d-byte limit", NativeJSONLMaxRecordBytes),
+						fmt.Sprintf("native record exceeds the %d-byte limit", config.MaxRecordBytes),
 					)}
 					return
 				}
@@ -420,8 +476,19 @@ func readNativeRecord(
 					if len(line) > 0 && line[len(line)-1] == '\r' {
 						line = line[:len(line)-1]
 					}
+					if len(line) > config.MaxRecordBytes {
+						doneCh <- outcome{err: NewNativeTransportError(
+							NativeTransportTooBig,
+							fmt.Sprintf("native record exceeds the %d-byte limit", config.MaxRecordBytes),
+						)}
+						return
+					}
 					if len(bytes.TrimSpace(line)) == 0 {
 						// Skip keep-alive blanks without events.
+						if reserved > 0 {
+							release()
+							accumulated = nil
+						}
 						continue
 					}
 					record, parseErr := ParseNativeJSONLRecord(line)
@@ -437,6 +504,9 @@ func readNativeRecord(
 				}
 			}
 			if err != nil {
+				if errors.Is(err, bufio.ErrBufferFull) {
+					continue
+				}
 				if err == io.EOF {
 					doneCh <- outcome{err: NewNativeTransportError(NativeTransportIncomplete, "incomplete trailing native record")}
 					return
