@@ -1,6 +1,6 @@
 # Pixie
 
-Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). The current host assistant uses Pi's SDK; the Pixie controller, interface and Browser MCP publisher run in Docker.
+Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). The current host assistant uses Pi's SDK; the Pixie controller, interface and Browser MCP publisher run in Docker, with a supported single-binary install documented in [deployment](docs/deployment.md).
 
 The interface provides persistent chats, streaming, image/text attachments, native model controls, read-only files and Git views, goals and schedules. Optional native integrations provide delegation, plans, MCP tools and memory.
 
