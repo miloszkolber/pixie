@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +25,16 @@ const (
 	modeFullHost   runMode = "full-host"
 	modeController runMode = "controller"
 )
+
+type runtimeConfigFile struct {
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	DataDir      string `json:"dataDir"`
+	StaticDir    string `json:"staticDir"`
+	Mode         string `json:"mode"`
+	AgentDir     string `json:"agentDir"`
+	PiExecutable string `json:"piExecutable"`
+}
 
 func parseMode(args []string) (runMode, error) {
 	mode := modeFullHost
@@ -75,6 +87,75 @@ func parseMode(args []string) (runMode, error) {
 	return mode, nil
 }
 
+func configPath(args []string) string {
+	for index := 1; index < len(args); index++ {
+		switch {
+		case args[index] == "--config" && index+1 < len(args):
+			return strings.TrimSpace(args[index+1])
+		case strings.HasPrefix(args[index], "--config="):
+			return strings.TrimSpace(strings.TrimPrefix(args[index], "--config="))
+		}
+	}
+	return ""
+}
+
+func readRuntimeConfig(path string, mode runMode) (runtimeConfigFile, error) {
+	if strings.TrimSpace(path) == "" {
+		return runtimeConfigFile{}, nil
+	}
+	if !filepath.IsAbs(path) {
+		return runtimeConfigFile{}, errors.New("--config must be an absolute path")
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return runtimeConfigFile{}, fmt.Errorf("read config: %w", err)
+	}
+	var config runtimeConfigFile
+	if err := json.Unmarshal(content, &config); err != nil {
+		return runtimeConfigFile{}, fmt.Errorf("decode config: %w", err)
+	}
+	if config.Mode != "" && config.Mode != string(modeFullHost) && config.Mode != string(modeController) {
+		return runtimeConfigFile{}, fmt.Errorf("unsupported config mode %q", config.Mode)
+	}
+	if config.Mode != "" && runMode(config.Mode) != mode {
+		return runtimeConfigFile{}, fmt.Errorf("config mode %q does not match requested %q mode", config.Mode, mode)
+	}
+	config.DataDir = expandHomePath(config.DataDir)
+	config.StaticDir = expandHomePath(config.StaticDir)
+	config.AgentDir = expandHomePath(config.AgentDir)
+	config.PiExecutable = expandHomePath(config.PiExecutable)
+	return config, nil
+}
+
+func runtimeConfigFor(path string, mode runMode) (runtimeConfigFile, error) {
+	return readRuntimeConfig(path, mode)
+}
+
+func runUtilityCommand(command, path string) error {
+	if path != "" {
+		if !filepath.IsAbs(path) {
+			return errors.New("--config must be an absolute path")
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read config: %w", err)
+		}
+		var value map[string]any
+		if err := json.Unmarshal(content, &value); err != nil || value == nil {
+			return errors.New("config must be a JSON object")
+		}
+	}
+	if command == "doctor" {
+		fmt.Printf("pixie doctor: configuration is readable (%s)\n", path)
+		return nil
+	}
+	// Uninstall is intentionally non-destructive. The package provides the
+	// binary/unit/configuration evidence and leaves native Pi state untouched;
+	// operators stop and remove the selected unit explicitly.
+	fmt.Println("pixie uninstall: stop and remove the selected user unit and binary")
+	return nil
+}
+
 // controllerPort reads PIXIE_CONTROLLER_PORT with the compiled default.
 // UI, API and the in-process MCP publisher share one listener, so one port
 // covers all three surfaces.
@@ -94,12 +175,39 @@ func controllerPort() int {
 // The controller owns its runtime; only the full-host composition supplies a
 // PiURL from the public assistant facade before calling serveController.
 func runController(ctx context.Context, build diagnostics.BuildInfo) error {
+	return runControllerWithConfig(ctx, build, "")
+}
+
+func runControllerWithConfig(ctx context.Context, build diagnostics.BuildInfo, configPath string) error {
 	if err := rejectControllerAssistantSettings(os.LookupEnv); err != nil {
+		return err
+	}
+	fileConfig, err := runtimeConfigFor(configPath, modeController)
+	if err != nil {
+		return err
+	}
+	if err := rejectControllerConfigAssistantSettings(fileConfig); err != nil {
 		return err
 	}
 	// Container defaults apply when unset, so plain `go build` binaries keep
 	// working outside Docker by pointing these at local directories.
-	runtime, err := controller.NewRuntime(controller.RuntimeConfig{AppVersion: build.Version, AppRevision: build.Revision, DataDir: os.Getenv("PIXIE_DATA_DIR"), StaticDir: os.Getenv("PIXIE_STATIC_DIR"), Port: controllerPort()})
+	host := strings.TrimSpace(os.Getenv("PIXIE_CONTROLLER_HOST"))
+	if host == "" {
+		host = fileConfig.Host
+	}
+	port := controllerPort()
+	if strings.TrimSpace(os.Getenv("PIXIE_CONTROLLER_PORT")) == "" && fileConfig.Port != 0 {
+		port = fileConfig.Port
+	}
+	dataDir := expandHomePath(os.Getenv("PIXIE_DATA_DIR"))
+	if strings.TrimSpace(dataDir) == "" {
+		dataDir = fileConfig.DataDir
+	}
+	staticDir := expandHomePath(os.Getenv("PIXIE_STATIC_DIR"))
+	if strings.TrimSpace(staticDir) == "" {
+		staticDir = fileConfig.StaticDir
+	}
+	runtime, err := controller.NewRuntime(controller.RuntimeConfig{Host: host, AppVersion: build.Version, AppRevision: build.Revision, DataDir: dataDir, StaticDir: staticDir, Port: port})
 	if err != nil {
 		return err
 	}
@@ -134,6 +242,31 @@ func rejectControllerAssistantSettings(lookup func(string) (string, bool)) error
 		}
 	}
 	return nil
+}
+
+func rejectControllerConfigAssistantSettings(config runtimeConfigFile) error {
+	if strings.TrimSpace(config.AgentDir) != "" {
+		return fmt.Errorf("controller-only mode rejects local assistant setting agentDir")
+	}
+	if strings.TrimSpace(config.PiExecutable) != "" {
+		return fmt.Errorf("controller-only mode rejects local assistant setting piExecutable")
+	}
+	return nil
+}
+
+func expandHomePath(value string) string {
+	value = strings.TrimSpace(value)
+	if value != "~" && !strings.HasPrefix(value, "~/") {
+		return value
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return value
+	}
+	if value == "~" {
+		return home
+	}
+	return filepath.Join(home, strings.TrimPrefix(value, "~/"))
 }
 
 func fatal(err error) {

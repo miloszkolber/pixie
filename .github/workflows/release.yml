@@ -1,0 +1,358 @@
+name: Commit release
+
+# Validation runs for every candidate. The publish job is additionally guarded
+# by the repository variable PIXIE_RELEASE_ENABLED; adding this workflow does
+# not enable publication by itself.
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "37 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Full commit to validate (must be reachable from main)
+        required: false
+        type: string
+  push:
+    branches: [main]
+
+concurrency:
+  group: commit-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate source and package gates
+    uses: ./.github/workflows/ci.yml
+    with:
+      revision: ${{ inputs.revision || github.sha }}
+    permissions:
+      contents: read
+
+  identity:
+    name: Resolve source commit identity
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      source_commit: ${{ steps.source.outputs.source_commit }}
+      release_id: ${{ steps.source.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          fetch-depth: 0
+      - id: source
+        env:
+          REQUESTED_REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT=$(git rev-parse --verify 'HEAD^{commit}')
+          if [[ ! "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'SOURCE_COMMIT must be 40 lowercase hexadecimal characters' >&2
+            exit 1
+          fi
+          if [[ -n "$REQUESTED_REVISION" && ! "$REQUESTED_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'workflow_dispatch revision must be a full 40-character commit SHA' >&2
+            exit 1
+          fi
+          if [[ -n "$REQUESTED_REVISION" && "$REQUESTED_REVISION" != "$SOURCE_COMMIT" ]]; then
+            echo 'checked out source does not match the requested revision' >&2
+            exit 1
+          fi
+          if [[ "${{ github.event_name }}" == 'workflow_dispatch' ]]; then
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            git merge-base --is-ancestor "$SOURCE_COMMIT" refs/remotes/origin/main || {
+              echo 'workflow_dispatch revision must be reachable from main' >&2
+              exit 1
+            }
+          fi
+          RELEASE_ID="sha-${SOURCE_COMMIT:0:12}"
+          echo "source_commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+  stage:
+    name: Stage four commit-named archives
+    needs: [validate, identity]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: package/go.mod
+          cache-dependency-path: package/go.sum
+      - name: Install release build dependencies
+        run: bun install --frozen-lockfile
+        working-directory: package
+      - name: Build and stage immutable archives
+        run: bun run build:release --output "$RUNNER_TEMP/pixie-release"
+      - name: Verify complete archive names and checksums
+        working-directory: ${{ runner.temp }}/pixie-release
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          for archive in \
+            "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" \
+            "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" \
+            "pixie-${RELEASE_ID}-linux-amd64.tar.gz" \
+            "pixie-${RELEASE_ID}-linux-arm64.tar.gz"; do
+            test -f "$archive"
+          done
+          sha256sum --check checksums.txt
+          jq -e --arg source '${{ needs.identity.outputs.source_commit }}' --arg release_id '${{ needs.identity.outputs.release_id }}' \
+            '.releaseId == $release_id and .sourceCommit == $source and .cleanSourceTree == true and .completeSet == false and .checksumsPresent == true and .sbomPresent == false and .provenancePresent == false and (.archiveHashes | length == 4)' \
+            release-manifest.json >/dev/null
+          verify_archive() {
+            local archive="$1" binary="$2" unit="$3" config="$4"
+            tar -tzf "$archive" | grep -qx "$binary"
+            tar -tzf "$archive" | grep -qx "$unit"
+            tar -tzf "$archive" | grep -qx "$config"
+            tar -tzf "$archive" | grep -qx 'INSTALL.md'
+            tar -tzf "$archive" | grep -qx 'LICENSE'
+            tar -tzf "$archive" | grep -qx 'NOTICE.md'
+          }
+          verify_archive "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" pixie-assistant pixie-assistant.service assistant.json
+          verify_archive "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" pixie-assistant pixie-assistant.service assistant.json
+          verify_archive "pixie-${RELEASE_ID}-linux-amd64.tar.gz" pixie pixie.service pixie.json
+          verify_archive "pixie-${RELEASE_ID}-linux-arm64.tar.gz" pixie pixie.service pixie.json
+          CANDIDATE_DIR=$(mktemp -d)
+          trap 'rm -rf "$CANDIDATE_DIR"' EXIT
+          tar -xzf "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" -C "$CANDIDATE_DIR"
+          tar -xzf "pixie-${RELEASE_ID}-linux-amd64.tar.gz" -C "$CANDIDATE_DIR"
+          [[ "$("$CANDIDATE_DIR/pixie-assistant" --version)" == "pixie-assistant $RELEASE_ID (revision $SOURCE_COMMIT)" ]]
+          [[ "$("$CANDIDATE_DIR/pixie" --version)" == "pixie $RELEASE_ID (revision $SOURCE_COMMIT)" ]]
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pixie-release-${{ github.sha }}
+          path: ${{ runner.temp }}/pixie-release
+          if-no-files-found: error
+          retention-days: 14
+
+  image:
+    name: Validate runnable multi-architecture controller image
+    needs: [validate, identity]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      - uses: docker/setup-qemu-action@1f40c72289eff860eea304f1438e3cff362a0 # v4
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Build controller image without publication
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          docker buildx build --platform linux/amd64,linux/arm64 --file package/Dockerfile --target pixie \
+            --build-arg "VERSION=$RELEASE_ID" \
+            --build-arg "REVISION=$SOURCE_COMMIT" \
+            --tag "pixie:${RELEASE_ID}" \
+            --label "org.opencontainers.image.version=$RELEASE_ID" \
+            --label "org.opencontainers.image.revision=$SOURCE_COMMIT" \
+            --sbom=true --attest type=provenance --output=type=oci,dest="$RUNNER_TEMP/pixie-controller.oci" .
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: pixie-image-${{ github.sha }}
+          path: ${{ runner.temp }}/pixie-*
+          if-no-files-found: warn
+          retention-days: 14
+  publish-image:
+    name: Publish matching controller image after complete validation
+    needs: [validate, identity, stage, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.identity.outputs.source_commit }}
+      - uses: docker/setup-qemu-action@1f40c72289eff860eea304f1438e3cff362a0 # v4
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0 # v4
+      - name: Log in to GHCR for the authorized release job
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish matching controller image after complete validation
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          REF="ghcr.io/${GITHUB_REPOSITORY_OWNER}/pixie:${RELEASE_ID}"
+          docker buildx build --platform linux/amd64,linux/arm64 --file package/Dockerfile --target pixie \
+            --build-arg "VERSION=$RELEASE_ID" \
+            --build-arg "REVISION=$SOURCE_COMMIT" \
+            --tag "$REF" \
+            --label "org.opencontainers.image.version=$RELEASE_ID" \
+            --label "org.opencontainers.image.revision=$SOURCE_COMMIT" \
+            --sbom=true --attest type=provenance --push --metadata-file "$RUNNER_TEMP/pixie-image-metadata.json" .
+          test -s "$RUNNER_TEMP/pixie-image-metadata.json"
+          jq -e 'has("buildx.build.provenance") and .["buildx.build.provenance"] != null' \
+            "$RUNNER_TEMP/pixie-image-metadata.json" >/dev/null
+          # Verify both runnable platform manifests; attestations do not replace
+          # platform evidence. The release tag is immutable and latest moves later.
+          docker buildx imagetools inspect "$REF" | tee "$RUNNER_TEMP/pixie-image-inspect.txt"
+          grep -q 'linux/amd64' "$RUNNER_TEMP/pixie-image-inspect.txt"
+          grep -q 'linux/arm64' "$RUNNER_TEMP/pixie-image-inspect.txt"
+          docker buildx imagetools inspect --raw "$REF" > "$RUNNER_TEMP/pixie-image-index.json"
+          mkdir -p "$RUNNER_TEMP/pixie-attestations"
+          while read -r ATTESTATION_DIGEST; do
+            [[ "$ATTESTATION_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || continue
+            docker buildx imagetools inspect --raw "$REF@$ATTESTATION_DIGEST" \
+              > "$RUNNER_TEMP/pixie-attestations/${ATTESTATION_DIGEST#sha256:}.json"
+          done < <(jq -r '.manifests[]? | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") | .digest' "$RUNNER_TEMP/pixie-image-index.json")
+          SBOM_PRESENT=false
+          PROVENANCE_PRESENT=false
+          for ATTESTATION in "$RUNNER_TEMP"/pixie-attestations/*.json; do
+            [[ -f "$ATTESTATION" ]] || continue
+            if jq -e '[.layers[]? | .annotations?["in-toto.io/predicate-type"]? | select(type == "string") | test("spdx|cyclonedx"; "i")] | any' "$ATTESTATION" >/dev/null; then
+              SBOM_PRESENT=true
+            fi
+            if jq -e '[.layers[]? | .annotations?["in-toto.io/predicate-type"]? | select(type == "string") | test("slsa|provenance"; "i")] | any' "$ATTESTATION" >/dev/null; then
+              PROVENANCE_PRESENT=true
+            fi
+          done
+          [[ "$SBOM_PRESENT" == true && "$PROVENANCE_PRESENT" == true ]] || {
+            echo "published image is missing an SBOM or provenance attestation" >&2
+            exit 1
+          }
+          INDEX_DIGEST=$(jq -r '.["containerimage.digest"] // .containerimage.digest // empty' "$RUNNER_TEMP/pixie-image-metadata.json")
+          AMD64_DIGEST=$(jq -r '.manifests[] | select(.platform.architecture == "amd64" and .platform.os == "linux") | .digest' "$RUNNER_TEMP/pixie-image-index.json" | head -n1)
+          ARM64_DIGEST=$(jq -r '.manifests[] | select(.platform.architecture == "arm64" and .platform.os == "linux") | .digest' "$RUNNER_TEMP/pixie-image-index.json" | head -n1)
+          [[ "$INDEX_DIGEST" =~ ^sha256:[0-9a-f]{64}$ && "$AMD64_DIGEST" =~ ^sha256:[0-9a-f]{64}$ && "$ARM64_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+           jq -n --arg tag "$REF" --arg index "$INDEX_DIGEST" --arg amd64 "$AMD64_DIGEST" --arg arm64 "$ARM64_DIGEST" \
+            --argjson sbom "$SBOM_PRESENT" --argjson provenance "$PROVENANCE_PRESENT" \
+            '{tag: $tag, indexDigest: $index, platformDigests: {amd64: $amd64, arm64: $arm64}, sbom: $sbom, provenance: $provenance}' \
+            > "$RUNNER_TEMP/pixie-image-evidence.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pixie-image-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/pixie-image-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish immutable GitHub Release
+    needs: [validate, identity, stage, image, publish-image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-release-${{ github.sha }}
+          path: release
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-image-evidence-${{ github.sha }}
+          path: image-evidence
+      - name: Guard short-ID collisions
+        working-directory: release
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          if git ls-remote --exit-code origin "refs/tags/$RELEASE_ID" >/dev/null 2>&1; then
+            TARGET=$(git ls-remote origin "refs/tags/$RELEASE_ID" | cut -f1)
+            [[ "$TARGET" == "$SOURCE_COMMIT" ]] || { echo 'short-ID collision with a different full commit' >&2; exit 1; }
+          fi
+      - name: Verify staged payload before publication
+        working-directory: release
+        run: |
+          set -euo pipefail
+          sha256sum --check checksums.txt
+          test -f "pixie-assistant-${{ needs.identity.outputs.release_id }}-linux-amd64.tar.gz"
+          test -f "pixie-assistant-${{ needs.identity.outputs.release_id }}-linux-arm64.tar.gz"
+          test -f "pixie-${{ needs.identity.outputs.release_id }}-linux-amd64.tar.gz"
+          test -f "pixie-${{ needs.identity.outputs.release_id }}-linux-arm64.tar.gz"
+      - name: Record verified OCI digests in the release manifest
+        working-directory: release
+        run: |
+          set -euo pipefail
+          jq -e --arg release_id '${{ needs.identity.outputs.release_id }}' \
+            '.tag == ("ghcr.io/" + env.GITHUB_REPOSITORY_OWNER + "/pixie:" + $release_id) and (.indexDigest | test("^sha256:[0-9a-f]{64}$")) and (.platformDigests.amd64 | test("^sha256:[0-9a-f]{64}$")) and (.platformDigests.arm64 | test("^sha256:[0-9a-f]{64}$"))' \
+            ../image-evidence/pixie-image-evidence.json >/dev/null
+          INDEX_DIGEST=$(jq -r '.indexDigest' ../image-evidence/pixie-image-evidence.json)
+          AMD64_DIGEST=$(jq -r '.platformDigests.amd64' ../image-evidence/pixie-image-evidence.json)
+          ARM64_DIGEST=$(jq -r '.platformDigests.arm64' ../image-evidence/pixie-image-evidence.json)
+          jq -e '.sbom == true and .provenance == true' ../image-evidence/pixie-image-evidence.json >/dev/null
+          SBOM_PRESENT=$(jq -r '.sbom' ../image-evidence/pixie-image-evidence.json)
+          PROVENANCE_PRESENT=$(jq -r '.provenance' ../image-evidence/pixie-image-evidence.json)
+          jq --arg index "$INDEX_DIGEST" --arg amd64 "$AMD64_DIGEST" --arg arm64 "$ARM64_DIGEST" \
+            --argjson sbom "$SBOM_PRESENT" --argjson provenance "$PROVENANCE_PRESENT" \
+            '.completeSet = true | .imageIndexDigest = $index | .platformDigests = {amd64: $amd64, arm64: $arm64} | .sbomPresent = $sbom | .provenancePresent = $provenance' \
+            release-manifest.json > release-manifest.next.json
+          mv release-manifest.next.json release-manifest.json
+      - name: Create or resume the draft release with the complete set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: release
+        run: |
+          set -euo pipefail
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          # Existing identical payloads are no-ops. A mismatch stops the retry;
+          # partial publication is retained and never promotes latest.
+          gh release view "$RELEASE_ID" >/dev/null 2>&1 || gh release create "$RELEASE_ID" --draft --title "$RELEASE_ID" --target "$GITHUB_SHA"
+          TEMP_DIR=$(mktemp -d)
+          trap 'rm -rf "$TEMP_DIR"' EXIT
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_ID" > "$TEMP_DIR/release.json"
+          for asset in \
+            "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" \
+            "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" \
+            "pixie-${RELEASE_ID}-linux-amd64.tar.gz" \
+            "pixie-${RELEASE_ID}-linux-arm64.tar.gz" checksums.txt release-manifest.json; do
+            LOCAL_HASH=$(sha256sum "$asset" | cut -d' ' -f1)
+            DOWNLOAD_URL=$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .browser_download_url // empty' "$TEMP_DIR/release.json")
+            if [[ -z "$DOWNLOAD_URL" ]]; then
+              gh release upload "$RELEASE_ID" "$asset"
+              continue
+            fi
+            curl --fail --silent --show-error --location \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/octet-stream' \
+              "$DOWNLOAD_URL" -o "$TEMP_DIR/$asset"
+            REMOTE_HASH=$(sha256sum "$TEMP_DIR/$asset" | cut -d' ' -f1)
+            if [[ "$REMOTE_HASH" != "$LOCAL_HASH" ]]; then
+              echo "release asset $asset exists with a different SHA-256; refusing to overwrite" >&2
+              exit 1
+            fi
+            echo "release asset $asset already matches ($LOCAL_HASH); skipping upload"
+          done
+      - name: Publish the complete release, then consider latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          RELEASE_STATE=$(gh release view "$RELEASE_ID" --json isDraft,isImmutable)
+          if jq -e '.isDraft == true' <<<"$RELEASE_STATE" >/dev/null; then
+            gh release edit "$RELEASE_ID" --draft=false
+          else
+            echo "release $RELEASE_ID is already published; keeping its immutable state"
+          fi
+          # latest promotion is intentionally separate and must compare verified
+          # source ancestry; this workflow never moves it backward on a retry.
+          echo "immutable release $RELEASE_ID published; latest promotion requires verified ancestry"

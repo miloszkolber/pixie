@@ -117,7 +117,8 @@ function extractGoImportSpecifiers(source: string): string[] {
 		if (match[1]) specifiers.push(match[1]);
 	}
 	for (const block of clean.matchAll(importBlocks)) {
-		for (const match of block[1]?.matchAll(/^\s*(?:(?:[A-Za-z_]\w*|\.)\s+)?["']([^"']+)["']/gm) ?? []) {
+		for (const match of block[1]?.matchAll(/^\s*(?:(?:[A-Za-z_]\w*|\.)\s+)?["']([^"']+)["']/gm) ??
+			[]) {
 			if (match[1]) specifiers.push(match[1]);
 		}
 	}
@@ -199,13 +200,17 @@ function checkDockerfile(
 		noAssistantRuntime: false,
 	};
 	if (dockerfile === undefined) {
-		violations.push("package/Dockerfile: Dockerfile is required for the controller-only composition check");
+		violations.push(
+			"package/Dockerfile: Dockerfile is required for the controller-only composition check",
+		);
 		return missing;
 	}
 
 	missing.noAssistantRuntime = !hasAssistantRuntimeCopy(dockerfile);
 	if (!missing.noAssistantRuntime) {
-		violations.push("package/Dockerfile: runtime image must not copy assistant source or host-facade packages");
+		violations.push(
+			"package/Dockerfile: runtime image must not copy assistant source or host-facade packages",
+		);
 	}
 	const hasBuildRecipe = strictChecks;
 	if (hasBuildRecipe) {
@@ -233,26 +238,35 @@ function checkDockerfile(
 		.map((match) => match[0])
 		.join("\n");
 	if (launch === "") {
-		violations.push("package/Dockerfile: final application stage must declare an entrypoint or command");
+		violations.push(
+			"package/Dockerfile: final application stage must declare an entrypoint or command",
+		);
 		return missing;
 	}
 	if (!/\/app\/pixie\b/.test(launch)) {
 		violations.push("package/Dockerfile: final entrypoint must run the Pixie controller binary");
 	}
-	missing.explicitControllerEntrypoint =
-		/\bserve\b[\s,"']+.*--mode[=\s,"']+controller\b/i.test(launch);
+	missing.explicitControllerEntrypoint = /\bserve\b[\s,"']+.*--mode[=\s,"']+controller\b/i.test(
+		launch,
+	);
 	if (!missing.explicitControllerEntrypoint) {
-		violations.push("package/Dockerfile: final entrypoint must explicitly run `pixie serve --mode controller`");
+		violations.push(
+			"package/Dockerfile: final entrypoint must explicitly run `pixie serve --mode controller`",
+		);
 	}
 	missing.effectiveInit = /(?:^|[\s,"'])\/usr\/bin\/tini(?:[\s,"']|$)/.test(launch);
 	if (hasBuildRecipe && !missing.effectiveInit) {
-		violations.push("package/Dockerfile: final entrypoint must run under tini for effective descendant reaping");
+		violations.push(
+			"package/Dockerfile: final entrypoint must run under tini for effective descendant reaping",
+		);
 	}
 	if (hasBuildRecipe && !/COPY\s+--from=web-build\s+[^\n]+\s+\/app\/web\b/i.test(final)) {
 		violations.push("package/Dockerfile: final controller image must include the built UI bundle");
 	}
 	if (/\b(?:pixie-assistant|pi)\s+(?:serve|--)/i.test(final)) {
-		violations.push("package/Dockerfile: final entrypoint must not start an assistant or local Pi process");
+		violations.push(
+			"package/Dockerfile: final entrypoint must not start an assistant or local Pi process",
+		);
 	}
 	return missing;
 }
@@ -267,8 +281,12 @@ function sourceText(
 		.join("\n");
 }
 
-function inspectFullHostComposition(input: CompositionInput, violations: string[]): FullHostCompositionFacts {
-	const hasExtendedSourceEvidence = input.packageWebuiSources !== undefined || input.embeddedUiFiles !== undefined;
+function inspectFullHostComposition(
+	input: CompositionInput,
+	violations: string[],
+): FullHostCompositionFacts {
+	const hasExtendedSourceEvidence =
+		input.packageWebuiSources !== undefined || input.embeddedUiFiles !== undefined;
 	if (!hasExtendedSourceEvidence) {
 		return {
 			facadeStart: true,
@@ -280,19 +298,35 @@ function inspectFullHostComposition(input: CompositionInput, violations: string[
 			drain: true,
 		};
 	}
-	const command = sourceText(input.packageCommandSources, (path) => path.endsWith("/main.go") || path.endsWith("/runtime.go"));
-	const controllerSources = sourceText(input.productionSources, (path) => path.includes("internal/controller/"));
-	const webuiSources = sourceText(input.packageWebuiSources, (path) => path.endsWith("/webui.go") || path === "webui.go");
+	const command = sourceText(
+		input.packageCommandSources,
+		(path) => path.endsWith("/main.go") || path.endsWith("/runtime.go"),
+	);
+	const controllerSources = sourceText(input.productionSources, (path) =>
+		path.includes("internal/controller/"),
+	);
+	const webuiSources = sourceText(
+		input.packageWebuiSources,
+		(path) => path.endsWith("/webui.go") || path === "webui.go",
+	);
 	const uiFiles = input.embeddedUiFiles ?? [];
 	const facts: FullHostCompositionFacts = {
 		facadeStart: /\b[A-Za-z_]\w*\.Start\s*\(\s*ctx\b/.test(command),
 		controllerUsesFacadeEndpoint: /\bPiURL\s*:\s*[A-Za-z_]\w*\.Endpoint\s*\(\s*\)/.test(command),
-		privateTransport: /\bHost\s*:\s*"127\.0\.0\.1"/.test(command) && /\bPort\s*:\s*0\b/.test(command),
-		durableAuthority: /pairing_authority\.go/.test(Object.keys(input.productionSources).join("\n")) ||
+		privateTransport:
+			/\bHost\s*:\s*"127\.0\.0\.1"/.test(command) && /\bPort\s*:\s*0\b/.test(command),
+		durableAuthority:
+			/pairing_authority\.go/.test(Object.keys(input.productionSources).join("\n")) ||
 			/authorityBindingId/.test(controllerSources),
-		uiEmbed: /go:embed\s+all:dist/.test(webuiSources) && uiFiles.some((path) => /(?:^|\/)dist\/index\.html$/.test(path)),
-		modeSwitch: /modeFullHost/.test(command) && /modeController/.test(command) && /func\s+parseMode/.test(command),
-		drain: /func\s+\(r \*Runtime\) Shutdown\s*\(/.test(controllerSources) &&
+		uiEmbed:
+			/go:embed\s+all:dist/.test(webuiSources) &&
+			uiFiles.some((path) => /(?:^|\/)dist\/index\.html$/.test(path)),
+		modeSwitch:
+			/modeFullHost/.test(command) &&
+			/modeController/.test(command) &&
+			/func\s+parseMode/.test(command),
+		drain:
+			/func\s+\(r \*Runtime\) Shutdown\s*\(/.test(controllerSources) &&
 			/\.sessions\.shutdown\s*\(/.test(controllerSources) &&
 			/\.client\.Close\s*\(/.test(controllerSources) &&
 			/\.work\.Wait\s*\(/.test(controllerSources) &&
@@ -302,16 +336,24 @@ function inspectFullHostComposition(input: CompositionInput, violations: string[
 	};
 
 	if (!facts.facadeStart) {
-		violations.push("package/cmd: full-host entrypoint must start the assistant through the public facade");
+		violations.push(
+			"package/cmd: full-host entrypoint must start the assistant through the public facade",
+		);
 	}
 	if (!facts.controllerUsesFacadeEndpoint) {
-		violations.push("package/cmd: full-host controller must use the private endpoint returned by the facade");
+		violations.push(
+			"package/cmd: full-host controller must use the private endpoint returned by the facade",
+		);
 	}
 	if (!facts.privateTransport) {
-		violations.push("package/cmd: full-host assistant transport must be private loopback with an ephemeral port");
+		violations.push(
+			"package/cmd: full-host assistant transport must be private loopback with an ephemeral port",
+		);
 	}
 	if (!facts.durableAuthority) {
-		violations.push("package/internal/controller: combined mode must retain durable pairing/ownership authority");
+		violations.push(
+			"package/internal/controller: combined mode must retain durable pairing/ownership authority",
+		);
 	}
 	if (!facts.uiEmbed) {
 		violations.push("package/webui: full-host build must embed a real dist/index.html bundle");
@@ -320,7 +362,9 @@ function inspectFullHostComposition(input: CompositionInput, violations: string[
 		violations.push("package/cmd: full-host/controller mode switching must remain explicit");
 	}
 	if (!facts.drain) {
-		violations.push("package/cmd: whole-composition shutdown must drain controller and assistant work");
+		violations.push(
+			"package/cmd: whole-composition shutdown must drain controller and assistant work",
+		);
 	}
 	return facts;
 }
@@ -343,7 +387,9 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 			violations.push(`package/go.mod: must require the assistant module ${assistantModule}`);
 		}
 		if (!hasExactLocalReplace(input.packageGoModText ?? "", assistantModule)) {
-			violations.push(`package/go.mod: assistant module must use the exact local replacement => ../assistant`);
+			violations.push(
+				`package/go.mod: assistant module must use the exact local replacement => ../assistant`,
+			);
 		}
 	}
 
@@ -357,10 +403,7 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 	const commandImports = Object.entries(input.packageCommandSources).flatMap(([path, source]) =>
 		extractImportSpecifiers(path, source),
 	);
-	if (
-		publicFacadeImport === null ||
-		!commandImports.includes(publicFacadeImport)
-	) {
+	if (publicFacadeImport === null || !commandImports.includes(publicFacadeImport)) {
 		violations.push(
 			`package/cmd: full-host entrypoint must import the public assistant facade${publicFacadeImport ? ` ${publicFacadeImport}` : ""}`,
 		);
@@ -376,7 +419,9 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 			extractImportSpecifiers(path, source).includes(publicFacadeImport),
 		)
 	) {
-		violations.push(`assistant/cmd: assistant entrypoint must use the same public facade ${publicFacadeImport}`);
+		violations.push(
+			`assistant/cmd: assistant entrypoint must use the same public facade ${publicFacadeImport}`,
+		);
 	}
 
 	for (const [path, source] of Object.entries(input.assistantSources)) {
@@ -392,10 +437,13 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 			continue;
 		}
 		for (const specifier of specifiers) {
-			const isOwnAssistantImport = assistantModule !== null &&
+			const isOwnAssistantImport =
+				assistantModule !== null &&
 				(specifier === assistantModule || specifier.startsWith(`${assistantModule}/`));
 			if (specifier.includes("/internal/") && !isOwnAssistantImport) {
-				violations.push(`${path}: forbidden controller-internal import ${JSON.stringify(specifier)}`);
+				violations.push(
+					`${path}: forbidden controller-internal import ${JSON.stringify(specifier)}`,
+				);
 			}
 		}
 	}
@@ -414,11 +462,14 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 		);
 	}
 	if (supervisorOwners.size > 1) {
-		violations.push(`production sources: duplicate supervisor owners (${[...supervisorOwners].sort().join(", ")})`);
+		violations.push(
+			`production sources: duplicate supervisor owners (${[...supervisorOwners].sort().join(", ")})`,
+		);
 	}
 
 	const fullHost = inspectFullHostComposition(input, violations);
-	const hasExtendedSourceEvidence = input.packageWebuiSources !== undefined || input.embeddedUiFiles !== undefined;
+	const hasExtendedSourceEvidence =
+		input.packageWebuiSources !== undefined || input.embeddedUiFiles !== undefined;
 	const docker = checkDockerfile(input.dockerfileText, violations, hasExtendedSourceEvidence);
 	if (input.fullHostArtifactEvidence === undefined) {
 		missingLiveEvidence.push("full-host binary execution on a supported host");
@@ -437,8 +488,12 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 		.filter(([path]) => path.startsWith("assistant/host/") && path.endsWith(".go"))
 		.map(([, source]) => source)
 		.join("\n");
-	if (/return\s+nil\s*,\s*ErrUnavailable\b/.test(facadeSource)) {
-		missingLiveEvidence.push("assistant host facade has a live engine implementation (current Start returns ErrUnavailable)");
+	if (
+		/return\s+nil\s*,\s*ErrUnavailable\b|native engine is unavailable|capabilities["']?\s*:\s*map\[string\]int\{\}/.test(
+			facadeSource,
+		)
+	) {
+		missingLiveEvidence.push("assistant host facade has a live native engine implementation");
 	}
 	return {
 		ok: violations.length === 0,
@@ -523,17 +578,33 @@ export async function collectCompositionInput(
 		Object.entries(packageWebuiTree).filter(([path]) => path.endsWith(".go")),
 	);
 	const embeddedUiFiles = await collectFilePaths(repositoryRoot, "package/webui/dist");
-	const packageGoModText = await readFile(resolve(repositoryRoot, "package/go.mod"), "utf8").catch(() => undefined);
-	const assistantGoModText = await readFile(resolve(repositoryRoot, "assistant/go.mod"), "utf8").catch(() => undefined);
-	const dockerfileText = await readFile(resolve(repositoryRoot, "package/Dockerfile"), "utf8").catch(() => undefined);
-	const optional: Pick<CompositionInput, "assistantGoModText" | "packageGoModText" | "dockerfileText"> = {};
+	const packageGoModText = await readFile(resolve(repositoryRoot, "package/go.mod"), "utf8").catch(
+		() => undefined,
+	);
+	const assistantGoModText = await readFile(
+		resolve(repositoryRoot, "assistant/go.mod"),
+		"utf8",
+	).catch(() => undefined);
+	const dockerfileText = await readFile(
+		resolve(repositoryRoot, "package/Dockerfile"),
+		"utf8",
+	).catch(() => undefined);
+	const optional: Pick<
+		CompositionInput,
+		"assistantGoModText" | "packageGoModText" | "dockerfileText"
+	> = {};
 	if (assistantGoModText !== undefined) optional.assistantGoModText = assistantGoModText;
 	if (packageGoModText !== undefined) optional.packageGoModText = packageGoModText;
 	if (dockerfileText !== undefined) optional.dockerfileText = dockerfileText;
 	return {
 		assistantSources,
 		packageCommandSources,
-		productionSources: { ...assistantSources, ...packageCommandSources, ...packageInternalSources, ...packageWebuiSources },
+		productionSources: {
+			...assistantSources,
+			...packageCommandSources,
+			...packageInternalSources,
+			...packageWebuiSources,
+		},
 		packageWebuiSources,
 		embeddedUiFiles,
 		...optional,
@@ -542,7 +613,8 @@ export async function collectCompositionInput(
 
 export function formatCompositionReport(report: CompositionReport): string {
 	if (report.ok) {
-		const output = `check-composition: OK (static facade ${report.facts.publicFacadeImport}, ` +
+		const output =
+			`check-composition: OK (static facade ${report.facts.publicFacadeImport}, ` +
 			`Bun.serve ${report.facts.bunServeCount}, supervisor owners ${report.facts.supervisorOwners.length})`;
 		if (report.facts.missingLiveEvidence.length === 0) return output;
 		return [

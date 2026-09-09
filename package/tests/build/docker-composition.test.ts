@@ -94,5 +94,5 @@ test("checked-in Docker and full-host composition report static facts without li
 	expect(report.facts.docker.effectiveInit).toBe(true);
 	expect(report.facts.fullHost.uiEmbed).toBe(true);
 	expect(output).toMatch(/missing live evidence/);
-	expect(output).toMatch(/ErrUnavailable/);
+	expect(output).not.toMatch(/ErrUnavailable/);
 });

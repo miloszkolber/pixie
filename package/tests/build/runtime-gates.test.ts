@@ -11,7 +11,7 @@ function text(value: Uint8Array): string {
 }
 
 function run(command: readonly string[], env: Record<string, string> = {}) {
-	const result = Bun.spawnSync(command, {
+	const result = Bun.spawnSync([...command], {
 		cwd: packageRoot,
 		env: { ...process.env, ...env },
 		stdout: "pipe",
@@ -66,9 +66,7 @@ test("checked-in runtime composition has explicit controller-only and drain gate
 	expect(controller).toContain("mode != modeController");
 });
 
-test("controller and full-host executable fixtures exercise mode boundaries without live Pi claims", {
-	timeout: 120_000,
-}, async () => {
+test("controller and full-host executable fixtures exercise mode boundaries without live Pi claims", async () => {
 	const buildTempRoot = process.env.TMPDIR?.trim() || resolve(repositoryRoot, ".pixie-tmp");
 	await mkdir(buildTempRoot, { recursive: true });
 	const temporary = await mkdtemp(join(buildTempRoot, "pixie-runtime-gates-"));
@@ -138,4 +136,4 @@ test("controller and full-host executable fixtures exercise mode boundaries with
 	} finally {
 		await rm(temporary, { recursive: true, force: true });
 	}
-});
+}, 120_000);

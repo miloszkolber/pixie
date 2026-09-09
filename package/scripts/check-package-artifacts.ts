@@ -65,7 +65,11 @@ function stripComments(source: string): string {
 	return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
 }
 
-function expectedArchiveName(variant: PackageVariant, architecture: PackageArchitecture, releaseId: string): string {
+function expectedArchiveName(
+	variant: PackageVariant,
+	architecture: PackageArchitecture,
+	releaseId: string,
+): string {
 	const binary = variant === "assistant" ? "pixie-assistant" : "pixie";
 	return `${binary}-${releaseId}-linux-${architecture}.tar.gz`;
 }
@@ -116,7 +120,9 @@ function checkUnit(
 		}
 	} else if (name === "pixie.service") {
 		if (!/^\s*ExecStart=.*\bpixie\b.*\bserve\b.*--config\s+\S+/m.test(source)) {
-			violations.push(`${name}: ExecStart must run the full-host pixie binary with an explicit config`);
+			violations.push(
+				`${name}: ExecStart must run the full-host pixie binary with an explicit config`,
+			);
 		}
 		if (/^\s*(?:Requires|BindsTo)=.*pixie-assistant\.service/m.test(source)) {
 			violations.push(`${name}: full-host unit must not depend on a separate assistant service`);
@@ -128,7 +134,12 @@ function checkUnit(
 	staticChecks.push(`${name}: service lifetime directives`);
 }
 
-function checkConfig(name: string, source: string | undefined, violations: string[], staticChecks: string[]): void {
+function checkConfig(
+	name: string,
+	source: string | undefined,
+	violations: string[],
+	staticChecks: string[],
+): void {
 	if (source === undefined) {
 		violations.push(`package/systemd: missing ${name} configuration example`);
 		return;
@@ -162,11 +173,15 @@ function checkArchives(
 		),
 	];
 	let releaseId = input.releaseId;
-	if (releaseId === undefined && observedReleaseIds.length === 1) releaseId = `sha-${observedReleaseIds[0]}`;
-	if (observedReleaseIds.length > 1) violations.push("archives must use one commit-based release ID");
+	if (releaseId === undefined && observedReleaseIds.length === 1)
+		releaseId = `sha-${observedReleaseIds[0]}`;
+	if (observedReleaseIds.length > 1)
+		violations.push("archives must use one commit-based release ID");
 	if (releaseId !== undefined) {
 		if (!RELEASE_ID_PATTERN.test(releaseId)) {
-			violations.push(`release ID must be sha- plus 12 lowercase hexadecimal characters (${releaseId})`);
+			violations.push(
+				`release ID must be sha- plus 12 lowercase hexadecimal characters (${releaseId})`,
+			);
 		} else {
 			for (const variant of PACKAGE_VARIANTS) {
 				for (const architecture of PACKAGE_ARCHITECTURES) {
@@ -178,7 +193,8 @@ function checkArchives(
 
 	const byName = new Map<string, PackageArchiveEvidence>();
 	for (const archive of archives) {
-		if (byName.has(archive.name)) violations.push(`archive ${archive.name}: duplicate archive evidence`);
+		if (byName.has(archive.name))
+			violations.push(`archive ${archive.name}: duplicate archive evidence`);
 		byName.set(archive.name, archive);
 		if (!ARCHIVE_PATTERN.test(archive.name)) {
 			violations.push(`archive ${archive.name}: name must be commit-based for linux amd64/arm64`);
@@ -190,24 +206,37 @@ function checkArchives(
 		const binary = expectedBinaryName(variant);
 		const unit = `${binary}.service`;
 		const config = variant === "assistant" ? "assistant.json" : "pixie.json";
-		if (!entries.has(binary)) violations.push(`archive ${archive.name}: missing ${binary} executable`);
+		if (!entries.has(binary))
+			violations.push(`archive ${archive.name}: missing ${binary} executable`);
 		if (!entries.has(unit)) violations.push(`archive ${archive.name}: missing ${unit}`);
 		if (!entries.has(config)) violations.push(`archive ${archive.name}: missing ${config}`);
 		if (![...entries].some((entry) => INSTALL_ENTRY_PATTERN.test(entry))) {
 			violations.push(`archive ${archive.name}: missing concise install/uninstall instructions`);
 		}
 		for (const legal of ["license", "notice.md"]) {
-			if (!entries.has(legal)) violations.push(`archive ${archive.name}: missing ${legal.toUpperCase()} notice`);
+			if (!entries.has(legal))
+				violations.push(`archive ${archive.name}: missing ${legal.toUpperCase()} notice`);
 		}
-		if (variant === "host" && [...entries].some((entry) => entry === "pixie-assistant" || entry === "pixie-assistant.service")) {
-			violations.push(`archive ${archive.name}: full-host archive must not ship a separate assistant runtime`);
+		if (
+			variant === "host" &&
+			[...entries].some(
+				(entry) => entry === "pixie-assistant" || entry === "pixie-assistant.service",
+			)
+		) {
+			violations.push(
+				`archive ${archive.name}: full-host archive must not ship a separate assistant runtime`,
+			);
 		}
 		if ([...entries].some((entry) => entry === "web" || entry.startsWith("web/"))) {
-			violations.push(`archive ${archive.name}: full-host UI must be embedded, not a required web asset directory`);
+			violations.push(
+				`archive ${archive.name}: full-host UI must be embedded, not a required web asset directory`,
+			);
 		}
 	}
 	if (expected.length === 0) {
-		missingLiveEvidence.push("four commit-named host archives (assistant and full-host, linux amd64 and arm64)");
+		missingLiveEvidence.push(
+			"four commit-named host archives (assistant and full-host, linux amd64 and arm64)",
+		);
 	} else {
 		for (const name of expected) {
 			if (!byName.has(name)) missingLiveEvidence.push(`release archive ${name}`);
@@ -231,12 +260,18 @@ function checkStaticCommands(
 		[/uninstall\b/, "uninstall"],
 	];
 	for (const [pattern, label] of checks) {
-		if (!pattern.test(source)) violations.push(`package binaries: ${label} command/check is not present in the current source`);
+		if (!pattern.test(source))
+			violations.push(
+				`package binaries: ${label} command/check is not present in the current source`,
+			);
 		else staticChecks.push(`binary ${label} command/check`);
 	}
 
 	const units = Object.values(input.units ?? {}).join("\n");
-	if (!/^\s*Restart=on-failure\s*$/m.test(units) || !/^\s*RestartForceExitStatus=75\s*$/m.test(units)) {
+	if (
+		!/^\s*Restart=on-failure\s*$/m.test(units) ||
+		!/^\s*RestartForceExitStatus=75\s*$/m.test(units)
+	) {
 		violations.push("package units: restart policy evidence is missing");
 	} else {
 		staticChecks.push("restart policy and requested-restart status");
@@ -248,10 +283,14 @@ function checkBinaries(
 	input: PackageArtifactInput,
 	missingLiveEvidence: string[],
 ): void {
-	const inferredReleaseId = input.releaseId ?? input.archives?.[0]?.name.match(/-sha-([0-9a-f]{12})-linux-/)?.[1];
-	const expectedReleaseId = inferredReleaseId === undefined
-		? undefined
-		: inferredReleaseId.startsWith("sha-") ? inferredReleaseId : `sha-${inferredReleaseId}`;
+	const inferredReleaseId =
+		input.releaseId ?? input.archives?.[0]?.name.match(/-sha-([0-9a-f]{12})-linux-/)?.[1];
+	const expectedReleaseId =
+		inferredReleaseId === undefined
+			? undefined
+			: inferredReleaseId.startsWith("sha-")
+				? inferredReleaseId
+				: `sha-${inferredReleaseId}`;
 	const observed = new Map<string, PackageBinaryEvidence>();
 	for (const binary of binaries ?? []) {
 		const key = `${binary.variant}/${binary.architecture}`;
@@ -268,7 +307,8 @@ function checkBinaries(
 		if (!binary.readiness) missingLiveEvidence.push(`${key} readiness check`);
 		if (!binary.lifecycle) missingLiveEvidence.push(`${key} start/stop/restart check`);
 		if (!binary.uninstall) missingLiveEvidence.push(`${key} uninstall check`);
-		if (binary.variant === "host" && !binary.uiEmbedded) missingLiveEvidence.push(`${key} real embedded UI check`);
+		if (binary.variant === "host" && !binary.uiEmbedded)
+			missingLiveEvidence.push(`${key} real embedded UI check`);
 	}
 	for (const variant of PACKAGE_VARIANTS) {
 		for (const architecture of PACKAGE_ARCHITECTURES) {
@@ -277,12 +317,26 @@ function checkBinaries(
 		}
 	}
 	if (binaries === undefined || binaries.length === 0) {
-		missingLiveEvidence.push("live version/doctor/readiness/lifecycle checks for both binaries on both architectures");
+		missingLiveEvidence.push(
+			"live version/doctor/readiness/lifecycle checks for both binaries on both architectures",
+		);
 	}
-	if (input.facadeSources !== undefined && Object.values(input.facadeSources).some((source) => /ErrUnavailable/.test(source))) {
-		missingLiveEvidence.push("full-host binary starts a working assistant engine through the facade");
+	if (
+		input.facadeSources !== undefined &&
+		Object.values(input.facadeSources).some((source) =>
+			/ErrUnavailable|native engine is unavailable|capabilities["']?\s*:\s*map\[string\]int\{\}/.test(
+				source,
+			),
+		)
+	) {
+		missingLiveEvidence.push(
+			"full-host binary starts a working native assistant engine through the facade",
+		);
 	}
-	if (input.webuiSources !== undefined && !Object.values(input.webuiSources).some((source) => /go:embed\s+all:dist/.test(source))) {
+	if (
+		input.webuiSources !== undefined &&
+		!Object.values(input.webuiSources).some((source) => /go:embed\s+all:dist/.test(source))
+	) {
 		missingLiveEvidence.push("full-host binary embeds the UI through package/webui");
 	}
 	if (
@@ -297,13 +351,24 @@ export function inspectPackageArtifacts(input: PackageArtifactInput): PackageArt
 	const violations: string[] = [];
 	const staticChecks: string[] = [];
 	const missingLiveEvidence: string[] = [];
-	for (const [name, source] of Object.entries(input.units ?? {})) checkUnit(basename(name), source, violations, staticChecks);
+	for (const [name, source] of Object.entries(input.units ?? {}))
+		checkUnit(basename(name), source, violations, staticChecks);
 	const units = Object.keys(input.units ?? {}).map((name) => basename(name).toLowerCase());
 	for (const required of ["pixie-assistant.service", "pixie.service"]) {
 		if (!units.includes(required)) violations.push(`package/systemd: missing ${required}`);
 	}
-	checkConfig("assistant.json", Object.entries(input.configs ?? {}).find(([name]) => basename(name) === "assistant.json")?.[1], violations, staticChecks);
-	checkConfig("pixie.json", Object.entries(input.configs ?? {}).find(([name]) => basename(name) === "pixie.json")?.[1], violations, staticChecks);
+	checkConfig(
+		"assistant.json",
+		Object.entries(input.configs ?? {}).find(([name]) => basename(name) === "assistant.json")?.[1],
+		violations,
+		staticChecks,
+	);
+	checkConfig(
+		"pixie.json",
+		Object.entries(input.configs ?? {}).find(([name]) => basename(name) === "pixie.json")?.[1],
+		violations,
+		staticChecks,
+	);
 	checkStaticCommands(input, violations, staticChecks);
 	const archives = checkArchives(input, violations, missingLiveEvidence);
 	checkBinaries(input.binaries, input, missingLiveEvidence);
@@ -320,14 +385,20 @@ export function inspectPackageArtifacts(input: PackageArtifactInput): PackageArt
 			expectedArchives: archives.expected,
 			observedArchives: archives.observed,
 			unitFiles: units.sort(),
-			configFiles: Object.keys(input.configs ?? {}).map((name) => basename(name)).sort(),
+			configFiles: Object.keys(input.configs ?? {})
+				.map((name) => basename(name))
+				.sort(),
 			staticChecks,
 			missingLiveEvidence,
 		},
 	};
 }
 
-async function collectTextTree(repositoryRoot: string, directory: string, extensions: ReadonlySet<string>): Promise<Record<string, string>> {
+async function collectTextTree(
+	repositoryRoot: string,
+	directory: string,
+	extensions: ReadonlySet<string>,
+): Promise<Record<string, string>> {
 	const files: Record<string, string> = {};
 	const root = resolve(repositoryRoot, directory);
 	async function walk(current: string): Promise<void> {
@@ -377,7 +448,9 @@ async function collectFilePaths(repositoryRoot: string, directory: string): Prom
 	return files.sort();
 }
 
-export async function collectPackageArtifactInput(repositoryRoot = resolve(import.meta.dir, "../..")): Promise<PackageArtifactInput> {
+export async function collectPackageArtifactInput(
+	repositoryRoot = resolve(import.meta.dir, "../.."),
+): Promise<PackageArtifactInput> {
 	const commandSources = {
 		...(await collectTextTree(repositoryRoot, "package/cmd", new Set([".go"]))),
 		...(await collectTextTree(repositoryRoot, "package/internal", new Set([".go"]))),
@@ -392,8 +465,10 @@ export async function collectPackageArtifactInput(repositoryRoot = resolve(impor
 
 export function formatPackageArtifactReport(report: PackageArtifactReport): string {
 	if (report.ok) {
-		return `check-package-artifacts: OK (${report.facts.observedArchives.length} archives, ` +
-			`${report.facts.unitFiles.length} units, ${report.facts.staticChecks.length} static checks)`;
+		return (
+			`check-package-artifacts: OK (${report.facts.observedArchives.length} archives, ` +
+			`${report.facts.unitFiles.length} units, ${report.facts.staticChecks.length} static checks)`
+		);
 	}
 	return [
 		"check-package-artifacts: FAILED",
@@ -402,7 +477,9 @@ export function formatPackageArtifactReport(report: PackageArtifactReport): stri
 	].join("\n");
 }
 
-export async function runPackageArtifactCheck(repositoryRoot = resolve(import.meta.dir, "../..")): Promise<number> {
+export async function runPackageArtifactCheck(
+	repositoryRoot = resolve(import.meta.dir, "../.."),
+): Promise<number> {
 	const report = inspectPackageArtifacts(await collectPackageArtifactInput(repositoryRoot));
 	const output = formatPackageArtifactReport(report);
 	if (report.ok) console.log(output);

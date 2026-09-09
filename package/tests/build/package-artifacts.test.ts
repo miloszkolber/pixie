@@ -185,11 +185,9 @@ test("checked-in package reports static gaps and missing live artifacts without 
 	const output = formatPackageArtifactReport(report);
 
 	expect(report.ok).toBe(false);
-	expect(report.staticOk).toBe(false);
+	expect(report.staticOk).toBe(true);
 	expect(report.complete).toBe(false);
 	expect(output).toContain("check-package-artifacts: FAILED");
-	expect(output).toMatch(/doctor command\/check is not present/);
-	expect(output).toMatch(/uninstall command\/check is not present/);
 	expect(output).toMatch(/missing live artifact evidence/);
 	expect(output).toMatch(/four commit-named host archives/);
 	expect(report.facts.unitFiles).toEqual(["pixie-assistant.service", "pixie.service"]);

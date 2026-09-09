@@ -125,8 +125,9 @@ test("one full source commit derives the same identity on every release surface"
 test("release identity rejects short source references, semver names, and incomplete digests", () => {
 	const input = passingInput();
 	if (input.docker === undefined) throw new Error("passing fixture Docker evidence is missing");
+	const { manifest: _manifest, ...inputWithoutManifest } = input;
 	const report = inspectReleaseIdentity({
-		...input,
+		...inputWithoutManifest,
 		tag: { name: "v1.2.3", target: sourceCommit.slice(0, 12) },
 		release: { title: "1.2.3", tag: "v1.2.3", target: sourceCommit.slice(0, 12) },
 		archives: (input.archives ?? []).slice(0, 3),
@@ -136,7 +137,6 @@ test("release identity rejects short source references, semver names, and incomp
 			indexDigest: "sha256:short",
 			platformDigests: { amd64: digest },
 		},
-		manifest: undefined,
 	});
 
 	expect(report.ok).toBe(false);
@@ -240,11 +240,10 @@ test("checked-in workflows and artifacts report missing release evidence without
 
 	expect(report.ok).toBe(false);
 	expect(output).toContain("check-release-identity: FAILED");
-	expect(output).toMatch(/missing workflow evidence/);
 	expect(output).toMatch(/missing artifact evidence/);
-	expect(output).toMatch(/semantic-version fallback|0\.0\.0-dev/);
-	expect(output).toContain("stale legacy npm semantic-version guard remains");
-	expect(report.facts.missingWorkflowEvidence).toContain("a commit-named release workflow");
+	expect(output).not.toMatch(/semantic-version fallback|0\.0\.0-dev/);
+	expect(output).not.toContain("stale legacy npm semantic-version guard remains");
+	expect(report.facts.missingWorkflowEvidence).toEqual([]);
 	expect(report.facts.missingArtifactEvidence).toContain(
 		"release-manifest.json with full source and digest evidence",
 	);

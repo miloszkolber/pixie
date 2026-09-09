@@ -20,7 +20,7 @@ pixie-sha-<12>-linux-amd64.tar.gz
 pixie-sha-<12>-linux-arm64.tar.gz
 ```
 
-Each archive records its SHA-256, variant, architecture, full source SHA and contained binary name (`pixie-assistant` or `pixie`). The release manifest records all archive hashes, the full source SHA, a clean-tree result, checksums, SBOM/provenance and the Docker image index/platform digests.
+Each archive records its SHA-256, variant, architecture, full source SHA and contained binary name (`pixie-assistant` or `pixie`). The staged release manifest records all archive hashes, the full source SHA, a clean-tree result and checksums. Publication adds SBOM/provenance and Docker image index/platform digests only from verified image evidence; staging never claims attestations that have not been produced.
 
 The Docker reference is `ghcr.io/miloszkolber/pixie:sha-<12>`. Verify one multi-architecture index plus runnable `linux/amd64` and `linux/arm64` manifests; attestation descriptors do not replace platform evidence.
 
@@ -34,7 +34,7 @@ Documentation-only changes follow the same validate-only path and never create a
 
 An existing tag or release with the same `sha-<12>` is reusable only when its recorded full source SHA matches exactly. A different full SHA is a collision and stops publication.
 
-If publication stops after a partial upload, retain the staged payload and immutable identity, do not move `latest`, and retry with the same full source SHA, release ID, artifact hashes and image digests. Existing identical payloads are no-ops; mismatches stop the retry.
+If publication stops after a partial upload, retain the staged payload and immutable identity, do not move `latest`, and retry with the same full source SHA, release ID, artifact hashes and image digests. Existing assets are downloaded and compared by SHA-256: identical payloads are no-ops, while a mismatch stops the retry without overwriting the asset.
 
 The static gate combines identity, package and policy checks:
 
@@ -46,6 +46,6 @@ Its failure output separates static violations from missing live inputs. A green
 
 ## Current repository evidence
 
-From `package/`, `bun scripts/check-release-identity.ts`, `bun scripts/check-package-artifacts.ts` and `bun scripts/release-gate.ts` are static checks. In this checkout they report missing release workflow policy, complete archive/binary evidence, release manifest, Docker labels/digests, provenance and live package runs, and flag legacy semantic-version fallback paths. Those findings are intentionally not represented as completed release evidence.
+From `package/`, `bun scripts/check-release-identity.ts`, `bun scripts/check-package-artifacts.ts` and `bun scripts/release-gate.ts` are static checks. The commit release workflow is present and validate-only paths are guarded, while this checkout still lacks a published tag/release, complete archive/binary evidence, Docker labels/digests, provenance, live package runs and explicit publication authorization. Those missing inputs are intentionally not represented as completed release evidence.
 
 The canonical policy and exact publication order are in [builds-and-releases.md](../../roadmap/builds-and-releases.md#5-commit-based-release-identity), with task status in [execution.md](../../roadmap/execution.md#builds-and-release-pipeline).

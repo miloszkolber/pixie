@@ -150,6 +150,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	projects.SetPublisher(func(project workspace.Project) { publish("project.updated", project) })
 	settings := NewSettings(store, func(value AppConfig) { publish("settings.changed", value) })
 	sessions := NewSessionManager(projects, config.Policy, records, queues, objectives, publish)
+	sessions.SetMCPRegistry(mcpRegistry)
 	if config.PiURL == "" {
 		resolved, err := resolvePiURL(config.Getenv)
 		if err != nil {
@@ -362,6 +363,12 @@ func (m *SessionManager) shutdown(ctx context.Context) {
 		entry.state.Unlock()
 	}
 	m.mu.Unlock()
+	// Revoke registrations for active and settled residents alike. The native
+	// registry is instance-owned, so this is local cleanup rather than durable
+	// module state.
+	for _, id := range ids {
+		m.revokeNativeMCPSession(id)
+	}
 
 	// Shutdown unwinds blocked UI on every session: dismiss browser modals.
 	// The host closes its own bridges on session close.
