@@ -70,7 +70,7 @@ print('close', call({'session':'bench-1','command':'close','args':[]}, 3))
 
 Use distinct tokens and private environment/configuration files. Provider credentials pass to Pi and are excluded from replay and snapshots. MCP connection summaries omit commands, environment values and secret headers.
 
-Remote Web UI access requires authentication unless explicitly overridden for a trusted network with firewall protection. Use HTTPS and an exact `PIXIE_PUBLIC_ORIGIN`. Pi always stays on loopback; only its port is configurable.
+Remote Web UI access requires authentication unless explicitly overridden for a trusted network with firewall protection. Use HTTPS and an exact `PIXIE_PUBLIC_ORIGIN`. Direct cleartext requests from remote peers are rejected for HTTPS public origins. Controller-owned service calls may use cleartext HTTP only from an actual loopback peer with a literal `localhost`, `127.0.0.1` or `::1` Host at the configured listener port; this transport exception does not bypass route-specific bearer or session authorization. The documented unauthenticated LAN mode leaves `PIXIE_TRUSTED_PROXY_CIDRS` unset. A TLS-terminating proxy may use a cleartext backend only with controller authentication, a peer CIDR explicitly configured in `PIXIE_TRUSTED_PROXY_CIDRS`, a `Host` rewrite to the exact public authority, and `X-Forwarded-Proto: https`; untrusted `Forwarded`/`X-Forwarded-*` headers cannot change authority or transport. Pi always stays on loopback; only its port is configurable.
 
 Interactive App HTML runs in a nested iframe on the Browser origin with bounded CSP and browser permissions. It receives no service credentials. Tool and resource requests return to Pixie for same-session checks. These iframe policies are separate from Pi tool behavior.
 

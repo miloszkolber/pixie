@@ -87,6 +87,14 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	if config.Port == 0 {
 		config.Port = DefaultControllerPort
 	}
+	if err := validateControllerRuntime(config.Host, config.Port, authConfig); err != nil {
+		return nil, err
+	}
+	// Authority checks need the same effective listener host/port as the
+	// listener itself. Keep this alongside the runtime defaults so HTTP and
+	// WebSocket handlers cannot drift to a request-derived authority.
+	authConfig.ControllerHost = config.Host
+	authConfig.ControllerPort = config.Port
 	if config.DataDir == "" {
 		config.DataDir = defaultDataDir(config.Getenv)
 	}
@@ -170,7 +178,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	git := workspace.NewGit(projects, config.Policy)
 	watches := workspace.NewProjectWatches(projects, git, publish)
 	requests := &diagnostics.RequestCounter{}
-	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig)
+	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig, mcpRegistry)
 	statusProvider.schedules = schedules
 	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPRegistry: mcpRegistry}
 	welcome := func(ctx context.Context) (any, error) {
@@ -234,6 +242,33 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	}
 	httpHandler.MCPRegistry = mcpRegistry
 	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, registry: mcpRegistry}, nil
+}
+
+func validateControllerRuntime(host string, port int, auth AuthConfig) error {
+	if err := validateControllerHost(host); err != nil {
+		return fmt.Errorf("invalid effective controller bind: %w", err)
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("PIXIE_CONTROLLER_PORT must be a port 1-65535, got %d", port)
+	}
+	effectiveAuth := auth
+	effectiveAuth.ControllerHost = host
+	if !mcpPublisherAuthConfigured(effectiveAuth) {
+		return fmt.Errorf("PIXIE_MCP_TOKEN must be a strong printable random token for the enabled MCP publisher")
+	}
+	if err := validateTrustedProxyAuth(auth.Enabled, auth.TrustedProxyCIDRs); err != nil {
+		return err
+	}
+	if isLoopbackControllerHost(host) {
+		return nil
+	}
+	if auth.PublicOrigin == "" {
+		return fmt.Errorf("a non-loopback effective controller bind requires PIXIE_PUBLIC_ORIGIN")
+	}
+	if !auth.Enabled && !auth.AllowRemoteWithout {
+		return fmt.Errorf("a non-loopback effective controller bind requires controller authentication or explicit PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true")
+	}
+	return nil
 }
 
 func (r *Runtime) Start() (string, error) {

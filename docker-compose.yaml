@@ -18,6 +18,7 @@ services:
             PIXIE_CONTROLLER_HOST: "${PIXIE_CONTROLLER_HOST:-127.0.0.1}"
             PIXIE_ALLOW_UNAUTHENTICATED_REMOTE: "${PIXIE_ALLOW_UNAUTHENTICATED_REMOTE:-false}"
             PIXIE_PUBLIC_ORIGIN: "${PIXIE_PUBLIC_ORIGIN:-}"
+            PIXIE_TRUSTED_PROXY_CIDRS: "${PIXIE_TRUSTED_PROXY_CIDRS:-}"
             # The in-process MCP publisher and Pi adapter registration share this token.
             PIXIE_MCP_TOKEN: "${PIXIE_MCP_TOKEN:?set a strong MCP token in .pixie}"
             # Pinned to the container layout below; non-Docker runs leave

@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"time"
 
 	"github.com/miloszkolber/pixie/internal/diagnostics"
+	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
 
@@ -64,14 +67,19 @@ type runtimeStatusProvider struct {
 	static        staticFiles
 	agent         *PiClient
 	auth          AuthConfig
+	registry      *mcpserver.Registry
 	browserClient *http.Client
 }
 
-func newRuntimeStatusProvider(build diagnostics.BuildInfo, requests *diagnostics.RequestCounter, projects *workspace.Projects, settings *Settings, staticDir string, agent *PiClient, auth AuthConfig) *runtimeStatusProvider {
+func newRuntimeStatusProvider(build diagnostics.BuildInfo, requests *diagnostics.RequestCounter, projects *workspace.Projects, settings *Settings, staticDir string, agent *PiClient, auth AuthConfig, registries ...*mcpserver.Registry) *runtimeStatusProvider {
+	var registry *mcpserver.Registry
+	if len(registries) > 0 {
+		registry = registries[0]
+	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	return &runtimeStatusProvider{
 		build: build, started: time.Now(), requests: requests, projects: projects, settings: settings,
-		static: resolveStaticFiles(staticDir), agent: agent, auth: auth,
+		static: resolveStaticFiles(staticDir), agent: agent, auth: auth, registry: registry,
 		browserClient: &http.Client{
 			Transport: transport,
 			Timeout:   runtimeStatusTimeout,
@@ -161,6 +169,12 @@ func projectAgentStatus(status map[string]any) runtimeAgentStatus {
 }
 
 func (s *runtimeStatusProvider) browserStatus(ctx context.Context) runtimeServiceStatus {
+	if s.registry != nil && s.auth.BrowserURL == "" {
+		return s.browserPublisherStatus(ctx)
+	}
+	if s.auth.BrowserURL == "" {
+		return unavailableBrowser("Browser service is unavailable.")
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, s.auth.BrowserURL+"/status", nil)
 	if err != nil {
 		return unavailableBrowser("Browser status is unavailable.")
@@ -171,6 +185,40 @@ func (s *runtimeStatusProvider) browserStatus(ctx context.Context) runtimeServic
 	response, err := s.browserClient.Do(request)
 	if err != nil {
 		return unavailableBrowser("Browser service is unavailable.")
+	}
+	return s.browserStatusResponse(response)
+}
+
+// browserPublisherStatus reads the Browser status endpoint directly through
+// the merged publisher. The in-process Browser has no external URL or
+// listener of its own, so routing this probe through the registry keeps
+// runtime.status truthful without a loopback HTTP round trip.
+func (s *runtimeStatusProvider) browserPublisherStatus(ctx context.Context) runtimeServiceStatus {
+	endpoint := s.registry.Endpoint()
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" {
+		return unavailableBrowser("Browser status is unavailable.")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/status", nil)
+	if err != nil {
+		return unavailableBrowser("Browser status is unavailable.")
+	}
+	// Registry.ServeHTTP receives an in-process request rather than a client
+	// request, so populate the server-side fields that the Browser handler
+	// validates for origin-form requests.
+	request.Host = parsed.Host
+	request.RequestURI = request.URL.RequestURI()
+	if s.auth.MCPToken != "" {
+		request.Header.Set("Authorization", "Bearer "+s.auth.MCPToken)
+	}
+	response := httptest.NewRecorder()
+	s.registry.ServeHTTP(response, request)
+	return s.browserStatusResponse(response.Result())
+}
+
+func (s *runtimeStatusProvider) browserStatusResponse(response *http.Response) runtimeServiceStatus {
+	if response == nil {
+		return unavailableBrowser("Browser status is unavailable.")
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {

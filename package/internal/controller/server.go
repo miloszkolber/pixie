@@ -69,10 +69,26 @@ func NewHTTPHandler(webSocket *WebSocketServer, objective ObjectiveHandler, proj
 }
 
 func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	// Liveness/readiness are intentionally kept usable by service managers and
+	// container health checks. Every application, API, module, file/static and
+	// authenticated service route is admitted only after the independent Host
+	// authority check. Origin and credentials remain additional route checks.
+	if !isHealthRoute(request) && (!h.Auth.IsAllowedAuthority(request) || !h.Auth.IsAllowedTransport(request)) {
+		http.Error(response, "forbidden", http.StatusForbidden)
+		return
+	}
 	switch {
 	case request.URL.Path == "/mcp/objective":
 		h.Objective.ServeHTTP(response, request)
-	case h.MCPRegistry != nil && (request.URL.Path == "/mcp/browser" || strings.HasPrefix(request.URL.Path, "/mcp/browser/") || request.URL.Path == "/api/mcp/modules" || request.URL.Path == "/api/mcp/status"):
+	case h.MCPRegistry != nil && mcpPublisherRoute(request.URL.Path):
+		if !mcpPublisherAuthConfigured(h.Auth) {
+			writeAuthJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "MCP publisher authentication is not configured"})
+			return
+		}
+		if !h.isAuthorizedMCPRequest(request) {
+			writeAuthJSON(response, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
 		h.MCPRegistry.ServeHTTP(response, request)
 	case strings.HasPrefix(request.URL.Path, "/auth/"):
 		h.serveAuth(response, request)
@@ -92,9 +108,31 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		h.serveProjectImage(response, request)
 	case strings.HasPrefix(request.URL.Path, "/v1/artifacts/"):
 		h.serveBrowserArtifact(response, request)
+	case reservedAPIMCPRoute(request.URL.Path):
+		writeAuthJSON(response, http.StatusNotFound, map[string]string{"error": "not found"})
 	default:
 		h.serveStatic(response, request)
 	}
+}
+
+func reservedAPIMCPRoute(path string) bool {
+	return path == "/api" || strings.HasPrefix(path, "/api/") || path == "/mcp" || strings.HasPrefix(path, "/mcp/")
+}
+
+func mcpPublisherRoute(path string) bool {
+	return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp/")
+}
+
+func (h *HTTPHandler) isAuthorizedMCPRequest(request *http.Request) bool {
+	if origins := request.Header.Values("Origin"); len(origins) > 0 && !h.Auth.IsExpectedOrigin(request) {
+		return false
+	}
+	if h.Auth.MCPToken == "" {
+		site := request.Header.Get("Sec-Fetch-Site")
+		return site == "" || site == "same-origin"
+	}
+	values := request.Header.Values("Authorization")
+	return len(values) == 1 && strings.HasPrefix(values[0], "Bearer ") && constantTimeStringEqual(strings.TrimPrefix(values[0], "Bearer "), h.Auth.MCPToken)
 }
 
 func (h *HTTPHandler) serveAuth(response http.ResponseWriter, request *http.Request) {
@@ -128,7 +166,7 @@ func (h *HTTPHandler) serveAuth(response http.ResponseWriter, request *http.Requ
 		writeAuthJSON(response, status, map[string]string{"error": err.Error()})
 		return
 	}
-	secure := request.TLS != nil || strings.HasPrefix(h.Auth.PublicOrigin, "https://")
+	secure := h.Auth.SecureCookie(request)
 	if request.URL.Path == "/auth/login" {
 		if len(body) != 1 {
 			writeAuthJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -184,6 +222,18 @@ func writeAuthJSON(response http.ResponseWriter, status int, value any) {
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(status)
 	_ = json.NewEncoder(response).Encode(value)
+}
+
+func isHealthRoute(request *http.Request) bool {
+	if request == nil || request.URL == nil {
+		return false
+	}
+	switch request.URL.Path {
+	case "/health", "/livez", "/readyz":
+		return true
+	default:
+		return false
+	}
 }
 
 func serveHealth(response http.ResponseWriter, request *http.Request) {

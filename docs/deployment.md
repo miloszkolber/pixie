@@ -58,7 +58,7 @@ Add project roots to the `pixie` service's mounts, preserving host absolute path
 docker compose --env-file .pixie up -d --build
 ```
 
-Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. For remote access either enable authentication with HTTPS and an exact public origin, or run on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`. Pi stays on loopback; set only `PIXIE_PI_PORT`.
+Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. Controller-owned service calls may use cleartext HTTP only from an actual loopback peer with a literal `localhost`, `127.0.0.1` or `::1` Host at the configured listener port; route-specific bearer and session checks still apply. For remote access either enable authentication with HTTPS and an exact public origin, or run on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`, leaving `PIXIE_TRUSTED_PROXY_CIDRS` unset. A TLS-terminating reverse proxy requires controller authentication, a peer CIDR explicitly listed in `PIXIE_TRUSTED_PROXY_CIDRS`, a `Host` rewrite to the exact public authority, and `X-Forwarded-Proto: https`; only that header from the listed peer is honored, and arbitrary forwarding headers are ignored. Pi stays on loopback; set only `PIXIE_PI_PORT`.
 
 ## MCP and Signet
 
@@ -92,7 +92,7 @@ PIXIE_MCP_TOKEN=<token>
 
 Both secrets live in that one file: the assistant reads `PIXIE_PI_SECRET_KEY` for its Bearer credential, and `pixie` reads both. Reuse your existing Pi configuration; no Pi setup is needed beyond what the TUI already uses, and uninstalling Pixie never touches native Pi state.
 
-The service listens on loopback (`127.0.0.1:7312` by default; `--host`/`--port` on the assistant, `PIXIE_CONTROLLER_HOST`/`PIXIE_CONTROLLER_PORT` on `pixie`). The remote-access rules from the container layout apply unchanged: either enable authentication with HTTPS and an exact public origin, or stay on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`. State defaults to `$XDG_DATA_HOME/pixie` (`~/.local/share/pixie`) when `PIXIE_DATA_DIR` is unset; set it explicitly only to use a different directory.
+The service listens on loopback (`127.0.0.1:7312` by default; `--host`/`--port` on the assistant, `PIXIE_CONTROLLER_HOST`/`PIXIE_CONTROLLER_PORT` on `pixie`). Controller-owned local service calls use the loopback HTTP exception described above; the remote-access rules from the container layout apply unchanged otherwise: either enable authentication with HTTPS and an exact public origin, or stay on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`, leaving `PIXIE_TRUSTED_PROXY_CIDRS` unset. A cleartext reverse-proxy hop additionally requires controller authentication and the explicit `PIXIE_TRUSTED_PROXY_CIDRS` Host-rewrite policy described above. State defaults to `$XDG_DATA_HOME/pixie` (`~/.local/share/pixie`) when `PIXIE_DATA_DIR` is unset; set it explicitly only to use a different directory.
 
 Foreground (two terminals, or one service manager):
 

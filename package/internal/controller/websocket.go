@@ -68,6 +68,13 @@ func NewWebSocketServer(handler Handler, welcome Welcome, config AuthConfig) (*W
 }
 
 func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	// Keep WebSocket admission on the same independent authority policy as the
+	// assembled HTTP handler. Origin is checked separately below; neither an
+	// Origin nor an untrusted forwarded header can authorize a Host.
+	if !s.Auth.IsAllowedAuthority(request) || !s.Auth.IsAllowedTransport(request) {
+		http.Error(response, "forbidden", http.StatusForbidden)
+		return
+	}
 	if request.Method != http.MethodGet {
 		response.Header().Set("Allow", http.MethodGet)
 		http.Error(response, "method not allowed", http.StatusMethodNotAllowed)
