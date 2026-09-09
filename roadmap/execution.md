@@ -58,7 +58,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] FIX-12 — F/G: controller child-group termination and finite pipe draining, including Git and final container reaping; X03 (F31/F40). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-12--bounded-child-termination-and-container-reaping).
 - [x] FIX-13 — F/A/E: typed publication/durability outcomes, reconciliation and post-rename fault injection; X04 (F32). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-13--ledger-save-paths-on-typed-publication-outcomes).
 - [x] API-01 — A: exhaustive browser/controller/host/native catalog and FC mapping, including schedule methods absent from constant lists and removal of broad Administration/provider assumptions (F20/F41). Evidence: [CHANGELOG.md](CHANGELOG.md#api-01--exhaustive-browser-catalog-with-handler-binding-check).
-- [ ] API-02 — A/B: host v2 schemas/epochs/snapshot/settlement/error fixtures; separate browser/native request IDs and compatibility; X06 (F34).
+- [x] API-02 — A/B: host v2 schemas/epochs/snapshot/settlement/error fixtures; separate browser/native request IDs and compatibility; X06 (F34). Evidence: [CHANGELOG.md](CHANGELOG.md#api-02--host-v2-schemas-with-separated-id-domains).
 - [ ] API-03 — A/B/F: durable paired authority independent of ephemeral dialing, legacy recovery-blocked migration (F21).
 - [x] STATE-01 — A/C: independent selections, nullable project grouping, explicit cwd/admission, routes/drafts/layout migration. Evidence: [CHANGELOG.md](CHANGELOG.md#state-01--nullable-project-grouping-with-explicit-admission).
 - [x] MIG-01 — A/B/F with G: full metadata inventory, staged conversion, topology switching and schema-aware rollback from migration.md; ungrouped queues/deletions, old archive metadata and no ledger rewind (F25/F32). Evidence: [CHANGELOG.md](CHANGELOG.md#mig-01--staged-conversion-with-topology-switching-and-rollback).
@@ -96,22 +96,22 @@ Every task below remains open until implementation evidence is recorded. FC01–
 
 ### Workspace and Mewa
 
-- [ ] UI-01 — C: six-slot reducer/shell against fixture transport, no mixed-content tab ownership.
-- [ ] UI-02 — C/D: real Chat + File split and independent collapse/focus/restore with draft/stream/scroll/focus continuity.
+- [x] UI-01 — C: six-slot reducer/shell against fixture transport, no mixed-content tab ownership. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-01--six-slot-reducer-with-canonical-selection-ownership).
+- [x] UI-02 — C/D: real Chat + File split and independent collapse/focus/restore with draft/stream/scroll/focus continuity. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-02--chat-and-file-split-with-continuity).
 - [ ] UI-03 — D/C: grouped/flat/ungrouped catalog, recent expansion, native titles, selected/running visibility and Archive.
-- [ ] UI-04 — D/C: Schedules and primary Settings list/detail/run navigation reuse backend state and semantics.
+- [x] UI-04 — D/C: Schedules and primary Settings list/detail/run navigation reuse backend state and semantics. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-04--schedules-and-settings-listdetail-navigation).
 - [x] UI-05 — D/C: Details, multi-repository Git, read-only files/diffs and context-safe previews; show eligible idle-runtime release. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-05--details-sidebar-with-release-control-and-multi-repo-git).
-- [ ] UI-06 — C/F: v2 routes/back-forward/restore, invalid/missing/stale states, responsive layouts and keyboard resizers.
+- [x] UI-06 — C/F: v2 routes/back-forward/restore, invalid/missing/stale states, responsive layouts and keyboard resizers. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-06--v2-routes-with-invalidmissingstale-recovery).
 - [ ] UI-07 — C/G/F: old-tab/new-server and lazy-asset upgrade recovery without draft loss or mutation re-execution; X14 (F38).
-- [ ] MEWA-01 — D: pinned tokens/components/adapters and preserved correct wrappers/integrity.
-- [ ] MEWA-02 — D: one foundation owner/cascade/lifecycle; retire mappings/generators only after consumers migrate.
+- [x] MEWA-01 — D: pinned tokens/components/adapters and preserved correct wrappers/integrity. Evidence: [CHANGELOG.md](CHANGELOG.md#mewa-01--pinned-tokens-components-and-adapters).
+- [x] MEWA-02 — D: one foundation owner/cascade/lifecycle; retire mappings/generators only after consumers migrate. Evidence: [CHANGELOG.md](CHANGELOG.md#mewa-02--one-foundation-cascade-owner).
 - [ ] MEWA-03 — D/F: five content-filled light/dark layouts, zoom/keyboard/focus/overflow and no view-driven runtime loss.
 
 ### Integrations, validation and docs
 
 - [ ] EXT-01 — E/B: every supported native UI row, exact limitations and single final response mapping.
-- [ ] EXT-02 — E: generalized registry, complete-map persistence outcomes, independent desired/readiness states and no lock-held startup; mixed invalid/restrictive config fails locally without permissive fallback (F39).
-- [ ] EXT-03 — E/C: Browser in slots 4/5/6, leases/artifacts/cleanup, human/tool availability and explicitly tested deployment profile.
+- [x] EXT-02 — E: generalized registry, complete-map persistence outcomes, independent desired/readiness states and no lock-held startup; mixed invalid/restrictive config fails locally without permissive fallback (F39). Evidence: [CHANGELOG.md](CHANGELOG.md#ext-02--registry-lifecycle-with-desiredreadiness-split).
+- [x] EXT-03 — E/C: Browser in slots 4/5/6, leases/artifacts/cleanup, human/tool availability and explicitly tested deployment profile. Evidence: [CHANGELOG.md](CHANGELOG.md#ext-03--browser-leases-artifacts-and-cleanup).
 - [ ] EXT-04 — E/A/F: generic scoped native MCP registration/credentials/revocation; forged IDs grant nothing.
 - [ ] SEC-01 — F/G: actual HTTP/auth/CSRF/filesystem/Browser posture in both modes; X01/X02/X13 without unsupported isolation claims.
 - [ ] SEC-02 — F/G: actual launcher/delegation, pre-exec resource placement, scratch/inode/egress/descriptor/descendant tests on both architectures; X12/X13 (F37).

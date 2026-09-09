@@ -150,6 +150,69 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Verification:** `bun test tests/webui/files` (44 pass); web typecheck with zero errors; `git diff --check` clean.
 - **Remaining boundary:** full Web UI suite, production build, and browser QA remain later-stage work.
 
+### API-02 — Host v2 schemas with separated ID domains
+
+- **Implementation:** `ebc890c` adds v2 envelope validation (protocol version, close codes, hello without credentials, strict ID/method/params, v1 duplicate shim), distinct browser/host/native ID domains with no-coercion parse shims and reconnect-safe mapping, plus epochs, sequenced snapshots, settlement transitions, and durability gates.
+- **Behavior evidence:** 15 new fixtures cover the close-code matrix, oversize handling, duplicate semantics per version, `"001"`-vs-`1` non-conversion, native-only large IDs, epoch/snapshot staleness, and follow-up blocking.
+- **Verification:** `CGO_ENABLED=0 go test -count=1 ./internal/piprotocol ./tests/go/piprotocol` (pass, 18 tests); integrated six-package Go run (all ok); `gofmt` clean; `git diff --check` clean.
+- **Remaining boundary:** v2 dispatcher bindings, legacy adapter wiring, live Pi profiles, both-architecture runs, and full race evidence remain later-stage work.
+
+### UI-01 — Six-slot reducer with canonical selection ownership
+
+- **Implementation:** `58b76c9` builds the six-slot shell on `workspaceSelection`/`WorkspaceLayout`; `449d1ae` removes mixed-content tab ownership from the canonical path (legacy cache resolves only unmatched tabs), adds versioned persist with v1 forward migration, and constrains selections to live projects on new-server recovery.
+- **Behavior evidence:** shell-layout, selection, and ui-closure-selection regressions cover defaults, split ranges, independence, canonical-over-legacy derivation, invalid tab IDs, and persist round-trips.
+- **Verification:** `bun test tests/webui/workspace tests/webui/store` (139 pass); full package typecheck passes; `git diff --check` clean.
+- **Remaining boundary:** full Web UI suite, production build, and browser QA remain later-stage work.
+
+### UI-02 — Chat and File split with continuity
+
+- **Implementation:** `58b76c9` with `449d1ae` delivers the real Chat plus File split with independent collapse/focus/restore; `selectSplitPair` resolves canonical pairs, split panes guard in-progress resizes, and runtimes with drafts/streams/queues survive tab clearing.
+- **Behavior evidence:** ui-closure-split regressions cover split pairing, draft/stream continuity across switches, scroll/focus retention hooks, and project-scoped secondary tabs.
+- **Verification:** `bun test tests/webui/workspace tests/webui/store` (139 pass); full package typecheck passes; `git diff --check` clean.
+- **Remaining boundary:** full Web UI suite, production build, and browser QA remain later-stage work.
+
+### UI-04 — Schedules and Settings list/detail navigation
+
+- **Implementation:** `b02e74b` adds schedule list/detail/run views reusing ledger semantics with missing-state recovery plus settings-section wiring.
+- **Behavior evidence:** 35 focused schedule/settings regressions cover filtering, selection without redirect, status labels, run-ledger reuse, and section resolution.
+- **Verification:** 35 focused tests pass; web typecheck with zero errors; `git diff --check` clean.
+- **Remaining boundary:** shared poller ownership, rail-dialog unification, full suite, production build, and browser QA remain later-stage work.
+
+### UI-06 — v2 routes with invalid/missing/stale recovery
+
+- **Implementation:** `58b76c9` introduces `#/v2/...` routes with v1 compatibility and bounded IDs; `449d1ae` makes missing canonical selections resolve to recovery views instead of unrelated tabs and adds staleness detection.
+- **Behavior evidence:** location/restore plus ui-closure-restore regressions cover round-trips, invalid/missing/stale states, back/forward derivation, and persist migration.
+- **Verification:** `bun test tests/webui/workspace tests/webui/store` (139 pass); full package typecheck passes; `git diff --check` clean.
+- **Remaining boundary:** full Web UI suite, production build, and browser QA remain later-stage work.
+
+### MEWA-01 — Pinned tokens, components, and adapters
+
+- **Implementation:** `8fa2a5f` pins the Mewa 0.1.2 foundation (lock/manifest/base/tokens paths, revision, 78 icons) and records the semantic-role inventory without emitting a second visual system.
+- **Behavior evidence:** foundation-pin, adapters, and cascade regressions verify the pin, wrapper preservation, icon-set equality, scoped controller lifecycle, and no generated-system leakage.
+- **Verification:** `bun test tests/webui/mewa` (10 pass, 273 expectations); web typecheck with zero errors; `git diff --check` clean.
+- **Remaining boundary:** full suite, production build, and browser QA remain later-stage work.
+
+### MEWA-02 — One foundation cascade owner
+
+- **Implementation:** `8fa2a5f` declares `mewa.css` the sole cascade owner with pin-first import order and keeps Pixie product tokens in `index.css`.
+- **Behavior evidence:** cascade regressions assert import order, local-only sources, and no Pixie/Tailwind leakage into the foundation.
+- **Verification:** `bun test tests/webui/mewa` (10 pass); web typecheck with zero errors; `git diff --check` clean.
+- **Remaining boundary:** retiring legacy mappings/generators after consumer migration, plus full suite and browser QA, remain later-stage work.
+
+### EXT-02 — Registry lifecycle with desired/readiness split
+
+- **Implementation:** `b5a048d` separates desired enablement from module readiness, persists complete maps preserving unknown entries, snapshots startup config under read lock, and fails restrictive configs locally without permissive fallback.
+- **Behavior evidence:** lifecycle regressions cover desired surviving startup failure, complete-map preservation with start decisions, and strict-config local failure.
+- **Verification:** focused mcpserver/controller lifecycle run (pass); integrated six-package Go run (all ok); `gofmt` clean; `git diff --check` clean.
+- **Remaining boundary:** full race suite, live deployment evidence, and both-architecture runs remain later-stage work.
+
+### EXT-03 — Browser leases, artifacts, and cleanup
+
+- **Implementation:** `b5a048d` sorts live lease-renewal payloads deterministically, rejects forged artifact session contexts, accepts service-matching image extensions, and marks lease expiry in the panel.
+- **Behavior evidence:** lease/artifact regressions cover sorted renewal excluding closed panels, forged-session rejection, and case-insensitive image acceptance.
+- **Verification:** focused controller Browser run (pass, existing suites included); integrated six-package Go run (all ok); `gofmt` clean; `git diff --check` clean.
+- **Remaining boundary:** live Browser deployment profile, full race suite, and both-architecture runs remain later-stage work.
+
 ### Committed slices with tasks left open (2026-09-09, fourth batch)
 
 - **Operating docs accuracy (`a69f9d2`, `DOC-01`/`DOC-02` remain open):** architecture, deployment, development, security, and README synced to shipped behavior with verified local links and examples; remaining doc files and checker tooling stay open.
