@@ -61,8 +61,8 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [ ] API-02 — A/B: host v2 schemas/epochs/snapshot/settlement/error fixtures; separate browser/native request IDs and compatibility; X06 (F34).
 - [ ] API-03 — A/B/F: durable paired authority independent of ephemeral dialing, legacy recovery-blocked migration (F21).
 - [x] STATE-01 — A/C: independent selections, nullable project grouping, explicit cwd/admission, routes/drafts/layout migration. Evidence: [CHANGELOG.md](CHANGELOG.md#state-01--nullable-project-grouping-with-explicit-admission).
-- [ ] MIG-01 — A/B/F with G: full metadata inventory, staged conversion, topology switching and schema-aware rollback from migration.md; ungrouped queues/deletions, old archive metadata and no ledger rewind (F25/F32).
-- [ ] MODULE-01 — A/E: trusted contribution descriptors and sidebar-only/viewer-only fixtures with real scope authority.
+- [x] MIG-01 — A/B/F with G: full metadata inventory, staged conversion, topology switching and schema-aware rollback from migration.md; ungrouped queues/deletions, old archive metadata and no ledger rewind (F25/F32). Evidence: [CHANGELOG.md](CHANGELOG.md#mig-01--staged-conversion-with-topology-switching-and-rollback).
+- [x] MODULE-01 — A/E: trusted contribution descriptors and sidebar-only/viewer-only fixtures with real scope authority. Evidence: [CHANGELOG.md](CHANGELOG.md#module-01--trusted-descriptors-with-http-scope-enforcement).
 - [x] ROUTE-01 — E/A/F: registered MCP/management/artifact routing through the assembled HTTP handler, reserved routes and no API-to-SPA fallback; X05 (F33). Evidence: [CHANGELOG.md](CHANGELOG.md#route-01--assembled-reserved-routing-without-spa-fallback).
 - [ ] LIMIT-01 — A/B/F: composed input/store/transport caps, aggregate-byte admission, control reserve and bounded Design index artifact; X07–X09 (F35).
 - [ ] LIFE-01 — B/E/C/F: verified Stop outcomes and explicit safe idle-runtime release under capacity pressure; X10–X11 (F36).
@@ -100,7 +100,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [ ] UI-02 — C/D: real Chat + File split and independent collapse/focus/restore with draft/stream/scroll/focus continuity.
 - [ ] UI-03 — D/C: grouped/flat/ungrouped catalog, recent expansion, native titles, selected/running visibility and Archive.
 - [ ] UI-04 — D/C: Schedules and primary Settings list/detail/run navigation reuse backend state and semantics.
-- [ ] UI-05 — D/C: Details, multi-repository Git, read-only files/diffs and context-safe previews; show eligible idle-runtime release.
+- [x] UI-05 — D/C: Details, multi-repository Git, read-only files/diffs and context-safe previews; show eligible idle-runtime release. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-05--details-sidebar-with-release-control-and-multi-repo-git).
 - [ ] UI-06 — C/F: v2 routes/back-forward/restore, invalid/missing/stale states, responsive layouts and keyboard resizers.
 - [ ] UI-07 — C/G/F: old-tab/new-server and lazy-asset upgrade recovery without draft loss or mutation re-execution; X14 (F38).
 - [ ] MEWA-01 — D: pinned tokens/components/adapters and preserved correct wrappers/integrity.

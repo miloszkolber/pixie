@@ -126,5 +126,30 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 
 ### Committed slices with tasks left open (2026-09-09, third batch)
 
-- **Trusted module descriptors (`a671119`, `MODULE-01` remains open):** descriptor validation with sidebar-only/viewer-only scope declarations, allowlist rejection of remote-code fields, opaque namespaced resource IDs, and unguessable session-bound scope tokens where forged IDs grant nothing. Verified by 9 new mcpserver tests passing; wiring scope authority into the assembled HTTP/controller path remains open.
-- **Details model and multi-repo Git views (`bdd106f`, `UI-05` remains open):** session-details helpers, multi-repository selector identity, raw-conversion notice wiring, read-only preview hooks, and release-eligibility model. Verified by 39 files Web UI tests passing and web typecheck with zero errors; secondary-sidebar wiring with live stats, an explicit release-eligibility RPC, and browser QA remain open.
+- **Trusted module descriptors (`a671119`, superseded by `MODULE-01` below).**
+- **Details model and multi-repo Git views (`bdd106f`, superseded by `UI-05` below).**
+
+### MODULE-01 — Trusted descriptors with HTTP scope enforcement
+
+- **Implementation:** `a671119` adds descriptor validation (sidebar-only/viewer-only declarations, remote-code allowlist rejection, namespaced resource IDs) with session-bound unguessable scope tokens; `3b31d52` wires the boundary into the assembled handler so module resource requests authorize the exact module/resource/session/generation tuple and forged, mismatched, expired, revoked, or URL-carried tokens fail closed without module delegation.
+- **Behavior evidence:** 9 descriptor/scope regressions plus 6 HTTP boundary regressions covering valid delegation, forged/mismatched/expired/revoked tokens, token-in-URL, contribution scope, unknown modules, and wrong methods, all asserting no delegation on failure.
+- **Verification:** `CGO_ENABLED=0 go test -count=1 ./internal/mcpserver ./tests/go/mcpserver ./internal/controller ./tests/go/controller -run 'Scope|Descriptor|Module|Contribution|Forged|Revok'` (pass); integrated eight-package Go run (all ok); `gofmt` clean; `git diff --check` clean.
+- **Remaining boundary:** full race suite, both-architecture runs, live deployment evidence, and browser QA remain later-stage work.
+
+### MIG-01 — Staged conversion with topology switching and rollback
+
+- **Implementation:** `f1c8268` provides the additive metadata inventory; `5199294` adds the staged apply engine (inventory, hashed backups, staging, primary, sync, receipt checkpoints with dry-run redaction and per-phase fault injection) plus both topology switches with preconditions and schema-aware rollback that never restores older snapshots as runnable authority and never rewinds ledgers.
+- **Behavior evidence:** new apply/topology/rollback fixtures cover checkpoint order, redacted dry-runs, backup hashes, interruption before/after each phase, both switch directions, ungrouped preservation, tombstone retention, and no missed-job dispatch.
+- **Verification:** `CGO_ENABLED=0 go test -count=1 ./internal/persist ./tests/go/persist` (all ok); integrated eight-package Go run (all ok); `gofmt` clean; `git diff --check` clean.
+- **Remaining boundary:** live migration on real installations, full race suite, and both-architecture/systemd/Docker evidence remain later-stage work.
+
+### UI-05 — Details sidebar with release control and multi-repo Git
+
+- **Implementation:** `bdd106f` adds session-details helpers, multi-repository selector identity, raw-conversion notice wiring, and read-only preview hooks; `57641c1` wires the details panel into the secondary sidebar with live `session.list`/`session.getStats` data (unknown values stay unknown, never zero) and a backend-authoritative `session.release` affordance shown only when eligible.
+- **Behavior evidence:** 39 files tests plus 5 wiring regressions cover authoritative release params, verbatim refusal surfacing, unknown-never-zero display, multi-repo identity, and work-area delegation keeping release authority in the wrapper.
+- **Verification:** `bun test tests/webui/files` (44 pass); web typecheck with zero errors; `git diff --check` clean.
+- **Remaining boundary:** full Web UI suite, production build, and browser QA remain later-stage work.
+
+### Committed slices with tasks left open (2026-09-09, fourth batch)
+
+- **Operating docs accuracy (`a69f9d2`, `DOC-01`/`DOC-02` remain open):** architecture, deployment, development, security, and README synced to shipped behavior with verified local links and examples; remaining doc files and checker tooling stay open.
