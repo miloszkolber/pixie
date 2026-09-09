@@ -109,3 +109,22 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Composed transport and prompt caps (`0e8021c`, `LIMIT-01` remains open):** documented frame/record/in-flight/aggregate/control bounds with ordinary-vs-control admission and per-image/aggregate text-resource validation. Verified by focused piprotocol/controller limit tests passing; the X09 Design index artifact path, a single cross-subsystem counter, and full race evidence remain open.
 - **Verified Stop outcomes and idle release (`92fff3c`, `LIFE-01` remains open):** dispatch-freeze-first Stop with bounded abort, generation-quiescence verification, distinct stopping/stopped/uncertain reporting, retained-paused outbox, `Abort` caller-deadline contract preserved, and eligible-only idle release retaining history. Verified by the full controller package passing including 6 new Stop regressions; forced managed-child teardown, post-stop generation bump, and live Pi evidence remain open.
 - **Schedules list/detail and settings sections (`b02e74b`, `UI-04` remains open):** schedule list/detail/run views reusing ledger semantics with missing-state recovery, plus settings-section wiring. Verified by 35 focused schedule/settings tests passing and web typecheck with zero errors; shared poller ownership, rail-dialog unification, and browser QA remain open (2 `extensions.test.ts` failures are pre-existing and unrelated).
+
+### API-01 — Exhaustive browser catalog with handler binding check
+
+- **Implementation:** `8486353` adds the 10 missing `WS_METHODS` entries (8 `schedule.*`, `model.thinkingLevels`, `mcpAdapter.status`) so 96 constants match 96 `WsMethodMap` keys, and adds `ws-catalog.test.ts` with per-row FC/owner/profile/native-route mapping plus a generated check reading the Go `CoreHandler`/`PiAdmin` sources to prove every contract method has a handler case and vice versa.
+- **Behavior evidence:** the catalog test enumerates all 96 rows with exact native routes at both compile time (`Exclude` proofs) and runtime, closing the known constant-list divergence.
+- **Verification:** `bun test tests/contracts` (12 pass, 1136 expectations); contracts typecheck and tests typecheck clean; `git diff --check` clean.
+- **Remaining boundary:** per-method live native/bridge evidence per FC profile, both-architecture runs, and full-suite/browser QA remain later-stage work.
+
+### STATE-01 — Nullable project grouping with explicit admission
+
+- **Implementation:** `a4b6443` makes empty project identity mean ungrouped (filesystem admission only, no hidden all-files project), separates stored native cwd from admission re-checks so stale roots fail closed, makes project removal grouping-only (conversations and session-keyed drafts survive), and migrates legacy drafts to session keys with conflict detection.
+- **Behavior evidence:** new `projects_cwd_test.go`/`projects_grouping_test.go` cover ungrouped admission without a project, admission/grouping separation, removal preserving conversations and drafts, and nullable grouping validation.
+- **Verification:** `CGO_ENABLED=0 go test -count=1 ./internal/workspace ./tests/go/workspace ./internal/persist ./tests/go/persist` (all ok); integrated run with mcpserver/controller also ok; `gofmt` clean; `git diff --check` clean.
+- **Remaining boundary:** full metadata conversion, topology switching, and schema-aware rollback stay `MIG-01` work; full race suite and live migration evidence remain later-stage.
+
+### Committed slices with tasks left open (2026-09-09, third batch)
+
+- **Trusted module descriptors (`a671119`, `MODULE-01` remains open):** descriptor validation with sidebar-only/viewer-only scope declarations, allowlist rejection of remote-code fields, opaque namespaced resource IDs, and unguessable session-bound scope tokens where forged IDs grant nothing. Verified by 9 new mcpserver tests passing; wiring scope authority into the assembled HTTP/controller path remains open.
+- **Details model and multi-repo Git views (`bdd106f`, `UI-05` remains open):** session-details helpers, multi-repository selector identity, raw-conversion notice wiring, read-only preview hooks, and release-eligibility model. Verified by 39 files Web UI tests passing and web typecheck with zero errors; secondary-sidebar wiring with live stats, an explicit release-eligibility RPC, and browser QA remain open.
