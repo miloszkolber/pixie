@@ -59,6 +59,8 @@ jobs:
           fi
           RELEASE_ID="sha-${SOURCE_COMMIT:0:12}"
           docker buildx build --platform linux/amd64,linux/arm64 --file package/Dockerfile --target pixie \
+            --build-arg "VERSION=${RELEASE_ID}" \
+            --build-arg "REVISION=${SOURCE_COMMIT}" \
             --tag "pixie:${RELEASE_ID}" \
             --label "org.opencontainers.image.version=${RELEASE_ID}" \
             --label "org.opencontainers.image.revision=${SOURCE_COMMIT}" \

@@ -4,6 +4,10 @@ import { resolve } from "node:path";
 
 const workflowPath = resolve(import.meta.dir, "../../../.github/workflows/release.yml");
 const ciWorkflowPath = resolve(import.meta.dir, "../../../.github/workflows/ci.yml");
+const containerWorkflowPath = resolve(
+	import.meta.dir,
+	"../../../.github/workflows/container-images.yml",
+);
 
 test("commit release workflow has one source identity derivation and validate-only non-main paths", async () => {
 	const workflow = await readFile(workflowPath, "utf8");
@@ -59,6 +63,16 @@ test("release retries compare immutable asset hashes instead of clobbering", asy
 	expect(workflow).toContain("already matches ($LOCAL_HASH); skipping upload");
 	expect(workflow).not.toContain("--clobber");
 	expect(workflow).toContain("isDraft == true");
+});
+
+test("validate-only container image carries the source identity as build arguments", async () => {
+	const workflow = await readFile(containerWorkflowPath, "utf8");
+
+	expect(workflow).toContain('RELEASE_ID="sha-${SOURCE_COMMIT:0:12}"');
+	expect(workflow).toContain('--build-arg "VERSION=${RELEASE_ID}"');
+	expect(workflow).toContain('--build-arg "REVISION=${SOURCE_COMMIT}"');
+	expect(workflow).not.toContain("--push");
+	expect(workflow).not.toContain("packages: write");
 });
 
 test("CI invokes the coverage, package and release gates as blocking checks", async () => {
