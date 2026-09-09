@@ -132,6 +132,43 @@ function clearChatWorkspace(state: AppState, projectAreaId: string, sessionId: s
 	};
 }
 
+/**
+ * Active local work that must survive view closes, stale reconciliations,
+ * and old-tab/new-server upgrades. Mirrors the close-to-history guard so
+ * drafts, streams, submissions, queues, and pending goal work never drop.
+ */
+export function hasActiveSessionWork(
+	runtime: Pick<
+		SessionRuntime,
+		"isStreaming" | "draft" | "submission" | "queue" | "goal"
+	>,
+): boolean {
+	return (
+		runtime.isStreaming ||
+		runtime.submission != null ||
+		runtime.draft.trim() !== "" ||
+		runtime.queue.steering.length > 0 ||
+		runtime.queue.followUp.length > 0 ||
+		runtime.goal.status === "loading" ||
+		runtime.goal.status === "saving"
+	);
+}
+
+function hasRemainingSessionTab(
+	state: AppState,
+	sessionId: string,
+	exceptProjectAreaId: string,
+	exceptTabIds: ReadonlySet<string>,
+): boolean {
+	return Object.entries(state.tabsByProjectArea).some(([areaId, areaTabs]) =>
+		areaTabs.some(
+			(candidate) =>
+				contentSessionId(candidate) === sessionId &&
+				!(areaId === exceptProjectAreaId && exceptTabIds.has(candidate.id)),
+		),
+	);
+}
+
 function withoutChat(
 	state: AppState,
 	projectAreaId: string,
@@ -173,10 +210,14 @@ function withoutChat(
 	const wasActive =
 		state.activeTabByProjectArea[projectAreaId] !== null &&
 		removedTabIds.has(state.activeTabByProjectArea[projectAreaId] ?? "");
+	const runtime = state.sessions[sessionId];
+	const preserveRuntime =
+		runtime !== undefined &&
+		(hasActiveSessionWork(runtime) || hasRemainingSessionTab(state, sessionId, projectAreaId, removedTabIds));
 	return {
 		...state,
 		...clearChatWorkspace(state, projectAreaId, sessionId),
-		...(markDeleted && !alreadyDeleted
+		...(markDeleted && !alreadyDeleted && !preserveRuntime
 			? {
 					deletedSessionsByProjectArea: Object.assign(
 						Object.create(null),
@@ -218,8 +259,8 @@ function withoutChat(
 					},
 				}
 			: {}),
-		...(hasRuntime ? { sessions: omitKey(state.sessions, sessionId) } : {}),
-		...(hasSkillBaseline
+		...(hasRuntime && !preserveRuntime ? { sessions: omitKey(state.sessions, sessionId) } : {}),
+		...(hasSkillBaseline && !preserveRuntime
 			? {
 					skillsSyncedTickBySession: omitKey(state.skillsSyncedTickBySession, sessionId),
 				}

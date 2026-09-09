@@ -536,6 +536,33 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 			const sessions = { ...state.sessions };
 			const skillsSyncedTickBySession = { ...state.skillsSyncedTickBySession };
 			for (const sessionId of selectProjectAreaSessionIds(state, projectAreaId)) {
+				const runtime = (state.sessions as unknown as Record<string, unknown>)[sessionId] as
+					| {
+							isStreaming?: unknown;
+							draft?: unknown;
+							submission?: unknown;
+							queue?: { steering?: unknown; followUp?: unknown };
+							goal?: { status?: unknown };
+						}
+					| undefined;
+				const queue = runtime?.queue as { steering?: unknown[]; followUp?: unknown[] } | undefined;
+				const hasActiveWork =
+					runtime !== undefined &&
+					(runtime.isStreaming === true ||
+						(runtime.submission !== null && runtime.submission !== undefined) ||
+						(typeof runtime.draft === "string" && runtime.draft.trim() !== "") ||
+						(Array.isArray(queue?.steering) && queue.steering.length > 0) ||
+						(Array.isArray(queue?.followUp) && queue.followUp.length > 0) ||
+						runtime.goal?.status === "loading" ||
+						runtime.goal?.status === "saving");
+				const tabbedElsewhere = Object.entries(state.tabsByProjectArea).some(
+					([areaId, areaTabs]) =>
+						areaId !== projectAreaId &&
+						areaTabs.some(
+							(candidate) => candidate.kind === "chat" && candidate.sessionId === sessionId,
+						),
+				);
+				if (hasActiveWork || tabbedElsewhere) continue;
 				delete sessions[sessionId];
 				delete skillsSyncedTickBySession[sessionId];
 			}

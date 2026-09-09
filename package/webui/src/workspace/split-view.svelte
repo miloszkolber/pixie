@@ -32,7 +32,9 @@ let {
 
 let current = $state(SPLIT_DEFAULT);
 $effect(() => {
-	current = splitPercent;
+	// While dragging, the handle owns the value so remote prop updates cannot
+	// clobber the in-progress resize or reset chat/preview continuity.
+	if (!dragging) current = splitPercent;
 });
 let clamped = $derived(clampSplitPercent(current));
 let group: HTMLElement | null = $state(null);
@@ -114,6 +116,7 @@ function endDrag(): void {
 			onpointermove={onHandlePointerMove}
 			onpointerup={endDrag}
 			onpointercancel={endDrag}
+			onlostpointercapture={endDrag}
 		></div>
 		<div
 			class="resizable-panel pixie-split-panel"

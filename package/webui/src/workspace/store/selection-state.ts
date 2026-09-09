@@ -58,7 +58,12 @@ export function isPrimaryArea(value: unknown): value is PrimaryArea {
 }
 
 function isValidModuleId(value: string): boolean {
+	return isValidWorkspaceId(value);
+}
+
+export function isValidWorkspaceId(value: unknown): value is string {
 	return (
+		typeof value === "string" &&
 		value.length > 0 &&
 		value.length <= 512 &&
 		!Array.from(value).some((character) => {
@@ -310,6 +315,219 @@ export function workspaceReducer(
 }
 
 export const selectionReducer = workspaceReducer;
+
+export function sanitizePrimarySelection(value: unknown): PrimarySelection {
+	if (!value || typeof value !== "object") return null;
+	const candidate = value as Record<string, unknown>;
+	if (candidate.kind === "session" && isValidWorkspaceId(candidate.sessionId)) {
+		return candidate.projectId === undefined || isValidWorkspaceId(candidate.projectId)
+			? {
+					kind: "session",
+					sessionId: candidate.sessionId,
+					...(candidate.projectId === undefined
+						? {}
+						: { projectId: candidate.projectId as string }),
+				}
+			: null;
+	}
+	if (
+		candidate.kind === "schedule" &&
+		isValidWorkspaceId(candidate.scheduleId) &&
+		isValidWorkspaceId(candidate.projectId)
+	) {
+		return {
+			kind: "schedule",
+			scheduleId: candidate.scheduleId,
+			projectId: candidate.projectId,
+		};
+	}
+	if (candidate.kind === "settings" && isValidWorkspaceId(candidate.sectionId)) {
+		return { kind: "settings", sectionId: candidate.sectionId };
+	}
+	return null;
+}
+
+export function sanitizeSecondarySelection(value: unknown): SecondarySelection {
+	if (value === null || value === undefined) return null;
+	if (!value || typeof value !== "object") return null;
+	const candidate = value as Record<string, unknown>;
+	if (!isValidWorkspaceId(candidate.resourceId)) return null;
+	const resourceId = candidate.resourceId as string;
+	if (candidate.kind === "file" && isValidWorkspaceId(candidate.projectId)) {
+		return { kind: "file", projectId: candidate.projectId as string, resourceId };
+	}
+	if (
+		candidate.kind === "diff" &&
+		isValidWorkspaceId(candidate.projectId) &&
+		isValidWorkspaceId(candidate.reviewId)
+	) {
+		return {
+			kind: "diff",
+			projectId: candidate.projectId as string,
+			resourceId,
+			reviewId: candidate.reviewId as string,
+		};
+	}
+	if (candidate.kind === "module" && isValidWorkspaceId(candidate.moduleId)) {
+		const context = candidate.context as Record<string, unknown> | undefined;
+		if (!context || typeof context !== "object") return null;
+		if (context.scope === "instance" && isValidWorkspaceId(context.instanceId)) {
+			return {
+				kind: "module",
+				moduleId: candidate.moduleId as string,
+				resourceId,
+				context: { scope: "instance", instanceId: context.instanceId as string },
+			};
+		}
+		if (context.scope === "project" && isValidWorkspaceId(context.projectId)) {
+			return {
+				kind: "module",
+				moduleId: candidate.moduleId as string,
+				resourceId,
+				context: { scope: "project", projectId: context.projectId as string },
+			};
+		}
+		if (
+			context.scope === "session" &&
+			isValidWorkspaceId(context.sessionId) &&
+			(context.projectId === undefined || isValidWorkspaceId(context.projectId))
+		) {
+			return {
+				kind: "module",
+				moduleId: candidate.moduleId as string,
+				resourceId,
+				context: {
+					scope: "session",
+					sessionId: context.sessionId as string,
+					...(context.projectId === undefined
+						? {}
+						: { projectId: context.projectId as string }),
+				},
+			};
+		}
+	}
+	return null;
+}
+
+/** Drop invalid restored selections while keeping valid layout and areas. */
+export function sanitizeWorkspaceSelection(value: unknown): WorkspaceSelectionSnapshot {
+	const base = createInitialWorkspaceState();
+	if (!value || typeof value !== "object") return base;
+	const candidate = value as Record<string, unknown>;
+	return {
+		primaryArea: normalizePrimaryArea(candidate.primaryArea),
+		secondaryArea: normalizeSecondaryArea(candidate.secondaryArea),
+		primarySelection: sanitizePrimarySelection(candidate.primarySelection),
+		secondarySelection: sanitizeSecondarySelection(candidate.secondarySelection),
+		layout: normalizeWorkspaceLayout(
+			(candidate.layout ?? {}) as Partial<WorkspaceLayout>,
+			base.layout,
+		),
+	};
+}
+
+/**
+ * Versioned persisted workspace state (X14/UI-07 slice).
+ * v1 only carried layout; v2 carries the full six-slot snapshot.
+ * Unknown future versions fail closed to safe defaults.
+ */
+export const WORKSPACE_PERSIST_VERSION = 2;
+
+export interface PersistedWorkspaceStateV2 {
+	version: typeof WORKSPACE_PERSIST_VERSION;
+	snapshot: WorkspaceSelectionSnapshot;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function layoutFromV1Record(value: Record<string, unknown>): Partial<WorkspaceLayout> {
+	const layout: Partial<WorkspaceLayout> = {};
+	if (typeof value.leftCollapsed === "boolean") layout.leftCollapsed = value.leftCollapsed;
+	if (typeof value.rightCollapsed === "boolean") layout.rightCollapsed = value.rightCollapsed;
+	if (value.focus === "none" || value.focus === "primary" || value.focus === "secondary")
+		layout.focus = value.focus;
+	if (typeof value.leftWidth === "number") layout.leftWidth = value.leftWidth;
+	if (typeof value.rightWidth === "number") layout.rightWidth = value.rightWidth;
+	if (typeof value.primaryFraction === "number") layout.primaryFraction = value.primaryFraction;
+	if (typeof value.shellLeftOpen === "boolean") layout.leftCollapsed = !value.shellLeftOpen;
+	if (typeof value.shellRightOpen === "boolean") layout.rightCollapsed = !value.shellRightOpen;
+	if (typeof value.shellSplitPercent === "number")
+		layout.primaryFraction = value.shellSplitPercent / 100;
+	return layout;
+}
+
+export function encodeWorkspacePersist(snapshot: WorkspaceSelectionSnapshot): PersistedWorkspaceStateV2 {
+	return { version: WORKSPACE_PERSIST_VERSION, snapshot: sanitizeWorkspaceSelection(snapshot) };
+}
+
+/**
+ * Decode persisted state covering invalid/missing/stale shapes.
+ * Returns null when nothing recoverable remains; otherwise a sanitized
+ * snapshot with invalid selections dropped but valid layout/areas kept.
+ * v1 layout records forward-migrate to a v2 snapshot with empty selections.
+ */
+export function decodeWorkspacePersist(raw: unknown): WorkspaceSelectionSnapshot | null {
+	if (!isRecord(raw)) return null;
+	if (raw.version === WORKSPACE_PERSIST_VERSION) {
+		if (!isRecord(raw.snapshot)) return null;
+		return sanitizeWorkspaceSelection(raw.snapshot);
+	}
+	if (raw.version === 1 && isRecord(raw.layout)) {
+		const base = createInitialWorkspaceState();
+		return {
+			...base,
+			layout: normalizeWorkspaceLayout(layoutFromV1Record(raw.layout), base.layout),
+		};
+	}
+	if (isRecord((raw as Record<string, unknown>).layout) && raw.version === undefined) {
+		const base = createInitialWorkspaceState();
+		return {
+			...base,
+			layout: normalizeWorkspaceLayout(
+				layoutFromV1Record(raw.layout as Record<string, unknown>),
+				base.layout,
+			),
+		};
+	}
+	return null;
+}
+
+function projectIdOfSelection(
+	selection: PrimarySelection | SecondarySelection,
+): string | null {
+	if (!selection) return null;
+	if (selection.kind === "session") return selection.projectId ?? null;
+	if (selection.kind === "schedule") return selection.projectId;
+	if (selection.kind === "file" || selection.kind === "diff") return selection.projectId;
+	if (selection.kind !== "module") return null;
+	if (selection.context.scope === "instance") return null;
+	return selection.context.projectId ?? null;
+}
+
+/**
+ * New-server upgrade recovery: drop selections whose project no longer
+ * exists while keeping layout, areas, and compatible selections.
+ * Instance-scoped modules survive; drafts/runtimes are owned elsewhere.
+ */
+export function constrainWorkspaceSelectionToProjects(
+	snapshot: WorkspaceSelectionSnapshot,
+	availableProjectIds: ReadonlySet<string> | readonly string[],
+): WorkspaceSelectionSnapshot {
+	const available =
+		availableProjectIds instanceof Set ? availableProjectIds : new Set(availableProjectIds);
+	let next = snapshot;
+	const primaryProject = projectIdOfSelection(next.primarySelection);
+	if (primaryProject !== null && !available.has(primaryProject)) {
+		next = workspaceReducer(next, { type: "clear-primary" });
+	}
+	const secondaryProject = projectIdOfSelection(next.secondarySelection);
+	if (secondaryProject !== null && !available.has(secondaryProject)) {
+		next = workspaceReducer(next, { type: "clear-secondary" });
+	}
+	return next;
+}
 
 export interface WorkspaceSelectionState {
 	workspaceSelection: WorkspaceSelectionSnapshot;
