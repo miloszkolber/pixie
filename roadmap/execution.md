@@ -56,7 +56,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] FIX-10 — F/A: configured Host allowlist plus separately checked normalized Origin/proxy policy across real routes; X01 (F29). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-10--controller-host-authority-and-mcp-routing).
 - [x] FIX-11 — F/A: non-executing Git inspection, harmless clean/process-filter endpoint regressions and explicit raw-conversion semantics; X02 (F30). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-11--read-only-git-inspection-and-termination).
 - [x] FIX-12 — F/G: controller child-group termination and finite pipe draining, including Git and final container reaping; X03 (F31/F40). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-12--bounded-child-termination-and-container-reaping).
-- [ ] FIX-13 — F/A/E: typed publication/durability outcomes, reconciliation and post-rename fault injection; X04 (F32).
+- [x] FIX-13 — F/A/E: typed publication/durability outcomes, reconciliation and post-rename fault injection; X04 (F32). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-13--ledger-save-paths-on-typed-publication-outcomes).
 - [ ] API-01 — A: exhaustive browser/controller/host/native catalog and FC mapping, including schedule methods absent from constant lists and removal of broad Administration/provider assumptions (F20/F41).
 - [ ] API-02 — A/B: host v2 schemas/epochs/snapshot/settlement/error fixtures; separate browser/native request IDs and compatibility; X06 (F34).
 - [ ] API-03 — A/B/F: durable paired authority independent of ephemeral dialing, legacy recovery-blocked migration (F21).
