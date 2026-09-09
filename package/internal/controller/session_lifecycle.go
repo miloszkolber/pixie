@@ -543,3 +543,91 @@ func parseTimestamp(value string) (int64, error) {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	return parsed.UnixMilli(), err
 }
+
+// LIFE-01/X10-X11: explicit idle-runtime release for eligible settled
+// residents. Close/Archive/Delete never imply Stop: Archive and Delete require
+// an already stopped session through beginLifecycle and never send
+// session.cancel themselves. ReleaseIdleRuntime likewise never aborts; it only
+// frees residence for a verified idle session while retaining history, draft,
+// queue, selection and metadata for later reattachment. Release to TUI stays
+// separate.
+
+// IdleReleaseEligible reports whether a resident session may be explicitly
+// released. Active, queued, uncertain, scheduled, pinned or lifecycle-busy
+// sessions are never eligible.
+func (m *SessionManager) IdleReleaseEligible(sessionID string) (bool, string) {
+	entry, err := m.entry(sessionID)
+	if err != nil {
+		return false, err.Error()
+	}
+	defer m.releaseEntry(entry)
+	if err := m.lockEntry(sessionID, entry); err != nil {
+		return false, err.Error()
+	}
+	defer entry.op.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed || m.sessions[sessionID] != entry || m.lifecycle[sessionID] {
+		return false, "wait for the chat lifecycle operation to finish"
+	}
+	if entry.refs > 1 {
+		return false, "session is busy"
+	}
+	if m.hasActiveLivenessLocked(sessionID) {
+		return false, "extension work still pins the session"
+	}
+	for key := range m.dialogs {
+		if key.sessionID == sessionID {
+			return false, "dialog still awaiting input"
+		}
+	}
+	entry.state.Lock()
+	defer entry.state.Unlock()
+	return idleStateEligibleLocked(entry)
+}
+
+// ReleaseIdleRuntime frees residence for a verified idle session while
+// retaining its durable history, queue, selection and metadata. The next
+// read or prompt reloads the authoritative transcript from Pi.
+func (m *SessionManager) ReleaseIdleRuntime(ctx context.Context, sessionID string) error {
+	entry, err := m.entry(sessionID)
+	if err != nil {
+		return err
+	}
+	defer m.releaseEntry(entry)
+	if err := m.lockEntryContext(ctx, sessionID, entry); err != nil {
+		return err
+	}
+	defer entry.op.Unlock()
+	m.mu.Lock()
+	if m.closed || m.sessions[sessionID] != entry || m.lifecycle[sessionID] {
+		m.mu.Unlock()
+		return fmt.Errorf("wait for the chat lifecycle operation to finish")
+	}
+	if entry.refs > 1 {
+		m.mu.Unlock()
+		return fmt.Errorf("session is busy")
+	}
+	if m.hasActiveLivenessLocked(sessionID) {
+		m.mu.Unlock()
+		return fmt.Errorf("extension work still pins the session")
+	}
+	for key := range m.dialogs {
+		if key.sessionID == sessionID {
+			m.mu.Unlock()
+			return fmt.Errorf("dialog still awaiting input")
+		}
+	}
+	entry.state.Lock()
+	eligible, reason := idleStateEligibleLocked(entry)
+	if !eligible {
+		entry.state.Unlock()
+		m.mu.Unlock()
+		return fmt.Errorf("session is not idle: %s", reason)
+	}
+	delete(m.sessions, sessionID)
+	entry.state.Unlock()
+	m.mu.Unlock()
+	m.emit("session.lifecycleChanged", map[string]any{"sessionId": sessionID, "operation": "idle-released"})
+	return nil
+}

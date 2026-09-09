@@ -421,41 +421,171 @@ func (m *SessionManager) Steer(ctx context.Context, sessionID, text string, imag
 }
 
 func (m *SessionManager) Abort(ctx context.Context, sessionID string) error {
+	outcome, err := m.Stop(ctx, sessionID)
+	if err != nil {
+		// Abort keeps its historical contract: a caller deadline surfaces as
+		// the context error even though Stop reports the richer uncertain
+		// outcome for its own callers.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	if outcome.Status == StopStatusUncertain {
+		if outcome.Reason != "" {
+			return fmt.Errorf("stop outcome is uncertain: %s", outcome.Reason)
+		}
+		return fmt.Errorf("stop outcome is uncertain")
+	}
+	return nil
+}
+
+// Stop freezes controller dispatch first, clears continuation, aborts
+// boundedly and verifies generation quiescence with distinct
+// stopping/stopped/uncertain reporting. Unsent outbox items are retained
+// paused; resume or discard stays an explicit user decision and never happens
+// automatically here.
+func (m *SessionManager) Stop(ctx context.Context, sessionID string) (StopOutcome, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	entry, err := m.entry(sessionID)
 	if err != nil {
-		return err
+		return StopOutcome{Status: StopStatusUncertain, Reason: err.Error()}, err
 	}
 	defer m.releaseEntry(entry)
 	if err := m.lockEntryContext(ctx, sessionID, entry); err != nil {
-		return err
+		return StopOutcome{Status: StopStatusUncertain, Reason: err.Error()}, err
 	}
-	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
+	// Freeze dispatch first. The lifecycle flag blocks admitFollowUp,
+	// retryFollowUp and new operations while the settling generation may
+	// still clear itself through lockEntryForSettlement.
+	m.mu.Lock()
+	if m.closed || m.lifecycle[sessionID] {
+		m.mu.Unlock()
 		entry.op.Unlock()
-		return err
+		err := fmt.Errorf("wait for the chat lifecycle operation to finish")
+		return StopOutcome{Status: StopStatusUncertain, Reason: err.Error()}, err
+	}
+	if m.lifecycle == nil {
+		m.lifecycle = make(map[string]bool)
+	}
+	m.lifecycle[sessionID] = true
+	m.mu.Unlock()
+	unfreeze := func() {
+		m.mu.Lock()
+		delete(m.lifecycle, sessionID)
+		m.mu.Unlock()
 	}
 	entry.state.Lock()
+	if entry.drainRetry != nil {
+		entry.drainRetry.Stop()
+		entry.drainRetry = nil
+	}
+	generation := entry.promptGeneration
+	// Clear continuation: rewind an un-attempted dispatch to paused follow-up.
+	// An attempted dispatch stays for settlement to mark Blocked/uncertain.
+	rewindErrMessage := ""
+	if entry.queue.Dispatch != nil && !entry.queue.Dispatch.Attempted {
+		next := entry.queue.clone()
+		item := queuedFollowUp{ID: next.Dispatch.ID, Text: next.Dispatch.Text}
+		next.Dispatch = nil
+		next.FollowUp = append([]queuedFollowUp{item}, next.FollowUp...)
+		next.Revision = identifier.New()
+		if saveErr := m.saveQueueLocked(sessionID, entry, next); saveErr != nil {
+			rewindErrMessage = saveErr.Error()
+			m.emitQueueProjection(sessionID, entry, true)
+		} else {
+			m.emitQueue(sessionID, entry)
+		}
+	}
 	done := entry.promptDone
 	entry.state.Unlock()
-
+	m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": StopStatusStopping, "generation": generation}})
+	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
+		entry.state.Lock()
+		paused := pausedOutboxCount(entry.queue)
+		entry.state.Unlock()
+		unfreeze()
+		entry.op.Unlock()
+		reason := err.Error()
+		if rewindErrMessage != "" {
+			reason = rewindErrMessage + "; " + reason
+		}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: reason}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": reason}})
+		return outcome, err
+	}
 	// Stop unwinds blocked UI on the controller side as well: dismiss the
 	// browser modal immediately. The host settles its awaiting extension call
 	// through session.cancel, which fans back as ui_cancel (idempotent here).
 	m.cancelDialogs(sessionID)
-	err = m.client.Cancel(entry.context(ctx), sessionID)
+	cancelErr := m.client.Cancel(entry.context(ctx), sessionID)
 	entry.op.Unlock()
-	if err != nil || done == nil {
-		return err
-	}
 	// Cancellation is a notification. Its acknowledgement is prompt settlement,
 	// which must acquire the operation lock we just released.
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			// Bounded abort: fall through to quiescence verification below,
+			// which will report uncertain while the generation is still active.
+		}
 	}
+	// Verify generation quiescence. A forwarded abort response alone is never
+	// evidence; only an unchanged generation with no active prompt, native
+	// continuation or scheduled dispatch counts as stopped.
+	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	verifyErr := entry.op.LockContext(verifyCtx)
+	verifyCancel()
+	if verifyErr != nil {
+		entry.state.Lock()
+		paused := pausedOutboxCount(entry.queue)
+		entry.state.Unlock()
+		unfreeze()
+		reason := "could not verify generation quiescence"
+		if cancelErr != nil {
+			reason = cancelErr.Error()
+		} else if ctx.Err() != nil {
+			reason = ctx.Err().Error()
+		}
+		if rewindErrMessage != "" {
+			reason = rewindErrMessage + "; " + reason
+		}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: reason}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": reason}})
+		if cancelErr != nil {
+			return outcome, cancelErr
+		}
+		return outcome, fmt.Errorf("stop outcome is uncertain: %s", reason)
+	}
+	entry.state.Lock()
+	paused := pausedOutboxCount(entry.queue)
+	quiescent, quiesceReason := stopQuiescentLocked(entry, generation)
+	entry.state.Unlock()
+	unfreeze()
+	entry.op.Unlock()
+	if rewindErrMessage != "" {
+		reason := rewindErrMessage
+		if cancelErr != nil {
+			reason = reason + "; " + cancelErr.Error()
+		}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: reason}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": reason}})
+		return outcome, fmt.Errorf("stop outcome is uncertain: %s", reason)
+	}
+	if cancelErr != nil {
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: cancelErr.Error()}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": cancelErr.Error()}})
+		return outcome, cancelErr
+	}
+	if !quiescent {
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: quiesceReason}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": quiesceReason}})
+		return outcome, fmt.Errorf("stop outcome is uncertain: %s", quiesceReason)
+	}
+	outcome := StopOutcome{Status: StopStatusStopped, Generation: generation, RetainedPaused: paused}
+	m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": StopStatusStopped, "generation": generation, "retainedPaused": paused}})
+	return outcome, nil
 }
 
 func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry, text string, images []ImageContent, resources []TextResourceAttachment, queueID string) error {
@@ -539,7 +669,7 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 		defer close(done)
 		defer m.releaseWork(entry)
 		response, promptErr := m.client.Prompt(promptContext, piwire.PromptRequest{SessionId: piwire.SessionId(sessionID), Prompt: prompt})
-		if err := m.lockEntry(sessionID, entry); err != nil {
+		if err := m.lockEntryForSettlement(sessionID, entry); err != nil {
 			return
 		}
 		defer entry.op.Unlock()
