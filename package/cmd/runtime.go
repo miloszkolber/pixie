@@ -32,19 +32,39 @@ func parseMode(args []string) (runMode, error) {
 	if args[0] != "serve" {
 		return "", fmt.Errorf("unknown command %q; use `serve`", args[0])
 	}
+	modeConfigured := false
 	for index := 1; index < len(args); index++ {
 		argument := args[index]
-		if argument == "--mode" {
-			if index+1 >= len(args) {
+		switch {
+		case argument == "--mode":
+			if index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" {
 				return "", errors.New("--mode requires a value")
 			}
 			index++
 			argument = args[index]
-		} else if strings.HasPrefix(argument, "--mode=") {
+		case strings.HasPrefix(argument, "--mode="):
 			argument = strings.TrimPrefix(argument, "--mode=")
-		} else {
+			if strings.TrimSpace(argument) == "" {
+				return "", errors.New("--mode requires a value")
+			}
+		case argument == "--config":
+			if index+1 >= len(args) || strings.TrimSpace(args[index+1]) == "" {
+				return "", errors.New("--config requires a value")
+			}
+			index++
 			continue
+		case strings.HasPrefix(argument, "--config="):
+			if strings.TrimSpace(strings.TrimPrefix(argument, "--config=")) == "" {
+				return "", errors.New("--config requires a value")
+			}
+			continue
+		default:
+			return "", fmt.Errorf("unknown serve argument %q", argument)
 		}
+		if modeConfigured {
+			return "", errors.New("--mode may only be specified once")
+		}
+		modeConfigured = true
 		switch runMode(argument) {
 		case modeFullHost, modeController:
 			mode = runMode(argument)
@@ -74,6 +94,9 @@ func controllerPort() int {
 // The controller owns its runtime; only the full-host composition supplies a
 // PiURL from the public assistant facade before calling serveController.
 func runController(ctx context.Context, build diagnostics.BuildInfo) error {
+	if err := rejectControllerAssistantSettings(os.LookupEnv); err != nil {
+		return err
+	}
 	// Container defaults apply when unset, so plain `go build` binaries keep
 	// working outside Docker by pointing these at local directories.
 	runtime, err := controller.NewRuntime(controller.RuntimeConfig{AppVersion: build.Version, AppRevision: build.Revision, DataDir: os.Getenv("PIXIE_DATA_DIR"), StaticDir: os.Getenv("PIXIE_STATIC_DIR"), Port: controllerPort()})
@@ -93,9 +116,24 @@ func serveController(ctx context.Context, runtime *controller.Runtime) error {
 	case err = <-runtime.Errors():
 	case <-ctx.Done():
 	}
-	shutdownContext, release := context.WithTimeout(context.Background(), 15*time.Second)
+	shutdownContext, release := context.WithTimeout(context.Background(), applicationDrainTimeout)
 	defer release()
 	return errors.Join(err, runtime.Shutdown(shutdownContext))
+}
+
+const applicationDrainTimeout = 25 * time.Second
+
+// rejectControllerAssistantSettings keeps controller-only mode from
+// accidentally accepting settings that would select or configure a local Pi.
+// PIXIE_PI_PORT/PIXIE_PI_URL remain valid: they identify the separately
+// managed host service that controller mode is intended to reach.
+func rejectControllerAssistantSettings(lookup func(string) (string, bool)) error {
+	for _, key := range []string{"PI_CODING_AGENT_DIR", "PIXIE_PI_EXECUTABLE", "PIXIE_PI_ARGS", "PIXIE_LLAMA", "LLAMA_BASE_URL"} {
+		if value, ok := lookup(key); ok && strings.TrimSpace(value) != "" {
+			return fmt.Errorf("controller-only mode rejects local assistant setting %s", key)
+		}
+	}
+	return nil
 }
 
 func fatal(err error) {
