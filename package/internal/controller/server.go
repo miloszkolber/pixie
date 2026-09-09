@@ -77,10 +77,17 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		http.Error(response, "forbidden", http.StatusForbidden)
 		return
 	}
+	// Normalize once so "/api", "//api/unknown", "/./mcp/unknown" and similar
+	// encodings resolve to the same reserved namespace before the static
+	// fallback. The static fallback stays only for frontend navigation.
+	route := "/"
+	if request.URL != nil {
+		route = normalizeRoutePath(request.URL.Path)
+	}
 	switch {
-	case request.URL.Path == "/mcp/objective":
+	case route == "/mcp/objective":
 		h.Objective.ServeHTTP(response, request)
-	case h.MCPRegistry != nil && mcpPublisherRoute(request.URL.Path):
+	case h.MCPRegistry != nil && mcpPublisherRoute(route):
 		if !mcpPublisherAuthConfigured(h.Auth) {
 			writeAuthJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "MCP publisher authentication is not configured"})
 			return
@@ -90,13 +97,13 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 			return
 		}
 		h.MCPRegistry.ServeHTTP(response, request)
-	case strings.HasPrefix(request.URL.Path, "/auth/"):
+	case strings.HasPrefix(route, "/auth/"):
 		h.serveAuth(response, request)
-	case request.URL.Path == "/ws":
+	case route == "/ws":
 		h.WebSocket.ServeHTTP(response, request)
-	case request.URL.Path == "/health" || request.URL.Path == "/livez":
+	case route == "/health" || route == "/livez":
 		serveHealth(response, request)
-	case request.URL.Path == "/readyz":
+	case route == "/readyz":
 		if request.Method != http.MethodGet {
 			methodNotAllowed(response, http.MethodGet)
 		} else if h.Ready == nil {
@@ -104,23 +111,46 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		} else {
 			h.Ready(response, request)
 		}
-	case strings.HasPrefix(request.URL.Path, "/files/"):
+	case strings.HasPrefix(route, "/files/"):
 		h.serveProjectImage(response, request)
-	case strings.HasPrefix(request.URL.Path, "/v1/artifacts/"):
+	case strings.HasPrefix(route, "/v1/artifacts/"):
 		h.serveBrowserArtifact(response, request)
-	case reservedAPIMCPRoute(request.URL.Path):
+	case reservedAPIMCPRoute(route):
 		writeAuthJSON(response, http.StatusNotFound, map[string]string{"error": "not found"})
 	default:
 		h.serveStatic(response, request)
 	}
 }
 
-func reservedAPIMCPRoute(path string) bool {
-	return path == "/api" || strings.HasPrefix(path, "/api/") || path == "/mcp" || strings.HasPrefix(path, "/mcp/")
+// normalizeRoutePath collapses duplicate slashes and dot segments so reserved
+// /api/* and /mcp/* namespaces cannot bypass the top-level router into the
+// SPA fallback. A trailing slash is preserved so "/api" and "/api/" keep
+// their distinct reserved-versus-publisher meaning.
+func normalizeRoutePath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	cleaned := path.Clean(p)
+	if cleaned == "." {
+		return "/"
+	}
+	if !strings.HasPrefix(cleaned, "/") {
+		cleaned = "/" + cleaned
+	}
+	if strings.HasSuffix(p, "/") && cleaned != "/" && !strings.HasSuffix(cleaned, "/") {
+		cleaned += "/"
+	}
+	return cleaned
 }
 
-func mcpPublisherRoute(path string) bool {
-	return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp/")
+func reservedAPIMCPRoute(p string) bool {
+	cleaned := normalizeRoutePath(p)
+	return cleaned == "/api" || strings.HasPrefix(cleaned, "/api/") || cleaned == "/mcp" || strings.HasPrefix(cleaned, "/mcp/")
+}
+
+func mcpPublisherRoute(p string) bool {
+	cleaned := normalizeRoutePath(p)
+	return strings.HasPrefix(cleaned, "/api/") || strings.HasPrefix(cleaned, "/mcp/")
 }
 
 func (h *HTTPHandler) isAuthorizedMCPRequest(request *http.Request) bool {
@@ -136,7 +166,11 @@ func (h *HTTPHandler) isAuthorizedMCPRequest(request *http.Request) bool {
 }
 
 func (h *HTTPHandler) serveAuth(response http.ResponseWriter, request *http.Request) {
-	if request.URL.Path == "/auth/status" {
+	route := "/"
+	if request.URL != nil {
+		route = normalizeRoutePath(request.URL.Path)
+	}
+	if route == "/auth/status" {
 		if request.Method != http.MethodGet {
 			methodNotAllowed(response, http.MethodGet)
 			return
@@ -148,7 +182,7 @@ func (h *HTTPHandler) serveAuth(response http.ResponseWriter, request *http.Requ
 		writeAuthJSON(response, http.StatusOK, map[string]bool{"authenticationEnabled": h.Auth.Enabled, "authenticated": authenticated})
 		return
 	}
-	if request.URL.Path != "/auth/login" && request.URL.Path != "/auth/logout" || !h.Auth.Enabled {
+	if route != "/auth/login" && route != "/auth/logout" || !h.Auth.Enabled {
 		writeAuthJSON(response, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
@@ -167,7 +201,7 @@ func (h *HTTPHandler) serveAuth(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	secure := h.Auth.SecureCookie(request)
-	if request.URL.Path == "/auth/login" {
+	if route == "/auth/login" {
 		if len(body) != 1 {
 			writeAuthJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 			return
@@ -228,7 +262,7 @@ func isHealthRoute(request *http.Request) bool {
 	if request == nil || request.URL == nil {
 		return false
 	}
-	switch request.URL.Path {
+	switch normalizeRoutePath(request.URL.Path) {
 	case "/health", "/livez", "/readyz":
 		return true
 	default:
