@@ -55,7 +55,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] FIX-09 — B/G/F: service deadline encloses creation/admin/extensions/in-flight teardown, not just provider abort (F27). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-09--bounded-assistant-lifecycle-deadlines).
 - [x] FIX-10 — F/A: configured Host allowlist plus separately checked normalized Origin/proxy policy across real routes; X01 (F29). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-10--controller-host-authority-and-mcp-routing).
 - [x] FIX-11 — F/A: non-executing Git inspection, harmless clean/process-filter endpoint regressions and explicit raw-conversion semantics; X02 (F30). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-11--read-only-git-inspection-and-termination).
-- [ ] FIX-12 — F/G: controller child-group termination and finite pipe draining, including Git and final container reaping; X03 (F31/F40).
+- [x] FIX-12 — F/G: controller child-group termination and finite pipe draining, including Git and final container reaping; X03 (F31/F40). Evidence: [CHANGELOG.md](CHANGELOG.md#fix-12--bounded-child-termination-and-container-reaping).
 - [ ] FIX-13 — F/A/E: typed publication/durability outcomes, reconciliation and post-rename fault injection; X04 (F32).
 - [ ] API-01 — A: exhaustive browser/controller/host/native catalog and FC mapping, including schedule methods absent from constant lists and removal of broad Administration/provider assumptions (F20/F41).
 - [ ] API-02 — A/B: host v2 schemas/epochs/snapshot/settlement/error fixtures; separate browser/native request IDs and compatibility; X06 (F34).
@@ -63,7 +63,7 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [ ] STATE-01 — A/C: independent selections, nullable project grouping, explicit cwd/admission, routes/drafts/layout migration.
 - [ ] MIG-01 — A/B/F with G: full metadata inventory, staged conversion, topology switching and schema-aware rollback from migration.md; ungrouped queues/deletions, old archive metadata and no ledger rewind (F25/F32).
 - [ ] MODULE-01 — A/E: trusted contribution descriptors and sidebar-only/viewer-only fixtures with real scope authority.
-- [ ] ROUTE-01 — E/A/F: registered MCP/management/artifact routing through the assembled HTTP handler, reserved routes and no API-to-SPA fallback; X05 (F33).
+- [x] ROUTE-01 — E/A/F: registered MCP/management/artifact routing through the assembled HTTP handler, reserved routes and no API-to-SPA fallback; X05 (F33). Evidence: [CHANGELOG.md](CHANGELOG.md#route-01--assembled-reserved-routing-without-spa-fallback).
 - [ ] LIMIT-01 — A/B/F: composed input/store/transport caps, aggregate-byte admission, control reserve and bounded Design index artifact; X07–X09 (F35).
 - [ ] LIFE-01 — B/E/C/F: verified Stop outcomes and explicit safe idle-runtime release under capacity pressure; X10–X11 (F36).
 
