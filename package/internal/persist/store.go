@@ -103,41 +103,8 @@ func Decode[T any](raw []byte, dst *T, validate func(T) error) error {
 }
 
 func Write[T any](s Store, name string, value T, validate func(T) error) error {
-	serialized, err := json.MarshalIndent(value, "", "\t")
-	if err != nil {
-		return fmt.Errorf("encode %s: %w", name, err)
-	}
-	serialized = append(serialized, '\n')
-	if len(serialized) > maxJSONBytes {
-		return fmt.Errorf("persisted JSON exceeds the %d-byte limit", maxJSONBytes)
-	}
-	var checked T
-	if err := Decode(serialized, &checked, validate); err != nil {
-		return fmt.Errorf("invalid persisted shape for %s: %w", name, err)
-	}
-
-	target := filepath.Join(s.Dir, name)
-	directoryPath := filepath.Dir(target)
-	if err := os.MkdirAll(directoryPath, 0o700); err != nil {
-		return err
-	}
-	old, mode, readErr := ReadFile(target)
-	if readErr == nil && Decode(old, &checked, validate) == nil {
-		if err := AtomicReplace(target+".bak", old, mode); err != nil {
-			return err
-		}
-	} else {
-		mode = 0o600
-	}
-	if err := AtomicReplace(target, serialized, mode); err != nil {
-		return err
-	}
-	directory, err := os.Open(directoryPath)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
+	_, err := WriteWithOutcome(s, name, value, validate, PublishFaults{})
+	return err
 }
 
 func AtomicReplace(target string, data []byte, mode os.FileMode) error {
