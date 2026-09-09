@@ -43,6 +43,7 @@ import {
 import { startChatSession } from "../navigation/start-chat";
 import PanelHeader from "../panel-header.svelte";
 import AddProjectMenu from "../projects/add-project-menu.svelte";
+import ArchiveList from "../projects/archive-list.svelte";
 import OpenProjectDialogs from "../projects/open-project-dialogs.svelte";
 import ProjectChatHistory from "../projects/project-chat-history.svelte";
 import ProjectTree from "../projects/project-tree.svelte";
@@ -639,17 +640,23 @@ function signOut(): void {
 						{/if}
 						<div data-testid="primary-sidebar-content" class="pixie-panel-scroll scroll-area px-xs py-xs"><ProjectTree chrome="bare" activeSessionId={primarySelection?.kind === "session" ? primarySelection.sessionId : null} filter={projectFilter} /></div>
 					{:else if primaryArea === "archive"}
-						<div data-testid="archive-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm">
-							<p class="tr-text-metadata text-text-muted">Recently closed chats</p>
-							{#if ($appStore.closedChatsByProjectArea[projectAreaId] ?? []).length === 0}
-								<p class="mt-xs tr-text-metadata text-text-muted">No closed chats.</p>
-							{:else}
-								<ul class="tree-group mt-xs flex flex-col">
-									{#each $appStore.closedChatsByProjectArea[projectAreaId] ?? [] as chat (chat.sessionId)}
-										<li><button type="button" class="tree-leaf w-full text-left tr-text-ui" onclick={() => void appStoreApi.getState().reopenChat(projectAreaId, chat.sessionId)}>{chat.title}</button></li>
-									{/each}
-								</ul>
+						<div data-testid="archive-sidebar" class="pixie-panel-scroll scroll-area flex flex-col gap-md px-sm py-sm">
+							{#if projectArea}
+								<ArchiveList {projectAreaId} />
 							{/if}
+							<section aria-label="Recently closed chats" class="flex flex-col gap-2xs">
+								<p class="tr-text-metadata text-text-muted">Recently closed chats</p>
+								<p class="tr-text-metadata text-text-muted">Closing a view is not archiving. Closed chats reopen here; archived chats restore above without cloning; deleting moves a chat to trash from history.</p>
+								{#if ($appStore.closedChatsByProjectArea[projectAreaId] ?? []).length === 0}
+									<p class="mt-xs tr-text-metadata text-text-muted">No closed chats.</p>
+								{:else}
+									<ul class="tree-group mt-xs flex flex-col">
+										{#each $appStore.closedChatsByProjectArea[projectAreaId] ?? [] as chat (chat.sessionId)}
+											<li><button type="button" data-testid="archive-closed-row" class="tree-leaf w-full text-left tr-text-ui" onclick={() => void appStoreApi.getState().reopenChat(projectAreaId, chat.sessionId)}>{chat.title}</button></li>
+										{/each}
+									</ul>
+								{/if}
+							</section>
 						</div>
 					{:else if primaryArea === "schedules"}
 						<div data-testid="schedules-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">Schedule definitions and run history are available in Settings.</p><Button class="mt-sm" variant="outline" size="sm" onclick={(event) => openSettings(event, SettingsSection.Schedules)}>Open schedules</Button></div>
@@ -693,7 +700,7 @@ function signOut(): void {
 							</div>
 						{/if}
 					{:else if primaryArea === "archive"}
-						<div data-testid="archive-detail" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Archive</span><p class="tr-text-ui text-text-muted">Select a recently closed chat from the primary sidebar to restore it.</p></div>
+						<div data-testid="archive-detail" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Archive</span><p class="tr-text-ui text-text-muted">Restore keeps the same archived chat; it never clones it. Closing a view is separate from archiving, and deleting is separate from both.</p><p class="tr-text-metadata text-text-muted">Select an archived chat in the primary sidebar to restore it.</p></div>
 					{:else if primaryArea === "schedules"}
 						<div data-testid="schedule-detail" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Schedule details</span><p class="tr-text-ui text-text-muted">Schedule definitions and run history are available in Settings.</p></div>
 					{:else}
