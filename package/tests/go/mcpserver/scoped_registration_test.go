@@ -30,6 +30,17 @@ func authorizeNativeFixture(registration mcpserver.NativeMCPRegistration) error 
 	})
 }
 
+func authorizeRegistryFixture(registry *mcpserver.Registry, registration mcpserver.NativeMCPRegistration) error {
+	return registry.Authorize(mcpserver.NativeMCPAuthorization{
+		RegistrationID: registration.RegistrationID,
+		Credential:     registration.Credential,
+		ModuleID:       registration.ModuleID,
+		ServerID:       registration.ServerID,
+		SessionID:      registration.SessionID,
+		Generation:     registration.Generation,
+	})
+}
+
 func TestNativeMCPScopedRegistrationRoundTrip(t *testing.T) {
 	registry := mcpserver.NewNativeMCPRegistry()
 	registration := scopedNativeFixture(t, registry, "session-a", 1)
@@ -178,5 +189,81 @@ func TestNativeMCPExpiryAndInvalidRegistrationFailClosed(t *testing.T) {
 		SessionID: expired.SessionID, Generation: expired.Generation,
 	}); err == nil {
 		t.Fatal("expired registration was accepted")
+	}
+}
+
+func TestRegistryOwnsNativeMCPRegistrationsAcrossModuleAndShutdownLifecycle(t *testing.T) {
+	registry := testRegistry(t, nil)
+	registration, err := registry.Register(mcpserver.NativeMCPRegistrationRequest{
+		ModuleID: "browser", ServerID: "server-a", SessionID: "session-live",
+		Generation: 1, TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := authorizeRegistryFixture(registry, registration); err != nil {
+		t.Fatalf("live Registry registration rejected: %v", err)
+	}
+	if err := registry.SetEnabled("browser", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := authorizeRegistryFixture(registry, registration); err == nil {
+		t.Fatal("module disable left a native MCP registration usable")
+	}
+
+	if err := registry.SetEnabled("browser", true); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := registry.Register(mcpserver.NativeMCPRegistrationRequest{
+		ModuleID: "browser", ServerID: "server-a", SessionID: "session-live",
+		Generation: 2, TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.Shutdown()
+	if err := authorizeRegistryFixture(registry, replacement); err == nil {
+		t.Fatal("Registry shutdown left a native MCP registration usable")
+	}
+}
+
+func TestRegistryNativeMCPGenerationAndSessionScopes(t *testing.T) {
+	registry := testRegistry(t, nil)
+	old, err := registry.Register(mcpserver.NativeMCPRegistrationRequest{
+		ModuleID: "fixture-native", ServerID: "server-a", SessionID: "session-a",
+		Generation: 1, TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherSession, err := registry.Register(mcpserver.NativeMCPRegistrationRequest{
+		ModuleID: "fixture-native", ServerID: "server-a", SessionID: "session-b",
+		Generation: 1, TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.AdvanceGeneration("fixture-native", "server-a", "session-a", 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := authorizeRegistryFixture(registry, old); err == nil {
+		t.Fatal("older generation registration survived the live Registry advance")
+	}
+	if err := authorizeRegistryFixture(registry, otherSession); err != nil {
+		t.Fatalf("generation advance crossed into another session: %v", err)
+	}
+	if err := registry.Authorize(mcpserver.NativeMCPAuthorization{
+		RegistrationID: otherSession.RegistrationID,
+		Credential:     otherSession.Credential,
+		ModuleID:       "fixture-other",
+		ServerID:       otherSession.ServerID,
+		SessionID:      otherSession.SessionID,
+		Generation:     otherSession.Generation,
+	}); err == nil {
+		t.Fatal("registration authorized for a forged module")
+	}
+	registry.RevokeSession("session-b")
+	if err := authorizeRegistryFixture(registry, otherSession); err == nil {
+		t.Fatal("session revocation left a native MCP registration usable")
 	}
 }

@@ -137,12 +137,15 @@ test("abort dismisses the dialog, publishes cancellation, and blocks replays", a
 	).requestId;
 	controller.abort();
 	expect(await pending).toBeUndefined();
-	expect(published).toContainEqual({
+	expect(published).toContainEqual(expect.objectContaining({
 		type: "pixie:ui:cancel",
 		sessionId: "session-a",
 		requestId,
 		reason: "aborted",
-	});
+		forwarded: true,
+		nativeCancelled: "unknown",
+		blocker: expect.objectContaining({ fcId: "FC15" }),
+	}));
 	expect(bridge.resolve({ sessionId: "session-a", requestId, value: "late" })).toMatchObject({
 		ok: false,
 	});
@@ -157,12 +160,15 @@ test("timeouts dismiss the dialog and publish cancellation", async () => {
 		published.find((event) => event.type === "pixie:ui:request") as { requestId: string }
 	).requestId;
 	expect(await pending).toBeUndefined();
-	expect(published).toContainEqual({
+	expect(published).toContainEqual(expect.objectContaining({
 		type: "pixie:ui:cancel",
 		sessionId: "session-a",
 		requestId,
 		reason: "timeout",
-	});
+		forwarded: true,
+		nativeCancelled: "unknown",
+		blocker: expect.objectContaining({ fcId: "FC15" }),
+	}));
 	expect(bridge.pendingCount()).toBe(0);
 });
 

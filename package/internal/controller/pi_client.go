@@ -249,11 +249,12 @@ func (c *PiClient) publishProfile(generation uint64, publish func(AgentProfile),
 
 func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (AgentProfile, error) {
 	var response struct {
-		ProtocolVersion int            `json:"protocolVersion"`
-		RuntimeID       string         `json:"runtimeId"`
-		BootID          string         `json:"bootId"`
-		Version         string         `json:"version"`
-		Capabilities    map[string]int `json:"capabilities"`
+		ProtocolVersion int             `json:"protocolVersion"`
+		RuntimeID       string          `json:"runtimeId"`
+		BootID          string          `json:"bootId"`
+		Version         string          `json:"version"`
+		Capabilities    map[string]int  `json:"capabilities"`
+		OperationSet    map[string]bool `json:"operationSet"`
 	}
 	if err := connection.client.call(ctx, "runtime.hello", map[string]any{"protocolVersion": 1}, &response); err != nil {
 		return AgentProfile{}, err
@@ -262,15 +263,53 @@ func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (Ag
 		return AgentProfile{}, fmt.Errorf("incompatible Pi host service")
 	}
 	caps := response.Capabilities
-	p := AgentProfile{Name: "Pi", Version: response.Version, BootID: response.BootID, Pi: true, Compatible: true, MissingRequired: []string{}, Capabilities: caps, identity: "pi:" + response.RuntimeID}
-	p.Operations = AgentOperations{DeleteSession: true, ForkSession: true, PromptImage: true, PromptEmbeddedContext: true, Steer: true, RenameSession: true, ArchiveSession: true, Administration: true, HTTPMCP: caps["mcp"] == 1}
-	for _, capability := range []string{"sessions", "providers"} {
+	p := AgentProfile{
+		Name: "Pi", Version: response.Version, BootID: response.BootID, Pi: true,
+		Compatible: true, MissingRequired: []string{}, Capabilities: caps,
+		OperationSet: cloneBoolMap(response.OperationSet), operationSetNegotiated: response.OperationSet != nil,
+		identity: "pi:" + response.RuntimeID,
+	}
+	// Keep the fixed booleans as a compatibility projection for old browser
+	// clients. New callers use the negotiated operationSet so each optional route is
+	// visible independently.
+	p.Operations = AgentOperations{
+		DeleteSession:         operationValue(response.OperationSet, "session.delete", true),
+		ForkSession:           operationValue(response.OperationSet, "session.fork", true),
+		PromptImage:           operationValue(response.OperationSet, "session.prompt.image", true),
+		PromptEmbeddedContext: operationValue(response.OperationSet, "session.prompt.resource", true),
+		Steer:                 operationValue(response.OperationSet, "session.steer", true),
+		RenameSession:         operationValue(response.OperationSet, "session.rename", true),
+		ArchiveSession:        operationValue(response.OperationSet, "session.archive", true),
+		HTTPMCP:               operationValue(response.OperationSet, "mcp.attach", caps["mcp"] == 1),
+	}
+	for _, capability := range []string{"sessions"} {
 		if caps[capability] != 1 {
 			p.Compatible = false
 			p.MissingRequired = append(p.MissingRequired, capability)
 		}
 	}
 	return p, nil
+}
+
+func cloneBoolMap(values map[string]bool) map[string]bool {
+	if values == nil {
+		return nil
+	}
+	result := make(map[string]bool, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
+}
+
+func operationValue(values map[string]bool, key string, fallback bool) bool {
+	if value, ok := values[key]; ok {
+		return value
+	}
+	if values != nil {
+		return false
+	}
+	return fallback
 }
 
 func cloneAgentProfile(profile AgentProfile) AgentProfile {
@@ -280,6 +319,7 @@ func cloneAgentProfile(profile AgentProfile) AgentProfile {
 	}
 	profile.Capabilities = caps
 	profile.MissingRequired = append([]string{}, profile.MissingRequired...)
+	profile.OperationSet = cloneBoolMap(profile.OperationSet)
 	return profile
 }
 
@@ -313,8 +353,16 @@ func (c *PiClient) CallPiUntilDone(ctx context.Context, method string, params an
 	if err != nil {
 		return nil, err
 	}
-	if !connection.profile.Operations.Administration {
-		return nil, unsupportedAgentCapability("Pi-specific operations")
+	// Hosts that negotiated operationSet can reject unsupported optional/native
+	// bridge methods before they enter the generic extension channel. A missing
+	// map is an explicit v1 compatibility case; a negotiated map is exhaustive
+	// for the controller's retained extension methods and fails closed on a
+	// missing entry.
+	if connection.profile.operationSetNegotiated {
+		supported, known := connection.profile.OperationSet[method]
+		if !known || !supported {
+			return nil, unsupportedAgentCapability(method)
+		}
 	}
 	result, err := connection.client.CallExtension(ctx, method, params)
 	if err != nil {
@@ -390,6 +438,17 @@ func (c *PiClient) DeleteSession(ctx context.Context, sessionID string) error {
 }
 
 func (c *PiClient) Prompt(ctx context.Context, request piwire.PromptRequest) (piwire.PromptResponse, error) {
+	// Validate the complete serialized prompt before dialing or dispatching to
+	// native Pi. This keeps the browser/controller/native limits composed and
+	// prevents a rejected attachment from becoming a native prompt side effect.
+	// A few native lifecycle probes use an empty content array to exercise the
+	// transport itself. The controller's user-facing Prompt/Steer paths always
+	// validate a composed text prompt; preserve that low-level probe behavior.
+	if len(request.Prompt) > 0 {
+		if err := request.Validate(); err != nil {
+			return piwire.PromptResponse{}, err
+		}
+	}
 	connection, _, err := c.ready(ctx)
 	if err != nil {
 		return piwire.PromptResponse{}, err

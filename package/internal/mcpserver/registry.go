@@ -138,9 +138,10 @@ type Registry struct {
 	store   persist.Store
 	started time.Time
 
-	mu      sync.RWMutex
-	browser *browser.Service
-	enabled map[string]bool
+	mu        sync.RWMutex
+	browser   *browser.Service
+	enabled   map[string]bool
+	nativeMCP *NativeMCPRegistry
 }
 
 // NewRegistry loads persisted module enablement (defaulting to enabled) and
@@ -162,12 +163,13 @@ func NewRegistry(config Config, build diagnostics.BuildInfo, logger *slog.Logger
 		config.Host = "127.0.0.1"
 	}
 	registry := &Registry{
-		config:  config,
-		build:   diagnostics.NormalizeBuild(build.Version, build.Revision),
-		logger:  logger,
-		store:   persist.Store{Dir: config.DataDir},
-		started: time.Now(),
-		enabled: map[string]bool{browserID: true},
+		config:    config,
+		build:     diagnostics.NormalizeBuild(build.Version, build.Revision),
+		logger:    logger,
+		store:     persist.Store{Dir: config.DataDir},
+		started:   time.Now(),
+		enabled:   map[string]bool{browserID: true},
+		nativeMCP: NewNativeMCPRegistry(),
 	}
 	if err := registry.loadEnabled(); err != nil {
 		return nil, err
@@ -206,6 +208,76 @@ func (r *Registry) loadEnabled() error {
 	return nil
 }
 
+// Register issues a native MCP credential from this publisher instance's
+// ephemeral scope registry. The returned credential is bound to the exact
+// module, server, session, and native generation supplied by the caller.
+// Registry instances never share registrations.
+func (r *Registry) Register(request NativeMCPRegistrationRequest) (NativeMCPRegistration, error) {
+	if r == nil || r.nativeMCP == nil {
+		return NativeMCPRegistration{}, fmt.Errorf("native MCP registry is not configured")
+	}
+	return r.nativeMCP.Register(request)
+}
+
+// Authorize validates a credential against this publisher instance's live
+// scope registry. Caller-provided IDs do not grant access by themselves.
+func (r *Registry) Authorize(request NativeMCPAuthorization) error {
+	if r == nil || r.nativeMCP == nil {
+		return fmt.Errorf("native MCP registry is not configured")
+	}
+	return r.nativeMCP.Authorize(request)
+}
+
+// Revoke removes one native MCP registration from this publisher instance.
+// Repeated cleanup is intentionally a no-op.
+func (r *Registry) Revoke(registrationID string) {
+	if r == nil || r.nativeMCP == nil {
+		return
+	}
+	r.nativeMCP.Revoke(registrationID)
+}
+
+// RevokeSession removes every native MCP registration bound to a session.
+// It is used by controller session lifecycle transitions and is deliberately
+// broader than one module/server so stale credentials cannot survive a delete
+// or generation replacement.
+func (r *Registry) RevokeSession(sessionID string) int {
+	if r == nil || r.nativeMCP == nil {
+		return 0
+	}
+	return r.nativeMCP.RevokeSession(sessionID)
+}
+
+// RevokeModule removes every native MCP registration belonging to a module.
+// Module disable/restart calls this before allowing the replacement lifecycle
+// to continue.
+func (r *Registry) RevokeModule(moduleID string) int {
+	if r == nil || r.nativeMCP == nil {
+		return 0
+	}
+	return r.nativeMCP.RevokeModule(moduleID)
+}
+
+// AdvanceGeneration invalidates registrations from older generations for one
+// exact module/server/session scope before a replacement native binding is
+// admitted.
+func (r *Registry) AdvanceGeneration(moduleID, serverID, sessionID string, generation uint64) (int, error) {
+	if r == nil || r.nativeMCP == nil {
+		return 0, fmt.Errorf("native MCP registry is not configured")
+	}
+	return r.nativeMCP.AdvanceGeneration(moduleID, serverID, sessionID, generation)
+}
+
+// RevokeAll removes every ephemeral native MCP registration. It is used when
+// the publisher shuts down; persisted module enablement never persists these
+// credentials.
+func (r *Registry) revokeAll() int {
+	if r == nil || r.nativeMCP == nil {
+		return 0
+	}
+	return r.nativeMCP.RevokeAll()
+}
+
 func validateState(value persistedState) error {
 	if value.Modules == nil {
 		return fmt.Errorf("modules must be an object")
@@ -227,6 +299,11 @@ func (r *Registry) SetEnabled(id string, enabled bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.enabled[id] == enabled {
+		if !enabled {
+			// A repeated disable is still a lifecycle boundary. Do not leave a
+			// registration issued before a previous cleanup usable.
+			r.nativeMCP.RevokeModule(id)
+		}
 		return nil
 	}
 	state := persistedState{Modules: map[string]persistedModule{id: {Enabled: enabled}}}
@@ -237,6 +314,11 @@ func (r *Registry) SetEnabled(id string, enabled bool) error {
 	// pre-publication work. A failed write must leave the live catalog and
 	// module handle aligned with the last committed state.
 	r.enabled[id] = enabled
+	if !enabled {
+		// Revocation happens before stopping the module so no new privileged
+		// continuation can use a credential after disablement is committed.
+		r.nativeMCP.RevokeModule(id)
+	}
 	r.startLocked()
 	return nil
 }
@@ -261,6 +343,9 @@ func (r *Registry) Restart(id string) error {
 	}
 	previous := r.browser
 	r.browser = service
+	// Restart creates a new module runtime generation. Credentials issued to
+	// the previous runtime must not cross that boundary.
+	r.nativeMCP.RevokeModule(id)
 	if previous != nil {
 		previous.Shutdown()
 	}
@@ -337,6 +422,7 @@ func (r *Registry) Endpoint() string {
 func (r *Registry) Shutdown() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.revokeAll()
 	if r.browser != nil {
 		r.browser.Shutdown()
 		r.browser = nil
@@ -369,6 +455,7 @@ func (r *Registry) BrowserLegacyHandler() func() http.Handler {
 
 func (r *Registry) startLocked() {
 	if !r.enabled[browserID] {
+		r.nativeMCP.RevokeModule(browserID)
 		if r.browser != nil {
 			r.browser.Shutdown()
 			r.browser = nil

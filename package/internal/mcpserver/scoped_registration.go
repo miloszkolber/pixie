@@ -277,6 +277,21 @@ func (r *NativeMCPRegistry) RevokeModule(moduleID string) int {
 	return revoked
 }
 
+// RevokeAll removes every live registration and generation watermark. The
+// registry is ephemeral, so shutdown must not leave credentials usable if the
+// publisher instance is retained by a caller during teardown.
+func (r *NativeMCPRegistry) RevokeAll() int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	revoked := len(r.registrations)
+	r.registrations = make(map[string]nativeMCPRegistrationEntry)
+	r.generations = make(map[string]uint64)
+	return revoked
+}
+
 // AdvanceGeneration revokes registrations from older generations without
 // issuing a new credential. A reconnecting native session calls this before
 // registering its replacement binding.

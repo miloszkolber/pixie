@@ -4,6 +4,23 @@ import { createRequire } from "node:module";
 import { isAbsolute, join, resolve } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import manifest from "../package.json" with { type: "json" };
+import {
+	ADMIN_FEATURES,
+	ADMIN_OPERATIONS,
+	evaluateAdminProfiles,
+	operationSupport,
+} from "./admin-profiles/index.ts";
+import {
+	assessCompatibility,
+	CURRENT_PROTOCOL_VERSION,
+	CURRENT_STATE_SCHEMA_VERSION,
+	checkCompatibility,
+	decideCompatibility,
+	decideLegacyCompatibility,
+	planRollback,
+	planSchemaRollback,
+	stagedRollback,
+} from "./compatibility/index.ts";
 import { startHost } from "./server.ts";
 import {
 	parseAssistantPort,
@@ -12,8 +29,38 @@ import {
 	validateAssistantSecret,
 } from "./startup.ts";
 
-export { parseAssistantPort, validateAssistantHost, validateAssistantRuntimePort, validateAssistantSecret };
-export { startHost };
+export type {
+	AdminOperationStatus,
+	AdminProfileEvidence,
+	AdminProfileReport,
+} from "./admin-profiles/types.ts";
+export type {
+	CompatibilityDecision,
+	CompatibilityInput,
+	RollbackInput,
+	RollbackPlan,
+	RollbackRun,
+} from "./compatibility/types.ts";
+export {
+	ADMIN_FEATURES,
+	ADMIN_OPERATIONS,
+	assessCompatibility,
+	CURRENT_PROTOCOL_VERSION,
+	CURRENT_STATE_SCHEMA_VERSION,
+	checkCompatibility,
+	decideCompatibility,
+	decideLegacyCompatibility,
+	evaluateAdminProfiles,
+	operationSupport,
+	parseAssistantPort,
+	planRollback,
+	planSchemaRollback,
+	stagedRollback,
+	startHost,
+	validateAssistantHost,
+	validateAssistantRuntimePort,
+	validateAssistantSecret,
+};
 
 export const ASSISTANT_PROTOCOL_VERSION = 1;
 
@@ -382,6 +429,17 @@ export const assistantFacade = {
 	describeAssistantBuild,
 	describePiInstallation,
 	redactAssistantConfig,
+	ADMIN_FEATURES,
+	ADMIN_OPERATIONS,
+	evaluateAdminProfiles,
+	operationSupport,
+	assessCompatibility,
+	checkCompatibility,
+	decideCompatibility,
+	decideLegacyCompatibility,
+	planRollback,
+	planSchemaRollback,
+	stagedRollback,
 	startAssistantHost,
 	startHost,
 	parseAssistantPort,

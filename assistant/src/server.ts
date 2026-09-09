@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
 import { lock } from "proper-lockfile";
+import { ADMIN_OPERATIONS } from "./admin-profiles/index.ts";
 import { configureExtension } from "./extension-configuration.ts";
 import { extensionInventory } from "./extension-inventory.ts";
 import llama, { llamaFactory } from "./extensions/llama.ts";
@@ -16,10 +17,11 @@ import {
 	type Deadline,
 } from "./lifecycle.ts";
 import { Providers } from "./providers.ts";
-import { buildEventFrame, serializeFrame } from "./serialize.ts";
 import { RuntimeWiring } from "./runtime-wiring.ts";
-import { UncertainPromptError } from "./session-runtime.ts";
+import { buildEventFrame, serializeFrame } from "./serialize.ts";
 import type { PromptBlock } from "./session/types.ts";
+import { redactSecrets } from "./session/validation.ts";
+import { UncertainPromptError } from "./session-runtime.ts";
 import { type ManagedSession, Sessions } from "./sessions.ts";
 import {
 	validateAssistantHost,
@@ -27,8 +29,7 @@ import {
 	validateAssistantSecret,
 } from "./startup.ts";
 import { HostError, object, type RecordValue, required, serviceStore, text } from "./storage.ts";
-import { redactSecrets } from "./session/validation.ts";
-import { NativeJsonlTransport } from "./transport/jsonl-transport.ts";
+import type { NativeJsonlTransport } from "./transport/jsonl-transport.ts";
 
 export interface HostOptions {
 	agentDir: string;
@@ -224,6 +225,95 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 		},
 		agentDir,
 	);
+	/**
+	 * Advertise operation-level support alongside the coarse extension
+	 * capabilities.  The latter are useful for discovery, but they are not an
+	 * authorization boundary: a Pi installation can expose MCP while the
+	 * adapter still has no supported programmatic tool executor, for example.
+	 * Keep this list in the host so the Go client can reject an unsupported
+	 * operation before sending it through the generic extension channel.
+	 */
+	const operationSet = (entry = control): Record<string, boolean> => {
+		const caps = entry.capabilities.snapshot();
+		const mcp = caps.mcp === 1;
+		const agents = caps.agents === 1;
+		const plans = caps.plans === 1;
+		return {
+			// Start from the canonical retained-operation catalog so every operation
+			// has an explicit negotiated value, including newly added bridge routes.
+			...Object.fromEntries(ADMIN_OPERATIONS.map(({ id }) => [id, false])),
+			// Session administration still travels through the native RPC-backed
+			// session owner, but is listed explicitly so Go does not need a broad
+			// Administration assumption.
+			"session.delete": true,
+			"session.fork": true,
+			"session.steer": true,
+			"session.rename": true,
+			"session.archive": true,
+			"session.prompt.image": true,
+			"session.prompt.resource": true,
+			"session.uiResponse": true,
+			"session.uiCancel": true,
+			"pi.session.info": true,
+			"pi.session.rename": true,
+			"pi.session.archive": true,
+			"pi.session.unarchive": true,
+			"pi.session.steer": true,
+			"pi.tools.list": mcp,
+			"runtime.capabilities": true,
+			"pi.slash-commands.list": true,
+			// Provider/auth/default operations are delegated to the selected native
+			// ModelRuntime. They remain optional from the vanilla profile's point of
+			// view, but are available when this host has a runtime context.
+			"pi.providers.list": true,
+			"pi.providers.canonical-model-info": true,
+			"pi.providers.inventory.refresh": true,
+			"pi.providers.readiness.check": true,
+			"provider.loginStart": true,
+			"provider.loginBegin": true,
+			"provider.loginReply": true,
+			"provider.loginCancel": true,
+			"pi.providers.config.read": true,
+			"pi.providers.config.delete": true,
+			"pi.defaults.read": true,
+			"pi.defaults.save": true,
+			"pi.defaults.clear": true,
+			"pi.preferences.read": true,
+			"pi.preferences.save": true,
+			"pi.preferences.reset": true,
+			"pi.extensions.list": true,
+			"pi.extensions.configure": true,
+			// The authoring capability is installed for every managed session. Its
+			// operations are deliberately separate from native execution eligibility.
+			"pi.sources.list": agents,
+			"pi.sources.create": agents,
+			"pi.sources.update": agents,
+			"pi.sources.delete": agents,
+			"pi.agent-mentions.list": agents,
+			// Whole-host restart is owned by the executable composition. The
+			// assistant host exposes runtime.restart, not a session-level pi.reload.
+			"pi.reload": false,
+			"pi.subagent.execute": false,
+			"pi.todo.plan": plans,
+			"pixie.goals.questions": false,
+			// A caller must use the selected adapter's public event surface for
+			// MCP registration. There is intentionally no private tool-array route.
+			"mcp.attach": mcp,
+			"pi.config.extensions.list": mcp,
+			"pi.config.extensions.add": mcp,
+			"pi.config.extensions.set-enabled": mcp,
+			"pi.config.extensions.remove": mcp,
+			"pi.session.extensions.list": mcp,
+			"pi.session.extensions.add": mcp,
+			"pi.session.extensions.remove": mcp,
+			"pi.tools.call": false,
+			"adapter.status": mcp,
+			"adapter.registerBrowser": mcp,
+			"adapter.session.forget": mcp,
+			"pi.llama": options.llama === true,
+			"pi.native-extensions": false,
+		};
+	};
 	const capabilitySnapshot = (entry = control) => ({
 		sessions: 1,
 		providers: 1,
@@ -253,6 +343,7 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 				bootId,
 				version: sdkVersion,
 				capabilities: capabilitySnapshot(),
+				operationSet: operationSet(),
 			};
 		if (method === "runtime.restart") {
 			if (!options.allowSelfRestart)
@@ -460,6 +551,7 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 						runtimeId,
 						bootId,
 						capabilities: capabilitySnapshot(),
+						operationSet: operationSet(),
 					});
 				if (
 					url.pathname === "/pi" &&

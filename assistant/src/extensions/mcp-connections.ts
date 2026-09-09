@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { Capability, CapabilityContext } from "../capabilities.ts";
 import { JsonStore, object, type RecordValue, required, text } from "../storage.ts";
+import { blockedPiToolsCall, emitRuntimeRegister } from "./adapter-mcp.ts";
 
 interface Registration {
 	dispose(): Promise<void>;
@@ -147,16 +147,12 @@ export function mcpConnectionsBridge(
 			return;
 		}
 		if (c.source.enabled === false) return;
-		const request: {
-			version: 1;
-			name: string;
-			definition: RecordValue;
-			result?: { ok: boolean; registration?: Registration; error?: Error };
-		} = { version: 1, name: c.name, definition: c.definition };
-		pi.events.emit("pi-mcp-adapter:runtime-register:v1", request);
-		if (!request.result?.ok || !request.result.registration)
-			throw request.result?.error ?? new Error("MCP runtime registration unavailable");
-		live.set(c.name, { ...c, registration: request.result.registration });
+		const registration = emitRuntimeRegister(
+			(channel, data) => pi.events.emit(channel, data),
+			c.name,
+			c.definition,
+		);
+		live.set(c.name, { ...c, registration });
 	};
 	const close = async () => {
 		closed = true;
@@ -182,17 +178,6 @@ export function mcpConnectionsBridge(
 		});
 	});
 	pi.on("session_shutdown", close);
-	const call = async (params: RecordValue, ctx: CapabilityContext) => {
-		ctx.signal.throwIfAborted();
-		if (closed) throw new Error("MCP bridge is closed");
-		const proxy = ctx.session.agent.state.tools.find((tool) => tool.name === "mcp");
-		if (!proxy) throw new Error("MCP proxy is unavailable");
-		const result = await proxy.execute(randomUUID(), params, ctx.signal);
-		const details = object(result.details);
-		if (details.error && details.error !== "tool_error")
-			throw new Error(`MCP proxy: ${text(details.error)}`);
-		return details;
-	};
 	const wrap = (source: RecordValue) => ({
 		type: "mcp",
 		server: {
@@ -201,17 +186,6 @@ export function mcpConnectionsBridge(
 			type: source.type === "streamable_http" ? "http" : source.type,
 		},
 	});
-	const requireServer = async (server: string, ctx: CapabilityContext) => {
-		if (live.has(server)) return;
-		// Native file/programmatic configuration remains upstream-owned. Its
-		// public status catalog is scoped to this same Pi instance as the APIs.
-		const status = await call({}, ctx);
-		if (
-			!Array.isArray(status.servers) ||
-			!status.servers.some((value) => object(value).name === server)
-		)
-			throw new Error("Unknown MCP connection");
-	};
 	return {
 		close,
 		operations: {
@@ -332,19 +306,7 @@ export function mcpConnectionsBridge(
 				});
 				return { ok: true };
 			},
-			"pi.tools.call": async (p, ctx) => {
-				authorize(ctx);
-				const encoded = required(p.toolName ?? p.name, "tool");
-				const separator = encoded.indexOf("__");
-				const explicit = text(p.extensionName ?? p.extension);
-				const server = explicit || (separator > 0 ? encoded.slice(0, separator) : "");
-				const tool = !explicit && separator > 0 ? encoded.slice(separator + 2) : encoded;
-				await requireServer(server, ctx);
-				const details = await call({ server, tool, args: object(p.arguments) }, ctx);
-				if (!details.mcpResult) throw new Error("MCP proxy did not return a raw tool result");
-				const result = object(details.mcpResult);
-				return { ...result, isError: result.isError === true };
-			},
+			"pi.tools.call": () => blockedPiToolsCall(),
 		},
 	};
 }

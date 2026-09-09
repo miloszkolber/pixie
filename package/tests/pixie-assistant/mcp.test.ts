@@ -85,13 +85,13 @@ test("MCP tools and connection removal remain scoped to the extension", async ()
 		);
 		expect(entry.session.getActiveToolNames()).toContain("mcp");
 		expect(entry.session.getActiveToolNames()).not.toContain("fixture__show");
-		expect(
-			await entry.capabilities.call(
+		await expect(
+			entry.capabilities.call(
 				"pi.tools.call",
 				{ extensionName: "fixture", toolName: "alpha__beta" },
 				ctx,
 			),
-		).toMatchObject({ isError: false });
+		).rejects.toThrow("BRIDGE-02 blocker");
 		expect(entry.session.getActiveToolNames()).toContain("bash");
 		const tool = entry.session.agent.state.tools.find((t) => t.name === "mcp")!;
 		const args = { server: "fixture", tool: "show", args: {} };
@@ -101,9 +101,9 @@ test("MCP tools and connection removal remain scoped to the extension", async ()
 				mcpResult: { structuredContent: { ok: true } },
 			},
 		});
-		expect(
-			await entry.capabilities.call("pi.tools.call", { name: "fixture__show", arguments: {} }, ctx),
-		).toMatchObject({ isError: false, structuredContent: { ok: true } });
+		await expect(
+			entry.capabilities.call("pi.tools.call", { name: "fixture__show", arguments: {} }, ctx),
+		).rejects.toThrow("BRIDGE-02 blocker");
 		expect(await entry.capabilities.call("pi.session.extensions.list", {}, ctx)).toMatchObject({
 			extensions: [{ extensionKey: "fixture", extension: { type: "mcp" } }],
 		});
@@ -349,18 +349,16 @@ test("standalone MCP supports authenticated SSE and cancels a blocked tool", asy
 	try {
 		const entry = await sessions.create(dir);
 		expect(entry.session.getActiveToolNames()).toContain("mcp");
-		const abort = new AbortController();
-		const call = entry.capabilities.call(
-			"pi.tools.call",
-			{ extensionName: "sse", toolName: "wait__here" },
-			{ ...sessions.context(entry), signal: abort.signal },
-		);
-		setTimeout(() => abort.abort(), 50);
-		await expect(call).rejects.toThrow();
-		// Cancellation is asynchronous; tolerate scheduler delays on loaded
-		// machines before asserting the fixture observed the abort.
-		for (let i = 0; i < 100 && !cancelled; i++) await Bun.sleep(10);
-		expect(cancelled).toBe(true);
+		// The native adapter owns execution and cancellation. Pixie's ordinary
+		// extension context intentionally exposes no private direct-call route.
+		await expect(
+			entry.capabilities.call(
+				"pi.tools.call",
+				{ extensionName: "sse", toolName: "wait__here" },
+				{ ...sessions.context(entry), signal: AbortSignal.timeout(50) },
+			),
+		).rejects.toThrow("BRIDGE-02 blocker");
+		expect(cancelled).toBe(false);
 	} finally {
 		await sessions.close();
 		await server.close();

@@ -84,13 +84,81 @@ func TestPiClientFramesPiAndOrdersNotifications(t *testing.T) {
 		t.Fatalf("notification was not handled before the response: %#v", methods)
 	}
 	_, profile, err := client.Profile(ctx)
-	if err != nil || profile.BootID != "fixture-boot" || !profile.Pi || !profile.Compatible || !profile.Operations.Administration || !profile.Operations.DeleteSession || !profile.Operations.PromptImage || !profile.Operations.HTTPMCP {
+	if err != nil || profile.BootID != "fixture-boot" || !profile.Pi || !profile.Compatible || !profile.Operations.DeleteSession || !profile.Operations.PromptImage || !profile.Operations.HTTPMCP {
 		t.Fatalf("unexpected capability profile: %#v, %v", profile, err)
 	}
 	select {
 	case err := <-serverErrors:
 		t.Fatal(err)
 	default:
+	}
+}
+
+func TestPiClientUsesOperationSetWithoutProviderAdministrationGate(t *testing.T) {
+	seen := make(chan string, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if err := json.Unmarshal(payload, &rpc); err != nil {
+				return
+			}
+			seen <- rpc.Method
+			if rpc.Method == "runtime.hello" {
+				_ = writeRPC(connection, map[string]any{
+					"jsonrpc": "2.0",
+					"id":      rpc.ID,
+					"result": map[string]any{
+						"protocolVersion": 1,
+						"runtimeId":       "operation-set-fixture",
+						"bootId":          "operation-set-boot",
+						"version":         "0.85.1",
+						"capabilities":    map[string]any{"sessions": 1},
+						"operationSet":    map[string]bool{},
+					},
+				})
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", nil)
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, profile, err := client.Profile(ctx)
+	if err != nil {
+		t.Fatalf("profile: %v", err)
+	}
+	if !profile.Compatible || profile.OperationSet["pi.tools.call"] {
+		t.Fatalf("unexpected operation-set profile: %#v", profile)
+	}
+	if _, err := client.CallPi(ctx, "pi.tools.call", map[string]any{}); err == nil || !strings.Contains(err.Error(), "pi.tools.call") {
+		t.Fatalf("unsupported operation was dispatched: %v", err)
+	}
+	if _, err := client.CallPi(ctx, "pi.unadvertised", map[string]any{}); err == nil || !strings.Contains(err.Error(), "pi.unadvertised") {
+		t.Fatalf("unadvertised operation was dispatched: %v", err)
+	}
+	for {
+		select {
+		case method := <-seen:
+			if method != "runtime.hello" {
+				t.Fatalf("unsupported operation reached Pi: %s", method)
+			}
+		default:
+			return
+		}
 	}
 }
 
