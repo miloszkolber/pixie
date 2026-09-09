@@ -1,8 +1,15 @@
 /*
- * Mewa owns shared foundations and component contracts. Pixie's product-specific layout and
- * utility layer loads first; Mewa loads second so overlapping foundation roles resolve to the pinned
- * library contract. Component entry styles include their declared style dependencies.
+ * Mewa owns shared foundations and component contracts (pinned: mewa-ui 0.1.2,
+ * revision c1bfb64a5874f2ca15d81c5ad78a2060360a37c0; pin record in
+ * ./foundation/tokens.css; lock in vendor/mewa.lock.json).
+ * This file is the single foundation cascade owner: it imports the pin first, then the
+ * vendor base/tokens foundations and the pinned component entries. Pixie's product-specific
+ * layout and utility layer (src/index.css) loads first via src/main.ts; Mewa loads second so
+ * overlapping foundation roles resolve to the pinned library contract. Component entry styles
+ * include their declared style dependencies (form entry covers field/label/text-field/checkbox/
+ * switch/button; label is also imported directly so the dependency is explicit).
  */
+@import "./foundation/tokens.css";
 @import "../vendor/mewa-ui/css/base.css";
 @import "../vendor/mewa-ui/css/tokens.css";
 @import "../vendor/mewa-ui/css/typography.css";
@@ -11,6 +18,7 @@
 @import "../vendor/mewa-ui/css/button.css";
 @import "../vendor/mewa-ui/css/button-group.css";
 @import "../vendor/mewa-ui/css/toolbar.css";
+@import "../vendor/mewa-ui/css/label.css";
 @import "../vendor/mewa-ui/css/field.css";
 @import "../vendor/mewa-ui/css/text-field.css";
 @import "../vendor/mewa-ui/css/textarea.css";
