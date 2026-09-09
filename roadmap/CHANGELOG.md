@@ -333,6 +333,30 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Verification:** 23 build tests pass; controller commands compile with `CGO_ENABLED=0`; static Docker/package/systemd checks pass.
 - **Remaining boundary:** production artifacts, Docker builds, real service lifecycle, and complete doctor/uninstall behavior remain open.
 
+### GO-08 / GO-09 — Administration profiles and compatibility contracts
+
+- **Implementation:** `d68590d` adds declared FC17–FC28 admin-profile descriptors with exact supported/blocked behavior and schema-aware compatibility/rollback contracts preserving tombstones and monotonic claims.
+- **Verification:** 9 assistant profile/compatibility tests pass, assistant typecheck and formatting pass.
+- **Remaining boundary:** runtime profile wiring, public native API proof, filesystem/topology migration, and released-artifact validation remain open.
+
+### EXT-04 / SEC-02 / COVERAGE-01 — Scoped registration and fail-closed gates
+
+- **Implementation:** `ccb9767` adds scoped native MCP registration with credential/generation/session/module revocation and forged-ID rejection, plus fail-closed FC/X coverage, cutover, resource/performance, and launcher posture checkers.
+- **Verification:** focused mcpserver/security Go tests and coverage Bun tests pass; `gofmt` and `git diff --check` clean.
+- **Remaining boundary:** live native registration, architecture/runtime resource evidence, and complete FC/artifact/launcher coverage remain open.
+
+### BUILD-03 / BUILD-04 / BUILD-05 — Runtime/service gate fixtures
+
+- **Implementation:** `b593135` hardens mode parsing, controller-only local-Pi rejection, bounded application drain, and systemd private environment/restart policy; `9f17cea` adds Docker/package/systemd fixture gates.
+- **Verification:** 34 build tests plus runtime-gate executable fixtures pass; controller Go commands compile with `CGO_ENABLED=0`.
+- **Remaining boundary:** full-host native engine, Docker builds, live systemd start/stop/restart, descendant drain, and both-architecture artifacts remain open.
+
+### REL-01–REL-04 / PKG-02–PKG-03 — Release and artifact gate checks
+
+- **Implementation:** `ccb9767` extends release identity and adds valid/invalid release gate fixtures for SHA naming, archives/platforms, labels/digests, provenance, collision/partial retries, and validate-only publication policy.
+- **Verification:** release/package gate tests pass and checklist links resolve.
+- **Remaining boundary:** workflows, real archives/images, provenance, immutable publication retries, and platform digests remain absent and are intentionally reported as failures by the checker.
+
 ### UI-07 / MEWA-03 — Integrated recovery and layout gates
 
 - **Implementation:** `db397ef` and `0350c40` wire five light/dark content probes through the six-slot shell, add inert/focus/overflow behavior, and mount bounded lazy-asset recovery preserving drafts and mutation IDs.
