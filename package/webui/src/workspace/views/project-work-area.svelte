@@ -1,10 +1,12 @@
 <script lang="ts">
+import { onMount } from "svelte";
 import type { Component } from "svelte";
 import { PROTOCOL_VERSION, type Project, type RuntimeStatusReport } from "@pixie/contracts";
 import ChatView from "../../chat/chat-view.svelte";
 import SessionLifecycleMenu from "../../chat/session/session-lifecycle-controls.svelte";
 import Button from "../../components/button.svelte";
 import ErrorBoundary from "../../components/error-boundary.svelte";
+import { isChunkLoadError } from "../../components/error-boundary-state";
 import Icon from "../../components/icon.svelte";
 import { errorText, getTransport, logoutController } from "../../connection";
 import ChangesPanel from "../../files/changes/changes-panel.svelte";
@@ -69,6 +71,7 @@ import {
 	buildUpgradeRecoveryState,
 	pruneRetainedAssets,
 	restoreDraftsAfterUpgrade,
+	UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS,
 	type DraftMap,
 	type UpgradeRecoveryState,
 } from "./upgrade-recovery";
@@ -79,6 +82,84 @@ interface Props {
 type ShellResizerComponent = typeof import("../shell-resizer.svelte").default;
 let { projectAreaId }: Props = $props();
 let ShellResizer = $state<ShellResizerComponent | null>(null);
+
+type LayoutProbeMode =
+	| "split"
+	| "secondary-focus"
+	| "primary-context"
+	| "primary-sidebar"
+	| "primary-focus";
+type LayoutProbeTheme = "light" | "dark";
+type LayoutProbeSlot =
+	| "primary-rail"
+	| "primary-sidebar"
+	| "primary-view"
+	| "secondary-view"
+	| "secondary-sidebar"
+	| "secondary-rail";
+
+const LAYOUT_PROBE_MODES: readonly LayoutProbeMode[] = [
+	"split",
+	"secondary-focus",
+	"primary-context",
+	"primary-sidebar",
+	"primary-focus",
+];
+const LAYOUT_PROBE_THEMES: readonly LayoutProbeTheme[] = ["light", "dark"];
+
+let showLayoutProbes = $state(false);
+let shellTheme = $state<LayoutProbeTheme>("light");
+let narrowViewport = $state(false);
+
+function probeSlotVisible(mode: LayoutProbeMode, slot: LayoutProbeSlot): boolean {
+	if (mode === "split") return true;
+	if (mode === "secondary-focus") return slot !== "primary-view";
+	if (mode === "primary-context") return slot !== "secondary-view";
+	if (mode === "primary-sidebar")
+		return slot !== "secondary-view" && slot !== "secondary-sidebar";
+	return (
+		slot === "primary-rail" ||
+		slot === "primary-view" ||
+		slot === "secondary-rail"
+	);
+}
+
+function probeThemeClass(theme: LayoutProbeTheme): string {
+	return theme === "dark" ? "dark" : "";
+}
+
+onMount(() => {
+	const query = new URLSearchParams(window.location.search);
+	showLayoutProbes = query.get("mewa") === "probes" || query.get("mewa-probes") === "1";
+	const media = typeof window.matchMedia === "function" ? window.matchMedia("(width < 64rem)") : null;
+	const updateViewport = () => {
+		narrowViewport = media?.matches ?? false;
+	};
+	updateViewport();
+	const removeViewportListener = () => {
+		if (!media) return;
+		if (typeof media.removeEventListener === "function")
+			media.removeEventListener("change", updateViewport);
+		else media.removeListener?.(updateViewport);
+	};
+	if (media) {
+		if (typeof media.addEventListener === "function") media.addEventListener("change", updateViewport);
+		else media.addListener?.(updateViewport);
+	}
+	const updateTheme = () => {
+		shellTheme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+	};
+	updateTheme();
+	if (typeof MutationObserver === "undefined") {
+		return removeViewportListener;
+	}
+	const observer = new MutationObserver(updateTheme);
+	observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+	return () => {
+		removeViewportListener();
+		observer.disconnect();
+	};
+});
 
 type MobilePane = "projects" | "primary" | "secondary";
 type MobileSecondarySurface = "view" | "sidebar";
@@ -147,7 +228,11 @@ let removed = $derived($appStore.removedProjectAreaIds[projectAreaId] === true);
 let hasSecondarySelection = $derived(secondarySelection !== null);
 let primarySidebarVisible = $derived(!layout.leftCollapsed && layout.focus !== "primary");
 let primaryViewVisible = $derived(layout.focus !== "secondary");
-let secondaryViewVisible = $derived(hasSecondarySelection && layout.focus !== "primary");
+let secondaryViewVisible = $derived(hasSecondarySelection && layout.focus !== "primary" && !layout.rightCollapsed);
+let secondarySlotAccessible = $derived(
+	secondaryViewVisible ||
+		(narrowViewport && mobilePane === "secondary" && mobileSecondarySurface === "view" && hasSecondarySelection),
+);
 let secondarySidebarVisible = $derived(!layout.rightCollapsed && layout.focus !== "primary");
 let layoutProbe = $derived(
 	layout.focus === "secondary"
@@ -262,7 +347,8 @@ function lazyAssetStatus(cause: unknown): number {
 		if (typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599)
 			return status;
 	}
-	return 404;
+	if (isChunkLoadError(cause)) return 404;
+	return 0;
 }
 
 function recordSettingsRecovery(section: SettingsSection, cause: unknown): void {
@@ -325,7 +411,10 @@ function retrySettingsSection(section: SettingsSection): void {
 	}
 	settingsReloadAttempts = {
 		...settingsReloadAttempts,
-		[section]: (settingsReloadAttempts[section] ?? 0) + 1,
+		[section]: Math.min(
+			(settingsReloadAttempts[section] ?? 0) + 1,
+			UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS,
+		),
 	};
 	void loadSettingsSection(section);
 }
@@ -731,6 +820,7 @@ function signOut(): void {
 	<div
 		data-testid="workspace-grid"
 		data-layout={layoutProbe}
+		data-theme={shellTheme}
 		data-secondary-selection={hasSecondarySelection ? "true" : "false"}
 		data-layout-focus={layout.focus}
 		style={gridStyle}
@@ -986,9 +1076,9 @@ function signOut(): void {
 				data-testid="secondary-view"
 				data-slot="secondary-view"
 				aria-label={secondaryTitle}
-				aria-hidden={!secondaryViewVisible}
-				inert={!secondaryViewVisible}
-				class={`pixie-slot mewa-layout-probe__slot pixie-slot-secondary-view min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "view" && secondaryViewVisible ? "flex" : "hidden"} ${secondaryViewVisible ? "lg:flex" : "lg:hidden"}`}
+				aria-hidden={!secondarySlotAccessible}
+				inert={!secondarySlotAccessible}
+					class={`pixie-slot mewa-layout-probe__slot pixie-slot-secondary-view min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "view" && hasSecondarySelection && layout.focus !== "primary" ? "flex" : "hidden"} ${secondaryViewVisible ? "lg:flex" : "lg:hidden"}`}
 			>
 				<div class="pixie-panel pixie-secondary-view">
 					<PanelHeader title={secondaryTitle}>
@@ -1073,5 +1163,94 @@ function signOut(): void {
 			{/if}
 		{/if}
 	</div>
+	{#if showLayoutProbes}
+		<!-- Opt-in local acceptance fixture (`?mewa=probes`): every mode and theme
+			is a mounted six-slot shell with real transcript/preview/control content. -->
+		<section data-testid="mewa-layout-probes" aria-label="Mewa layout probes" class="mewa-layout-probe-fixtures">
+			<header class="mewa-layout-probe-fixtures__header">
+				<h2 class="tr-title-compact">Mewa layout probes</h2>
+				<p class="tr-text-metadata text-text-muted">Five workspace modes, light and dark, with content.</p>
+			</header>
+			{#each LAYOUT_PROBE_THEMES as probeTheme}
+				{#each LAYOUT_PROBE_MODES as probeMode (probeMode)}
+					<article data-testid={`mewa-layout-probe-${probeTheme}-${probeMode}`} data-probe-theme={probeTheme} data-probe-layout={probeMode} class="mewa-layout-probe-fixture">
+						<h3 class="tr-text-ui">{probeTheme} · {probeMode}</h3>
+						<div data-testid={`mewa-shell-${probeTheme}-${probeMode}`} data-layout={probeMode} data-theme={probeTheme} class={`mewa-layout-probe ${probeThemeClass(probeTheme)}`}>
+							<aside data-slot="primary-rail" aria-label="Probe primary rail" aria-hidden={!probeSlotVisible(probeMode, "primary-rail")} inert={!probeSlotVisible(probeMode, "primary-rail")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
+								<nav class="flex min-h-0 flex-1 flex-col items-center justify-between gap-xs py-xs">
+									<div class="flex flex-col gap-2xs">
+										<button type="button" class="btn" aria-label="Probe chats">C</button>
+										<button type="button" class="btn" aria-label="Probe archive">A</button>
+										<button type="button" class="btn" aria-label="Probe schedules">S</button>
+									</div>
+									<button type="button" class="btn" aria-label="Probe settings">⚙</button>
+								</nav>
+							</aside>
+
+							<aside data-slot="primary-sidebar" aria-label="Probe primary sidebar" aria-hidden={!probeSlotVisible(probeMode, "primary-sidebar")} inert={!probeSlotVisible(probeMode, "primary-sidebar")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
+								<header class="mewa-layout-probe__header border-b px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Projects / a-very-long-project-name-that-must-not-widen-the-sidebar</span></header>
+								<div class="mewa-layout-probe__scroll flex flex-col gap-xs px-sm py-xs">
+									<p class="tr-text-metadata text-text-muted">Recent sessions</p>
+									<ul class="flex flex-col gap-2xs">
+										{#each ["Investigate transport replay", "Review file changes", "Prepare release notes", "Inspect large history", "Unresolved session title", "A session with a deliberately long native title"] as item, index (item)}
+											<li><button type="button" class="tree-leaf w-full text-left tr-text-ui" aria-label={`Open ${item}`}>{index + 1}. {item}</button></li>
+										{/each}
+									</ul>
+								</div>
+							</aside>
+
+							<main data-slot="primary-view" aria-label="Probe conversation" aria-hidden={!probeSlotVisible(probeMode, "primary-view")} inert={!probeSlotVisible(probeMode, "primary-view")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
+								<header class="mewa-layout-probe__header border-b px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Investigate transport replay · conversation</span></header>
+								<div class="mewa-layout-probe__scroll flex min-h-0 flex-1 flex-col gap-sm px-md py-sm">
+									<ol class="mewa-layout-probe__history flex flex-col gap-sm">
+										<li class="tr-text-ui"><strong>User</strong><p>Keep this draft while the shell changes layout.</p></li>
+										<li class="tr-text-ui"><strong>Assistant</strong><p>The transcript, stream, and selected file remain owned by the runtime.</p></li>
+										<li class="tr-text-ui"><strong>Tool</strong><pre class="mewa-layout-probe__code overflow-auto">mutationId=schedule-original
+result=awaiting-ledger-confirmation</pre></li>
+									</ol>
+								</div>
+								<form class="mewa-layout-probe__composer border-t px-sm py-xs" onsubmit={(event) => event.preventDefault()}>
+									<label class="sr-only" for={`probe-composer-${probeTheme}-${probeMode}`}>Draft message</label>
+									<textarea id={`probe-composer-${probeTheme}-${probeMode}`} class="input min-h-16 w-full" rows="2">Draft retained across focus and restore.</textarea>
+									<button type="submit" class="btn">Send</button>
+								</form>
+							</main>
+
+							<section data-slot="secondary-view" aria-label="Probe file preview" aria-hidden={!probeSlotVisible(probeMode, "secondary-view")} inert={!probeSlotVisible(probeMode, "secondary-view")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
+								<header class="mewa-layout-probe__header border-b px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">src/workspace/views/project-work-area.svelte</span></header>
+								<div class="mewa-layout-probe__scroll flex min-h-0 flex-1 flex-col gap-sm px-md py-sm">
+									<pre class="mewa-layout-probe__code overflow-auto tr-code-text">@@ -401,7 +401,12 @@ restoreLayout
+// Selections, drafts and accepted work remain intact.
+dispatchLayout(&#123; focus: "none" &#125;);</pre>
+									<p class="tr-text-metadata text-text-muted">Read-only preview; opening it never replaces the conversation.</p>
+								</div>
+							</section>
+
+							<aside data-slot="secondary-sidebar" aria-label="Probe secondary sidebar" aria-hidden={!probeSlotVisible(probeMode, "secondary-sidebar")} inert={!probeSlotVisible(probeMode, "secondary-sidebar")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
+								<header class="mewa-layout-probe__header border-b px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Files / activity and history controls</span></header>
+								<div class="mewa-layout-probe__scroll flex flex-col gap-xs px-sm py-xs">
+									<p class="tr-text-metadata text-text-muted">Selected resource</p>
+									<button type="button" class="tree-leaf w-full text-left tr-text-ui">project/src/index.ts</button>
+									<button type="button" class="tree-leaf w-full text-left tr-text-ui">project/src/workspace/views/project-work-area.svelte</button>
+									<p class="tr-text-metadata text-text-muted">Large histories and file trees scroll in their own region.</p>
+								</div>
+							</aside>
+
+							<aside data-slot="secondary-rail" aria-label="Probe secondary rail" aria-hidden={!probeSlotVisible(probeMode, "secondary-rail")} inert={!probeSlotVisible(probeMode, "secondary-rail")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
+								<nav class="flex min-h-0 flex-1 flex-col items-center justify-between gap-xs py-xs">
+									<div class="flex flex-col gap-2xs">
+										<button type="button" class="btn" aria-label="Probe details">D</button>
+										<button type="button" class="btn" aria-label="Probe files">F</button>
+										<button type="button" class="btn" aria-label="Probe git">G</button>
+									</div>
+									<button type="button" class="btn" aria-label="Probe collapse right rail">‹</button>
+								</nav>
+							</aside>
+						</div>
+					</article>
+				{/each}
+			{/each}
+		</section>
+	{/if}
 	<OpenProjectDialogs bind:this={opener} onOpened={selectProjectArea} />
 </div>

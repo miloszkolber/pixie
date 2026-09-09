@@ -162,32 +162,72 @@ export interface PeerVersions {
 	browserProtocol: number | null;
 	hostVersion: number | null;
 	buildHash?: string;
+	/** Browser feature levels are negotiated separately from host v2. */
+	browserCapabilities?: Readonly<Record<string, number>>;
+	/** Compatibility alias for callers that use the shorter wire name. */
+	capabilities?: Readonly<Record<string, number>>;
 }
 
 export interface UpgradeCompatibility {
 	browserCompatible: boolean;
+	/** Optional for callers persisted before capability negotiation shipped. */
+	capabilitiesCompatible?: boolean;
 	hostCompatible: boolean;
 	blockNewMutations: boolean;
 }
 
+function capabilityMap(peer: PeerVersions): Readonly<Record<string, number>> | undefined {
+	return peer.browserCapabilities ?? peer.capabilities;
+}
+
+function capabilitiesMeetRequirements(
+	peer: Readonly<Record<string, number>> | undefined,
+	required: Readonly<Record<string, number>> | undefined,
+): boolean {
+	if (!required || Object.keys(required).length === 0) return true;
+	if (!peer) return false;
+	return Object.entries(required).every(([name, minimum]) => {
+		const available = peer[name];
+		return (
+			typeof minimum === "number" &&
+			Number.isFinite(minimum) &&
+			minimum >= 0 &&
+			typeof available === "number" &&
+			Number.isFinite(available) &&
+			available >= minimum
+		);
+	});
+}
+
 /**
- * Compare browser protocol and host versions independently of build hash.
- * A build-hash change alone never marks a peer incompatible; a protocol
- * mismatch always blocks new mutations until explicit recovery.
+ * Compare browser protocol/capabilities and host versions independently of
+ * build hash. A build-hash change alone never marks a peer incompatible; a
+ * protocol or required-capability mismatch always blocks new mutations until
+ * explicit recovery.
  */
 export function compareUpgradeCompatibility(
 	peer: PeerVersions,
 	current: PeerVersions,
 ): UpgradeCompatibility {
-	const browserCompatible =
+	const protocolCompatible =
 		peer.browserProtocol !== null &&
 		current.browserProtocol !== null &&
 		peer.browserProtocol === current.browserProtocol;
+	const capabilitiesCompatible = capabilitiesMeetRequirements(
+		capabilityMap(peer),
+		capabilityMap(current),
+	);
+	const browserCompatible = protocolCompatible && capabilitiesCompatible;
 	const hostCompatible =
 		peer.hostVersion !== null &&
 		current.hostVersion !== null &&
 		peer.hostVersion === current.hostVersion;
-	return { browserCompatible, hostCompatible, blockNewMutations: !browserCompatible };
+	return {
+		browserCompatible,
+		capabilitiesCompatible,
+		hostCompatible,
+		blockNewMutations: !browserCompatible,
+	};
 }
 
 export type UpgradeTopology = "direct" | "controller-only";
@@ -199,10 +239,7 @@ export interface LazyAssetFailure {
 	topology: UpgradeTopology;
 }
 
-export type LazyAssetRecoveryKind =
-	| "refresh-once"
-	| "incompatible-peer"
-	| "await-explicit-refresh";
+export type LazyAssetRecoveryKind = "refresh-once" | "incompatible-peer" | "await-explicit-refresh";
 
 export interface LazyAssetRecovery {
 	kind: LazyAssetRecoveryKind;
@@ -213,8 +250,16 @@ export interface LazyAssetRecovery {
 	topology: UpgradeTopology;
 }
 
+function normalizedReloadAttempts(value: unknown): number {
+	if (typeof value !== "number" || Number.isNaN(value)) return UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS;
+	if (!Number.isFinite(value)) return UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS;
+	return Math.max(0, Math.floor(value));
+}
+
 function isOldLazyAssetMissing(failure: LazyAssetFailure): boolean {
-	return failure.httpStatus === 404 && failure.asset.trim() !== "";
+	return (
+		failure.httpStatus === 404 && typeof failure.asset === "string" && failure.asset.trim() !== ""
+	);
 }
 
 /**
@@ -228,11 +273,13 @@ export function classifyLazyAssetFailure(
 	failure: LazyAssetFailure,
 	compatibility: UpgradeCompatibility,
 ): LazyAssetRecovery {
+	const reloadAttempts = normalizedReloadAttempts(failure.reloadAttempts);
+	const asset = typeof failure.asset === "string" ? failure.asset : "";
 	if (!compatibility.browserCompatible) {
-		const allowReload = failure.reloadAttempts < UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS;
+		const allowReload = reloadAttempts < UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS;
 		return {
 			kind: "incompatible-peer",
-			asset: failure.asset,
+			asset,
 			topology: failure.topology,
 			blockNewMutations: true,
 			allowReload,
@@ -242,31 +289,29 @@ export function classifyLazyAssetFailure(
 		};
 	}
 	if (isOldLazyAssetMissing(failure)) {
-		if (failure.reloadAttempts < UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS) {
+		if (reloadAttempts < UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS) {
 			return {
 				kind: "refresh-once",
-				asset: failure.asset,
+				asset,
 				topology: failure.topology,
 				blockNewMutations: false,
 				allowReload: true,
-				message:
-					`The requested asset is from a previous deployment (${failure.asset}). Drafts are preserved. Refresh once to load the current bundle.`,
+				message: `The requested asset is from a previous deployment (${asset}). Drafts are preserved. Refresh once to load the current bundle.`,
 			};
 		}
 		return {
 			kind: "await-explicit-refresh",
-			asset: failure.asset,
+			asset,
 			topology: failure.topology,
 			blockNewMutations: false,
 			allowReload: false,
-			message:
-				`Refresh was already attempted for ${failure.asset}. Automatic reload is paused to avoid a loop. Copy unsaved work, then refresh explicitly.`,
+			message: `Refresh was already attempted for ${asset}. Automatic reload is paused to avoid a loop. Copy unsaved work, then refresh explicitly.`,
 		};
 	}
-	if (failure.reloadAttempts < UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS) {
+	if (reloadAttempts < UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS) {
 		return {
 			kind: "refresh-once",
-			asset: failure.asset,
+			asset,
 			topology: failure.topology,
 			blockNewMutations: compatibility.blockNewMutations,
 			allowReload: true,
@@ -276,7 +321,7 @@ export function classifyLazyAssetFailure(
 	}
 	return {
 		kind: "await-explicit-refresh",
-		asset: failure.asset,
+		asset,
 		topology: failure.topology,
 		blockNewMutations: compatibility.blockNewMutations,
 		allowReload: false,
@@ -341,6 +386,6 @@ export function buildUpgradeRecoveryState(input: {
 		mutations,
 		compatibility,
 		recovery,
-		canOfferRefresh: recovery !== null && recovery.allowReload,
+		canOfferRefresh: recovery?.allowReload ?? false,
 	};
 }

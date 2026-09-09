@@ -60,6 +60,33 @@
 	overflow: hidden;
 }
 
+/* Keep the slot contract self-contained for fixtures as well as the
+   production shell. The Pixie shell also supplies these names through its
+   product classes, but probes must not depend on that implementation detail. */
+.mewa-layout-probe__slot[data-slot="primary-rail"] {
+	grid-area: primary-rail;
+}
+
+.mewa-layout-probe__slot[data-slot="primary-sidebar"] {
+	grid-area: primary-sidebar;
+}
+
+.mewa-layout-probe__slot[data-slot="primary-view"] {
+	grid-area: primary-view;
+}
+
+.mewa-layout-probe__slot[data-slot="secondary-view"] {
+	grid-area: secondary-view;
+}
+
+.mewa-layout-probe__slot[data-slot="secondary-sidebar"] {
+	grid-area: secondary-sidebar;
+}
+
+.mewa-layout-probe__slot[data-slot="secondary-rail"] {
+	grid-area: secondary-rail;
+}
+
 .mewa-layout-probe__scroll {
 	min-height: 0;
 	min-width: 0;
@@ -147,6 +174,10 @@
 		"primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
 }
 
+.mewa-layout-probe[data-layout="primary-context"] .mewa-layout-probe__slot[data-slot="secondary-view"] {
+	visibility: hidden;
+}
+
 /* Mode 4: primary with sidebar. Right sidebar and preview hidden; rail stays. */
 .mewa-layout-probe[data-layout="primary-sidebar"] {
 	grid-template-columns:
@@ -209,6 +240,14 @@
 	outline-offset: -1px;
 }
 
+/* Production resizers keep their Pixie adapter class; apply the same focus
+   contract when they are mounted inside the Mewa-owned shell. */
+.mewa-layout-probe .pixie-resizer:focus-visible,
+.mewa-layout-probe .pixie-split-handle:focus-visible {
+	outline: var(--focus-ring-width, 2px) solid var(--border-focus);
+	outline-offset: -1px;
+}
+
 /* Slot chrome reads Mewa roles; no literals live here. */
 .mewa-layout-probe__slot[data-slot="primary-rail"],
 .mewa-layout-probe__slot[data-slot="primary-sidebar"] {
@@ -232,6 +271,50 @@
 	overscroll-behavior: contain;
 }
 
+/* The fixture page is opt-in and intentionally uses the same primitives as
+   the production shell. Its own scroll container keeps probes from creating
+   document overflow while testing long content. */
+.mewa-layout-probe-fixtures {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+	gap: var(--space-lg);
+	overflow: auto;
+	padding: var(--space-lg);
+}
+
+.mewa-layout-probe-fixtures__header {
+	display: flex;
+	min-width: 0;
+	flex-shrink: 0;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--space-sm);
+}
+
+.mewa-layout-probe-fixture {
+	display: flex;
+	min-height: 34rem;
+	min-width: 0;
+	flex-shrink: 0;
+	flex-direction: column;
+	gap: var(--space-xs);
+}
+
+.mewa-layout-probe-fixture > .mewa-layout-probe {
+	min-height: 30rem;
+}
+
+.mewa-layout-probe__code {
+	min-width: 0;
+	max-width: 100%;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
 /* Narrow viewports and 200% zoom: one content surface, same selection model.
    Drawers preserve selection; hidden regions are inert and restore focus. */
 @media (width < 64rem) {
@@ -248,6 +331,70 @@
 
 	.mewa-layout-probe__resizer {
 		display: none;
+	}
+
+	/* Mobile drawer selection may expose a slot that is collapsed on desktop;
+	   its aria state is the authority for visibility at this breakpoint. */
+	.mewa-layout-probe .mewa-layout-probe__slot[aria-hidden="false"] {
+		visibility: visible;
+	}
+
+	/* The opt-in fixture mirrors the production mobile drawer choice: one
+	   content surface is painted, while the remaining slots stay out of the
+	   tab order instead of stacking into a second page. */
+	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="split"] [data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="primary-context"] [data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="primary-sidebar"] [data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="primary-focus"] [data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="secondary-focus"] [data-slot]:not([data-slot="secondary-view"]) {
+		display: none;
+	}
+}
+
+/* Between the full desktop budget and the narrow single-surface breakpoint,
+   collapse sidebars before either content pane becomes unreadable. This is a
+   layout preference only; the canonical selections remain mounted and the
+   caller still exposes the drawers/restore controls. */
+@media (64rem <= width < 80rem) {
+	.mewa-layout-probe[data-layout="split"] {
+		grid-template-columns:
+			3rem
+			minmax(0, 12rem)
+			minmax(20rem, 1fr)
+			minmax(20rem, 1fr)
+			minmax(0, 12rem)
+			3rem;
+	}
+
+	.mewa-layout-probe[data-layout="secondary-focus"] {
+		grid-template-columns:
+			3rem
+			minmax(0, 12rem)
+			minmax(0, 0px)
+			minmax(20rem, 1fr)
+			minmax(0, 12rem)
+			3rem;
+	}
+
+	.mewa-layout-probe[data-layout="primary-context"] {
+		grid-template-columns:
+			3rem
+			minmax(0, 12rem)
+			minmax(20rem, 1fr)
+			minmax(0, 0px)
+			minmax(0, 12rem)
+			3rem;
+	}
+
+	.mewa-layout-probe[data-layout="primary-sidebar"],
+	.mewa-layout-probe[data-layout="primary-focus"] {
+		grid-template-columns:
+			3rem
+			minmax(0, 12rem)
+			minmax(20rem, 1fr)
+			minmax(0, 0px)
+			minmax(0, 0px)
+			3rem;
 	}
 }
 
