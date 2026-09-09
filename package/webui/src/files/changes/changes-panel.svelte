@@ -14,7 +14,7 @@ import {
 } from "../../store";
 import { openDiffInTab } from "../tabs/open-tabs";
 import ChangeRowActions from "./change-row-actions.svelte";
-import { branchName, scopeKey, splitPath, statusNameClass } from "./changes-model";
+import { branchName, repositoryDisplayName, scopeKey, splitPath, statusNameClass } from "./changes-model";
 import ChangesTree from "./changes-tree.svelte";
 import DiffStatBadge from "./diff-stat-badge.svelte";
 import GitScopeMenu from "./git-scope-menu.svelte";
@@ -216,6 +216,7 @@ function isActive(path: string): boolean {
 			{#if repositories.length > 1}
 				<select
 					aria-label="Git repository"
+					data-testid="git-repository-select"
 					value={repository?.root ?? ""}
 					onchange={(event) => {
 						selectedRepository = event.currentTarget.value;
@@ -224,7 +225,7 @@ function isActive(path: string): boolean {
 					class="select min-w-0 border-0 bg-transparent text-text-muted"
 				>
 					{#each repositories as candidate (candidate.id)}
-						<option value={candidate.root}>{candidate.relativePath || candidate.name}</option>
+						<option value={candidate.root}>{repositoryDisplayName(candidate)}</option>
 					{/each}
 				</select>
 			{:else}
@@ -274,7 +275,11 @@ function isActive(path: string): boolean {
 	{/if}
 	<div class="min-h-0 flex-1 overflow-auto">
 		{#if visibleWarnings.length > 0}
-			<p role="status" class="border-border-muted border-b px-sm py-xs tr-text-metadata text-feedback-warning">
+			<p
+				role="status"
+				data-testid="git-warnings"
+				class="border-border-muted border-b px-sm py-xs tr-text-metadata text-feedback-warning"
+			>
 				{visibleWarnings.join(" ")}
 			</p>
 		{/if}

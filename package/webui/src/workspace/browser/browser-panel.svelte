@@ -111,6 +111,7 @@ function open(event: SubmitEvent): void {
 		<label class="visually-hidden" for={`browser-address-${panelId}`}>Requested address</label>
 		<input
 			id={`browser-address-${panelId}`}
+			data-testid="browser-address"
 			value={panel.address}
 			oninput={(event) => setPanel({ address: event.currentTarget.value })}
 			placeholder="https://example.com"
@@ -174,7 +175,7 @@ function open(event: SubmitEvent): void {
 	<div class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
 		<section aria-label="Latest browser screenshot" class="flex min-h-0 items-center justify-center overflow-auto p-md">
 			{#if panel.screenshot}
-				<img src={panel.screenshot} onerror={() => setPanel({ screenshot: null, error: "The screenshot could not be loaded. Request a new screenshot." })} alt="Latest browser screenshot" class="image max-h-full max-w-full object-contain" />
+				<img src={panel.screenshot} data-testid="browser-screenshot" onerror={() => setPanel({ screenshot: null, error: "The screenshot could not be loaded. Request a new screenshot." })} alt="Latest browser screenshot" class="image max-h-full max-w-full object-contain" />
 			{:else}
 				<p class="app-empty text-center">Open a URL, then use Screenshot to render the current page.</p>
 			{/if}
@@ -182,7 +183,7 @@ function open(event: SubmitEvent): void {
 		<section aria-label="Snapshot and interactions" class="min-h-0 overflow-auto border-t p-sm lg:border-t-0 lg:border-l">
 			<h2 class="tr-text-ui text-text-default">Snapshot</h2>
 			{#if panel.snapshot}
-				<textarea readonly aria-label="Browser snapshot output" value={panel.snapshot} rows={8} class="textarea mt-xs max-h-48 w-full resize-none overflow-auto tr-code-text"></textarea>
+				<textarea readonly data-testid="browser-snapshot" aria-label="Browser snapshot output" value={panel.snapshot} rows={8} class="textarea mt-xs max-h-48 w-full resize-none overflow-auto tr-code-text"></textarea>
 			{:else}
 				<p class="mt-xs text-text-muted tr-text-metadata">Take a snapshot to inspect available element references.</p>
 			{/if}

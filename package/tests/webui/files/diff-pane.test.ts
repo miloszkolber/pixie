@@ -2,7 +2,7 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import type { GitDiffFile } from "@pixie/contracts";
 import { initTransport, resetTransport } from "@/connection";
 import { WsTransport } from "@/connection/transport";
-import { diffIsUnavailable, diffUnavailableNotice } from "@/files/changes/diff-pane-model";
+import { diffIsUnavailable, diffUnavailableNotice, rawPreviewNotice } from "@/files/changes/diff-pane-model";
 import { simpleUnifiedDiff } from "@/files/changes/line-diff";
 import { openDiffInTab } from "@/files/tabs/open-tabs";
 import { appStoreApi, type DiffTab } from "@/store";
@@ -129,7 +129,9 @@ test("refreshed diff notices replace each other and clear when text becomes avai
 test("successful raw previews retain a visible conversion notice", async () => {
 	const sourceText = await source("files/changes/diff-pane.svelte");
 	expect(sourceText).toContain('data-testid="diff-raw-notice"');
-	expect(sourceText).toContain("!unavailable && tab.message");
+	expect(sourceText).toContain("rawPreviewNotice(tab)");
+	expect(sourceText).toContain('data-testid="diff-scope"');
+	expect(sourceText).toContain("scopeLabel(tab.scope)");
 
 	const initial: DiffTab = {
 		kind: "diff",
@@ -155,4 +157,26 @@ test("successful raw previews retain a visible conversion notice", async () => {
 	if (tab?.kind !== "diff") throw new Error("diff tab missing");
 	expect(diffIsUnavailable(tab)).toBe(false);
 	expect(tab.message).toBe("Showing raw worktree bytes");
+	expect(rawPreviewNotice(tab)).toBe("Showing raw worktree bytes");
+});
+
+test("raw conversion notices stay hidden for unavailable previews", () => {
+	const binary: DiffTab = {
+		kind: "diff",
+		id: "binary-diff",
+		projectAreaId: "project",
+		repository: "/repo",
+		path: "file.bin",
+		name: "file.bin",
+		scope: { kind: "uncommitted" },
+		loadedTarget: "",
+		original: "",
+		modified: "",
+		unavailable: true,
+		binary: true,
+		message: "Binary files cannot be previewed",
+	};
+	expect(diffIsUnavailable(binary)).toBe(true);
+	expect(rawPreviewNotice(binary)).toBe("");
+	expect(diffUnavailableNotice(binary)).toBe("Binary files cannot be previewed");
 });
