@@ -8,6 +8,7 @@ import ErrorBoundary from "../../components/error-boundary.svelte";
 import Icon from "../../components/icon.svelte";
 import { errorText, getTransport, logoutController } from "../../connection";
 import ChangesPanel from "../../files/changes/changes-panel.svelte";
+import DetailsPanel from "../../files/changes/details-panel.svelte";
 import DiffPane from "../../files/changes/diff-pane.svelte";
 import FilePane from "../../files/tabs/file-pane.svelte";
 import FileTree from "../../files/tree/file-tree.svelte";
@@ -892,7 +893,7 @@ function signOut(): void {
 					{:else if secondaryArea === "git"}
 						<div role="tabpanel" aria-label="Git" class="pixie-panel-scroll scroll-area min-h-0 flex-1 px-xs py-xs"><ErrorBoundary label="git activity"><ChangesPanel {projectAreaId} onOpen={showSecondarySurface} /></ErrorBoundary></div>
 					{:else if secondaryArea === "details"}
-						<div data-testid="details-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">Session details</p>{#if sessionDetailsVisible && primarySelection?.kind === "session"}<p class="mt-xs break-all tr-code-text">{primarySelection.sessionId}</p>{:else}<p class="mt-xs tr-text-metadata text-text-muted">Select a chat to inspect its status and usage.</p>{/if}</div>
+						<div role="tabpanel" aria-label="Details" data-testid="details-sidebar" class="pixie-panel-scroll scroll-area min-h-0 flex-1 px-sm py-sm"><ErrorBoundary label="details"><DetailsPanel {projectAreaId} sessionId={sessionDetailsVisible && primarySelection?.kind === "session" ? primarySelection.sessionId : null} /></ErrorBoundary></div>
 					{:else}
 						<div data-testid="module-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">{secondaryTitle} controls</p><p class="mt-xs tr-text-metadata text-text-muted">The selected module preview owns its renderer and lifecycle.</p></div>
 					{/if}
