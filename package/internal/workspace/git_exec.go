@@ -19,7 +19,13 @@ const (
 	gitTerminateGrace   = 2 * time.Second
 	gitKillWait         = 500 * time.Millisecond
 	gitPipeDrainTimeout = 500 * time.Millisecond
-	gitExecutableEnv    = "PIXIE_GIT_EXECUTABLE"
+	// gitDescendantGrace bounds the TERM-to-KILL escalation for a managed
+	// group whose leader already exited but whose descendants retained the
+	// output pipe. The leader's exit is not proof the group is gone; give a
+	// descendant honoring TERM a brief chance to exit before SIGKILL while
+	// keeping total cleanup well inside the caller-visible bound.
+	gitDescendantGrace = 100 * time.Millisecond
+	gitExecutableEnv   = "PIXIE_GIT_EXECUTABLE"
 )
 
 // gitReadOnlyConfig is applied to every Git subprocess. Repository config is
@@ -143,12 +149,12 @@ func runGit(parent context.Context, directory string, args []string, limit int) 
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
 	waitErr, waitComplete := waitGitProcess(ctx, command, waitDone, stdoutReader, stderrReader)
-	if ctx.Err() != nil && waitComplete && gitProcessGroupExists(command) {
+	if ctx.Err() != nil && waitComplete {
 		// The group leader may have honored TERM while a descendant retained the
 		// output pipe. The leader's exit is not proof that its managed group is
-		// gone; finish cancellation with a group kill before returning.
-		terminateGitProcess(command)
-		killGitProcess(command)
+		// gone; finish cancellation with a bounded TERM-to-KILL escalation
+		// before returning.
+		terminateGitGroup(command)
 	}
 	if !waitComplete {
 		// The explicit read ends are closed here so a descendant that escaped the
@@ -166,10 +172,7 @@ func runGit(parent context.Context, directory string, args []string, limit int) 
 	stdoutDrained := waitForGitOutput(stdoutDone, stdoutReader)
 	stderrDrained := waitForGitOutput(stderrDone, stderrReader)
 	if !stdoutDrained || !stderrDrained {
-		if gitProcessGroupExists(command) {
-			terminateGitProcess(command)
-			killGitProcess(command)
-		}
+		terminateGitGroup(command)
 		return gitResult{err: "Git command output could not be drained", failure: "timeout"}
 	}
 	if stdout.overflow || stderr.overflow {
@@ -249,6 +252,28 @@ func waitGitProcess(ctx context.Context, command *exec.Cmd, waitDone <-chan erro
 		_ = stdout.Close()
 		_ = stderr.Close()
 		return fmt.Errorf("Git process cleanup timed out"), false
+	}
+}
+
+func terminateGitGroup(command *exec.Cmd) {
+	if !gitProcessGroupExists(command) {
+		return
+	}
+	terminateGitProcess(command)
+	grace := time.NewTimer(gitDescendantGrace)
+	defer grace.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-grace.C:
+			killGitProcess(command)
+			return
+		case <-ticker.C:
+			if !gitProcessGroupExists(command) {
+				return
+			}
+		}
 	}
 }
 

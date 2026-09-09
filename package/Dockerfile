@@ -206,4 +206,7 @@ USER 1000:1000
 EXPOSE 7312
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["/app/pixie", "healthcheck"]
-ENTRYPOINT ["/app/pixie"]
+# Run under tini so PID 1 reaps orphaned managed-group descendants (Git and
+# Browser helpers) instead of leaving zombies. The intermediate
+# browser-packages stage already uses tini; the final stage must keep it.
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie"]
