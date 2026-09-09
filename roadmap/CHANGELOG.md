@@ -259,7 +259,11 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Identity-safe outbox contracts (`509e578`, superseded by `GO-05` below).**
 - **Generation-safe native UI state (`1e901e5`, superseded by `GO-06` below).**
 - **Bounded residency and idle handoff (`f01f5db`, superseded by `GO-07` below).**
-- **Public bridge feasibility (`45ca73e`, `BRIDGE-01` remains open):** npm/standalone capability discovery, explicit asset opt-in and bounded private-channel checks, with unsupported APIs reported as blockers rather than mocked. Verified by 9 bridge tests and typecheck; live installation probes remain open.
+### BRIDGE-01 — Public bridge feasibility
+
+- **Implementation:** `45ca73e` adds npm/standalone capability discovery, explicit asset opt-in, and bounded private-channel checks, with unsupported APIs reported as blockers rather than mocked.
+- **Verification:** 9 bridge tests and assistant typecheck pass.
+- **Remaining boundary:** live installation probes, asset materialization, and descriptor inheritance remain later-stage work.
 - **Fail-closed launcher posture checks (`a7a5146`, `SEC-02` remains open):** pure validation for pre-exec placement, namespaces, scratch/inode, egress, descriptors, descendants, supported architectures, and direct-host/shared-UID rejection. Verified by focused Go security tests and `gofmt`; launcher wiring and live architecture evidence remain open.
 - **Composition boundary checks (`6e97cc6`, superseded by `BUILD-01` below).**
 
@@ -310,3 +314,27 @@ This file records roadmap work that has shipped in the checkout. [execution.md](
 - **Implementation:** `2942bf7` adds commit-named release identity checks and `docs/builds/release-checklist.md`; the checker intentionally reports absent workflows/artifacts/digests rather than claiming release readiness.
 - **Verification:** 8 release identity tests pass and documented links resolve.
 - **Remaining boundary:** REL-01 through REL-04, complete artifacts, provenance, immutable retries, and publication policy remain open.
+
+### GO-02 — Bounded JSONL transport integration
+
+- **Implementation:** `a728344` defines bounded Go/TypeScript framing, admission, correlation, exit, and stall behavior; `64f80e8` wires real child-process transport into the assistant runtime with hello handshake, stderr draining, control reserve, and explicit interrupted/uncertain outcomes.
+- **Verification:** 20 transport/runtime integration tests pass, piprotocol Go tests pass, assistant typecheck passes, and `git diff --check` is clean.
+- **Remaining boundary:** full child-supervision/race evidence, live Pi handshake, and dual-architecture runtime remain later-stage work.
+
+### EXT-01 / BRIDGE-02 / BRIDGE-03 — Native bridge integration
+
+- **Implementation:** `a47ba78` defines exact native UI rows, public adapter routing, and honest FC15 blockers; `68fb539` wires table-driven dispatch and public adapter events into the existing extension runtime, with private `pi.tools.call` remaining an explicit blocker.
+- **Verification:** 21 bridge/native integration tests pass and assistant typecheck is clean.
+- **Remaining boundary:** live Pi API proof, exact upstream cancellation hooks, and unsupported `pi.tools.call` remain explicit blockers.
+
+### BUILD-03 / BUILD-04 / PKG-01 — Composition and package boundary checks
+
+- **Implementation:** `aaa4809` adds separate assistant/full-host entrypoints and controller-only Docker mode; `9f17cea` adds artifact/package checks plus systemd units and redacted config fixtures.
+- **Verification:** 23 build tests pass; controller commands compile with `CGO_ENABLED=0`; static Docker/package/systemd checks pass.
+- **Remaining boundary:** production artifacts, Docker builds, real service lifecycle, and complete doctor/uninstall behavior remain open.
+
+### UI-07 / MEWA-03 — Integrated recovery and layout gates
+
+- **Implementation:** `db397ef` and `0350c40` wire five light/dark content probes through the six-slot shell, add inert/focus/overflow behavior, and mount bounded lazy-asset recovery preserving drafts and mutation IDs.
+- **Verification:** 32 layout/recovery tests pass, web typecheck has zero errors/warnings, and `git diff --check` is clean.
+- **Remaining boundary:** production screenshots, full browser QA, old-browser upgrade evidence, and full suite remain open.

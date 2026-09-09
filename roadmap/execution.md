@@ -70,15 +70,15 @@ Every task below remains open until implementation evidence is recorded. FC01–
 ### Shared assistant and retained features
 
 - [x] GO-01 — B: separate module/facade, CLI/config/discovery/read-only doctor and independent Pi installations. Evidence: [CHANGELOG.md](CHANGELOG.md#go-01--separate-module-with-discovery-and-staged-compatibility).
-- [ ] GO-02 — B: bounded native JSONL, writer/correlation/admission/backpressure, child exit and stalled-pipe handling.
+- [x] GO-02 — B: bounded native JSONL, writer/correlation/admission/backpressure, child exit and stalled-pipe handling. Evidence: [CHANGELOG.md](CHANGELOG.md#go-02--bounded-jsonl-transport-integration).
 - [x] GO-03 — B: vanilla create/prompt/images/model/thinking/abort/reopen with native resource/trust semantics. Evidence: [CHANGELOG.md](CHANGELOG.md#go-03--native-session-flow-contracts).
 - [x] GO-04 — B/F: clone/fork identity/cancellation, drafts, bounded read-only catalog/history, unknown entries and external replacement. Evidence: [CHANGELOG.md](CHANGELOG.md#go-04--bounded-history-and-draft-continuity).
 - [x] GO-05 — B/A/F: prepared/dispatching/accepted/settled/uncertain outbox, retry/compaction/continuation and verified Stop. Evidence: [CHANGELOG.md](CHANGELOG.md#go-05--identity-safe-outbox-contracts).
 - [x] GO-06 — B/E: supported native UI/latest passive state, draft conflicts and generation-safe replay. Evidence: [CHANGELOG.md](CHANGELOG.md#go-06--generation-safe-native-ui-state).
 - [x] GO-07 — B/F: residency/capacity, detached-work disposition, explicit runtime release, descendants and idle TUI handoff. Evidence: [CHANGELOG.md](CHANGELOG.md#go-07--bounded-residency-and-idle-handoff).
-- [ ] BRIDGE-01 — B/E/A: public installed import/context/storage feasibility on npm/standalone Pi, private bounded channel and explicit asset opt-in.
-- [ ] BRIDGE-02 — E/B: every retained MCP admin operation uses a supported adapter API, not private AgentSession tool access (F28).
-- [ ] BRIDGE-03 — E/B: exact native UI cancellation/working hints or precise FC15 upstream blocker, without fabricated acknowledgments (F24).
+- [x] BRIDGE-01 — B/E/A: public installed import/context/storage feasibility on npm/standalone Pi, private bounded channel and explicit asset opt-in. Evidence: [CHANGELOG.md](CHANGELOG.md#public-bridge-feasibility-45ca73e).
+- [x] BRIDGE-02 — E/B: every retained MCP admin operation uses a supported adapter API, not private AgentSession tool access (F28). Evidence: [CHANGELOG.md](CHANGELOG.md#ext-01--bridge-02--bridge-03--native-bridge-integration).
+- [x] BRIDGE-03 — E/B: exact native UI cancellation/working hints or precise FC15 upstream blocker, without fabricated acknowledgments (F24). Evidence: [CHANGELOG.md](CHANGELOG.md#ext-01--bridge-02--bridge-03--native-bridge-integration).
 - [ ] GO-08 — B/E/A: all declared FC17–FC28 administration/authoring/optional profiles retain tested behavior; no TUI-only substitution.
 - [ ] GO-09 — B/G: staged legacy compatibility and schema-aware rollback before host/npm retirement.
 
@@ -102,14 +102,14 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] UI-04 — D/C: Schedules and primary Settings list/detail/run navigation reuse backend state and semantics. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-04--schedules-and-settings-listdetail-navigation).
 - [x] UI-05 — D/C: Details, multi-repository Git, read-only files/diffs and context-safe previews; show eligible idle-runtime release. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-05--details-sidebar-with-release-control-and-multi-repo-git).
 - [x] UI-06 — C/F: v2 routes/back-forward/restore, invalid/missing/stale states, responsive layouts and keyboard resizers. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-06--v2-routes-with-invalidmissingstale-recovery).
-- [ ] UI-07 — C/G/F: old-tab/new-server and lazy-asset upgrade recovery without draft loss or mutation re-execution; X14 (F38).
+- [x] UI-07 — C/G/F: old-tab/new-server and lazy-asset upgrade recovery without draft loss or mutation re-execution; X14 (F38). Evidence: [CHANGELOG.md](CHANGELOG.md#ui-07--mewa-03--integrated-recovery-and-layout-gates).
 - [x] MEWA-01 — D: pinned tokens/components/adapters and preserved correct wrappers/integrity. Evidence: [CHANGELOG.md](CHANGELOG.md#mewa-01--pinned-tokens-components-and-adapters).
 - [x] MEWA-02 — D: one foundation owner/cascade/lifecycle; retire mappings/generators only after consumers migrate. Evidence: [CHANGELOG.md](CHANGELOG.md#mewa-02--one-foundation-cascade-owner).
-- [ ] MEWA-03 — D/F: five content-filled light/dark layouts, zoom/keyboard/focus/overflow and no view-driven runtime loss.
+- [x] MEWA-03 — D/F: five content-filled light/dark layouts, zoom/keyboard/focus/overflow and no view-driven runtime loss. Evidence: [CHANGELOG.md](CHANGELOG.md#ui-07--mewa-03--integrated-recovery-and-layout-gates).
 
 ### Integrations, validation and docs
 
-- [ ] EXT-01 — E/B: every supported native UI row, exact limitations and single final response mapping.
+- [x] EXT-01 — E/B: every supported native UI row, exact limitations and single final response mapping. Evidence: [CHANGELOG.md](CHANGELOG.md#ext-01--bridge-02--bridge-03--native-bridge-integration).
 - [x] EXT-02 — E: generalized registry, complete-map persistence outcomes, independent desired/readiness states and no lock-held startup; mixed invalid/restrictive config fails locally without permissive fallback (F39). Evidence: [CHANGELOG.md](CHANGELOG.md#ext-02--registry-lifecycle-with-desiredreadiness-split).
 - [x] EXT-03 — E/C: Browser in slots 4/5/6, leases/artifacts/cleanup, human/tool availability and explicitly tested deployment profile. Evidence: [CHANGELOG.md](CHANGELOG.md#ext-03--browser-leases-artifacts-and-cleanup).
 - [ ] EXT-04 — E/A/F: generic scoped native MCP registration/credentials/revocation; forged IDs grant nothing.
