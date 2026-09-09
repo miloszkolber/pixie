@@ -14,6 +14,7 @@
 @import "../vendor/mewa-ui/css/tokens.css";
 @import "../vendor/mewa-ui/css/typography.css";
 @import "../vendor/mewa-ui/css/layout.css";
+@import "./foundation/layouts.css";
 @import "../vendor/mewa-ui/css/icon.css";
 @import "../vendor/mewa-ui/css/button.css";
 @import "../vendor/mewa-ui/css/button-group.css";
@@ -63,3 +64,25 @@
 @import "../vendor/mewa-ui/css/agent-activity.css";
 @import "../vendor/mewa-ui/css/todo-list.css";
 @import "../vendor/mewa-ui/css/tree-view.css";
+
+/* The production shell supplies persisted track variables. Keep the MEWA probe
+ * contract on that shell without replacing its resizable geometry. */
+.pixie-shell-grid.mewa-layout-probe {
+	grid-template-columns:
+		3rem
+		minmax(0, var(--pixie-primary-sidebar-track, 16rem))
+		minmax(var(--pixie-primary-content-min, 0px), var(--pixie-primary-view-track, 1fr))
+		minmax(var(--pixie-secondary-content-min, 0px), var(--pixie-secondary-view-track, 0px))
+		minmax(0, var(--pixie-secondary-sidebar-track, 16rem))
+		3rem;
+	grid-template-rows: minmax(0, 1fr);
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+@media (width < 64rem) {
+	.pixie-shell-grid.mewa-layout-probe {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr);
+		grid-template-areas: "mobile";
+	}
+}

@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Component } from "svelte";
-import type { Project, RuntimeStatusReport } from "@pixie/contracts";
+import { PROTOCOL_VERSION, type Project, type RuntimeStatusReport } from "@pixie/contracts";
 import ChatView from "../../chat/chat-view.svelte";
 import SessionLifecycleMenu from "../../chat/session/session-lifecycle-controls.svelte";
 import Button from "../../components/button.svelte";
@@ -65,6 +65,13 @@ import {
 	selectSecondaryContentTab,
 	selectTabSessionStreaming,
 } from "./project-work-area-state";
+import {
+	buildUpgradeRecoveryState,
+	pruneRetainedAssets,
+	restoreDraftsAfterUpgrade,
+	type DraftMap,
+	type UpgradeRecoveryState,
+} from "./upgrade-recovery";
 
 interface Props {
 	projectAreaId: string;
@@ -142,6 +149,17 @@ let primarySidebarVisible = $derived(!layout.leftCollapsed && layout.focus !== "
 let primaryViewVisible = $derived(layout.focus !== "secondary");
 let secondaryViewVisible = $derived(hasSecondarySelection && layout.focus !== "primary");
 let secondarySidebarVisible = $derived(!layout.rightCollapsed && layout.focus !== "primary");
+let layoutProbe = $derived(
+	layout.focus === "secondary"
+		? "secondary-focus"
+		: layout.focus === "primary"
+			? "primary-focus"
+			: layout.rightCollapsed
+				? "primary-sidebar"
+				: hasSecondarySelection
+					? "split"
+					: "primary-context",
+);
 let sessionDetailsVisible = $derived(
 	primaryArea === "chats" && primarySelection?.kind === "session",
 );
@@ -211,24 +229,105 @@ let settingsVisited = $state<SettingsSection[]>([]);
 let settingsModules = $state.raw<Partial<Record<SettingsSection, Component<any>>>>({});
 let settingsSectionPending = $state<Partial<Record<SettingsSection, boolean>>>({});
 let settingsLoadErrors = $state<Partial<Record<SettingsSection, boolean>>>({});
+let settingsRecovery = $state<Partial<Record<SettingsSection, UpgradeRecoveryState>>>({});
+let settingsReloadAttempts = $state<Partial<Record<SettingsSection, number>>>({});
+let retainedUpgradeAssets = $state<string[]>([]);
 let settingsLoadGeneration = 0;
+
+const UPGRADE_DRAFT_STORAGE_KEY = "pixie.upgrade-recovery.drafts";
+
+function currentDrafts(): DraftMap {
+	return Object.fromEntries(
+		Object.entries(appStoreApi.getState().sessions)
+			.map(([sessionId, runtime]) => [sessionId, runtime.draft]),
+	);
+}
+
+function draftStorage(): { save: (drafts: DraftMap) => void } | null {
+	try {
+		if (typeof localStorage === "undefined") return null;
+		return {
+			save: (drafts) => {
+				localStorage.setItem(UPGRADE_DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+			},
+		};
+	} catch {
+		return null;
+	}
+}
+
+function lazyAssetStatus(cause: unknown): number {
+	if (typeof cause === "object" && cause !== null && "status" in cause) {
+		const status = (cause as { status?: unknown }).status;
+		if (typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599)
+			return status;
+	}
+	return 404;
+}
+
+function recordSettingsRecovery(section: SettingsSection, cause: unknown): void {
+	const attempts = settingsReloadAttempts[section] ?? 0;
+	const state = appStoreApi.getState();
+	const asset = `settings/${section}.js`;
+	retainedUpgradeAssets = pruneRetainedAssets([...retainedUpgradeAssets, asset]);
+	settingsRecovery = {
+		...settingsRecovery,
+		[section]: buildUpgradeRecoveryState({
+			drafts: currentDrafts(),
+			storage: draftStorage(),
+			// Settings loading has no authority to dispatch work. Keep the
+			// ledger input empty rather than inventing mutation identities.
+			pending: [],
+			ledger: [],
+			peer: { browserProtocol: state.protocolVersion, hostVersion: null },
+			current: { browserProtocol: PROTOCOL_VERSION, hostVersion: null },
+			failure: {
+				asset,
+				httpStatus: lazyAssetStatus(cause),
+				reloadAttempts: attempts,
+				topology: "controller-only",
+			},
+		}),
+	};
+}
+
 async function loadSettingsSection(section: SettingsSection): Promise<void> {
 	const loader = settingsSectionLoaders[section];
 	if (!loader || settingsModules[section] || settingsSectionPending[section]) return;
 	const current = settingsLoadGeneration;
 	settingsSectionPending = { ...settingsSectionPending, [section]: true };
 	settingsLoadErrors = { ...settingsLoadErrors, [section]: false };
+	settingsRecovery = { ...settingsRecovery, [section]: undefined };
 	try {
 		const module = await loader();
 		if (current === settingsLoadGeneration)
 			settingsModules = { ...settingsModules, [section]: module.default };
-	} catch {
-		if (current === settingsLoadGeneration)
+	} catch (cause) {
+		if (current === settingsLoadGeneration) {
 			settingsLoadErrors = { ...settingsLoadErrors, [section]: true };
+			recordSettingsRecovery(section, cause);
+		}
 	} finally {
 		if (current === settingsLoadGeneration)
 			settingsSectionPending = { ...settingsSectionPending, [section]: false };
 	}
+}
+
+function retrySettingsSection(section: SettingsSection): void {
+	const recovery = settingsRecovery[section];
+	if (recovery) {
+		const restored = restoreDraftsAfterUpgrade(recovery.drafts.preserved, currentDrafts());
+		const state = appStoreApi.getState();
+		for (const [sessionId, draft] of Object.entries(restored)) {
+			if (state.sessions[sessionId] && state.sessions[sessionId].draft !== draft)
+				state.setChatDraft(sessionId, draft);
+		}
+	}
+	settingsReloadAttempts = {
+		...settingsReloadAttempts,
+		[section]: (settingsReloadAttempts[section] ?? 0) + 1,
+	};
+	void loadSettingsSection(section);
 }
 
 $effect(() => {
@@ -584,6 +683,45 @@ function signOut(): void {
 	</Button>
 {/snippet}
 
+{#snippet settingsRecoveryPane(section: SettingsSection)}
+	{@const state = settingsRecovery[section]}
+	{#if state?.recovery}
+		<div
+			data-testid="upgrade-recovery"
+			data-recovery-kind={state.recovery.kind}
+			data-recovery-topology={state.recovery.topology}
+			data-retained-assets={retainedUpgradeAssets.length}
+			role="alert"
+			class="mewa-layout-probe__recovery flex min-h-0 flex-col items-center justify-center gap-sm overflow-auto px-lg py-xl text-center"
+		>
+			<Icon name="triangle-alert" size={24} class="text-feedback-warning" />
+			<h3 class="tr-title-compact">This view needs the current bundle</h3>
+			<p class="max-w-[34rem] tr-text-ui text-text-muted">{state.recovery.message}</p>
+			{#if state.drafts.unsavedWarning}
+				<p data-testid="upgrade-recovery-draft-warning" class="max-w-[34rem] tr-text-metadata text-feedback-warning">{state.drafts.unsavedWarning}</p>
+			{/if}
+			<p data-testid="upgrade-recovery-mutation-status" class="max-w-[34rem] tr-text-metadata text-text-muted">
+				Pending actions remain attached to their original mutation identities; this recovery view never replays them.
+				{#if state.mutations.retryWithSameId.length} Retry is available only with the original identity.{/if}
+				{#if state.mutations.held.length} Unconfirmed actions remain held for ledger confirmation.{/if}
+			</p>
+			{#if state.canOfferRefresh}
+				<Button data-testid="upgrade-recovery-refresh" variant="outline" onclick={() => retrySettingsSection(section)}>
+					<Icon name="refresh-cw" size={16} /> Try refresh once
+				</Button>
+			{:else}
+				<p data-testid="upgrade-recovery-loop-paused" class="max-w-[34rem] tr-text-metadata text-text-muted">Automatic refresh is paused. Copy unsaved work, then retry loading explicitly.</p>
+				<Button data-testid="upgrade-recovery-retry" variant="outline" onclick={() => retrySettingsSection(section)}>
+					<Icon name="rotate-ccw" size={16} /> Retry loading
+				</Button>
+			{/if}
+		</div>
+	{:else}
+		<p role="alert" class="tr-text-ui text-feedback-error">Couldn't load this settings section. Your open form drafts are retained.</p>
+		<Button variant="outline" onclick={() => retrySettingsSection(section)}>Retry loading</Button>
+	{/if}
+{/snippet}
+
 <div data-testid="project-work-area" class="pixie-work-area">
 	<nav aria-label="Mobile panes" data-testid="mobile-pane-navigation" class="tab-list flex shrink-0 border-b lg:hidden">
 		<button type="button" data-testid="mobile-projects" class="tab-trigger min-h-11 flex-1 capitalize" aria-pressed={mobilePane === "projects"} onclick={showProjects}>Projects</button>
@@ -592,13 +730,14 @@ function signOut(): void {
 	</nav>
 	<div
 		data-testid="workspace-grid"
+		data-layout={layoutProbe}
 		data-secondary-selection={hasSecondarySelection ? "true" : "false"}
 		data-layout-focus={layout.focus}
 		style={gridStyle}
-		class="pixie-shell-grid"
+		class="pixie-shell-grid mewa-layout-probe"
 		bind:this={grid}
 	>
-		<aside data-testid="primary-rail" data-slot="primary-rail" aria-label="Primary rail" class="pixie-slot pixie-slot-primary-rail hidden lg:flex">
+		<aside data-testid="primary-rail" data-slot="primary-rail" aria-label="Primary rail" class="pixie-slot mewa-layout-probe__slot pixie-slot-primary-rail hidden lg:flex">
 			<ShellRail side="left" label="Primary navigation">
 				{#snippet top()}
 					<Button
@@ -678,8 +817,10 @@ function signOut(): void {
 			data-testid="primary-sidebar"
 			data-slot="primary-sidebar"
 			aria-label="Primary sidebar"
+			aria-hidden={!primarySidebarVisible}
+			inert={!primarySidebarVisible}
 			tabindex="-1"
-			class={`pixie-slot pixie-slot-primary-sidebar outline-none ${mobilePane === "projects" && primarySidebarVisible ? "flex" : "hidden"} ${primarySidebarVisible ? "lg:flex" : "lg:hidden"}`}
+			class={`pixie-slot mewa-layout-probe__slot pixie-slot-primary-sidebar outline-none ${mobilePane === "projects" && primarySidebarVisible ? "flex" : "hidden"} ${primarySidebarVisible ? "lg:flex" : "lg:hidden"}`}
 		>
 			{#if primarySidebarVisible}
 				<div class="pixie-panel-box pixie-panel">
@@ -710,9 +851,9 @@ function signOut(): void {
 						{#if projectFilterOpen}
 							<div class="shrink-0 px-sm py-xs"><input type="search" aria-label="Filter projects" placeholder="Filter projects" class="input w-full" bind:value={projectFilter} /></div>
 						{/if}
-						<div data-testid="primary-sidebar-content" class="pixie-panel-scroll scroll-area px-xs py-xs"><ProjectTree chrome="bare" activeSessionId={primarySelection?.kind === "session" ? primarySelection.sessionId : null} filter={projectFilter} /></div>
+						<div data-testid="primary-sidebar-content" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-xs py-xs"><ProjectTree chrome="bare" activeSessionId={primarySelection?.kind === "session" ? primarySelection.sessionId : null} filter={projectFilter} /></div>
 					{:else if primaryArea === "archive"}
-						<div data-testid="archive-sidebar" class="pixie-panel-scroll scroll-area flex flex-col gap-md px-sm py-sm">
+						<div data-testid="archive-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area flex flex-col gap-md px-sm py-sm">
 							{#if projectArea}
 								<ArchiveList {projectAreaId} />
 							{/if}
@@ -731,7 +872,7 @@ function signOut(): void {
 							</section>
 						</div>
 					{:else if primaryArea === "schedules"}
-						<div data-testid="schedules-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm">
+						<div data-testid="schedules-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-sm py-sm">
 							{#if schedulesProject}
 								{#key schedulesProject.id}<ErrorBoundary label="schedules"><ScheduleList project={schedulesProject} /></ErrorBoundary>{/key}
 							{:else}
@@ -739,7 +880,7 @@ function signOut(): void {
 							{/if}
 						</div>
 					{:else}
-						<div data-testid="settings-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm">
+						<div data-testid="settings-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-sm py-sm">
 							<ul aria-label="Settings sections" class="flex flex-col gap-2xs">
 								{#each settingsTabList as tab (tab.section)}
 									<li>
@@ -767,7 +908,9 @@ function signOut(): void {
 			data-slot="primary-view"
 			id="main-content"
 			aria-label={primaryTitle}
-			class={`pixie-slot pixie-slot-primary-view min-w-0 ${mobilePane === "primary" && primaryViewVisible ? "flex" : "hidden"} ${primaryViewVisible ? "lg:flex" : "lg:hidden"}`}
+			aria-hidden={!primaryViewVisible}
+			inert={!primaryViewVisible}
+			class={`pixie-slot mewa-layout-probe__slot pixie-slot-primary-view min-w-0 ${mobilePane === "primary" && primaryViewVisible ? "flex" : "hidden"} ${primaryViewVisible ? "lg:flex" : "lg:hidden"}`}
 		>
 			<div class="pixie-panel pixie-center">
 				<PanelHeader title={primaryTitle}>
@@ -797,7 +940,7 @@ function signOut(): void {
 					{:else if primaryArea === "archive"}
 						<div data-testid="archive-detail" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Archive</span><p class="tr-text-ui text-text-muted">Restore keeps the same archived chat; it never clones it. Closing a view is separate from archiving, and deleting is separate from both.</p><p class="tr-text-metadata text-text-muted">Select an archived chat in the primary sidebar to restore it.</p></div>
 					{:else if primaryArea === "schedules"}
-						<div data-testid="schedules-detail" class="flex min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+						<div data-testid="schedules-detail" class="mewa-layout-probe__scroll flex min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
 							{#if schedulesProject}
 								{#key schedulesProject.id}<ErrorBoundary label="schedule details"><ScheduleDetail project={schedulesProject} /></ErrorBoundary>{/key}
 							{:else}
@@ -805,7 +948,7 @@ function signOut(): void {
 							{/if}
 						</div>
 					{:else}
-						<div data-testid="settings-detail" class="flex min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+						<div data-testid="settings-detail" class="mewa-layout-probe__scroll flex min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
 							{#each settingsVisited as section (section)}
 								{#if section === settingsActiveSection}
 									<div id={`settings-panel-${section}`} role="tabpanel" class="min-w-0 flex-1">
@@ -816,9 +959,8 @@ function signOut(): void {
 												{#key schedulesProject.id}
 													{#if settingsModules[section]}
 														{@const Section = settingsModules[section]!}<Section project={schedulesProject} />
-													{:else if settingsLoadErrors[section]}
-														<p role="alert" class="tr-text-ui text-feedback-error">Couldn't load this settings section. Your open form drafts are retained.</p>
-														<Button variant="outline" onclick={() => void loadSettingsSection(section)}>Retry loading</Button>
+														{:else if settingsLoadErrors[section]}
+															{@render settingsRecoveryPane(section)}
 													{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
 												{/key}
 											{:else}
@@ -826,9 +968,8 @@ function signOut(): void {
 											{/if}
 										{:else if settingsModules[section]}
 											{@const Section = settingsModules[section]!}<Section />
-										{:else if settingsLoadErrors[section]}
-											<p role="alert" class="tr-text-ui text-feedback-error">Couldn't load this settings section. Your open form drafts are retained.</p>
-											<Button variant="outline" onclick={() => void loadSettingsSection(section)}>Retry loading</Button>
+											{:else if settingsLoadErrors[section]}
+												{@render settingsRecoveryPane(section)}
 										{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
 									</div>
 								{/if}
@@ -845,7 +986,9 @@ function signOut(): void {
 				data-testid="secondary-view"
 				data-slot="secondary-view"
 				aria-label={secondaryTitle}
-				class={`pixie-slot pixie-slot-secondary-view min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "view" && secondaryViewVisible ? "flex" : "hidden"} ${secondaryViewVisible ? "lg:flex" : "lg:hidden"}`}
+				aria-hidden={!secondaryViewVisible}
+				inert={!secondaryViewVisible}
+				class={`pixie-slot mewa-layout-probe__slot pixie-slot-secondary-view min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "view" && secondaryViewVisible ? "flex" : "hidden"} ${secondaryViewVisible ? "lg:flex" : "lg:hidden"}`}
 			>
 				<div class="pixie-panel pixie-secondary-view">
 					<PanelHeader title={secondaryTitle}>
@@ -871,9 +1014,11 @@ function signOut(): void {
 			data-testid="secondary-sidebar"
 			data-slot="secondary-sidebar"
 			aria-label="Secondary sidebar"
+			aria-hidden={!secondarySidebarVisible}
+			inert={!secondarySidebarVisible}
 			tabindex="-1"
 			id="right-panel"
-			class={`pixie-slot pixie-slot-secondary-sidebar min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "sidebar" && secondarySidebarVisible ? "flex" : "hidden"} ${secondarySidebarVisible ? "lg:flex" : "lg:hidden"}`}
+			class={`pixie-slot mewa-layout-probe__slot pixie-slot-secondary-sidebar min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "sidebar" && secondarySidebarVisible ? "flex" : "hidden"} ${secondarySidebarVisible ? "lg:flex" : "lg:hidden"}`}
 		>
 			{#if secondarySidebarVisible}
 				<div id="activity-panel" class="pixie-panel-box pixie-panel">
@@ -889,19 +1034,19 @@ function signOut(): void {
 					</PanelHeader>
 					{#if secondaryArea === "files"}
 						{#if filesFilterOpen}<div class="shrink-0 px-sm py-xs"><input type="search" aria-label="Filter files" placeholder="Filter loaded files" class="input w-full" bind:value={filesFilter} /></div>{/if}
-						<div role="tabpanel" aria-label="Files" class="pixie-panel-scroll scroll-area min-h-0 flex-1 px-xs py-xs"><ErrorBoundary label="files activity"><FileTree {projectAreaId} filter={filesFilter} onOpen={showSecondarySurface} /></ErrorBoundary></div>
+						<div role="tabpanel" aria-label="Files" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-xs py-xs"><ErrorBoundary label="files activity"><FileTree {projectAreaId} filter={filesFilter} onOpen={showSecondarySurface} /></ErrorBoundary></div>
 					{:else if secondaryArea === "git"}
-						<div role="tabpanel" aria-label="Git" class="pixie-panel-scroll scroll-area min-h-0 flex-1 px-xs py-xs"><ErrorBoundary label="git activity"><ChangesPanel {projectAreaId} onOpen={showSecondarySurface} /></ErrorBoundary></div>
+						<div role="tabpanel" aria-label="Git" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-xs py-xs"><ErrorBoundary label="git activity"><ChangesPanel {projectAreaId} onOpen={showSecondarySurface} /></ErrorBoundary></div>
 					{:else if secondaryArea === "details"}
-						<div role="tabpanel" aria-label="Details" data-testid="details-sidebar" class="pixie-panel-scroll scroll-area min-h-0 flex-1 px-sm py-sm"><ErrorBoundary label="details"><DetailsPanel {projectAreaId} sessionId={sessionDetailsVisible && primarySelection?.kind === "session" ? primarySelection.sessionId : null} /></ErrorBoundary></div>
+						<div role="tabpanel" aria-label="Details" data-testid="details-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-sm py-sm"><ErrorBoundary label="details"><DetailsPanel {projectAreaId} sessionId={sessionDetailsVisible && primarySelection?.kind === "session" ? primarySelection.sessionId : null} /></ErrorBoundary></div>
 					{:else}
-						<div data-testid="module-sidebar" class="pixie-panel-scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">{secondaryTitle} controls</p><p class="mt-xs tr-text-metadata text-text-muted">The selected module preview owns its renderer and lifecycle.</p></div>
+						<div data-testid="module-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">{secondaryTitle} controls</p><p class="mt-xs tr-text-metadata text-text-muted">The selected module preview owns its renderer and lifecycle.</p></div>
 					{/if}
 				</div>
 			{/if}
 		</aside>
 
-		<aside data-testid="secondary-rail" data-slot="secondary-rail" aria-label="Secondary rail" class="pixie-slot pixie-slot-secondary-rail hidden lg:flex">
+		<aside data-testid="secondary-rail" data-slot="secondary-rail" aria-label="Secondary rail" class="pixie-slot mewa-layout-probe__slot pixie-slot-secondary-rail hidden lg:flex">
 			<ShellRail side="right" label="Secondary navigation">
 				{#snippet top()}
 					<Button variant="ghost" size="icon-sm" data-testid="rail-details" aria-label="Details" title="Details" aria-current={secondaryArea === "details" ? "page" : undefined} onclick={() => selectSecondaryRail("details")}><Icon name="info" size={16} /></Button>

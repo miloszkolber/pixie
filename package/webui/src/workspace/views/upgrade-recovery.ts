@@ -46,7 +46,7 @@ export interface MutationReconciliation {
 }
 
 function isNonEmptyId(value: unknown): value is string {
-	return typeof value === "string" && value.length > 0 && value.length <= 512;
+	return typeof value === "string" && value.trim() !== "" && value.length <= 512;
 }
 
 /**
@@ -68,10 +68,13 @@ export function reconcilePendingMutations(
 	const retryWithSameId: PendingMutation[] = [];
 	const held: PendingMutation[] = [];
 	const settled: string[] = [];
+	const seenPending = new Set<string>();
 	for (const mutation of pending) {
 		if (!isNonEmptyId(mutation.mutationId)) {
 			continue;
 		}
+		if (seenPending.has(mutation.mutationId)) continue;
+		seenPending.add(mutation.mutationId);
 		if (settledById.has(mutation.mutationId)) {
 			settled.push(mutation.mutationId);
 			continue;
@@ -226,14 +229,16 @@ export function classifyLazyAssetFailure(
 	compatibility: UpgradeCompatibility,
 ): LazyAssetRecovery {
 	if (!compatibility.browserCompatible) {
+		const allowReload = failure.reloadAttempts < UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS;
 		return {
 			kind: "incompatible-peer",
 			asset: failure.asset,
 			topology: failure.topology,
 			blockNewMutations: true,
-			allowReload: true,
-			message:
-				"This browser bundle uses an unsupported protocol. New actions are paused. Drafts are preserved. Refresh explicitly to load the compatible bundle.",
+			allowReload,
+			message: allowReload
+				? "This browser bundle uses an unsupported protocol. New actions are paused. Drafts are preserved. Refresh explicitly to load the compatible bundle."
+				: "This browser bundle uses an unsupported protocol. New actions are paused. Automatic refresh is paused to avoid a loop. Copy unsaved work, then refresh explicitly.",
 		};
 	}
 	if (isOldLazyAssetMissing(failure)) {
