@@ -54,6 +54,10 @@ export interface DockerEvidence {
 	revision: string;
 	indexDigest: string;
 	platformDigests: Readonly<Partial<Record<ReleaseArchitecture, string>>>;
+	/** Explicit OCI labels when they are available from the image inspection. */
+	labels?: Readonly<Record<string, string>>;
+	/** Whether an in-toto/SLSA provenance attestation was attached to the image. */
+	provenance?: boolean;
 }
 
 export interface ReleaseManifestEvidence {
@@ -113,6 +117,7 @@ export interface ReleaseIdentityFacts {
 	workflowFiles: readonly string[];
 	missingWorkflowEvidence: readonly string[];
 	missingArtifactEvidence: readonly string[];
+	missingLiveInputs: readonly string[];
 }
 
 export interface ReleaseIdentityReport {
@@ -271,6 +276,23 @@ function inspectWorkflowEvidence(
 			"partial publication retry and non-regressing latest checks",
 		);
 	}
+	if (
+		!/org\.opencontainers\.image\.version|oci[^\n]*version[^\n]*label|--label[^\n]*version/i.test(
+			releaseText,
+		)
+	) {
+		addMissing(violations, missing, "workflow", "OCI version label evidence");
+	}
+	if (
+		!/org\.opencontainers\.image\.revision|oci[^\n]*revision[^\n]*label|--label[^\n]*revision/i.test(
+			releaseText,
+		)
+	) {
+		addMissing(violations, missing, "workflow", "OCI full source revision label evidence");
+	}
+	if (!/provenance|attest[^\n]*type\s*=\s*slsai?|sbom/i.test(releaseText)) {
+		addMissing(violations, missing, "workflow", "SBOM and provenance attestation evidence");
+	}
 
 	const allTriggers = entries.map(([, source]) => source).join("\n");
 	for (const trigger of ["pull_request", "schedule", "workflow_dispatch"] as const) {
@@ -391,6 +413,21 @@ function inspectDocker(
 	if (docker.version !== expectedReleaseId)
 		violations.push("Docker OCI version label must be the release ID");
 	checkFullSha(docker.revision, "Docker OCI revision label", expectedSource, violations);
+	const labels = docker.labels;
+	if (labels === undefined) {
+		violations.push("Docker OCI version and revision labels are required");
+	} else {
+		if (labels["org.opencontainers.image.version"] !== expectedReleaseId) {
+			violations.push("Docker OCI label org.opencontainers.image.version must be the release ID");
+		}
+		if (labels["org.opencontainers.image.revision"] !== expectedSource) {
+			violations.push(
+				"Docker OCI label org.opencontainers.image.revision must be the full source commit",
+			);
+		}
+	}
+	if (docker.provenance !== true)
+		violations.push("Docker image verified provenance evidence is required");
 	checkDigest(docker.indexDigest, "Docker image index", violations);
 	const platformDigests = docker.platformDigests ?? {};
 	for (const architecture of RELEASE_ARCHITECTURES) {
@@ -443,7 +480,7 @@ function inspectManifest(
 		violations.push("release-manifest.json: checksums.txt evidence is required");
 	if (!manifest.sbomPresent) violations.push("release-manifest.json: SBOM evidence is required");
 	if (!manifest.provenancePresent)
-		violations.push("release-manifest.json: provenance evidence is required");
+		violations.push("release-manifest.json: verified provenance evidence is required");
 }
 
 function inspectDigestConsistency(input: ReleaseIdentityInput, violations: string[]): void {
@@ -506,7 +543,21 @@ function inspectCollisionAndRetry(
 			: [];
 		if (publishedArtifacts.length === 0)
 			violations.push("partial publication: at least one uploaded artifact must be recorded");
-		if (partial.latestPromoted === true) {
+		const allowedPartialArtifacts = new Set([
+			...expectedArchiveNames(expectedReleaseId),
+			"checksums.txt",
+			"release-manifest.json",
+			"sbom",
+			"provenance",
+		]);
+		for (const artifact of publishedArtifacts) {
+			if (!allowedPartialArtifacts.has(artifact) && !DIGEST_PATTERN.test(artifact)) {
+				violations.push(`partial publication: unknown staged artifact ${artifact}`);
+			}
+		}
+		if (partial.latestPromoted === undefined) {
+			violations.push("partial publication: latest promotion state must be recorded as false");
+		} else if (partial.latestPromoted === true) {
 			violations.push(
 				"partial publication: latest must not be promoted before the complete set is verified",
 			);
@@ -524,6 +575,9 @@ function inspectCollisionAndRetry(
 		}
 		if (!input.retry.reusedPayload) {
 			violations.push("retry: retry must reuse the staged payload rather than rebuild it");
+		}
+		if (input.partialPublication === undefined) {
+			violations.push("retry: a retry record must identify the partial publication it resumes");
 		}
 	}
 }
@@ -547,6 +601,12 @@ export function inspectReleaseIdentity(input: ReleaseIdentityInput): ReleaseIden
 	if (expectedReleaseId === null) {
 		if (input.releaseId !== undefined)
 			violations.push("release ID cannot be derived from an invalid source commit");
+		addMissing(
+			violations,
+			missingArtifactEvidence,
+			"artifact",
+			"four commit-named archives, four binary records, Docker index/platform digests and release manifest",
+		);
 		inspectWorkflowEvidence(input.workflowSources, violations, missingWorkflowEvidence);
 		return {
 			ok: false,
@@ -562,6 +622,7 @@ export function inspectReleaseIdentity(input: ReleaseIdentityInput): ReleaseIden
 				workflowFiles: Object.keys(input.workflowSources ?? {}).sort(),
 				missingWorkflowEvidence,
 				missingArtifactEvidence,
+				missingLiveInputs: missingArtifactEvidence,
 			},
 		};
 	}
@@ -635,6 +696,7 @@ export function inspectReleaseIdentity(input: ReleaseIdentityInput): ReleaseIden
 			workflowFiles: Object.keys(input.workflowSources ?? {}).sort(),
 			missingWorkflowEvidence,
 			missingArtifactEvidence,
+			missingLiveInputs: missingArtifactEvidence,
 		},
 	};
 }
@@ -684,10 +746,12 @@ async function readManifest(repositoryRoot: string): Promise<ReleaseManifestEvid
 export async function collectReleaseIdentityInput(
 	repositoryRoot = resolve(import.meta.dir, "../.."),
 ): Promise<ReleaseIdentityInput> {
+	const sourceCommit = await gitRevision(repositoryRoot);
+	const manifest = await readManifest(repositoryRoot);
 	return {
-		sourceCommit: await gitRevision(repositoryRoot),
 		workflowSources: await readWorkflowSources(repositoryRoot),
-		manifest: await readManifest(repositoryRoot),
+		...(sourceCommit === undefined ? {} : { sourceCommit }),
+		...(manifest === undefined ? {} : { manifest }),
 	};
 }
 
@@ -701,6 +765,7 @@ export function formatReleaseIdentityReport(report: ReleaseIdentityReport): stri
 	return [
 		"check-release-identity: FAILED",
 		...report.violations.map((violation) => `  - ${violation}`),
+		...report.facts.missingLiveInputs.map((input) => `  - missing live input: ${input}`),
 	].join("\n");
 }
 

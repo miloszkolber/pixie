@@ -30,6 +30,7 @@ jobs:
   release:
     if: github.event_name == 'push'
     run: stage pixie-assistant-${releaseId}-linux-amd64.tar.gz pixie-assistant-${releaseId}-linux-arm64.tar.gz pixie-${releaseId}-linux-amd64.tar.gz pixie-${releaseId}-linux-arm64.tar.gz checksums.txt release-manifest.json
+    run: docker buildx build --label org.opencontainers.image.version=${releaseId} --label org.opencontainers.image.revision=$SOURCE_COMMIT --sbom=true --attest type=provenance
     run: reject collision when an existing tag has a different full commit
     run: retain partial publication for retry with the same payload; never move latest backward
     run: validate-only on pull requests, schedules and manual dispatch
@@ -89,6 +90,11 @@ function passingInput(): ReleaseIdentityInput {
 			revision: sourceCommit,
 			indexDigest: digest,
 			platformDigests: { amd64: digest, arm64: `sha256:${"c".repeat(64)}` },
+			labels: {
+				"org.opencontainers.image.version": releaseId,
+				"org.opencontainers.image.revision": sourceCommit,
+			},
+			provenance: true,
 		},
 		manifest: {
 			path: "release-manifest.json",
@@ -123,7 +129,7 @@ test("release identity rejects short source references, semver names, and incomp
 		...input,
 		tag: { name: "v1.2.3", target: sourceCommit.slice(0, 12) },
 		release: { title: "1.2.3", tag: "v1.2.3", target: sourceCommit.slice(0, 12) },
-		archives: input.archives?.slice(0, 3),
+		archives: (input.archives ?? []).slice(0, 3),
 		docker: {
 			...input.docker,
 			version: "0.0.0-dev",
@@ -147,6 +153,7 @@ test("partial publication retries retain identity and never promote latest", () 
 			releaseId,
 			sourceCommit,
 			publishedArtifacts: ["checksums.txt"],
+			latestPromoted: false,
 		},
 		retry: { releaseId, sourceCommit, reusedPayload: true },
 	});
