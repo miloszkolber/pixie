@@ -81,12 +81,12 @@ test(
 	},
 );
 
-test("the checked-in composition reports outstanding BUILD-01 gaps", async () => {
+test("the checked-in composition satisfies the BUILD-01 boundary", async () => {
 	const report = inspectComposition(await collectCompositionInput());
 
-	expect(formatCompositionReport(report)).not.toContain("duplicate Bun.serve");
-	expect(report.ok).toBe(false);
-	expect(report.violations.join("\n")).toMatch(/separate assistant Go module/);
-	expect(report.violations.join("\n")).toMatch(/public assistant facade/);
-	expect(report.violations.join("\n")).toMatch(/--mode controller/);
+	expect(formatCompositionReport(report)).toContain("check-composition: OK");
+	expect(report.ok).toBe(true);
+	expect(report.violations).toEqual([]);
+	expect(report.facts.publicFacadeImport).toBe("github.com/miloszkolber/pixie/assistant/host");
+	expect(report.facts.bunServeCount).toBeLessThanOrEqual(1);
 });

@@ -9,23 +9,23 @@
 	},
 	"type": "module",
 	"bin": {
-		"pixie-assistant": "src/main.ts"
+		"pixie-assistant": "dist/main.js"
 	},
 	"files": [
-		"src",
+		"dist",
 		"patches"
 	],
 	"publishConfig": {
 		"access": "public"
 	},
 	"exports": {
-		"./capabilities": "./src/capabilities.ts",
-		"./mcp-admin-bridge": "./src/extensions/mcp-admin-bridge.ts"
+		"./capabilities": "./dist/capabilities.js",
+		"./mcp-admin-bridge": "./dist/extensions/mcp-admin-bridge.js"
 	},
 	"scripts": {
-		"start": "bun src/main.ts",
+		"start": "bun dist/main.js",
 		"typecheck": "tsc --noEmit",
-		"build": "bun build src/main.ts --target=bun --outdir=dist",
+		"build": "bun build src/main.ts src/doctor.ts src/capabilities.ts src/extensions/mcp-admin-bridge.ts --target=bun --outdir=dist",
 		"postinstall": "node patches/apply-patches.mjs"
 	},
 	"dependencies": {

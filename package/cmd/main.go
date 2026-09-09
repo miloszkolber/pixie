@@ -1,3 +1,5 @@
+//go:build !controller
+
 package main
 
 import (
@@ -8,17 +10,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	assistantHost "github.com/miloszkolber/pixie/assistant/host"
 	controller "github.com/miloszkolber/pixie/internal/controller"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 )
-
-var version = "0.0.0-dev"
-var revision = "unknown"
 
 func main() {
 	build := diagnostics.NormalizeBuild(version, revision)
@@ -43,50 +42,50 @@ func main() {
 		}
 		return
 	}
+	mode, err := parseMode(os.Args[1:])
+	if err != nil {
+		fatal(err)
+	}
 	stop, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	if err := run(stop, build); err != nil {
+	if err := run(stop, build, mode); err != nil {
 		fatal(err)
 	}
 }
 
-// controllerPort reads PIXIE_CONTROLLER_PORT with the compiled default.
-// UI, API and the in-process MCP publisher share one listener, so one port
-// covers all three surfaces.
-func controllerPort() int {
-	raw := strings.TrimSpace(os.Getenv("PIXIE_CONTROLLER_PORT"))
-	if raw == "" {
-		return controller.DefaultControllerPort
+func run(ctx context.Context, build diagnostics.BuildInfo, mode runMode) error {
+	if mode == modeFullHost {
+		return runFullHost(ctx, build)
 	}
-	port, err := strconv.Atoi(raw)
-	if err != nil || port < 1 || port > 65535 {
-		fatal(fmt.Errorf("PIXIE_CONTROLLER_PORT must be a port 1-65535, got %q", raw))
-	}
-	return port
+	return runController(ctx, build)
 }
 
-func run(ctx context.Context, build diagnostics.BuildInfo) error {
-	// Container defaults apply when unset, so plain `go build` binaries keep
-	// working outside Docker by pointing these at local directories.
-	runtime, err := controller.NewRuntime(controller.RuntimeConfig{AppVersion: build.Version, AppRevision: build.Revision, DataDir: os.Getenv("PIXIE_DATA_DIR"), StaticDir: os.Getenv("PIXIE_STATIC_DIR"), Port: controllerPort()})
+func runFullHost(ctx context.Context, build diagnostics.BuildInfo) error {
+	// Full-host composition obtains the assistant through the public facade.
+	// The facade owns the engine lifecycle and private transport; the
+	// controller never reaches into assistant internals.
+	assistant, err := assistantHost.Start(ctx, assistantHost.Config{
+		Host:     "127.0.0.1",
+		Port:     0,
+		AgentDir: os.Getenv("PI_CODING_AGENT_DIR"),
+	})
+	if err != nil {
+		return fmt.Errorf("start embedded assistant: %w", err)
+	}
+	defer func() { _ = assistant.Close(context.Background()) }()
+	if assistant.Endpoint() == "" {
+		return errors.New("embedded assistant did not provide a private transport endpoint")
+	}
+	runtime, err := controller.NewRuntime(controller.RuntimeConfig{
+		AppVersion:  build.Version,
+		AppRevision: build.Revision,
+		DataDir:     os.Getenv("PIXIE_DATA_DIR"),
+		StaticDir:   os.Getenv("PIXIE_STATIC_DIR"),
+		Port:        controllerPort(),
+		PiURL:       assistant.Endpoint(),
+	})
 	if err != nil {
 		return err
 	}
-	endpoint, err := runtime.Start()
-	if err != nil {
-		return err
-	}
-	slog.Info("listening", "address", endpoint)
-	select {
-	case err = <-runtime.Errors():
-	case <-ctx.Done():
-	}
-	shutdownContext, release := context.WithTimeout(context.Background(), 15*time.Second)
-	defer release()
-	return errors.Join(err, runtime.Shutdown(shutdownContext))
-}
-
-func fatal(err error) {
-	slog.Error("application failed", "error", err)
-	os.Exit(1)
+	return serveController(ctx, runtime)
 }

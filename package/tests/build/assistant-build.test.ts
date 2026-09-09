@@ -106,15 +106,15 @@ test("assistant build does not silently drop doctor or the independent typecheck
 	expect(violations).toMatch(/typecheck/);
 });
 
-test("checked-in assistant package reports the remaining runtime-packaging work", async () => {
+test("checked-in assistant package has a runtime-only bundled build", async () => {
 	const report = inspectAssistantBuild(await collectAssistantBuildInput());
 
 	const output = formatAssistantBuildReport(report);
-	expect(output).toContain("FAILED");
-	expect(report.ok).toBe(false);
-	expect(output).toMatch(/runtime bin/);
-	expect(output).toMatch(/bundled dist artifact/);
-	expect(output).toMatch(/runtime-only/);
-	expect(output).toMatch(/export .*bundled runtime output/);
-	expect(output).toMatch(/doctor/);
+	expect(output).toContain("check-assistant-build: OK");
+	expect(report.ok).toBe(true);
+	expect(report.violations).toEqual([]);
+	expect(report.facts.artifactRoots).toEqual(["dist"]);
+	expect(report.facts.buildEntries).toContain("src/main.ts");
+	expect(report.facts.buildEntries).toContain("src/doctor.ts");
+	expect(report.facts.closure).toContain("src/doctor.ts");
 });
