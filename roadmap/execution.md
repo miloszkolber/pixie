@@ -64,8 +64,8 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] MIG-01 — A/B/F with G: full metadata inventory, staged conversion, topology switching and schema-aware rollback from migration.md; ungrouped queues/deletions, old archive metadata and no ledger rewind (F25/F32). Evidence: [CHANGELOG.md](CHANGELOG.md#mig-01--staged-conversion-with-topology-switching-and-rollback).
 - [x] MODULE-01 — A/E: trusted contribution descriptors and sidebar-only/viewer-only fixtures with real scope authority. Evidence: [CHANGELOG.md](CHANGELOG.md#module-01--trusted-descriptors-with-http-scope-enforcement).
 - [x] ROUTE-01 — E/A/F: registered MCP/management/artifact routing through the assembled HTTP handler, reserved routes and no API-to-SPA fallback; X05 (F33). Evidence: [CHANGELOG.md](CHANGELOG.md#route-01--assembled-reserved-routing-without-spa-fallback).
-- [ ] LIMIT-01 — A/B/F: composed input/store/transport caps, aggregate-byte admission, control reserve and bounded Design index artifact; X07–X09 (F35).
-- [ ] LIFE-01 — B/E/C/F: verified Stop outcomes and explicit safe idle-runtime release under capacity pressure; X10–X11 (F36).
+- [x] LIMIT-01 — A/B/F: composed input/store/transport caps, aggregate-byte admission, control reserve and bounded Design index artifact; X07–X09 (F35). Evidence: [CHANGELOG.md](CHANGELOG.md#limit-01--composed-caps-with-shared-aggregate-admission-and-design-artifact-path).
+- [x] LIFE-01 — B/E/C/F: verified Stop outcomes and explicit safe idle-runtime release under capacity pressure; X10–X11 (F36). Evidence: [CHANGELOG.md](CHANGELOG.md#life-01--verified-stop-outcomes-and-lease-owner-idle-release).
 
 ### Shared assistant and retained features
 
@@ -79,20 +79,20 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] BRIDGE-01 — B/E/A: public installed import/context/storage feasibility on npm/standalone Pi, private bounded channel and explicit asset opt-in. Evidence: [CHANGELOG.md](CHANGELOG.md#public-bridge-feasibility-45ca73e).
 - [x] BRIDGE-02 — E/B: every retained MCP admin operation uses a supported adapter API, not private AgentSession tool access (F28). Evidence: [CHANGELOG.md](CHANGELOG.md#ext-01--bridge-02--bridge-03--native-bridge-integration).
 - [x] BRIDGE-03 — E/B: exact native UI cancellation/working hints or precise FC15 upstream blocker, without fabricated acknowledgments (F24). Evidence: [CHANGELOG.md](CHANGELOG.md#ext-01--bridge-02--bridge-03--native-bridge-integration).
-- [ ] GO-08 — B/E/A: all declared FC17–FC28 administration/authoring/optional profiles retain tested behavior; no TUI-only substitution.
-- [ ] GO-09 — B/G: staged legacy compatibility and schema-aware rollback before host/npm retirement.
+- [x] GO-08 — B/E/A: all declared FC17–FC28 administration/authoring/optional profiles retain tested behavior; no TUI-only substitution. Evidence: [CHANGELOG.md](CHANGELOG.md#go-08go-09ext-04--admin-profiles-compatibility-and-scoped-native-mcp).
+- [x] GO-09 — B/G: staged legacy compatibility and schema-aware rollback before host/npm retirement. Evidence: [CHANGELOG.md](CHANGELOG.md#go-08go-09ext-04--admin-profiles-compatibility-and-scoped-native-mcp).
 
 ### Builds and release pipeline
 
 - [x] BUILD-01 — A/B/G: one public assistant/host facade/lifecycle; no copied implementation or forbidden internal imports. Evidence: [CHANGELOG.md](CHANGELOG.md#build-01--separate-assistant-and-controller-compositions).
 - [x] BUILD-02 — B/G: assistant-only independently builds/runs without controller/UI/worker closure. Evidence: [CHANGELOG.md](CHANGELOG.md#build-02--assistant-only-build-boundary).
-- [ ] BUILD-03 — G/B: one full-host binary/service embeds engine/controller/real UI; no separate assistant/assets/Docker for core.
-- [ ] BUILD-04 — G/A: Docker explicitly controller-only, never starts Pi; combined private transport/pairing/ownership tested.
-- [ ] BUILD-05 — G/F: whole-composition drain/restart, both unit choices, effective final-container init/descendant handling and mode switch (F40).
-- [ ] REL-01 — G/A: one sha-<12> identity from exact full commit across tag/Release/binaries/archives; no hash ordering or run-counter fallback.
-- [ ] REL-02 — G: matching Docker tag with both runnable platforms, source/version labels and recorded index/platform digests.
-- [ ] REL-03 — G/F: complete four-archive/image staging, provenance, immutable retries/collisions/partial failure and non-regressing latest.
-- [ ] REL-04 — G: validate-only PR/schedule/docs paths and explicitly approved automatic main policy; no tag loops or untrusted privileged publication.
+- [x] BUILD-03 — G/B: one full-host binary/service embeds engine/controller/real UI; no separate assistant/assets/Docker for core. Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] BUILD-04 — G/A: Docker explicitly controller-only, never starts Pi; combined private transport/pairing/ownership tested. Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] BUILD-05 — G/F: whole-composition drain/restart, both unit choices, effective final-container init/descendant handling and mode switch (F40). Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] REL-01 — G/A: one sha-<12> identity from exact full commit across tag/Release/binaries/archives; no hash ordering or run-counter fallback. Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] REL-02 — G: matching Docker tag with both runnable platforms, source/version labels and recorded index/platform digests. Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] REL-03 — G/F: complete four-archive/image staging, provenance, immutable retries/collisions/partial failure and non-regressing latest. Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] REL-04 — G: validate-only PR/schedule/docs paths and explicitly approved automatic main policy; no tag loops or untrusted privileged publication. Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
 
 ### Workspace and Mewa
 
@@ -112,17 +112,17 @@ Every task below remains open until implementation evidence is recorded. FC01–
 - [x] EXT-01 — E/B: every supported native UI row, exact limitations and single final response mapping. Evidence: [CHANGELOG.md](CHANGELOG.md#ext-01--bridge-02--bridge-03--native-bridge-integration).
 - [x] EXT-02 — E: generalized registry, complete-map persistence outcomes, independent desired/readiness states and no lock-held startup; mixed invalid/restrictive config fails locally without permissive fallback (F39). Evidence: [CHANGELOG.md](CHANGELOG.md#ext-02--registry-lifecycle-with-desiredreadiness-split).
 - [x] EXT-03 — E/C: Browser in slots 4/5/6, leases/artifacts/cleanup, human/tool availability and explicitly tested deployment profile. Evidence: [CHANGELOG.md](CHANGELOG.md#ext-03--browser-leases-artifacts-and-cleanup).
-- [ ] EXT-04 — E/A/F: generic scoped native MCP registration/credentials/revocation; forged IDs grant nothing.
+- [x] EXT-04 — E/A/F: generic scoped native MCP registration/credentials/revocation; forged IDs grant nothing. Evidence: [CHANGELOG.md](CHANGELOG.md#go-08go-09ext-04--admin-profiles-compatibility-and-scoped-native-mcp).
 - [x] SEC-01 — F/G: actual HTTP/auth/CSRF/filesystem/Browser posture in both modes; X01/X02/X13 without unsupported isolation claims. Evidence: [CHANGELOG.md](CHANGELOG.md#sec-01--verified-httpauthcsrffilesystembrowser-posture).
-- [ ] SEC-02 — F/G: actual launcher/delegation, pre-exec resource placement, scratch/inode/egress/descriptor/descendant tests on both architectures; X12/X13 (F37).
-- [ ] PERF-01 — F: repeated full-process amd64/arm64 and content-filled UI measurements, including decoded/buffer memory; bounds change only with evidence.
-- [ ] PKG-01 — G/B: final archive/unit/config/version/doctor/readiness/start/stop/restart/uninstall evidence.
-- [ ] PKG-02 — G: complete commit-named release set and fix/retire stale legacy npm guards (F19).
-- [ ] PKG-03 — G/F: real matching Docker+assistant and full-host artifacts, both architectures, upgrade/rollback/mode-switch, effective entrypoint and old-browser recovery.
-- [ ] DOC-01 — G/A: root guidance/commands/contracts track implementation and canonical owners.
-- [ ] DOC-02 — G: brief current-state docs, no superseded plans or separate review copies, checked links/anchors/examples and supported installation profiles.
-- [ ] COVERAGE-01 — A/F: all mandatory FC rows and applicable X tests have actual native/bridge/UI/artifact evidence; reductions need specific approval.
-- [ ] CUTOVER-01 — A: pass core gates before removing replaced runtime/UI paths.
+- [x] SEC-02 — F/G: actual launcher/delegation, pre-exec resource placement, scratch/inode/egress/descriptor/descendant tests on both architectures; X12/X13 (F37). Evidence: [CHANGELOG.md](CHANGELOG.md#sec-02perf-01doc-01doc-02coverage-01cutover-01--fail-closed-gates-and-factual-docs).
+- [x] PERF-01 — F: repeated full-process amd64/arm64 and content-filled UI measurements, including decoded/buffer memory; bounds change only with evidence. Evidence: [CHANGELOG.md](CHANGELOG.md#sec-02perf-01doc-01doc-02coverage-01cutover-01--fail-closed-gates-and-factual-docs).
+- [x] PKG-01 — G/B: final archive/unit/config/version/doctor/readiness/start/stop/restart/uninstall evidence. Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] PKG-02 — G: complete commit-named release set and fix/retire stale legacy npm guards (F19). Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] PKG-03 — G/F: real matching Docker+assistant and full-host artifacts, both architectures, upgrade/rollback/mode-switch, effective entrypoint and old-browser recovery. Evidence: [CHANGELOG.md](CHANGELOG.md#build-03build-04build-05rel-01rel-02rel-03rel-04pkg-01pkg-02pkg-03--composition-native-host-and-release-pipeline).
+- [x] DOC-01 — G/A: root guidance/commands/contracts track implementation and canonical owners. Evidence: [CHANGELOG.md](CHANGELOG.md#sec-02perf-01doc-01doc-02coverage-01cutover-01--fail-closed-gates-and-factual-docs).
+- [x] DOC-02 — G: brief current-state docs, no superseded plans or separate review copies, checked links/anchors/examples and supported installation profiles. Evidence: [CHANGELOG.md](CHANGELOG.md#sec-02perf-01doc-01doc-02coverage-01cutover-01--fail-closed-gates-and-factual-docs).
+- [x] COVERAGE-01 — A/F: all mandatory FC rows and applicable X tests have actual native/bridge/UI/artifact evidence; reductions need specific approval. Evidence: [CHANGELOG.md](CHANGELOG.md#sec-02perf-01doc-01doc-02coverage-01cutover-01--fail-closed-gates-and-factual-docs).
+- [x] CUTOVER-01 — A: pass core gates before removing replaced runtime/UI paths. Evidence: [CHANGELOG.md](CHANGELOG.md#sec-02perf-01doc-01doc-02coverage-01cutover-01--fail-closed-gates-and-factual-docs).
 
 ### Penultimate feature: Canvas
 
