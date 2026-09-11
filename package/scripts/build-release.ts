@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { writeDeterministicTarGz } from "./deterministic-tar.ts";
 
 const SOURCE_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 const ARCHITECTURES = ["amd64", "arm64"] as const;
@@ -175,25 +176,17 @@ async function archiveBinary(
 	await writeFile(join(stage, "INSTALL.md"), installInstructions(variant));
 	await copyFile(join(repositoryRoot, "LICENSE"), join(stage, "LICENSE"));
 	await copyFile(join(repositoryRoot, "NOTICE.md"), join(stage, "NOTICE.md"));
-	await run(
+	await writeDeterministicTarGz(
+		archivePath,
 		[
-			"tar",
-			"--sort=name",
-			`--mtime=@${commitTime}`,
-			"--owner=0",
-			"--group=0",
-			"--numeric-owner",
-			"-czf",
-			archivePath,
-			binary,
-			unit,
-			config,
-			"INSTALL.md",
-			"LICENSE",
-			"NOTICE.md",
+			{ name: binary, path: join(stage, binary), mode: 0o755 },
+			{ name: unit, path: join(stage, unit), mode: 0o644 },
+			{ name: config, path: join(stage, config), mode: 0o644 },
+			{ name: "INSTALL.md", path: join(stage, "INSTALL.md"), mode: 0o644 },
+			{ name: "LICENSE", path: join(stage, "LICENSE"), mode: 0o644 },
+			{ name: "NOTICE.md", path: join(stage, "NOTICE.md"), mode: 0o644 },
 		],
-		stage,
-		{ GZIP: "-n" },
+		commitTime,
 	);
 	return {
 		variant,
