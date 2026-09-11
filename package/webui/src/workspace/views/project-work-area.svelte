@@ -8,7 +8,6 @@ import Button from "../../components/button.svelte";
 import ErrorBoundary from "../../components/error-boundary.svelte";
 import { isChunkLoadError } from "../../components/error-boundary-state";
 import Icon from "../../components/icon.svelte";
-import CanvasPreview from "../../canvas/canvas-preview.svelte";
 import {
 	CANVAS_CONTRIBUTION,
 	canvasManagementStatusUrl,
@@ -17,7 +16,6 @@ import {
 	type CanvasState,
 	type CanvasStatusResponse,
 } from "../../canvas";
-import DesignPreview from "../../design/design-preview.svelte";
 import {
 	DESIGN_CONTRIBUTION,
 	designStateFromStatus,
@@ -104,8 +102,12 @@ interface Props {
 	projectAreaId: string;
 }
 type ShellResizerComponent = typeof import("../shell-resizer.svelte").default;
+type CanvasPreviewComponent = typeof import("../../canvas/canvas-preview.svelte").default;
+type DesignPreviewComponent = typeof import("../../design/design-preview.svelte").default;
 let { projectAreaId }: Props = $props();
 let ShellResizer = $state<ShellResizerComponent | null>(null);
+let CanvasPreview = $state<CanvasPreviewComponent | null>(null);
+let DesignPreview = $state<DesignPreviewComponent | null>(null);
 
 type LayoutProbeMode =
 	| "split"
@@ -198,6 +200,12 @@ let canvasRefreshPending = $state(false);
 let designRefreshPending = $state(false);
 let canvasRefreshError = $state<string | null>(null);
 let designRefreshError = $state<string | null>(null);
+let canvasPreviewLoadPending = $state(false);
+let designPreviewLoadPending = $state(false);
+let canvasPreviewLoadError = $state(false);
+let designPreviewLoadError = $state(false);
+let canvasPreviewReloadAttempts = $state(0);
+let designPreviewReloadAttempts = $state(0);
 let moduleRefreshOwner = $state<string | null>(null);
 let previousTabs: ContentTab[] = [];
 const browserRestartsInFlight = new Set<string>();
@@ -224,6 +232,56 @@ $effect(() => {
 		cancelled = true;
 	};
 });
+
+function loadCanvasPreview(): void {
+	if (CanvasPreview || canvasPreviewLoadPending || canvasPreviewLoadError) return;
+	canvasPreviewLoadPending = true;
+	void import("../../canvas/canvas-preview.svelte")
+		.then(({ default: component }) => {
+			CanvasPreview = component;
+		})
+		.catch(() => {
+			canvasPreviewLoadError = true;
+		})
+		.finally(() => {
+			canvasPreviewLoadPending = false;
+		});
+}
+
+function loadDesignPreview(): void {
+	if (DesignPreview || designPreviewLoadPending || designPreviewLoadError) return;
+	designPreviewLoadPending = true;
+	void import("../../design/design-preview.svelte")
+		.then(({ default: component }) => {
+			DesignPreview = component;
+		})
+		.catch(() => {
+			designPreviewLoadError = true;
+		})
+		.finally(() => {
+			designPreviewLoadPending = false;
+		});
+}
+
+function retryCanvasPreview(): void {
+	if (canvasPreviewReloadAttempts >= UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS) return;
+	canvasPreviewReloadAttempts = Math.min(
+		canvasPreviewReloadAttempts + 1,
+		UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS,
+	);
+	canvasPreviewLoadError = false;
+	loadCanvasPreview();
+}
+
+function retryDesignPreview(): void {
+	if (designPreviewReloadAttempts >= UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS) return;
+	designPreviewReloadAttempts = Math.min(
+		designPreviewReloadAttempts + 1,
+		UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS,
+	);
+	designPreviewLoadError = false;
+	loadDesignPreview();
+}
 
 const STATUS_LABEL = {
 	connected: "Connected",
@@ -643,6 +701,11 @@ $effect(() => {
 });
 
 $effect(() => {
+	if (activeCanvasTab) loadCanvasPreview();
+	if (activeDesignTab) loadDesignPreview();
+});
+
+$effect(() => {
 	const tabs = contentTabs;
 	if (removed) {
 		for (const tab of previousTabs) {
@@ -975,7 +1038,21 @@ function signOut(): void {
 			</div>
 			<p data-testid="canvas-module-status" class="tr-text-ui text-text-muted">{moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel)}</p>
 			{#if canvasRefreshError}<p role="alert" class="tr-text-metadata text-feedback-error">{canvasRefreshError}</p>{/if}
-			<CanvasPreview preview={canvasState.scope?.sessionId === tab.sessionId ? canvasState.preview : unavailableCanvasState(tab.sessionId).preview} />
+			{#if CanvasPreview}
+				<CanvasPreview preview={canvasState.scope?.sessionId === tab.sessionId ? canvasState.preview : unavailableCanvasState(tab.sessionId).preview} />
+			{:else if canvasPreviewLoadError}
+				<p role="alert" class="tr-text-metadata text-feedback-error">Canvas preview needs the current bundle. Canvas content remains unchanged.</p>
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={canvasPreviewReloadAttempts >= UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS}
+					onclick={retryCanvasPreview}
+				>
+					{canvasPreviewReloadAttempts === 0 ? "Try loading once" : "Retry preview"}
+				</Button>
+			{:else}
+				<p role="status" class="tr-text-metadata text-text-muted">Loading Canvas preview…</p>
+			{/if}
 		</div>
 	{:else}
 		<div data-testid="design-module-view" class="mewa-layout-probe__scroll flex min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
@@ -994,7 +1071,21 @@ function signOut(): void {
 			{#if designState.document}
 				<p class="tr-text-ui text-text-muted">{designState.document.name} · {designState.document.pageCount} pages · {designState.document.nodeCount} nodes</p>
 			{/if}
-			<DesignPreview preview={designState.preview} />
+			{#if DesignPreview}
+				<DesignPreview preview={designState.preview} />
+			{:else if designPreviewLoadError}
+				<p role="alert" class="tr-text-metadata text-feedback-error">Design preview needs the current bundle. Design data remains unchanged.</p>
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={designPreviewReloadAttempts >= UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS}
+					onclick={retryDesignPreview}
+				>
+					{designPreviewReloadAttempts === 0 ? "Try loading once" : "Retry preview"}
+				</Button>
+			{:else}
+				<p role="status" class="tr-text-metadata text-text-muted">Loading Design preview…</p>
+			{/if}
 		</div>
 	{/if}
 {/snippet}

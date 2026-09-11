@@ -18,7 +18,7 @@ import { focusFirstVisible, panelHasFocusableContent } from "./focus-control";
 import ProjectTree from "./projects/project-tree.svelte";
 import { hasConfiguredProvider, resolveShellAvailability } from "./shell-state";
 import NoProviderWelcome from "./views/no-provider-welcome.svelte";
-import ProjectWorkArea from "./views/project-work-area.svelte";
+import { UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS } from "./views/upgrade-recovery";
 import WelcomePanel from "./views/welcome-panel.svelte";
 
 const STATUS_LABEL = {
@@ -34,6 +34,11 @@ const STATUS_DOT = {
 
 let providerError = $state(false);
 let providerRefreshTick = $state(0);
+type ProjectWorkAreaComponent = typeof import("./views/project-work-area.svelte").default;
+let ProjectWorkArea = $state<ProjectWorkAreaComponent | null>(null);
+let projectWorkAreaLoadPending = $state(false);
+let projectWorkAreaLoadError = $state(false);
+let projectWorkAreaReloadAttempts = $state(0);
 let SettingsDialog = $state<typeof import("../settings/settings-dialog.svelte").default | null>(
 	null,
 );
@@ -55,6 +60,37 @@ let availability = $derived(
 let hasActiveProjectArea = $derived(
 	availability === "ready" && $appStore.activeProjectAreaId !== null,
 );
+
+function loadProjectWorkArea(): void {
+	if (ProjectWorkArea || projectWorkAreaLoadPending) return;
+	projectWorkAreaLoadPending = true;
+	projectWorkAreaLoadError = false;
+	void import("./views/project-work-area.svelte")
+		.then(({ default: component }) => {
+			ProjectWorkArea = component;
+		})
+		.catch(() => {
+			projectWorkAreaLoadError = true;
+		})
+		.finally(() => {
+			projectWorkAreaLoadPending = false;
+		});
+}
+
+function retryProjectWorkArea(): void {
+	// A stale deployment chunk must not trigger an unbounded reload loop or
+	// re-dispatch any work. Drafts and accepted work remain in the app store.
+	if (projectWorkAreaReloadAttempts >= UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS) return;
+	projectWorkAreaReloadAttempts = Math.min(
+		projectWorkAreaReloadAttempts + 1,
+		UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS,
+	);
+	loadProjectWorkArea();
+}
+
+$effect(() => {
+	if (hasActiveProjectArea) loadProjectWorkArea();
+});
 
 onMount(() =>
 	initGlobalHotkeys({
@@ -163,7 +199,22 @@ function signOut(): void {
 	<a class="skip-link" href="#main-content">Skip to content</a>
 	{#if hasActiveProjectArea && $appStore.activeProjectAreaId}
 		<div data-testid="project-shell" class="flex min-h-0 min-w-0 flex-1 flex-col">
-			{#key $appStore.activeProjectAreaId}<ProjectWorkArea projectAreaId={$appStore.activeProjectAreaId} />{/key}
+			{#if ProjectWorkArea}
+				{#key $appStore.activeProjectAreaId}<ProjectWorkArea projectAreaId={$appStore.activeProjectAreaId} />{/key}
+			{:else if projectWorkAreaLoadError}
+				<main id="main-content" data-testid="project-work-area-load-error" class="app-empty flex-1" role="alert">
+					<p>The workspace view needs the current bundle. Open work remains intact.</p>
+					<Button
+						variant="outline"
+						disabled={projectWorkAreaReloadAttempts >= UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS}
+						onclick={retryProjectWorkArea}
+					>
+						{projectWorkAreaReloadAttempts === 0 ? "Try loading once" : "Retry loading"}
+					</Button>
+				</main>
+			{:else}
+				<main id="main-content" data-testid="project-work-area-loading" class="app-empty flex-1" role="status">Loading workspace…</main>
+			{/if}
 		</div>
 	{:else}
 		<header class="app-header flex min-w-0 items-center justify-between gap-sm border-b px-sm py-sm sm:px-lg">
