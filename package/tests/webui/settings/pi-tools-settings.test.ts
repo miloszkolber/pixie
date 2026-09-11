@@ -6,7 +6,11 @@ import {
 	isSessionInventoryCurrent,
 	registryModuleStatusLabel,
 } from "@/settings/sections/pi-tools-settings";
-import { resolveSettingsSection, settingsTabs } from "@/settings/settings-dialog";
+import {
+	resolveSettingsSection,
+	selectVisibleSettingsSection,
+	settingsTabs,
+} from "@/settings/settings-dialog";
 import { SettingsSection } from "@/settings/state";
 import { appStoreApi } from "@/store";
 
@@ -71,6 +75,14 @@ test("System remains reachable while agent capabilities are unavailable", () => 
 		{ section: SettingsSection.Schedules, label: "Schedules" },
 		{ section: SettingsSection.System, label: "System" },
 	]);
+});
+
+test("profile loss falls back from an unavailable local selection to System", () => {
+	const tabs = settingsTabs(false, true);
+	const resolved = resolveSettingsSection(SettingsSection.Pi, null);
+	expect(selectVisibleSettingsSection(SettingsSection.Pi, resolved, tabs)).toBe(
+		SettingsSection.System,
+	);
 });
 
 test("settings tabs wrap without a native horizontal scroll container", async () => {

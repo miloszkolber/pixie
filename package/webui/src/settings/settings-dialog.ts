@@ -40,6 +40,16 @@ export function resolveSettingsSection(
 	return available.some((tab) => tab.section === section) ? section : SettingsSection.Providers;
 }
 
+export function selectVisibleSettingsSection(
+	selected: SettingsSection | null,
+	resolved: SettingsSection,
+	tabs: readonly SettingsTabDescriptor[],
+): SettingsSection {
+	if (selected !== null && tabs.some((tab) => tab.section === selected)) return selected;
+	if (tabs.some((tab) => tab.section === resolved)) return resolved;
+	return tabs[0]?.section ?? SettingsSection.System;
+}
+
 export function settingsTabs(
 	genericAgent = false,
 	profilePending = false,

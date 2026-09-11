@@ -24,7 +24,10 @@ func TestDiagnosticsHelperChildOutlivingDeadline(t *testing.T) {
 	temporary := t.TempDir()
 	marker := filepath.Join(temporary, "child-pid")
 	helper := filepath.Join(temporary, "helper.sh")
-	script := "#!/bin/sh\n( trap '' TERM; sleep 30 ) &\nchild=$!\nprintf '%s' \"$child\" > '" + strings.ReplaceAll(marker, "'", "'\\''") + "'\nwait \"$child\"\n"
+	// Keep the managed shell alive after TERM. Some /bin/sh implementations do
+	// not preserve an ignored disposition when they exec sleep directly, which
+	// made the former one-sleep fixture depend on shell implementation details.
+	script := "#!/bin/sh\n( trap '' TERM; while :; do sleep 30; done ) &\nchild=$!\nprintf '%s' \"$child\" > '" + strings.ReplaceAll(marker, "'", "'\\''") + "'\nwait \"$child\"\n"
 	if err := os.WriteFile(helper, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}

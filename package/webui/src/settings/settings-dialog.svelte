@@ -5,7 +5,11 @@ import Dialog from "@/components/dialog.svelte";
 import { appStore, appStoreApi, selectActiveProjectArea, selectActiveContentTab } from "@/store";
 import { restoreSettingsFocus } from "./open-settings";
 import AgentSettings from "./sections/agent-settings.svelte";
-import { resolveSettingsSection, settingsTabs } from "./settings-dialog";
+import {
+	resolveSettingsSection,
+	selectVisibleSettingsSection,
+	settingsTabs,
+} from "./settings-dialog";
 import { SettingsSection } from "./state";
 
 const loaders: Partial<Record<SettingsSection, () => Promise<{ default: Component }>>> = {
@@ -71,12 +75,19 @@ let genericAgent = $derived(
 	!profilePending &&
 		(!$appStore.agentProfile?.pi || $appStore.agentProfile.operations.administration === false),
 );
-let activeSection = $derived(resolveSettingsSection($appStore.settingsSection, settingsProfile));
 let tabs = $derived(settingsTabs(genericAgent, profilePending, settingsProfile));
+let selectedSection = $state<SettingsSection | null>(null);
+let resolvedSection = $derived(resolveSettingsSection($appStore.settingsSection, settingsProfile));
+let activeSection = $derived(selectVisibleSettingsSection(selectedSection, resolvedSection, tabs));
 
 function selectSection(section: SettingsSection): void {
+	selectedSection = section;
 	appStoreApi.getState().setSettingsSection(section);
 }
+
+$effect(() => {
+	if (!$appStore.settingsOpen) selectedSection = null;
+});
 
 function handleTabKeydown(event: KeyboardEvent): void {
 	if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;

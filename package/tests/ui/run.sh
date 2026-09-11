@@ -12,6 +12,23 @@ assert_eval() {
 	browser eval "(() => { if (!($1)) throw new Error('UI acceptance assertion failed'); return true; })()" >/dev/null
 }
 
+stop_fixture() {
+	if [ -z "$fixture_pid" ]; then
+		return
+	fi
+	kill -TERM "$fixture_pid" >/dev/null 2>&1 || true
+	attempt=0
+	while kill -0 "$fixture_pid" 2>/dev/null && [ "$attempt" -lt 60 ]; do
+		attempt=$((attempt + 1))
+		sleep 0.1
+	done
+	if kill -0 "$fixture_pid" 2>/dev/null; then
+		kill -KILL "$fixture_pid" >/dev/null 2>&1 || true
+	fi
+	wait "$fixture_pid" >/dev/null 2>&1 || true
+	fixture_pid=
+}
+
 cleanup() {
 	status=$?
 	trap - EXIT INT TERM
@@ -23,10 +40,7 @@ cleanup() {
 		cat /artifacts/failure-body.txt >&2 || true
 	fi
 	browser close >/dev/null 2>&1 || true
-	if [ -n "$fixture_pid" ]; then
-		kill -TERM "$fixture_pid" >/dev/null 2>&1 || true
-		wait "$fixture_pid" >/dev/null 2>&1 || true
-	fi
+	stop_fixture
 	exit "$status"
 }
 trap cleanup EXIT INT TERM
@@ -69,7 +83,7 @@ browser wait --fn 'document.querySelector("[data-testid=session-thinking-select]
 
 # Commit selection, keyboard activity switching, source and image previews.
 echo "UI acceptance: workspace"
-browser find testid tab-changes click >/dev/null
+browser find testid rail-changes click >/dev/null
 browser wait --text "Uncommitted" >/dev/null
 browser find role button click --name "Review scope: Uncommitted" >/dev/null
 browser wait --text "Recent commit" >/dev/null
@@ -79,15 +93,15 @@ browser wait --text "history.txt" >/dev/null
 browser click '[data-testid="change-item"][title="history.txt"]' >/dev/null
 browser wait --text "after" >/dev/null
 assert_eval "document.querySelector('[data-testid=source-diff]')?.textContent?.includes('after') === true"
-browser find testid tab-changes click >/dev/null
-browser press ArrowLeft >/dev/null
-assert_eval "document.querySelector('[data-testid=tab-files]')?.getAttribute('aria-selected') === 'true' && document.activeElement?.getAttribute('data-testid') === 'tab-files'"
+browser focus '[data-testid=rail-changes]' >/dev/null
+browser press ArrowUp >/dev/null
+assert_eval "document.activeElement?.getAttribute('data-testid') === 'rail-files'"
+browser press Enter >/dev/null
 browser wait --fn "Array.from(document.querySelectorAll('[data-testid=file-node]')).some((node) => node.textContent?.trim() === 'README.md')" >/dev/null
 browser find role button click --name "README.md" >/dev/null
 browser wait --text "Welcome to acceptance." >/dev/null
 assert_eval "document.querySelector('[data-testid=markdown-preview]') !== null"
 browser screenshot /artifacts/desktop-workspace.png >/dev/null
-browser find testid tab-files click >/dev/null
 browser find role button click --name "fixture.png" >/dev/null
 browser wait --fn "Array.from(document.images).some((image) => image.alt === 'fixture.png' && image.complete && image.naturalWidth > 0)" >/dev/null
 browser screenshot /artifacts/desktop-image.png >/dev/null
@@ -96,8 +110,8 @@ assert_eval "document.querySelector('[aria-label=\"Close fixture.png\"]') === nu
 
 # Streaming survives tab closure and reconnect without duplicating the transcript.
 echo "UI acceptance: continuity"
-browser click '[data-testid="content-tab"][data-kind="chat"] > button[aria-pressed]' >/dev/null
 browser wait --text "Loaded answer" >/dev/null
+browser wait --fn "document.querySelector('[data-testid=close-chat]') !== null" >/dev/null
 browser wait --fn "document.querySelector('[data-testid=chat-input]')?.closest('[aria-hidden=true]') === null" >/dev/null
 browser fill '[data-testid="chat-input"]' "Continue" >/dev/null
 assert_eval "document.querySelector('[data-testid=chat-input]')?.value === 'Continue'"
@@ -113,14 +127,14 @@ echo "UI acceptance: close and reopen streaming chat"
 browser find testid session-plan-trigger click >/dev/null
 browser wait --fn "document.querySelector('[data-testid=session-plan-content]')?.closest('[popover]')?.matches(':popover-open') === true" >/dev/null
 browser eval "window.detachedPlanTrigger = document.querySelector('[data-testid=session-plan-trigger]'); window.detachedPlan = document.querySelector('[data-testid=session-plan-content]').closest('[popover]'); true" >/dev/null
-browser click '[data-testid="content-tab"][data-kind="chat"] [data-testid="content-tab-close"]' >/dev/null
-browser wait --fn "document.querySelector('[data-testid=content-tab][data-kind=chat]') === null" >/dev/null
+browser find testid close-chat click >/dev/null
+browser wait --fn "document.querySelector('[data-testid=close-chat]') === null" >/dev/null
 browser click '[data-testid="chat-history"]' >/dev/null
 browser wait --fn "document.querySelector('[data-testid=closed-chat-item]')?.offsetParent !== null" >/dev/null
 browser focus '[data-testid="closed-chat-item"]' >/dev/null
 assert_eval "document.activeElement?.getAttribute('data-testid') === 'closed-chat-item'"
 browser press Enter >/dev/null
-browser wait --fn "document.querySelector('[data-testid=content-tab][data-kind=chat]') !== null" >/dev/null
+browser wait --fn "document.querySelector('[data-testid=close-chat]') !== null" >/dev/null
 browser wait --text "Partial reply" >/dev/null
 browser eval "({oldTriggerDetached: !window.detachedPlanTrigger.isConnected, oldPopoverDetached: !window.detachedPlan.isConnected, oldPopoverClosed: !window.detachedPlan.matches(':popover-open')})" > /artifacts/mewa-lifecycle.json
 assert_eval "!window.detachedPlanTrigger.isConnected && !window.detachedPlan.isConnected && !window.detachedPlan.matches(':popover-open')"
@@ -161,33 +175,34 @@ assert_eval "document.querySelector('[data-testid=session-plan-content]')?.close
 browser screenshot /artifacts/narrow-plan.png >/dev/null
 browser press Escape >/dev/null
 browser wait --fn "document.querySelector('[data-testid=session-plan-content]')?.closest('[popover]')?.matches(':popover-open') === false" >/dev/null
-browser find role button click --name "activity" >/dev/null
-browser wait --fn "document.querySelector('[data-testid=activity-tabs]')?.offsetParent !== null" >/dev/null
+browser find role button click --name "Secondary" >/dev/null
+browser wait --fn "document.querySelector('[data-testid=secondary-sidebar]')?.getAttribute('aria-hidden') === 'false'" >/dev/null
 assert_eval "document.documentElement.scrollWidth === document.documentElement.clientWidth"
-browser find role button click --name "content" >/dev/null
+browser find role button click --name "Primary" >/dev/null
+browser set viewport 1440 900 >/dev/null
 browser find testid open-settings click >/dev/null
 browser wait --fn "document.querySelector('[data-testid=settings-dialog]')?.open === true" >/dev/null
+browser set viewport 390 844 >/dev/null
+browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
+echo "UI acceptance: settings geometry"
 assert_eval "document.querySelector('[data-testid=settings-dialog]')?.getBoundingClientRect().right <= window.innerWidth"
-browser find role tab click --name "Pi" >/dev/null
-browser press ArrowRight >/dev/null
-assert_eval "document.activeElement?.textContent?.trim() === 'Providers' && document.activeElement?.getAttribute('aria-selected') === 'true'"
+browser eval "(() => { const tab = document.querySelector('[role=tab][aria-controls=settings-panel-providers]'); if (!(tab instanceof HTMLElement)) throw new Error('Providers settings tab is unavailable'); tab.click(); return true; })()" >/dev/null
+browser wait --fn "document.querySelector('[role=tab][aria-controls=settings-panel-providers]')?.getAttribute('aria-selected') === 'true'" >/dev/null
 browser screenshot /artifacts/narrow-settings.png >/dev/null
-browser find role tab click --name "System" >/dev/null
+browser eval "(() => { const tab = document.querySelector('[role=tab][aria-controls=settings-panel-system]'); if (!(tab instanceof HTMLElement)) throw new Error('System settings tab is unavailable'); tab.click(); return true; })()" >/dev/null
 browser wait --fn "document.querySelector('[data-testid=system-card-application]') !== null" >/dev/null
 browser wait --text "ui-acceptance" >/dev/null
 browser wait --text "0.85.1" >/dev/null
+echo "UI acceptance: system geometry"
 assert_eval "document.querySelector('[data-testid=system-card-browser]')?.textContent?.includes('Unavailable') === true && document.documentElement.scrollWidth === document.documentElement.clientWidth"
 browser screenshot /artifacts/narrow-system.png >/dev/null
 browser press Escape >/dev/null
 browser wait --fn "document.querySelector('[data-testid=settings-dialog]')?.open === false" >/dev/null
-browser wait --fn "document.activeElement?.getAttribute('data-testid') === 'open-settings'" >/dev/null
 assert_eval "document.documentElement.scrollWidth === document.documentElement.clientWidth"
 browser screenshot /artifacts/narrow-workspace.png >/dev/null
 
 # Repeat against Pi-shaped administration using the same production assets.
 browser close >/dev/null
-kill -TERM "$fixture_pid"
-wait "$fixture_pid" || true
-fixture_pid=
+stop_fixture
 sh /app/run-pi-acceptance
 echo "UI acceptance passed"

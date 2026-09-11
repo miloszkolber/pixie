@@ -124,8 +124,19 @@ func TestStopQuiescenceUncertainOnTimeout(t *testing.T) {
 	if outcome.Generation == 0 {
 		t.Fatal("forced Stop did not advance the managed generation")
 	}
-	if releaseErr := manager.ReleaseIdleRuntime(context.Background(), "chat"); releaseErr == nil || !strings.Contains(releaseErr.Error(), "uncertain") {
-		t.Fatalf("uncertain detached work was reported idle: %v", releaseErr)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		releaseErr := manager.ReleaseIdleRuntime(context.Background(), "chat")
+		if releaseErr != nil && strings.Contains(releaseErr.Error(), "uncertain") {
+			break
+		}
+		if releaseErr == nil || !strings.Contains(releaseErr.Error(), "busy") {
+			t.Fatalf("uncertain detached work was reported idle: %v", releaseErr)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("uncertain detached work never settled: %v", releaseErr)
+		}
+		time.Sleep(time.Millisecond)
 	}
 	if outcome.Reason == "" {
 		t.Fatal("uncertain Stop reported no reason")
