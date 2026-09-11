@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -50,10 +52,13 @@ func NewIndexStore(root string) (*IndexStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve design artifact root: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Join(absolute, "documents"), 0o700); err != nil {
+	if err := ensureDir(absolute); err != nil {
 		return nil, fmt.Errorf("create design artifact root: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Join(absolute, "staging"), 0o700); err != nil {
+	if err := ensureDir(filepath.Join(absolute, "documents")); err != nil {
+		return nil, fmt.Errorf("create design document root: %w", err)
+	}
+	if err := ensureDir(filepath.Join(absolute, "staging")); err != nil {
 		return nil, fmt.Errorf("create design staging root: %w", err)
 	}
 	return &IndexStore{root: absolute}, nil
@@ -72,7 +77,14 @@ func (s *IndexStore) WriteIndex(ctx context.Context, documentID string, input io
 	if input == nil {
 		return IndexArtifact{}, errors.New("design index input is required")
 	}
-	stage, err := os.CreateTemp(filepath.Join(s.root, "staging"), "index-*.tmp")
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	stagingRoot := filepath.Join(s.root, "staging")
+	if err := rejectSymlinkParents(stagingRoot); err != nil {
+		return IndexArtifact{}, err
+	}
+	stage, err := os.CreateTemp(stagingRoot, "index-*.tmp")
 	if err != nil {
 		return IndexArtifact{}, fmt.Errorf("stage design index: %w", err)
 	}
@@ -121,10 +133,13 @@ func (s *IndexStore) WriteIndex(ctx context.Context, documentID string, input io
 	}
 
 	documentDir := filepath.Join(s.root, "documents", documentID)
-	if err := os.MkdirAll(documentDir, 0o700); err != nil {
+	if err := ensureDir(documentDir); err != nil {
 		return IndexArtifact{}, fmt.Errorf("create design document directory: %w", err)
 	}
 	path := filepath.Join(documentDir, "index.json")
+	if err := rejectSymlinkParents(path); err != nil {
+		return IndexArtifact{}, err
+	}
 	// A hard link is an atomic no-replace publication on the same filesystem.
 	// It also avoids copying the large staged artifact a second time.
 	if err := os.Link(stagePath, path); err != nil {
@@ -154,6 +169,9 @@ func (s *IndexStore) OpenIndex(documentID string) (*os.File, error) {
 		return nil, errors.New("invalid design document id")
 	}
 	path := filepath.Join(s.root, "documents", documentID, "index.json")
+	if err := rejectSymlinkParents(path); err != nil {
+		return nil, err
+	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -161,15 +179,23 @@ func (s *IndexStore) OpenIndex(documentID string) (*os.File, error) {
 	if !info.Mode().IsRegular() || info.Size() > MaxIndexArtifactBytes {
 		return nil, errors.New("design index artifact is invalid")
 	}
-	file, err := os.Open(path)
+	file, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
+	}
+	openedInfo, statErr := file.Stat()
+	if statErr != nil || !os.SameFile(info, openedInfo) {
+		_ = file.Close()
+		return nil, errors.New("design index artifact changed during open")
 	}
 	return file, nil
 }
 
 func validateJSONIndex(path string) error {
-	file, err := os.Open(path)
+	if err := rejectSymlinkParents(path); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return fmt.Errorf("open staged design index: %w", err)
 	}
