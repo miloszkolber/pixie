@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { appStoreApi, type ContentTab } from "@/store";
+import {
+	appStoreApi,
+	CANVAS_RESOURCE_ID,
+	type ContentTab,
+	canvasTabId,
+	DESIGN_RESOURCE_ID,
+	designTabId,
+	INSTANCE_CONTENT_TAB_AREA_ID,
+} from "@/store";
 import {
 	initialWorkspaceState,
 	sanitizePrimarySelection,
@@ -12,6 +20,7 @@ import {
 	migrateLegacyTabsToSelections,
 	resolvePrimaryContentStatus,
 	resolveSecondaryContentStatus,
+	selectSecondaryContentTab,
 	selectSplitChatTab,
 	selectSplitPair,
 	selectSplitPreviewTab,
@@ -48,6 +57,27 @@ function diffTab(id: string, projectAreaId = "area-1"): ContentTab {
 		loadedTarget: "uncommitted",
 		original: "before",
 		modified: "after",
+	};
+}
+
+function canvasTab(sessionId = "session-a", projectAreaId = "area-1"): ContentTab {
+	return {
+		kind: "canvas",
+		id: canvasTabId(projectAreaId, sessionId),
+		projectAreaId,
+		name: "Canvas",
+		sessionId,
+		resourceId: CANVAS_RESOURCE_ID,
+	};
+}
+
+function designTab(): ContentTab {
+	return {
+		kind: "design",
+		id: designTabId(),
+		projectAreaId: INSTANCE_CONTENT_TAB_AREA_ID,
+		name: "Design",
+		resourceId: DESIGN_RESOURCE_ID,
 	};
 }
 
@@ -164,9 +194,7 @@ test("split pair resolves chat and file independently from canonical state", () 
 test("invalid restored ids sanitize to empty selections", () => {
 	expect(sanitizePrimarySelection({ kind: "session", sessionId: "", projectId: "p" })).toBeNull();
 	expect(sanitizePrimarySelection({ kind: "session", sessionId: "badid" })).toBeNull();
-	expect(
-		sanitizeSecondarySelection({ kind: "file", projectId: "p", resourceId: "" }),
-	).toBeNull();
+	expect(sanitizeSecondarySelection({ kind: "file", projectId: "p", resourceId: "" })).toBeNull();
 	expect(
 		sanitizeSecondarySelection({
 			kind: "diff",
@@ -202,9 +230,9 @@ test("content status distinguishes none, available, missing, and invalid", () =>
 			"area-1",
 		),
 	).toBe("missing");
-	expect(
-		resolvePrimaryContentStatus(tabs, { kind: "session", sessionId: "" }, "area-1"),
-	).toBe("invalid");
+	expect(resolvePrimaryContentStatus(tabs, { kind: "session", sessionId: "" }, "area-1")).toBe(
+		"invalid",
+	);
 	expect(resolveSecondaryContentStatus(tabs, null, "area-1")).toBe("none");
 	expect(
 		resolveSecondaryContentStatus(
@@ -221,7 +249,11 @@ test("content status distinguishes none, available, missing, and invalid", () =>
 		),
 	).toBe("missing");
 	expect(
-		resolveSecondaryContentStatus(tabs, { kind: "file", projectId: "area-1", resourceId: "" }, "area-1"),
+		resolveSecondaryContentStatus(
+			tabs,
+			{ kind: "file", projectId: "area-1", resourceId: "" },
+			"area-1",
+		),
 	).toBe("invalid");
 });
 
@@ -242,5 +274,53 @@ test("legacy tabs migrate to independent selections without cross-project bleed"
 		kind: "file",
 		projectId: "area-1",
 		resourceId: "file-a",
+	});
+});
+
+test("secondary selectors resolve session Canvas and instance Design resources", () => {
+	const canvas = canvasTab();
+	const design = designTab();
+	const tabs = [canvas, design];
+	const canvasSelection = {
+		kind: "module",
+		moduleId: "canvas",
+		resourceId: CANVAS_RESOURCE_ID,
+		context: { scope: "session", sessionId: "session-a", projectId: "area-1" },
+	} as const;
+	const designSelection = {
+		kind: "module",
+		moduleId: "design",
+		resourceId: DESIGN_RESOURCE_ID,
+		context: { scope: "instance", instanceId: INSTANCE_CONTENT_TAB_AREA_ID },
+	} as const;
+
+	expect(selectSecondaryContentTab(tabs, canvasSelection, "area-1")?.kind).toBe("canvas");
+	expect(selectSecondaryContentTab(tabs, designSelection, "area-2")?.kind).toBe("design");
+	expect(resolveSecondaryContentStatus(tabs, canvasSelection, "area-1")).toBe("available");
+	expect(resolveSecondaryContentStatus(tabs, designSelection, "area-2")).toBe("available");
+	expect(
+		selectSecondaryContentTab(
+			tabs,
+			{ ...canvasSelection, context: { scope: "session", sessionId: "session-b" } },
+			"area-1",
+		),
+	).toBeNull();
+});
+
+test("legacy module tabs migrate to their declared scope", () => {
+	const migratedCanvas = migrateLegacyTabsToSelections([canvasTab()], "area-1");
+	expect(migratedCanvas.secondarySelection).toEqual({
+		kind: "module",
+		moduleId: "canvas",
+		resourceId: CANVAS_RESOURCE_ID,
+		context: { scope: "session", sessionId: "session-a", projectId: "area-1" },
+	});
+
+	const migratedDesign = migrateLegacyTabsToSelections([designTab()], "area-1", designTab().id);
+	expect(migratedDesign.secondarySelection).toEqual({
+		kind: "module",
+		moduleId: "design",
+		resourceId: DESIGN_RESOURCE_ID,
+		context: { scope: "instance", instanceId: INSTANCE_CONTENT_TAB_AREA_ID },
 	});
 });

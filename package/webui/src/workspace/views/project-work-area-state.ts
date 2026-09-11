@@ -1,5 +1,6 @@
 import type { RuntimeStatusReport } from "@pixie/contracts";
 import type { AppState, BrowserTab, ChatTab, ContentTab } from "../../store";
+import { contentTabResourceId, INSTANCE_CONTENT_TAB_AREA_ID } from "../store/model";
 import {
 	isValidWorkspaceId,
 	type PrimarySelection,
@@ -8,7 +9,10 @@ import {
 
 const EMPTY_TABS: ContentTab[] = [];
 
-export type SplitPreviewTab = Extract<ContentTab, { kind: "file" | "diff" | "browser" }>;
+export type SplitPreviewTab = Extract<
+	ContentTab,
+	{ kind: "file" | "diff" | "browser" | "canvas" | "design" }
+>;
 
 export type SelectionContentStatus = "none" | "available" | "missing" | "invalid";
 /** Resolve the canonical primary selection through the legacy tab cache. */
@@ -41,21 +45,30 @@ export function selectSecondaryContentTab(
 	} else if (selection.context.scope === "project") {
 		if (selection.context.projectId !== projectAreaId) return null;
 	} else if (selection.context.scope === "session") {
-		if (
-			selection.context.projectId !== undefined &&
-			selection.context.projectId !== projectAreaId
-		)
+		if (selection.context.projectId !== undefined && selection.context.projectId !== projectAreaId)
 			return null;
 	}
 	return (
 		tabs.find((tab): tab is SplitPreviewTab => {
-			if (tab.projectAreaId !== projectAreaId) return false;
+			if (tab.kind !== "design" && tab.projectAreaId !== projectAreaId) return false;
 			if (selection.kind === "file") return tab.kind === "file" && tab.id === selection.resourceId;
 			if (selection.kind === "diff") return tab.kind === "diff" && tab.id === selection.resourceId;
+			if (selection.moduleId === "browser") {
+				return tab.kind === "browser" && tab.panelId === selection.resourceId;
+			}
+			if (selection.moduleId === "canvas") {
+				return (
+					tab.kind === "canvas" &&
+					selection.context.scope === "session" &&
+					tab.sessionId === selection.context.sessionId &&
+					contentTabResourceId(tab) === selection.resourceId
+				);
+			}
 			return (
-				selection.moduleId === "browser" &&
-				tab.kind === "browser" &&
-				tab.panelId === selection.resourceId
+				selection.moduleId === "design" &&
+				tab.kind === "design" &&
+				selection.context.scope === "instance" &&
+				contentTabResourceId(tab) === selection.resourceId
 			);
 		}) ?? null
 	);
@@ -98,35 +111,57 @@ export function selectSplitPreviewTab(
 			return selectSecondaryContentTab(tabs, secondarySelection, projectAreaId);
 		}
 		return (
-			tabs.find(
-				(tab): tab is SplitPreviewTab =>
-					(secondarySelection.kind === "file" &&
-						tab.kind === "file" &&
-						secondarySelection.resourceId === tab.id) ||
-					(secondarySelection.kind === "diff" &&
-						tab.kind === "diff" &&
-						secondarySelection.resourceId === tab.id) ||
-					(secondarySelection.kind === "module" &&
-						tab.kind === "browser" &&
-						secondarySelection.moduleId === "browser" &&
-						secondarySelection.resourceId === tab.panelId),
-			) ?? null
+			tabs.find((tab): tab is SplitPreviewTab => {
+				if (secondarySelection.kind === "file")
+					return tab.kind === "file" && secondarySelection.resourceId === tab.id;
+				if (secondarySelection.kind === "diff")
+					return tab.kind === "diff" && secondarySelection.resourceId === tab.id;
+				if (secondarySelection.moduleId === "browser")
+					return tab.kind === "browser" && secondarySelection.resourceId === tab.panelId;
+				if (secondarySelection.moduleId === "canvas")
+					return (
+						tab.kind === "canvas" &&
+						secondarySelection.context.scope === "session" &&
+						tab.sessionId === secondarySelection.context.sessionId &&
+						contentTabResourceId(tab) === secondarySelection.resourceId
+					);
+				return (
+					secondarySelection.moduleId === "design" &&
+					tab.kind === "design" &&
+					secondarySelection.context.scope === "instance" &&
+					contentTabResourceId(tab) === secondarySelection.resourceId
+				);
+			}) ?? null
 		);
 	}
-	if (activeTab?.kind === "file" || activeTab?.kind === "diff" || activeTab?.kind === "browser")
+	if (
+		activeTab?.kind === "file" ||
+		activeTab?.kind === "diff" ||
+		activeTab?.kind === "browser" ||
+		activeTab?.kind === "canvas" ||
+		activeTab?.kind === "design"
+	)
 		return activeTab;
 	if (previewTabId) {
 		const preview = tabs.find(
 			(tab): tab is SplitPreviewTab =>
 				tab.id === previewTabId &&
-				(tab.kind === "file" || tab.kind === "diff" || tab.kind === "browser"),
+				(tab.kind === "file" ||
+					tab.kind === "diff" ||
+					tab.kind === "browser" ||
+					tab.kind === "canvas" ||
+					tab.kind === "design"),
 		);
 		if (preview) return preview;
 	}
 	return (
 		tabs.findLast(
 			(tab): tab is SplitPreviewTab =>
-				tab.kind === "file" || tab.kind === "diff" || tab.kind === "browser",
+				tab.kind === "file" ||
+				tab.kind === "diff" ||
+				tab.kind === "browser" ||
+				tab.kind === "canvas" ||
+				tab.kind === "design",
 		) ?? null
 	);
 }
@@ -163,10 +198,7 @@ export function resolvePrimaryContentStatus(
 		return isValidWorkspaceId(selection.sectionId) ? "available" : "invalid";
 	}
 	if (!isValidWorkspaceId(selection.sessionId)) return "invalid";
-	if (
-		selection.projectId !== undefined &&
-		!isValidWorkspaceId(selection.projectId)
-	)
+	if (selection.projectId !== undefined && !isValidWorkspaceId(selection.projectId))
 		return "invalid";
 	return selectPrimaryContentTab(tabs, selection, projectAreaId) ? "available" : "missing";
 }
@@ -224,20 +256,25 @@ export function isWorkspaceSelectionStale(
 	return currentGeneration !== capturedGeneration;
 }
 
-function validScopedTabs(
-	tabs: readonly ContentTab[],
-	projectAreaId: string,
-): ContentTab[] {
+function validScopedTabs(tabs: readonly ContentTab[], projectAreaId: string): ContentTab[] {
 	return tabs.filter((tab) => {
+		if (tab.kind === "design") {
+			return isValidWorkspaceId(tab.id) && isValidWorkspaceId(contentTabResourceId(tab));
+		}
 		if (tab.projectAreaId !== projectAreaId) return false;
 		if (tab.kind === "chat") return isValidWorkspaceId(tab.sessionId) && isValidWorkspaceId(tab.id);
-		if (tab.kind === "file")
-			return isValidWorkspaceId(tab.id) && isValidWorkspaceId(tab.path);
+		if (tab.kind === "file") return isValidWorkspaceId(tab.id) && isValidWorkspaceId(tab.path);
 		if (tab.kind === "diff")
 			return (
 				isValidWorkspaceId(tab.id) &&
 				isValidWorkspaceId(tab.path) &&
 				isValidWorkspaceId(tab.repository)
+			);
+		if (tab.kind === "canvas")
+			return (
+				isValidWorkspaceId(tab.id) &&
+				isValidWorkspaceId(tab.sessionId) &&
+				isValidWorkspaceId(contentTabResourceId(tab))
 			);
 		return isValidWorkspaceId(tab.id) && isValidWorkspaceId(tab.panelId);
 	});
@@ -256,8 +293,13 @@ export function migrateLegacyTabsToSelections(
 ): { primarySelection: PrimarySelection; secondarySelection: SecondarySelection } {
 	const scoped = validScopedTabs(tabs, projectAreaId);
 	const chats = scoped.filter((tab): tab is ChatTab => tab.kind === "chat");
-	const previews = scoped.filter((tab): tab is SplitPreviewTab =>
-		tab.kind === "file" || tab.kind === "diff" || tab.kind === "browser" ? true : false,
+	const previews = scoped.filter(
+		(tab): tab is SplitPreviewTab =>
+			tab.kind === "file" ||
+			tab.kind === "diff" ||
+			tab.kind === "browser" ||
+			tab.kind === "canvas" ||
+			tab.kind === "design",
 	);
 	const active = scoped.find((tab) => tab.id === activeTabId) ?? null;
 	const preview = scoped.find((tab) => tab.id === previewTabId) ?? null;
@@ -276,13 +318,23 @@ export function migrateLegacyTabsToSelections(
 
 	let secondarySelection: SecondarySelection = null;
 	const candidate =
-		(active?.kind === "file" || active?.kind === "diff" || active?.kind === "browser"
+		(active?.kind === "file" ||
+		active?.kind === "diff" ||
+		active?.kind === "browser" ||
+		active?.kind === "canvas" ||
+		active?.kind === "design"
 			? active
 			: null) ??
-		(preview?.kind === "file" || preview?.kind === "diff" || preview?.kind === "browser"
+		(preview?.kind === "file" ||
+		preview?.kind === "diff" ||
+		preview?.kind === "browser" ||
+		preview?.kind === "canvas" ||
+		preview?.kind === "design"
 			? preview
 			: null) ??
-		previews.at(-1) ??
+		// Instance-wide Design must not become the default preview while
+		// migrating a project area's legacy tabs.
+		previews.findLast((tab) => tab.kind !== "design") ??
 		null;
 	if (candidate?.kind === "file" && projectId !== undefined) {
 		secondarySelection = { kind: "file", projectId, resourceId: candidate.id };
@@ -299,12 +351,38 @@ export function migrateLegacyTabsToSelections(
 			resourceId: candidate.panelId,
 			context: { scope: "project", projectId },
 		};
+	} else if (candidate?.kind === "canvas") {
+		secondarySelection = {
+			kind: "module",
+			moduleId: "canvas",
+			resourceId: contentTabResourceId(candidate),
+			context: {
+				scope: "session",
+				sessionId: candidate.sessionId,
+				...(projectId === undefined ? {} : { projectId }),
+			},
+		};
+	} else if (candidate?.kind === "design") {
+		secondarySelection = {
+			kind: "module",
+			moduleId: "design",
+			resourceId: contentTabResourceId(candidate),
+			context: { scope: "instance", instanceId: INSTANCE_CONTENT_TAB_AREA_ID },
+		};
 	}
 	return { primarySelection, secondarySelection };
 }
 
 export function browserPanelAvailable(report: RuntimeStatusReport | null): boolean {
 	return report?.browser?.state === "ready";
+}
+
+export function canvasModuleAvailable(report: RuntimeStatusReport | null): boolean {
+	return report?.canvas?.state === "ready";
+}
+
+export function designModuleAvailable(report: RuntimeStatusReport | null): boolean {
+	return report?.design?.state === "ready";
 }
 
 export function claimBrowserRestart(inFlight: Set<string>, tabId: string): boolean {
@@ -330,7 +408,7 @@ export function selectTabSessionStreaming(
 ): Record<string, boolean> {
 	return Object.fromEntries(
 		(state.tabsByProjectArea[projectAreaId] ?? EMPTY_TABS).flatMap((tab): [string, boolean][] => {
-			if (tab.kind !== "chat") return [];
+			if (tab.kind !== "chat" && tab.kind !== "canvas") return [];
 			const runtime = state.sessions[tab.sessionId];
 			return runtime ? [[tab.sessionId, runtime.isStreaming]] : [];
 		}),

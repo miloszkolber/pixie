@@ -138,10 +138,7 @@ function clearChatWorkspace(state: AppState, projectAreaId: string, sessionId: s
  * drafts, streams, submissions, queues, and pending goal work never drop.
  */
 export function hasActiveSessionWork(
-	runtime: Pick<
-		SessionRuntime,
-		"isStreaming" | "draft" | "submission" | "queue" | "goal"
-	>,
+	runtime: Pick<SessionRuntime, "isStreaming" | "draft" | "submission" | "queue" | "goal">,
 ): boolean {
 	return (
 		runtime.isStreaming ||
@@ -213,7 +210,8 @@ function withoutChat(
 	const runtime = state.sessions[sessionId];
 	const preserveRuntime =
 		runtime !== undefined &&
-		(hasActiveSessionWork(runtime) || hasRemainingSessionTab(state, sessionId, projectAreaId, removedTabIds));
+		(hasActiveSessionWork(runtime) ||
+			hasRemainingSessionTab(state, sessionId, projectAreaId, removedTabIds));
 	return {
 		...state,
 		...clearChatWorkspace(state, projectAreaId, sessionId),
@@ -394,8 +392,7 @@ export const createSessionWorkspaceState: StateCreator<AppState, [], [], Session
 			const hasAnotherTab = Object.entries(state.tabsByProjectArea).some(([areaId, areaTabs]) =>
 				areaTabs.some(
 					(candidate) =>
-						candidate.kind === "chat" &&
-						candidate.sessionId === sessionId &&
+						contentSessionId(candidate) === sessionId &&
 						(areaId !== currentProjectAreaId || candidate.id !== tab.id),
 				),
 			);

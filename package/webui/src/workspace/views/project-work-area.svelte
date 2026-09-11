@@ -8,6 +8,23 @@ import Button from "../../components/button.svelte";
 import ErrorBoundary from "../../components/error-boundary.svelte";
 import { isChunkLoadError } from "../../components/error-boundary-state";
 import Icon from "../../components/icon.svelte";
+import CanvasPreview from "../../canvas/canvas-preview.svelte";
+import {
+	CANVAS_CONTRIBUTION,
+	canvasManagementStatusUrl,
+	canvasStateFromStatus,
+	emptyCanvasState,
+	type CanvasState,
+	type CanvasStatusResponse,
+} from "../../canvas";
+import DesignPreview from "../../design/design-preview.svelte";
+import {
+	DESIGN_CONTRIBUTION,
+	designStateFromStatus,
+	emptyDesignState,
+	type DesignState,
+	type DesignStatusResponse,
+} from "../../design";
 import { errorText, getTransport, logoutController } from "../../connection";
 import ChangesPanel from "../../files/changes/changes-panel.svelte";
 import DetailsPanel from "../../files/changes/details-panel.svelte";
@@ -24,9 +41,14 @@ import { SettingsSection } from "../../settings/state";
 import {
 	appStore,
 	appStoreApi,
+	CANVAS_RESOURCE_ID,
+	canvasTabId,
 	clearSecondary,
 	type ChatTab,
 	type ContentTab,
+	DESIGN_RESOURCE_ID,
+	designTabId,
+	INSTANCE_CONTENT_TAB_AREA_ID,
 	type PrimaryArea,
 	type SecondaryArea,
 	selectContextProject,
@@ -63,6 +85,8 @@ import {
 	browserPanelAvailable,
 	browserRestartTargetOpen,
 	claimBrowserRestart,
+	canvasModuleAvailable,
+	designModuleAvailable,
 	selectPrimaryContentTab,
 	selectSecondaryContentTab,
 	selectTabSessionStreaming,
@@ -115,13 +139,8 @@ function probeSlotVisible(mode: LayoutProbeMode, slot: LayoutProbeSlot): boolean
 	if (mode === "split") return true;
 	if (mode === "secondary-focus") return slot !== "primary-view";
 	if (mode === "primary-context") return slot !== "secondary-view";
-	if (mode === "primary-sidebar")
-		return slot !== "secondary-view" && slot !== "secondary-sidebar";
-	return (
-		slot === "primary-rail" ||
-		slot === "primary-view" ||
-		slot === "secondary-rail"
-	);
+	if (mode === "primary-sidebar") return slot !== "secondary-view" && slot !== "secondary-sidebar";
+	return slot === "primary-rail" || slot === "primary-view" || slot === "secondary-rail";
 }
 
 function probeThemeClass(theme: LayoutProbeTheme): string {
@@ -131,7 +150,8 @@ function probeThemeClass(theme: LayoutProbeTheme): string {
 onMount(() => {
 	const query = new URLSearchParams(window.location.search);
 	showLayoutProbes = query.get("mewa") === "probes" || query.get("mewa-probes") === "1";
-	const media = typeof window.matchMedia === "function" ? window.matchMedia("(width < 64rem)") : null;
+	const media =
+		typeof window.matchMedia === "function" ? window.matchMedia("(width < 64rem)") : null;
 	const updateViewport = () => {
 		narrowViewport = media?.matches ?? false;
 	};
@@ -143,7 +163,8 @@ onMount(() => {
 		else media.removeListener?.(updateViewport);
 	};
 	if (media) {
-		if (typeof media.addEventListener === "function") media.addEventListener("change", updateViewport);
+		if (typeof media.addEventListener === "function")
+			media.addEventListener("change", updateViewport);
 		else media.addListener?.(updateViewport);
 	}
 	const updateTheme = () => {
@@ -164,9 +185,20 @@ onMount(() => {
 type MobilePane = "projects" | "primary" | "secondary";
 type MobileSecondarySurface = "view" | "sidebar";
 
-	let mobilePane = $state<MobilePane>(initialMobilePane());
-	let mobileSecondarySurface = $state<MobileSecondarySurface>(initialMobileSecondarySurface());
+let mobilePane = $state<MobilePane>(initialMobilePane());
+let mobileSecondarySurface = $state<MobileSecondarySurface>(initialMobileSecondarySurface());
 let browserStatus = $state<RuntimeStatusReport | null>(null);
+let canvasState = $state<CanvasState>(emptyCanvasState(null));
+let designState = $state<DesignState>(emptyDesignState());
+let canvasReadinessOwner = $state<string | null>(null);
+let designReadinessOwner = $state<string | null>(null);
+let canvasRequestGeneration = 0;
+let designRequestGeneration = 0;
+let canvasRefreshPending = $state(false);
+let designRefreshPending = $state(false);
+let canvasRefreshError = $state<string | null>(null);
+let designRefreshError = $state<string | null>(null);
+let moduleRefreshOwner = $state<string | null>(null);
 let previousTabs: ContentTab[] = [];
 const browserRestartsInFlight = new Set<string>();
 
@@ -206,12 +238,18 @@ const STATUS_DOT = {
 
 let projectArea = $derived(selectProjectAreaById($appStore, projectAreaId));
 let contextProject = $derived(selectContextProject($appStore));
-let contentTabs = $derived($appStore.tabsByProjectArea[projectAreaId] ?? []);
+let contentTabs = $derived([
+	...($appStore.tabsByProjectArea[projectAreaId] ?? []),
+	...($appStore.tabsByProjectArea[INSTANCE_CONTENT_TAB_AREA_ID] ?? []),
+]);
 let workspaceSelection = $derived($appStore.workspaceSelection);
 let primaryArea = $derived(workspaceSelection.primaryArea);
 let secondaryArea = $derived(workspaceSelection.secondaryArea);
 let primarySelection = $derived(workspaceSelection.primarySelection);
 let secondarySelection = $derived(workspaceSelection.secondarySelection);
+let activeSessionId = $derived(
+	primarySelection?.kind === "session" ? primarySelection.sessionId : null,
+);
 let layout = $derived(workspaceSelection.layout);
 let primaryTab = $derived(
 	primaryArea === "chats"
@@ -221,17 +259,26 @@ let primaryTab = $derived(
 let secondaryTab = $derived(
 	selectSecondaryContentTab(contentTabs, secondarySelection, projectAreaId),
 );
+let activeCanvasTab = $derived(secondaryTab?.kind === "canvas" ? secondaryTab : null);
+let activeDesignTab = $derived(secondaryTab?.kind === "design" ? secondaryTab : null);
 let sessionStreaming = $derived(selectTabSessionStreaming($appStore, projectAreaId));
 let connected = $derived($appStore.status === "connected");
 let connectionGeneration = $derived($appStore.connectionGeneration);
 let removed = $derived($appStore.removedProjectAreaIds[projectAreaId] === true);
 let hasSecondarySelection = $derived(secondarySelection !== null);
+let canvasReady = $derived(canvasModuleAvailable(browserStatus));
+let designReady = $derived(designModuleAvailable(browserStatus));
 let primarySidebarVisible = $derived(!layout.leftCollapsed && layout.focus !== "primary");
 let primaryViewVisible = $derived(layout.focus !== "secondary");
-let secondaryViewVisible = $derived(hasSecondarySelection && layout.focus !== "primary" && !layout.rightCollapsed);
+let secondaryViewVisible = $derived(
+	hasSecondarySelection && layout.focus !== "primary" && !layout.rightCollapsed,
+);
 let secondarySlotAccessible = $derived(
 	secondaryViewVisible ||
-		(narrowViewport && mobilePane === "secondary" && mobileSecondarySurface === "view" && hasSecondarySelection),
+		(narrowViewport &&
+			mobilePane === "secondary" &&
+			mobileSecondarySurface === "view" &&
+			hasSecondarySelection),
 );
 let secondarySidebarVisible = $derived(!layout.rightCollapsed && layout.focus !== "primary");
 let layoutProbe = $derived(
@@ -323,8 +370,10 @@ const UPGRADE_DRAFT_STORAGE_KEY = "pixie.upgrade-recovery.drafts";
 
 function currentDrafts(): DraftMap {
 	return Object.fromEntries(
-		Object.entries(appStoreApi.getState().sessions)
-			.map(([sessionId, runtime]) => [sessionId, runtime.draft]),
+		Object.entries(appStoreApi.getState().sessions).map(([sessionId, runtime]) => [
+			sessionId,
+			runtime.draft,
+		]),
 	);
 }
 
@@ -429,7 +478,9 @@ $effect(() => {
 function selectSettingsSection(section: SettingsSection): void {
 	appStoreApi
 		.getState()
-		.dispatchWorkspaceSelection(selectPrimaryAction({ kind: "settings", sectionId: section }, "settings"));
+		.dispatchWorkspaceSelection(
+			selectPrimaryAction({ kind: "settings", sectionId: section }, "settings"),
+		);
 	appStoreApi.getState().setSettingsSection(section);
 }
 
@@ -468,6 +519,129 @@ $effect(() => {
 	};
 });
 
+function moduleStatusDetail(
+	status: RuntimeStatusReport["canvas"] | RuntimeStatusReport["design"],
+	label: string,
+): string {
+	return status?.state === "ready"
+		? `${label} is ready.`
+		: (status?.detail ?? `${label} is unavailable.`);
+}
+
+function unavailableCanvasState(sessionId: string | null): CanvasState {
+	const state = emptyCanvasState(sessionId, canvasProjectId());
+	return {
+		...state,
+		status: "unavailable",
+		preview: {
+			...state.preview,
+			status: "unavailable",
+			reason: moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel),
+		},
+	};
+}
+
+function canvasProjectId(): string {
+	return selectProjectAreaById(appStoreApi.getState(), projectAreaId)?.projectId ?? projectAreaId;
+}
+
+function unavailableDesignState(): DesignState {
+	const state = emptyDesignState();
+	return {
+		...state,
+		availability: "unavailable",
+		preview: {
+			...state.preview,
+			status: "unavailable",
+			reason: moduleStatusDetail(browserStatus?.design, DESIGN_CONTRIBUTION.railLabel),
+		},
+	};
+}
+
+$effect(() => {
+	const sessionId = activeCanvasTab?.sessionId ?? null;
+	const readiness = browserStatus?.canvas?.state ?? null;
+	const owner = `${sessionId ?? ""}\0${readiness ?? ""}`;
+	if (canvasReadinessOwner === owner) return;
+	canvasReadinessOwner = owner;
+	canvasState =
+		readiness === "ready"
+			? emptyCanvasState(sessionId, canvasProjectId())
+			: unavailableCanvasState(sessionId);
+});
+
+$effect(() => {
+	const readiness = browserStatus?.design?.state ?? null;
+	const owner = `${activeDesignTab ? "design" : ""}\0${readiness ?? ""}`;
+	if (designReadinessOwner === owner) return;
+	designReadinessOwner = owner;
+	designState =
+		readiness === "ready" ? { ...emptyDesignState(), enabled: true } : unavailableDesignState();
+});
+
+async function requestModuleJson<T>(path: string): Promise<T> {
+	const response = await fetch(path, {
+		credentials: "same-origin",
+		headers: { Accept: "application/json" },
+	});
+	if (!response.ok) throw new Error(`Module status request failed (${response.status}).`);
+	return (await response.json()) as T;
+}
+
+async function refreshCanvasModule(
+	sessionId: string | null = activeCanvasTab?.sessionId ?? activeSessionId,
+): Promise<void> {
+	if (!canvasReady || !sessionId) return;
+	const generation = ++canvasRequestGeneration;
+	canvasRefreshPending = true;
+	canvasRefreshError = null;
+	try {
+		const statusUrl = canvasManagementStatusUrl({ projectId: canvasProjectId(), sessionId });
+		if (statusUrl === null) throw new Error("Canvas scope is invalid.");
+		const response = await requestModuleJson<CanvasStatusResponse>(statusUrl);
+		if (generation !== canvasRequestGeneration || activeCanvasTab?.sessionId !== sessionId) return;
+		const current =
+			canvasState.scope?.sessionId === sessionId
+				? canvasState
+				: emptyCanvasState(sessionId, canvasProjectId());
+		canvasState = canvasStateFromStatus(current, response);
+	} catch (cause) {
+		if (generation === canvasRequestGeneration) canvasRefreshError = errorText(cause);
+	} finally {
+		if (generation === canvasRequestGeneration) canvasRefreshPending = false;
+	}
+}
+
+async function refreshDesignModule(): Promise<void> {
+	if (!designReady) return;
+	const generation = ++designRequestGeneration;
+	designRefreshPending = true;
+	designRefreshError = null;
+	try {
+		const response = await requestModuleJson<DesignStatusResponse>("/api/design/status");
+		if (generation !== designRequestGeneration) return;
+		designState = designStateFromStatus(designState, response);
+	} catch (cause) {
+		if (generation === designRequestGeneration) designRefreshError = errorText(cause);
+	} finally {
+		if (generation === designRequestGeneration) designRefreshPending = false;
+	}
+}
+
+$effect(() => {
+	const tab = secondaryTab;
+	const owner =
+		tab?.kind === "canvas"
+			? `canvas\0${tab.sessionId}\0${canvasReady}`
+			: tab?.kind === "design"
+				? `design\0${designReady}`
+				: null;
+	if (!owner || moduleRefreshOwner === owner) return;
+	moduleRefreshOwner = owner;
+	if (tab?.kind === "canvas") void refreshCanvasModule(tab.sessionId);
+	else if (tab?.kind === "design") void refreshDesignModule();
+});
+
 $effect(() => {
 	const tabs = contentTabs;
 	if (removed) {
@@ -502,24 +676,22 @@ function restoreLeft(): void {
 	dispatchLayout({ leftCollapsed: false });
 }
 
-	function restoreRight(): void {
-		dispatchLayout({ rightCollapsed: false });
-	}
+function restoreRight(): void {
+	dispatchLayout({ rightCollapsed: false });
+}
 
-	// Narrow viewports show one surface: start on the persisted secondary
-	// content when desktop focus already sits there, otherwise the grid paints
-	// blank until the first tap. Later switches recompute both values explicitly.
-	function initialMobilePane(): MobilePane {
-		return appStoreApi.getState().workspaceSelection.layout.focus === "secondary"
-			? "secondary"
-			: "primary";
-	}
+// Narrow viewports show one surface: start on the persisted secondary
+// content when desktop focus already sits there, otherwise the grid paints
+// blank until the first tap. Later switches recompute both values explicitly.
+function initialMobilePane(): MobilePane {
+	return appStoreApi.getState().workspaceSelection.layout.focus === "secondary"
+		? "secondary"
+		: "primary";
+}
 
-	function initialMobileSecondarySurface(): MobileSecondarySurface {
-		return appStoreApi.getState().workspaceSelection.secondarySelection === null
-			? "sidebar"
-			: "view";
-	}
+function initialMobileSecondarySurface(): MobileSecondarySurface {
+	return appStoreApi.getState().workspaceSelection.secondarySelection === null ? "sidebar" : "view";
+}
 
 function showPrimarySurface(): void {
 	mobilePane = "primary";
@@ -622,6 +794,42 @@ function startBrowser(): void {
 	void openBrowserTab();
 }
 
+function openCanvasTab(sessionId: string | null = activeSessionId): void {
+	if (!canvasReady || !sessionId) {
+		if (!sessionId) toast.info("Select a chat before opening Canvas", "Canvas");
+		return;
+	}
+	appStoreApi.getState().openTab(
+		{
+			kind: "canvas",
+			id: canvasTabId(projectAreaId, sessionId),
+			projectAreaId,
+			name: CANVAS_CONTRIBUTION.railLabel,
+			sessionId,
+			resourceId: CANVAS_RESOURCE_ID,
+		},
+		"keep",
+	);
+	showSecondarySurface();
+	void refreshCanvasModule(sessionId);
+}
+
+function openDesignTab(): void {
+	if (!designReady) return;
+	appStoreApi.getState().openTab(
+		{
+			kind: "design",
+			id: designTabId(),
+			projectAreaId: INSTANCE_CONTENT_TAB_AREA_ID,
+			name: DESIGN_CONTRIBUTION.railLabel,
+			resourceId: DESIGN_RESOURCE_ID,
+		},
+		"keep",
+	);
+	showSecondarySurface();
+	void refreshDesignModule();
+}
+
 function closeTab(tab: ContentTab): void {
 	if (tab.kind === "chat") {
 		appStoreApi.getState().closeChatToHistory(tab.sessionId, projectAreaId, true);
@@ -633,7 +841,7 @@ function closeTab(tab: ContentTab): void {
 				appStoreApi.getState().closeTab(tab.id, true, projectAreaId);
 			})
 			.catch((cause) => toast.error(errorText(cause), "Couldn't close the browser"));
-	} else appStoreApi.getState().closeTab(tab.id, true, projectAreaId);
+	} else appStoreApi.getState().closeTab(tab.id, true, tab.projectAreaId);
 }
 
 function closeSecondary(): void {
@@ -746,13 +954,48 @@ function signOut(): void {
 	{/if}
 {/snippet}
 
-{#snippet previewPane(tab: Extract<ContentTab, { kind: "file" | "diff" | "browser" }>)}
+{#snippet previewPane(tab: Extract<ContentTab, { kind: "file" | "diff" | "browser" | "canvas" | "design" }>)}
 	{#if tab.kind === "browser"}
 		{#key tab.panelId}<ErrorBoundary label="browser"><BrowserPanel panelId={tab.panelId} onRestart={() => openBrowserTab(tab)} /></ErrorBoundary>{/key}
 	{:else if tab.kind === "file"}
 		{#key tab.id}<ErrorBoundary label="preview"><FilePane {tab} /></ErrorBoundary>{/key}
-	{:else}
+	{:else if tab.kind === "diff"}
 		{#key tab.id}<ErrorBoundary label="preview"><DiffPane {tab} /></ErrorBoundary>{/key}
+	{:else if tab.kind === "canvas"}
+		<div data-testid="canvas-module-view" class="mewa-layout-probe__scroll flex min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+			<div class="flex flex-wrap items-start justify-between gap-sm">
+				<div>
+					<span class="eyebrow">{CANVAS_CONTRIBUTION.railLabel}</span>
+					<h2 class="tr-title-entity">Session Canvas</h2>
+					<p class="tr-text-metadata text-text-muted">Session {tab.sessionId}</p>
+				</div>
+				<Button size="sm" variant="outline" disabled={!canvasReady || canvasRefreshPending} onclick={() => void refreshCanvasModule(tab.sessionId)}>
+					<Icon name="refresh-cw" size={14} /> {canvasRefreshPending ? "Refreshing…" : "Refresh"}
+				</Button>
+			</div>
+			<p data-testid="canvas-module-status" class="tr-text-ui text-text-muted">{moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel)}</p>
+			{#if canvasRefreshError}<p role="alert" class="tr-text-metadata text-feedback-error">{canvasRefreshError}</p>{/if}
+			<CanvasPreview preview={canvasState.scope?.sessionId === tab.sessionId ? canvasState.preview : unavailableCanvasState(tab.sessionId).preview} />
+		</div>
+	{:else}
+		<div data-testid="design-module-view" class="mewa-layout-probe__scroll flex min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+			<div class="flex flex-wrap items-start justify-between gap-sm">
+				<div>
+					<span class="eyebrow">{DESIGN_CONTRIBUTION.railLabel}</span>
+					<h2 class="tr-title-entity">Instance Design</h2>
+					<p class="tr-text-metadata text-text-muted">Shared across project areas</p>
+				</div>
+				<Button size="sm" variant="outline" disabled={!designReady || designRefreshPending} onclick={() => void refreshDesignModule()}>
+					<Icon name="refresh-cw" size={14} /> {designRefreshPending ? "Refreshing…" : "Refresh"}
+				</Button>
+			</div>
+			<p data-testid="design-module-status" class="tr-text-ui text-text-muted">{moduleStatusDetail(browserStatus?.design, DESIGN_CONTRIBUTION.railLabel)}</p>
+			{#if designRefreshError}<p role="alert" class="tr-text-metadata text-feedback-error">{designRefreshError}</p>{/if}
+			{#if designState.document}
+				<p class="tr-text-ui text-text-muted">{designState.document.name} · {designState.document.pageCount} pages · {designState.document.nodeCount} nodes</p>
+			{/if}
+			<DesignPreview preview={designState.preview} />
+		</div>
 	{/if}
 {/snippet}
 
@@ -1129,6 +1372,36 @@ function signOut(): void {
 						<div role="tabpanel" aria-label="Git" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-xs py-xs"><ErrorBoundary label="git activity"><ChangesPanel {projectAreaId} onOpen={showSecondarySurface} /></ErrorBoundary></div>
 					{:else if secondaryArea === "details"}
 						<div role="tabpanel" aria-label="Details" data-testid="details-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-sm py-sm"><ErrorBoundary label="details"><DetailsPanel {projectAreaId} sessionId={sessionDetailsVisible && primarySelection?.kind === "session" ? primarySelection.sessionId : null} /></ErrorBoundary></div>
+					{:else if secondaryArea === "module:canvas"}
+						<div role="tabpanel" aria-label="Canvas" data-testid="canvas-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-sm py-sm">
+							<p class="tr-text-eyebrow text-text-muted">{CANVAS_CONTRIBUTION.railLabel}</p>
+							<p class="mt-xs tr-text-ui text-text-default">Session-scoped revision controls</p>
+							{#if activeCanvasTab}
+								<p class="mt-xs tr-text-metadata text-text-muted">Session {activeCanvasTab.sessionId}</p>
+							{/if}
+							<p data-testid="canvas-sidebar-status" class="mt-sm tr-text-metadata text-text-muted">{moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel)}</p>
+							{#if canvasRefreshError}<p role="alert" class="mt-xs tr-text-metadata text-feedback-error">{canvasRefreshError}</p>{/if}
+							{#if activeCanvasTab && canvasReady}
+								<Button class="mt-sm" size="sm" variant="outline" disabled={canvasRefreshPending} onclick={() => void refreshCanvasModule(activeCanvasTab?.sessionId ?? null)}>
+									<Icon name="refresh-cw" size={14} /> {canvasRefreshPending ? "Refreshing…" : "Refresh status"}
+								</Button>
+							{/if}
+						</div>
+					{:else if secondaryArea === "module:design"}
+						<div role="tabpanel" aria-label="Design" data-testid="design-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-sm py-sm">
+							<p class="tr-text-eyebrow text-text-muted">{DESIGN_CONTRIBUTION.railLabel}</p>
+							<p class="mt-xs tr-text-ui text-text-default">Instance-wide document and focus controls</p>
+							<p data-testid="design-sidebar-status" class="mt-sm tr-text-metadata text-text-muted">{moduleStatusDetail(browserStatus?.design, DESIGN_CONTRIBUTION.railLabel)}</p>
+							{#if designState.document}
+								<p class="mt-xs tr-text-metadata text-text-muted">{designState.document.name} · {designState.document.pageCount} pages · {designState.document.nodeCount} nodes</p>
+							{/if}
+							{#if designRefreshError}<p role="alert" class="mt-xs tr-text-metadata text-feedback-error">{designRefreshError}</p>{/if}
+							{#if activeDesignTab && designReady}
+								<Button class="mt-sm" size="sm" variant="outline" disabled={designRefreshPending} onclick={() => void refreshDesignModule()}>
+									<Icon name="refresh-cw" size={14} /> {designRefreshPending ? "Refreshing…" : "Refresh status"}
+								</Button>
+							{/if}
+						</div>
 					{:else}
 						<div data-testid="module-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">{secondaryTitle} controls</p><p class="mt-xs tr-text-metadata text-text-muted">The selected module preview owns its renderer and lifecycle.</p></div>
 					{/if}
@@ -1143,11 +1416,19 @@ function signOut(): void {
 					<Button variant="ghost" size="icon-sm" data-testid="rail-files" aria-label="Files" title="Files" aria-current={secondaryArea === "files" ? "page" : undefined} onclick={() => selectSecondaryRail("files")}><Icon name="folder" size={16} /></Button>
 					<Button variant="ghost" size="icon-sm" data-testid="rail-changes" aria-label="Git" title="Git" aria-current={secondaryArea === "git" ? "page" : undefined} onclick={() => selectSecondaryRail("git")}><Icon name="git-branch" size={16} /></Button>
 					<Button variant="ghost" size="icon-sm" data-testid="rail-browser" aria-label="Browser" title="Browser" aria-current={secondaryArea === "module:browser" ? "page" : undefined} disabled={!browserPanelAvailable(browserStatus)} onclick={() => { revealSecondaryArea("module:browser"); if (hasSecondarySelection) showSecondarySurface(); else showSecondarySidebar(); }}><Icon name="globe" size={16} /></Button>
+					{#if canvasReady && activeSessionId}
+						<Button variant="ghost" size="icon-sm" data-testid="rail-canvas" aria-label={CANVAS_CONTRIBUTION.railLabel} title={CANVAS_CONTRIBUTION.railLabel} aria-current={secondaryArea === "module:canvas" ? "page" : undefined} onclick={() => openCanvasTab(activeSessionId)}><Icon name="image" size={16} /></Button>
+					{/if}
+					{#if designReady}
+						<Button variant="ghost" size="icon-sm" data-testid="rail-design" aria-label={DESIGN_CONTRIBUTION.railLabel} title={DESIGN_CONTRIBUTION.railLabel} aria-current={secondaryArea === "module:design" ? "page" : undefined} onclick={openDesignTab}><Icon name="layers" size={16} /></Button>
+					{/if}
 				{/snippet}
 				{#snippet bottom()}
 					<Button variant="ghost" size="icon-sm" data-testid="toggle-right-panel" aria-label={layout.rightCollapsed ? "Open secondary sidebar" : "Close secondary sidebar"} title={layout.rightCollapsed ? "Open secondary sidebar" : "Close secondary sidebar"} aria-pressed={!layout.rightCollapsed} onclick={toggleRightPanel}><Icon name={layout.rightCollapsed ? "chevron-left" : "chevron-right"} size={16} /></Button>
 					{#if layout.rightCollapsed}<Button variant="ghost" size="icon-sm" data-testid="expand-right-panel" aria-label="Restore secondary sidebar" title="Restore secondary sidebar" onclick={restoreRight}><Icon name="archive-restore" size={16} /></Button>{/if}
 					{#if browserPanelAvailable(browserStatus)}<Button variant="ghost" size="icon-sm" data-testid="open-browser" aria-label="Open browser" title="Open browser" onclick={startBrowser}><Icon name="globe" size={16} /></Button>{/if}
+					{#if canvasReady && activeSessionId}<Button variant="ghost" size="icon-sm" data-testid="open-canvas" aria-label={`Open ${CANVAS_CONTRIBUTION.railLabel}`} title={`Open ${CANVAS_CONTRIBUTION.railLabel}`} onclick={() => openCanvasTab(activeSessionId)}><Icon name="image" size={16} /></Button>{/if}
+					{#if designReady}<Button variant="ghost" size="icon-sm" data-testid="open-design" aria-label={`Open ${DESIGN_CONTRIBUTION.railLabel}`} title={`Open ${DESIGN_CONTRIBUTION.railLabel}`} onclick={openDesignTab}><Icon name="layers" size={16} /></Button>{/if}
 				{/snippet}
 			</ShellRail>
 		</aside>

@@ -8,7 +8,9 @@ import {
 	type ContentOpenOptions,
 	type ContentTab,
 	contentSessionId,
+	contentTabResourceId,
 	type DiffTab,
+	INSTANCE_CONTENT_TAB_AREA_ID,
 	type ProjectAreaActivity,
 	type TabIntent,
 } from "./model";
@@ -131,6 +133,28 @@ function selectionActionForTab(tab: ContentTab) {
 			"git",
 		);
 	}
+	if (tab.kind === "canvas") {
+		return selectSecondary(
+			{
+				kind: "module",
+				moduleId: "canvas",
+				resourceId: contentTabResourceId(tab),
+				context: { scope: "session", sessionId: tab.sessionId, projectId: tab.projectAreaId },
+			},
+			"module:canvas",
+		);
+	}
+	if (tab.kind === "design") {
+		return selectSecondary(
+			{
+				kind: "module",
+				moduleId: "design",
+				resourceId: contentTabResourceId(tab),
+				context: { scope: "instance", instanceId: INSTANCE_CONTENT_TAB_AREA_ID },
+			},
+			"module:design",
+		);
+	}
 	return selectSecondary(
 		{
 			kind: "module",
@@ -168,6 +192,25 @@ function selectionMatchesTab(
 			? "secondary"
 			: null;
 	}
+	if (tab.kind === "canvas") {
+		return selection.secondarySelection?.kind === "module" &&
+			selection.secondarySelection.moduleId === "canvas" &&
+			selection.secondarySelection.resourceId === contentTabResourceId(tab) &&
+			selection.secondarySelection.context.scope === "session" &&
+			selection.secondarySelection.context.sessionId === tab.sessionId &&
+			(selection.secondarySelection.context.projectId === undefined ||
+				selection.secondarySelection.context.projectId === tab.projectAreaId)
+			? "secondary"
+			: null;
+	}
+	if (tab.kind === "design") {
+		return selection.secondarySelection?.kind === "module" &&
+			selection.secondarySelection.moduleId === "design" &&
+			selection.secondarySelection.resourceId === contentTabResourceId(tab) &&
+			selection.secondarySelection.context.scope === "instance"
+			? "secondary"
+			: null;
+	}
 	return selection.secondarySelection?.kind === "module" &&
 		selection.secondarySelection.moduleId === "browser" &&
 		selection.secondarySelection.resourceId === tab.panelId
@@ -197,6 +240,9 @@ function clearProjectAreaContentSelection(
 ): Partial<AppState> {
 	let workspaceSelection = state.workspaceSelection;
 	for (const tab of tabs) {
+		// Design is instance-scoped. A project-area teardown must not clear its
+		// selection even if an old cache placed the tab in that area's bucket.
+		if (tab.kind === "design") continue;
 		const side = selectionMatchesTab(workspaceSelection, tab);
 		if (!side) continue;
 		workspaceSelection = workspaceReducer(
@@ -323,11 +369,19 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 		}),
 	closeTab: (id, countNavigation = true, projectAreaId) =>
 		set((state) => {
-			const currentProjectAreaId = projectAreaId ?? state.activeProjectAreaId;
+			const currentProjectAreaId =
+				projectAreaId ??
+				(state.activeProjectAreaId &&
+				(state.tabsByProjectArea[state.activeProjectAreaId] ?? []).some((tab) => tab.id === id)
+					? state.activeProjectAreaId
+					: Object.entries(state.tabsByProjectArea).find(([, tabs]) =>
+							tabs.some((tab) => tab.id === id),
+						)?.[0]);
 			if (!currentProjectAreaId || state.removedProjectAreaIds[currentProjectAreaId]) return {};
 			const currentTabs = state.tabsByProjectArea[currentProjectAreaId] ?? [];
 			const closedBrowser = currentTabs.find((tab) => tab.id === id && tab.kind === "browser");
 			const closedTab = currentTabs.find((tab) => tab.id === id);
+			if (!closedTab) return {};
 			const tabs = currentTabs.filter((tab) => tab.id !== id);
 			const wasActive = state.activeTabByProjectArea[currentProjectAreaId] === id;
 			return {
@@ -359,11 +413,18 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 		}),
 	setActiveTab: (id, intent) =>
 		set((state) => {
-			const projectAreaId = state.activeProjectAreaId;
+			const projectAreaId =
+				state.activeProjectAreaId &&
+				(state.tabsByProjectArea[state.activeProjectAreaId] ?? []).some((tab) => tab.id === id)
+					? state.activeProjectAreaId
+					: Object.entries(state.tabsByProjectArea).find(([, tabs]) =>
+							tabs.some((tab) => tab.id === id),
+						)?.[0];
 			if (!projectAreaId) return {};
 			const tab = (state.tabsByProjectArea[projectAreaId] ?? []).find(
 				(candidate) => candidate.id === id,
 			);
+			if (!tab) return {};
 			return {
 				activeTabByProjectArea: { ...state.activeTabByProjectArea, [projectAreaId]: id },
 				navTickByProjectArea: bumpProjectAreaNavigation(state, projectAreaId),
@@ -543,7 +604,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 							submission?: unknown;
 							queue?: { steering?: unknown; followUp?: unknown };
 							goal?: { status?: unknown };
-						}
+					  }
 					| undefined;
 				const queue = runtime?.queue as { steering?: unknown[]; followUp?: unknown[] } | undefined;
 				const hasActiveWork =
@@ -558,16 +619,26 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 				const tabbedElsewhere = Object.entries(state.tabsByProjectArea).some(
 					([areaId, areaTabs]) =>
 						areaId !== projectAreaId &&
-						areaTabs.some(
-							(candidate) => candidate.kind === "chat" && candidate.sessionId === sessionId,
-						),
+						areaTabs.some((candidate) => contentSessionId(candidate) === sessionId),
 				);
 				if (hasActiveWork || tabbedElsewhere) continue;
 				delete sessions[sessionId];
 				delete skillsSyncedTickBySession[sessionId];
 			}
+			const retainedInstanceTabs = tabs
+				.filter((tab) => tab.kind === "design")
+				.map((tab) => ({ ...tab, projectAreaId: INSTANCE_CONTENT_TAB_AREA_ID }));
+			const tabsByProjectArea = omitKey(state.tabsByProjectArea, projectAreaId);
+			if (retainedInstanceTabs.length > 0) {
+				const existing = tabsByProjectArea[INSTANCE_CONTENT_TAB_AREA_ID] ?? [];
+				const existingIds = new Set(existing.map((tab) => tab.id));
+				tabsByProjectArea[INSTANCE_CONTENT_TAB_AREA_ID] = [
+					...existing,
+					...retainedInstanceTabs.filter((tab) => !existingIds.has(tab.id)),
+				];
+			}
 			return {
-				tabsByProjectArea: omitKey(state.tabsByProjectArea, projectAreaId),
+				tabsByProjectArea,
 				activeTabByProjectArea: omitKey(state.activeTabByProjectArea, projectAreaId),
 				previewTabByProjectArea: omitKey(state.previewTabByProjectArea, projectAreaId),
 				navTickByProjectArea: omitKey(state.navTickByProjectArea, projectAreaId),

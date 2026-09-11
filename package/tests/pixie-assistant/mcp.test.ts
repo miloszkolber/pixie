@@ -28,7 +28,8 @@ afterEach(() => {
 test("MCP tools and connection removal remain scoped to the extension", async () => {
 	const dir = await mkdtemp(tmpdir() + "/pixie-pi-mcp-");
 	isolate(dir);
-	async function serve(token = "") {
+	async function serve(token = "", header = "X-Fixture") {
+		let expected = token;
 		const mcp = new Server(
 			{ name: "fixture", version: "1.0.0" },
 			{ capabilities: { tools: {}, resources: {} } },
@@ -61,12 +62,12 @@ test("MCP tools and connection removal remain scoped to the extension", async ()
 			port: 0,
 			hostname: "127.0.0.1",
 			fetch: (request) =>
-				token && request.headers.get("X-Fixture") !== token
+				expected && request.headers.get(header) !== expected
 					? new Response("Unauthorized", { status: 401 })
 					: transport.handleRequest(request),
 		});
 
-		return { mcp, http };
+		return { mcp, http, setToken: (value: string) => (expected = value) };
 	}
 	const { mcp, http } = await serve();
 	const rotated = await serve("rotated");
@@ -185,6 +186,102 @@ test("MCP tools and connection removal remain scoped to the extension", async ()
 		await rotated.http.stop(true);
 		await mcp.close();
 		await http.stop(true);
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("same-name Canvas attachment replaces revoked credentials without retaining the old client", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/pixie-pi-mcp-canvas-replace-`);
+	isolate(dir);
+	const canvas = await (async () => {
+		const active = new Set<Server>();
+		const makeServer = () => {
+			const mcp = new Server(
+				{ name: "canvas-fixture", version: "1.0.0" },
+				{ capabilities: { tools: {}, resources: {} } },
+			);
+			mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+				tools: [
+					{ name: "show", description: "Show Canvas fixture", inputSchema: { type: "object" } },
+				],
+			}));
+			mcp.setRequestHandler(CallToolRequestSchema, async () => ({
+				content: [{ type: "text", text: "Canvas completed" }],
+				structuredContent: { ok: true },
+			}));
+			return mcp;
+		};
+		let expected = "Bearer revoked";
+		const seenAuth: string[] = [];
+		const http = Bun.serve({
+			port: 0,
+			hostname: "127.0.0.1",
+			fetch: async (request) => {
+				const authorization = request.headers.get("Authorization") ?? "";
+				seenAuth.push(authorization);
+				if (authorization !== expected) return new Response("Unauthorized", { status: 401 });
+				const mcp = makeServer();
+				active.add(mcp);
+				const transport = new WebStandardStreamableHTTPServerTransport({
+					sessionIdGenerator: undefined,
+					enableJsonResponse: true,
+				});
+				await mcp.connect(transport);
+				return transport.handleRequest(request);
+			},
+		});
+		return {
+			mcp: { close: async () => Promise.allSettled([...active].map((mcp) => mcp.close())) },
+			http,
+			setToken: (value: string) => (expected = `Bearer ${value}`),
+			seenAuth,
+		};
+	})();
+	const sessions = new Sessions(dir, [(pi) => mcpExtension(pi, dir)], () => {});
+	try {
+		const entry = await sessions.create(dir);
+		const context = sessions.context(entry);
+		const attach = (token: string) =>
+			entry.capabilities.call(
+				"mcp.attach",
+				{
+					servers: [
+						{
+							name: "pixie-canvas",
+							type: "http",
+							url: `http://127.0.0.1:${canvas.http.port}/mcp`,
+							headers: { Authorization: `Bearer ${token}` },
+						},
+					],
+				},
+				context,
+			);
+		const tool = entry.session.agent.state.tools.find((candidate) => candidate.name === "mcp");
+		if (!tool) throw new Error("MCP tool unavailable");
+		expect(await attach("revoked")).toEqual({ ok: true, unavailable: [] });
+		expect(
+			await tool.execute(
+				"canvas-before-replacement",
+				{ server: "pixie-canvas", tool: "show", args: {} },
+				new AbortController().signal,
+			),
+		).toMatchObject({ details: { mcpResult: { structuredContent: { ok: true } } } });
+		const beforeReplacement = canvas.seenAuth.length;
+		canvas.setToken("fresh");
+		expect(await attach("fresh")).toEqual({ ok: true, unavailable: [] });
+		expect(
+			await tool.execute(
+				"canvas-after-replacement",
+				{ server: "pixie-canvas", tool: "show", args: {} },
+				new AbortController().signal,
+			),
+		).toMatchObject({ details: { mcpResult: { structuredContent: { ok: true } } } });
+		expect(canvas.seenAuth.slice(beforeReplacement)).not.toContain("Bearer revoked");
+		expect(canvas.seenAuth.slice(beforeReplacement)).toContain("Bearer fresh");
+	} finally {
+		await sessions.close();
+		await canvas.mcp.close();
+		await canvas.http.stop(true);
 		await rm(dir, { recursive: true, force: true });
 	}
 });

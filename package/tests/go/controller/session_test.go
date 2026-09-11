@@ -97,6 +97,10 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 						return
 					}
 				}
+			case "session.create":
+				result = map[string]any{"sessionId": "created-session", "capabilities": map[string]any{"sessions": 1, "mcp": 1}}
+			case "session.fork":
+				result = map[string]any{"sessionId": "forked-session", "capabilities": map[string]any{"sessions": 1, "mcp": 1}}
 			case "session.prompt":
 				if promptRequests != nil {
 					promptRequests <- map[string]any{"connection": connection, "id": rpc.ID, "params": rpc.Params}
@@ -104,6 +108,8 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 				}
 			case "pi.tools.call":
 				result = map[string]any{"isError": false, "content": []any{map[string]any{"type": "text", "text": "tool result"}}, "structuredContent": map[string]any{"ok": true}, "_meta": map[string]any{"retained": true}}
+			case "mcp.attach":
+				result = map[string]any{"ok": true, "unavailable": []string{}}
 			}
 			if len(rpc.ID) > 0 && writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}) != nil {
 				return

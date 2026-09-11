@@ -60,6 +60,36 @@ export interface BrowserTab {
 	panelId: string;
 }
 
+/** The reserved tab bucket for resources whose lifetime is the Pixie instance. */
+export const INSTANCE_CONTENT_TAB_AREA_ID = "__pixie_instance__";
+
+/** Stable resource identities used by the registered Canvas and Design modules. */
+export const CANVAS_RESOURCE_ID = "canvas";
+export const DESIGN_RESOURCE_ID = "design";
+
+export interface CanvasTab {
+	kind: "canvas";
+	id: string;
+	/** Canvas is session-scoped, so the owning project area remains explicit. */
+	projectAreaId: string;
+	name: string;
+	sessionId: string;
+	/** Optional for tabs restored from an older cache; defaults to the tab id. */
+	resourceId?: string;
+	canvasId?: string | null;
+}
+
+export interface DesignTab {
+	kind: "design";
+	id: string;
+	/** New Design tabs live in the instance bucket, not in a project area. */
+	projectAreaId: string;
+	name: string;
+	/** Optional for tabs restored from an older cache; defaults to the tab id. */
+	resourceId?: string;
+	documentId?: string | null;
+}
+
 export interface BrowserPanelViewState {
 	address: string;
 	snapshot: string;
@@ -85,14 +115,30 @@ export function newBrowserPanelViewState(): BrowserPanelViewState {
 		requestGeneration: 0,
 	};
 }
-export type ContentTab = FileTab | ChatTab | DiffTab | BrowserTab;
+export type ContentTab = FileTab | ChatTab | DiffTab | BrowserTab | CanvasTab | DesignTab;
 export type ProjectAreaActivity = "files" | "changes";
 
 export function chatTabId(projectAreaId: string, sessionId: string): string {
 	return tupleKey("chat", projectAreaId, sessionId);
 }
 
-function contentResourceIdentity(tab: ContentTab): string {
+export function canvasTabId(projectAreaId: string, sessionId: string): string {
+	return tupleKey("canvas", projectAreaId, sessionId);
+}
+
+export function designTabId(): string {
+	return tupleKey("design", INSTANCE_CONTENT_TAB_AREA_ID);
+}
+
+/** Resolve a module tab's opaque resource id without treating it as a path. */
+export function contentTabResourceId(tab: ContentTab): string {
+	if (tab.kind === "canvas") return tab.resourceId ?? tab.canvasId ?? tab.id;
+	if (tab.kind === "design") return tab.resourceId ?? tab.documentId ?? tab.id;
+	if (tab.kind === "browser") return tab.panelId;
+	return tab.id;
+}
+
+export function contentResourceIdentity(tab: ContentTab): string {
 	if (tab.kind === "file")
 		return tupleKey("content-resource", tab.projectAreaId, "file", tab.root, tab.path);
 	if (tab.kind === "diff") {
@@ -112,13 +158,28 @@ function contentResourceIdentity(tab: ContentTab): string {
 			reference,
 		);
 	}
-	return tab.kind === "chat"
-		? tupleKey("content-resource", tab.projectAreaId, "chat", tab.sessionId)
-		: tupleKey("content-resource", tab.projectAreaId, "browser", tab.panelId);
+	if (tab.kind === "chat")
+		return tupleKey("content-resource", tab.projectAreaId, "chat", tab.sessionId);
+	if (tab.kind === "browser")
+		return tupleKey("content-resource", tab.projectAreaId, "browser", tab.panelId);
+	if (tab.kind === "canvas")
+		return tupleKey(
+			"content-resource",
+			tab.projectAreaId,
+			"canvas",
+			tab.sessionId,
+			contentTabResourceId(tab),
+		);
+	return tupleKey(
+		"content-resource",
+		INSTANCE_CONTENT_TAB_AREA_ID,
+		"design",
+		contentTabResourceId(tab),
+	);
 }
 
 export function contentSessionId(tab: ContentTab): string | null {
-	return tab.kind === "chat" ? tab.sessionId : null;
+	return tab.kind === "chat" || tab.kind === "canvas" ? tab.sessionId : null;
 }
 
 export function availableContentTabId(tabs: readonly ContentTab[], tab: ContentTab): string {

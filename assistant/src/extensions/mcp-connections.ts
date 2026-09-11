@@ -14,6 +14,14 @@ interface Connection {
 }
 type Membership = { add: Record<string, RecordValue>; remove: string[] };
 
+// Canvas is a controller-owned, session-scoped runtime contribution. The
+// controller issues a fresh bearer authority when a native Pi generation is
+// replaced, so this one reserved name is the only runtime registration that
+// may be replaced by `mcp.attach`. Operator connections keep the adapter's
+// ordinary first-registration-wins behavior below.
+const CANVAS_RUNTIME_NAME = "pixie-canvas";
+const AUTHORIZATION_HEADER = "authorization";
+
 // Compatibility for persisted Pixie connection records only. Registration and
 // all execution belong to the upstream adapter, not an MCP client here.
 function connection(
@@ -138,8 +146,7 @@ export function mcpConnectionsBridge(
 		await previous.registration.dispose();
 		live.delete(name);
 	};
-	const register = (value: unknown) => {
-		const c = connection(value, agentDir);
+	const registerConnection = (c: ReturnType<typeof connection>) => {
 		const previous = live.get(c.name);
 		if (previous) {
 			if (JSON.stringify(previous.definition) !== JSON.stringify(c.definition))
@@ -153,6 +160,51 @@ export function mcpConnectionsBridge(
 			c.definition,
 		);
 		live.set(c.name, { ...c, registration });
+	};
+	const register = (value: unknown) => registerConnection(connection(value, agentDir));
+	const authorizationHeader = (definition: RecordValue): string | undefined => {
+		const headers = object(definition.headers);
+		for (const [name, value] of Object.entries(headers))
+			if (name.toLowerCase() === AUTHORIZATION_HEADER && typeof value === "string") return value;
+		return undefined;
+	};
+	const canReplaceCanvas = (previous: Connection, next: ReturnType<typeof connection>): boolean => {
+		if (next.name !== CANVAS_RUNTIME_NAME) return false;
+		const previousAuthorization = authorizationHeader(previous.definition);
+		const nextAuthorization = authorizationHeader(next.definition);
+		if (
+			previousAuthorization === undefined ||
+			nextAuthorization === undefined ||
+			previousAuthorization === nextAuthorization ||
+			!/^Bearer \S+$/i.test(previousAuthorization) ||
+			!/^Bearer \S+$/i.test(nextAuthorization)
+		)
+			return false;
+		const withoutAuthorization = (definition: RecordValue): RecordValue => ({
+			...definition,
+			headers: Object.fromEntries(
+				Object.entries(object(definition.headers)).filter(
+					([name]) => name.toLowerCase() !== AUTHORIZATION_HEADER,
+				),
+			),
+		});
+		return (
+			JSON.stringify(withoutAuthorization(previous.definition)) ===
+			JSON.stringify(withoutAuthorization(next.definition))
+		);
+	};
+	const registerAttached = async (value: unknown) => {
+		const c = connection(value, agentDir);
+		const previous = live.get(c.name);
+		if (previous && JSON.stringify(previous.definition) !== JSON.stringify(c.definition)) {
+			if (!attached.has(c.name) || !canReplaceCanvas(previous, c))
+				throw new Error(`MCP connection already registered: ${c.name}`);
+			// The public adapter contract is dispose-then-register. Awaiting the
+			// owned handle also ensures its MCP client is closed before the fresh
+			// Canvas authority can be used; no second client is created here.
+			await remove(c.name);
+		}
+		registerConnection(c);
 	};
 	const close = async () => {
 		closed = true;
@@ -206,7 +258,7 @@ export function mcpConnectionsBridge(
 					for (const c of servers) {
 						ctx.signal.throwIfAborted();
 						try {
-							register(c.source);
+							await registerAttached(c.source);
 							attached.add(c.name);
 						} catch {
 							unavailable.push(`MCP connection unavailable: ${c.name}`);

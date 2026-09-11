@@ -146,6 +146,14 @@ test("the Svelte shell keeps one responsive activity surface and every blocked s
 		'data-slot="secondary-view"',
 		'data-testid="secondary-sidebar"',
 		'aria-label="Sign out"',
+		'data-testid="rail-canvas"',
+		'data-testid="rail-design"',
+		'data-testid="canvas-module-view"',
+		'data-testid="design-module-view"',
+		'data-testid="canvas-sidebar"',
+		'data-testid="design-sidebar"',
+		"canvasManagementStatusUrl",
+		'"/api/design/status"',
 	]) {
 		expect(source).toContain(contract);
 	}

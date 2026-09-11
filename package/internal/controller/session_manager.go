@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/miloszkolber/pixie/internal/canvas"
 	"github.com/miloszkolber/pixie/internal/identifier"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
@@ -38,6 +40,20 @@ type SessionPublisher func(channel string, data any)
 // native identity is deleted or replaced.
 type nativeMCPRevoker interface {
 	RevokeSession(string) int
+}
+
+type nativeMCPDeletionCleaner interface {
+	DeleteSession(string) error
+}
+
+// nativeCanvasMCPAttacher is the narrow attachment seam between managed
+// native sessions and the publisher. The registry remains the authority for
+// issuing a Canvas capability; the controller only places that capability in
+// the native adapter's server definition.
+type nativeCanvasMCPAttacher interface {
+	nativeMCPRevoker
+	AttachCanvas(string, ...uint64) (canvas.Authority, error)
+	Endpoint() string
 }
 
 type sessionEntry struct {
@@ -68,6 +84,7 @@ type sessionEntry struct {
 	detachedWork       string
 	objectiveToken     string
 	attached           uint64
+	canvasAttached     uint64
 	replay             *sessionEntry
 	promptGeneration   uint64
 	projectionID       string
@@ -162,6 +179,17 @@ func (m *SessionManager) revokeNativeMCPSession(sessionID string) {
 	}
 }
 
+func (m *SessionManager) cleanupNativeMCPSession(sessionID string) error {
+	if m.nativeMCP == nil || sessionID == "" {
+		return nil
+	}
+	cleaner, ok := m.nativeMCP.(nativeMCPDeletionCleaner)
+	if !ok {
+		return nil
+	}
+	return cleaner.DeleteSession(sessionID)
+}
+
 func (m *SessionManager) SetObjectiveURL(url string) { m.objectiveURL = url }
 
 func (m *SessionManager) RecordedCWD(projectID, sessionID string) (string, error) {
@@ -249,8 +277,35 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 	if err != nil {
 		return nil, nil, err
 	}
-	entry := newSessionEntry(sessionID, projectID, admitted, "", token)
+	// Pi allocates the native session ID during session.create. Attach the
+	// optional Canvas server only after that ID is known so its capability is
+	// bound to the authenticated native principal rather than to caller input.
+	canvasAttached := m.attachNativeCanvas(ctx, profile, sessionID, token, generation)
+	var entry *sessionEntry
+	creationCommitted := false
+	defer func() {
+		if creationCommitted {
+			return
+		}
+		if canvasAttached {
+			m.revokeNativeMCPSession(sessionID)
+		}
+		// A native session may remain in the host after a local creation
+		// failure. Fence this projection so the next operation reloads it and
+		// can establish a fresh Canvas binding instead of reusing a revoked
+		// registration.
+		if entry != nil {
+			entry.state.Lock()
+			entry.attached = 0
+			entry.canvasAttached = 0
+			entry.state.Unlock()
+		}
+	}()
+	entry = newSessionEntry(sessionID, projectID, admitted, "", token)
 	entry.capabilities = response.Capabilities
+	if canvasAttached {
+		entry.canvasAttached = generation
+	}
 	entry.configOptions = jsonValues(response.ConfigOptions)
 	entry.thinkingLevel = thinkingFromOptions(entry.configOptions)
 	entry.model = modelFromSetup(entry.configOptions, response.Meta)
@@ -304,6 +359,7 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 			m.releaseEntry(entry)
 		})
 	}
+	creationCommitted = true
 	return result, after, nil
 }
 
@@ -377,6 +433,17 @@ func (m *SessionManager) EnsureAttached(ctx context.Context, sessionID, projectI
 }
 
 func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, entry *sessionEntry) error {
+	return m.attachLockedWithCanvas(ctx, sessionID, entry, true)
+}
+
+// attachLockedWithoutCanvas is used by destructive lifecycle operations after
+// they revoke the session binding. Deleting or archiving a session must not
+// issue a replacement Canvas credential merely to load the native transcript.
+func (m *SessionManager) attachLockedWithoutCanvas(ctx context.Context, sessionID string, entry *sessionEntry) error {
+	return m.attachLockedWithCanvas(ctx, sessionID, entry, false)
+}
+
+func (m *SessionManager) attachLockedWithCanvas(ctx context.Context, sessionID string, entry *sessionEntry, allowCanvas bool) error {
 	m.mu.Lock()
 	current := !m.closed && m.sessions[sessionID] == entry
 	m.mu.Unlock()
@@ -409,8 +476,19 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 	}
 	previousGeneration := entry.attached
 	alreadyAttached := previousGeneration == generation
+	canvasAttached := entry.canvasAttached == generation
 	entry.state.Unlock()
 	if alreadyAttached {
+		if allowCanvas && !canvasAttached {
+			canvasAttached = m.attachNativeCanvas(ctx, profile, sessionID, entry.objectiveToken, generation)
+			entry.state.Lock()
+			if canvasAttached {
+				entry.canvasAttached = generation
+			} else {
+				entry.canvasAttached = 0
+			}
+			entry.state.Unlock()
+		}
 		m.scheduleFollowUp(sessionID, entry)
 		return nil
 	}
@@ -419,6 +497,11 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		// this session. The new session load below must register fresh bindings;
 		// do not let an old credential cross the transport generation boundary.
 		m.revokeNativeMCPSession(sessionID)
+	}
+	if previousGeneration == 0 || previousGeneration != generation {
+		entry.state.Lock()
+		entry.canvasAttached = 0
+		entry.state.Unlock()
 	}
 	// Pending dialogs survive re-attachment on purpose: the host keeps the
 	// matching promise and re-publishes unresolved requests on session.load
@@ -452,6 +535,9 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		entry.state.Unlock()
 		return err
 	}
+	if allowCanvas {
+		canvasAttached = m.attachNativeCanvas(ctx, profile, sessionID, entry.objectiveToken, generation)
+	}
 	m.reconcileDialogGeneration(sessionID, generation)
 	entry.state.Lock()
 	replay.capabilities = response.Capabilities
@@ -462,9 +548,15 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 	// during that RPC describe history, not a live prompt.
 	replay.streaming = false
 	replay.attached = generation
+	if canvasAttached {
+		replay.canvasAttached = generation
+	}
 	replay.queue = entry.queue.clone()
 	recoveredDispatch := replay.queue.Dispatch != nil
 	if err := m.recoverQueuedDispatchLocked(sessionID, replay); err != nil {
+		if canvasAttached {
+			m.revokeNativeMCPSession(sessionID)
+		}
 		entry.replay = nil
 		entry.state.Unlock()
 		return err
@@ -490,6 +582,7 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 	entry.agentIdentity = replay.agentIdentity
 	entry.detachedWork = detachedWorkNone
 	entry.attached = replay.attached
+	entry.canvasAttached = replay.canvasAttached
 	entry.projectionID = replay.projectionID
 	entry.replay = nil
 	if recoveredDispatch {
@@ -1265,6 +1358,89 @@ func (m *SessionManager) sessionServers(profile AgentProfile, token string) ([]p
 	// (`~/.pi/agent/extensions/signet-pi.js`, operator-installed); Pixie
 	// connects no MCP connection for it.
 	return m.objectiveServers(profile, token), nil
+}
+
+const (
+	canvasMCPServerName    = "pixie-canvas"
+	objectiveMCPServerName = "pixie_objectives"
+)
+
+// attachNativeCanvas asks the publisher for a fresh, native-session-scoped
+// Canvas capability and hands it to Pi's existing MCP adapter. Canvas is an
+// optional contribution: disabled, unavailable or unsupported deployments
+// leave core chat usable and never receive a fabricated/global credential.
+func (m *SessionManager) attachNativeCanvas(ctx context.Context, profile AgentProfile, sessionID, objectiveToken string, generation uint64) bool {
+	if m.client == nil || sessionID == "" || generation == 0 || !profile.Operations.HTTPMCP || m.nativeMCP == nil {
+		return false
+	}
+	attacher, ok := m.nativeMCP.(nativeCanvasMCPAttacher)
+	if !ok {
+		return false
+	}
+	authority, err := attacher.AttachCanvas(sessionID, generation)
+	if err != nil || authority.Token == "" {
+		return false
+	}
+	endpoint := canvasMCPEndpoint(attacher.Endpoint())
+	if endpoint == "" {
+		m.revokeNativeMCPSession(sessionID)
+		return false
+	}
+	servers := m.objectiveServers(profile, objectiveToken)
+	servers = append(servers, piwire.McpServer{Http: &piwire.McpServerHttpInline{
+		Type: "http", Name: canvasMCPServerName, Url: endpoint,
+		Headers: []piwire.HttpHeader{{Name: "Authorization", Value: "Bearer " + authority.Token}},
+	}})
+	result, err := m.client.CallPi(ctx, "mcp.attach", map[string]any{"sessionId": sessionID, "servers": servers})
+	if err != nil || canvasMCPAttachRejected(result, m.objectiveURL != "") {
+		// The adapter may have registered the definition before reporting a
+		// partial failure. Revocation makes either outcome fail closed.
+		m.revokeNativeMCPSession(sessionID)
+		return false
+	}
+	return true
+}
+
+// canvasMCPEndpoint converts the registry's canonical Browser endpoint to the
+// sibling Canvas route. Registry owns the listener origin; this helper only
+// changes the registered route and rejects credentials/query data so a token
+// can never be broadened into a URL.
+func canvasMCPEndpoint(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != mcpserver.BrowserRoute {
+		return ""
+	}
+	parsed.Path = mcpserver.CanvasRoute
+	parsed.RawPath = ""
+	return parsed.String()
+}
+
+func canvasMCPAttachRejected(result json.RawMessage, objectiveExpected bool) bool {
+	var outcome struct {
+		OK          *bool    `json:"ok"`
+		Unavailable []string `json:"unavailable"`
+	}
+	if err := json.Unmarshal(result, &outcome); err != nil || outcome.OK == nil {
+		return true
+	}
+	if *outcome.OK {
+		// The adapter's contract makes `ok` the aggregate of unavailable
+		// registrations. Treat an inconsistent success-plus-failure response as
+		// rejected rather than assuming the Canvas definition was installed.
+		return len(outcome.Unavailable) != 0
+	}
+	for _, detail := range outcome.Unavailable {
+		if strings.HasSuffix(detail, ": "+canvasMCPServerName) {
+			return true
+		}
+		if !objectiveExpected || !strings.HasSuffix(detail, ": "+objectiveMCPServerName) {
+			return true
+		}
+	}
+	// The adapter reports partial objective registration failures as unavailable
+	// while still registering the Canvas definition. Accept only that explicit,
+	// known partial outcome; every other false/empty result fails closed.
+	return len(outcome.Unavailable) == 0
 }
 
 func (m *SessionManager) objectiveServers(profile AgentProfile, token string) []piwire.McpServer {

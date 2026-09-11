@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { appStoreApi, type ContentTab } from "@/store";
+import {
+	appStoreApi,
+	CANVAS_RESOURCE_ID,
+	type ContentTab,
+	canvasTabId,
+	DESIGN_RESOURCE_ID,
+	designTabId,
+	INSTANCE_CONTENT_TAB_AREA_ID,
+} from "@/store";
 import {
 	clearSecondary,
 	initialWorkspaceState,
@@ -35,6 +43,27 @@ function fileTab(id: string): ContentTab {
 		name: id,
 		path: `src/${id}`,
 		content: "",
+	};
+}
+
+function canvasTab(sessionId: string, projectAreaId = "project-1"): ContentTab {
+	return {
+		kind: "canvas",
+		id: canvasTabId(projectAreaId, sessionId),
+		projectAreaId,
+		name: "Canvas",
+		sessionId,
+		resourceId: CANVAS_RESOURCE_ID,
+	};
+}
+
+function designTab(): ContentTab {
+	return {
+		kind: "design",
+		id: designTabId(),
+		projectAreaId: INSTANCE_CONTENT_TAB_AREA_ID,
+		name: "Design",
+		resourceId: DESIGN_RESOURCE_ID,
 	};
 }
 
@@ -204,4 +233,53 @@ test("project navigation clears only incompatible scoped selections", () => {
 	const next = appStoreApi.getState();
 	expect(next.workspaceSelection.primarySelection).toBeNull();
 	expect(next.workspaceSelection.secondarySelection).toBeNull();
+});
+
+test("module tabs keep session scope and instance scope distinct", () => {
+	appStoreApi.setState({ activeProjectAreaId: "project-1" });
+	const state = appStoreApi.getState();
+	state.openTab(chatTab("chat-1", "session-1"), "keep");
+	state.openTab(canvasTab("session-1"), "keep");
+
+	let next = appStoreApi.getState();
+	expect(next.workspaceSelection.primarySelection).toEqual({
+		kind: "session",
+		sessionId: "session-1",
+		projectId: "project-1",
+	});
+	expect(next.workspaceSelection.secondarySelection).toEqual({
+		kind: "module",
+		moduleId: "canvas",
+		resourceId: CANVAS_RESOURCE_ID,
+		context: { scope: "session", sessionId: "session-1", projectId: "project-1" },
+	});
+
+	state.openTab(designTab(), "keep");
+	next = appStoreApi.getState();
+	expect(next.workspaceSelection.primarySelection?.kind).toBe("session");
+	expect(next.workspaceSelection.secondarySelection).toEqual({
+		kind: "module",
+		moduleId: "design",
+		resourceId: DESIGN_RESOURCE_ID,
+		context: { scope: "instance", instanceId: INSTANCE_CONTENT_TAB_AREA_ID },
+	});
+	expect(next.tabsByProjectArea[INSTANCE_CONTENT_TAB_AREA_ID]).toHaveLength(1);
+});
+
+test("instance Design tabs survive project teardown and deduplicate globally", () => {
+	appStoreApi.setState({ activeProjectAreaId: "project-1" });
+	const state = appStoreApi.getState();
+	state.openTab(designTab(), "keep");
+	state.openTab({ ...designTab(), name: "Renamed Design" }, "keep");
+	state.clearProjectAreaTabs("project-1");
+
+	const next = appStoreApi.getState();
+	expect(next.tabsByProjectArea[INSTANCE_CONTENT_TAB_AREA_ID]).toHaveLength(1);
+	expect(next.tabsByProjectArea[INSTANCE_CONTENT_TAB_AREA_ID]?.[0]?.name).toBe("Renamed Design");
+	expect(next.workspaceSelection.secondarySelection).toEqual({
+		kind: "module",
+		moduleId: "design",
+		resourceId: DESIGN_RESOURCE_ID,
+		context: { scope: "instance", instanceId: INSTANCE_CONTENT_TAB_AREA_ID },
+	});
 });

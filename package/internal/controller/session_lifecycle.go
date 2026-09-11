@@ -64,6 +64,14 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 	if exists {
 		return SessionSummary{}, fmt.Errorf("Pi agent returned an existing session identifier for a fork")
 	}
+	canvasAttached := false
+	childCommitted := false
+	defer func() {
+		if childCommitted || !canvasAttached {
+			return
+		}
+		m.revokeNativeMCPSession(childID)
+	}()
 	records, err := m.records.List()
 	if err != nil {
 		return SessionSummary{}, err
@@ -83,6 +91,10 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 	child.thinkingLevel = thinkingFromOptions(child.configOptions)
 	child.model = modelFromSetup(child.configOptions, response.Meta)
 	child.capabilities = response.Capabilities
+	canvasAttached = m.attachNativeCanvas(ctx, profile, childID, token, generation)
+	if canvasAttached {
+		child.canvasAttached = generation
+	}
 	// The agent creates the child, but this controller has not replayed its
 	// inherited transcript yet. The first read or prompt must load it from the agent.
 	if err := m.records.Record(ProjectSessionRecord{ProjectID: projectID, SessionID: childID, CWD: admitted, ParentSessionID: sessionID}); err != nil {
@@ -95,6 +107,7 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 	}
 	m.sessions[childID] = child
 	m.mu.Unlock()
+	childCommitted = true
 	summary := m.summary(childID, child)
 	m.emit("session.lifecycleChanged", map[string]any{"projectId": projectID, "sessionId": childID, "operation": "forked"})
 	return summary, nil
@@ -160,7 +173,7 @@ func (m *SessionManager) Archive(ctx context.Context, projectID, sessionID, cwd 
 	// MCP credentials before any native lifecycle continuation; unarchiving must
 	// establish a fresh binding.
 	m.revokeNativeMCPSession(sessionID)
-	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
+	if err := m.attachLockedWithoutCanvas(ctx, sessionID, entry); err != nil {
 		return err
 	}
 	if _, err := m.client.CallPi(entry.context(ctx), "pi.session.archive", map[string]any{"sessionId": sessionID}); err != nil {
@@ -248,7 +261,7 @@ func (m *SessionManager) Delete(ctx context.Context, projectID, sessionID, cwd s
 	// Pin attachment and deletion to the capability profile checked above. This
 	// also avoids replaying an unsupported session merely to reject deletion.
 	ctx = context.WithValue(ctx, connectionGenerationKey{}, generation)
-	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
+	if err := m.attachLockedWithoutCanvas(ctx, sessionID, entry); err != nil {
 		return err
 	}
 	agentBinding, err := m.client.deletionAgentBinding(agentProfileIdentity(profile, generation))
@@ -269,6 +282,12 @@ func (m *SessionManager) Delete(ctx context.Context, projectID, sessionID, cwd s
 		// replying. Keep the marker and reservation for restart reconciliation.
 		finishLifecycle = false
 		return fmt.Errorf("session deletion outcome is uncertain; restart Pixie to reconcile it: %w", err)
+	}
+	if canvasErr := m.cleanupNativeMCPSession(sessionID); canvasErr != nil {
+		// Native deletion is confirmed, but owned Canvas cleanup is durable work
+		// that must remain retryable through the deletion journal.
+		finishLifecycle = false
+		return fmt.Errorf("clean up Canvas for deleted session: %w", canvasErr)
 	}
 	confirmErr := m.deletions.Confirm(projectID, sessionID)
 	if confirmErr != nil {
@@ -360,6 +379,10 @@ func (m *SessionManager) recoverDeletions(ctx context.Context) error {
 				recovery = append(recovery, fmt.Errorf("confirm deletion of session %s: %w", record.SessionID, confirmErr))
 				continue
 			}
+		}
+		if canvasErr := m.cleanupNativeMCPSession(record.SessionID); canvasErr != nil {
+			recovery = append(recovery, fmt.Errorf("clean up Canvas for deleted session %s: %w", record.SessionID, canvasErr))
+			continue
 		}
 		if cleanupErr := m.cleanupSessionDeletion(record.ProjectID, record.SessionID); cleanupErr != nil {
 			recovery = append(recovery, fmt.Errorf("resume deletion of session %s: %w", record.SessionID, cleanupErr))
