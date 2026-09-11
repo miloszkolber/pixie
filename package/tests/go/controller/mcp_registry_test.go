@@ -63,7 +63,7 @@ func handleJSON(t *testing.T, handler controller.CoreHandler, method, params str
 func TestMCPRegistryHandlerTogglesPersistedEnablement(t *testing.T) {
 	handler := controller.CoreHandler{MCPRegistry: testInProcessRegistry(t)}
 	catalog := handleJSON(t, handler, "mcpRegistry.catalog", "{}").(mcpserver.Catalog)
-	if len(catalog.Modules) != 1 || !catalog.Modules[0].Enabled || catalog.Modules[0].Endpoint == "" {
+	if len(catalog.Modules) != 3 || !catalog.Modules[0].Enabled || catalog.Modules[0].Endpoint == "" {
 		t.Fatalf("registry catalog = %#v", catalog)
 	}
 	disabled := handleJSON(t, handler, "mcpRegistry.moduleSetEnabled", `{"moduleId":"browser","enabled":false}`).(mcpserver.Catalog)

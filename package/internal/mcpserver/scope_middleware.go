@@ -52,9 +52,11 @@ type ModuleScopeRequest struct {
 // module ID: the combined Browser contribution plus sidebar-only and
 // viewer-only fixtures that prove generality without shell edits.
 func DefaultModuleDescriptors() map[string]FrontendDescriptor {
-	descriptors := make(map[string]FrontendDescriptor, 3)
+	descriptors := make(map[string]FrontendDescriptor, 5)
 	for _, descriptor := range []FrontendDescriptor{
 		BrowserDescriptorFixture(),
+		CanvasDescriptorFixture(),
+		DesignDescriptorFixture(),
 		SidebarOnlyFixture(),
 		ViewerOnlyFixture(),
 	} {

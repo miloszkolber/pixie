@@ -95,6 +95,25 @@ func BrowserDescriptorFixture() FrontendDescriptor {
 	}
 }
 
+// CanvasDescriptorFixture is the trusted combined Canvas contribution. Canvas
+// is session-scoped: its panel and selected document must not outlive the
+// authenticated native session context.
+func CanvasDescriptorFixture() FrontendDescriptor {
+	return FrontendDescriptor{
+		ModuleID: "canvas", Version: "1.0.0", Label: "Canvas", Icon: "canvas",
+		Sidebar: true, Viewer: true, ContextScope: "session", ResourceNamespace: "canvas",
+	}
+}
+
+// DesignDescriptorFixture is the trusted combined Design contribution. The
+// underlying source slot is instance-wide, independent of the selected chat.
+func DesignDescriptorFixture() FrontendDescriptor {
+	return FrontendDescriptor{
+		ModuleID: "design", Version: "1.0.0", Label: "Design", Icon: "design",
+		Sidebar: true, Viewer: true, ContextScope: "instance", ResourceNamespace: "design",
+	}
+}
+
 // SidebarOnlyFixture is a minimal sidebar-only contribution used to prove
 // generality without shell edits.
 func SidebarOnlyFixture() FrontendDescriptor {

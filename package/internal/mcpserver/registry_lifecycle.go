@@ -32,15 +32,17 @@ func (r *Registry) DesiredEnabled(id string) bool {
 func (r *Registry) ModuleLifecycle(id string) LifecycleSnapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if id != browserID {
+	definition, ok := r.definitionLocked(id)
+	if !ok {
 		return LifecycleSnapshot{Detail: fmt.Sprintf("unknown in-process MCP module %q", id)}
 	}
 	desired := r.enabled[id]
 	if !desired {
-		return LifecycleSnapshot{Desired: false, Ready: false, Detail: "The Browser module is disabled in Pixie MCP servers."}
+		return LifecycleSnapshot{Desired: false, Ready: false, Detail: fmt.Sprintf("The %s module is disabled in Pixie MCP servers.", definition.DisplayName)}
 	}
-	if r.browser == nil || !r.browser.Ready() {
-		return LifecycleSnapshot{Desired: true, Ready: false, Detail: "The Browser module is not ready."}
+	ready, detail := r.healthLocked(id)
+	if !ready {
+		return LifecycleSnapshot{Desired: true, Ready: false, Detail: detail}
 	}
 	return LifecycleSnapshot{Desired: true, Ready: true}
 }

@@ -75,7 +75,7 @@ func TestRegistryPublishesBrowserByDefault(t *testing.T) {
 	if catalog.SchemaVersion != 1 || catalog.Engine != "in-process" || catalog.Gateway.State != "ready" {
 		t.Fatalf("default catalog = %#v", catalog)
 	}
-	if len(catalog.Modules) != 1 {
+	if len(catalog.Modules) != 3 {
 		t.Fatalf("default modules = %#v", catalog.Modules)
 	}
 	module := catalog.Modules[0]
@@ -167,7 +167,7 @@ func TestRegistryPrePublicationPersistenceFailurePreservesStateAndRuntime(t *tes
 		t.Fatal("persistence failure was not reported")
 	}
 	after := registry.Catalog()
-	if len(after.Modules) != 1 || !after.Modules[0].Enabled || after.Revision != before.Revision {
+	if len(after.Modules) != 3 || !after.Modules[0].Enabled || after.Revision != before.Revision {
 		t.Fatalf("pre-publication failure changed catalog: before=%#v after=%#v", before, after)
 	}
 	if ready, detail := registry.Health("browser"); !ready {

@@ -50,6 +50,10 @@ type HTTPHandler struct {
 	ModuleScopes      *mcpserver.ScopeAuthority
 	ModuleDescriptors map[string]mcpserver.FrontendDescriptor
 	ModuleService     http.Handler
+	// SessionRecords is the controller-owned project/session association used
+	// before delegating Canvas management requests. A route ID alone is never
+	// treated as permission.
+	SessionRecords *SessionRecords
 }
 
 // inProcessBrowserHandler exposes the merged publisher's Browser REST surface
@@ -98,16 +102,80 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 	switch {
 	case route == "/mcp/objective":
 		h.Objective.ServeHTTP(response, request)
-	case h.MCPRegistry != nil && mcpPublisherRoute(route):
-		if !mcpPublisherAuthConfigured(h.Auth) {
-			writeAuthJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "MCP publisher authentication is not configured"})
-			return
-		}
-		if !h.isAuthorizedMCPRequest(request) {
+	case h.MCPRegistry != nil && isManagementOwnedRoute(h.MCPRegistry, route):
+		// Human management/artifact routes use the controller cookie/session
+		// authority, not the model-facing MCP bearer. The module service applies
+		// its own finer reader-versus-management policy after this boundary.
+		if !h.Auth.IsAuthorizedHTTPRequest(request, h.auth) {
 			writeAuthJSON(response, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
-		h.MCPRegistry.ServeHTTP(response, request)
+		// Controller credentials terminate at this boundary. The registry and
+		// owning module receive only the verified internal scope, never the
+		// browser cookie or an unrelated Authorization header.
+		request = request.Clone(request.Context())
+		request.Header.Del("Cookie")
+		request.Header.Del("Authorization")
+		// Secrets never travel in management URLs on any module surface.
+		if canvasCredentialQuery(request) {
+			writeAuthJSON(response, http.StatusBadRequest, map[string]string{"error": "credentials are not accepted in management URLs"})
+			return
+		}
+		if definition, ok := managementOwningDefinition(h.MCPRegistry, route); ok && definition.SessionScoped {
+			// Session-scoped management (currently Canvas) resolves the
+			// project/session target from the route but treats it as a
+			// claim, not permission: verifiedCanvasManagementScope checks
+			// both IDs against the controller's durable association.
+			// Instance-wide modules (Design, fixtures) skip this block and
+			// delegate directly after the cookie boundary above.
+			managementPrefix := ""
+			if len(definition.ManagementPaths) > 0 {
+				managementPrefix = definition.ManagementPaths[0]
+			}
+			target, parsed := parseScopedManagementRoute(managementPrefix, route, request)
+			// Keep the historical unscoped status health alias for callers that
+			// do not request retained session data. A status request carrying an
+			// explicit project/session target takes the management path below.
+			if managementPrefix != "" && route == managementPrefix+"/status" && !parsed && h.SessionRecords == nil {
+				h.serveMCPRegistry(response, request, route)
+				return
+			}
+			if !parsed {
+				writeAuthJSON(response, http.StatusNotFound, map[string]string{"error": "not found"})
+				return
+			}
+			resolvedTarget, verified := h.verifiedCanvasManagementScope(target)
+			if !verified {
+				writeAuthJSON(response, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				return
+			}
+			request = request.WithContext(mcpserver.ContextWithManagementScope(request.Context(), mcpserver.ManagementScope{ProjectID: resolvedTarget.projectID, SessionID: resolvedTarget.sessionID}))
+		}
+		h.serveMCPRegistry(response, request, route)
+	case h.MCPRegistry != nil && mcpPublisherRoute(route):
+		// Session-scoped modules carry a per-native-session capability in
+		// their Bearer header; the registry and owning handler validate that
+		// credential. Requiring the publisher-wide MCP bearer here would make
+		// scoped routes unusable whenever PIXIE_MCP_TOKEN is configured.
+		// Other module MCP surfaces keep the publisher credential at this
+		// top-level boundary. The scoped decision consumes only the owning
+		// definition's flag, never a module-name comparison.
+		if isSessionScopedMCPOwnedRoute(h.MCPRegistry, route) {
+			if !h.isAllowedSessionMCPRequest(request) {
+				writeAuthJSON(response, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				return
+			}
+		} else {
+			if !mcpPublisherAuthConfigured(h.Auth) {
+				writeAuthJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "MCP publisher authentication is not configured"})
+				return
+			}
+			if !h.isAuthorizedMCPRequest(request) {
+				writeAuthJSON(response, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				return
+			}
+		}
+		h.serveMCPRegistry(response, request, route)
 	case strings.HasPrefix(route, "/auth/"):
 		h.serveAuth(response, request)
 	case route == "/ws":
@@ -133,6 +201,224 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 	default:
 		h.serveStatic(response, request)
 	}
+}
+
+// serveMCPRegistry presents the normalized route to the registered owner.
+// This keeps duplicate-slash and dot-segment variants inside the reserved API
+// boundary instead of letting a module or the SPA interpret the raw path.
+func (h *HTTPHandler) serveMCPRegistry(response http.ResponseWriter, request *http.Request, route string) {
+	if request == nil || request.URL == nil || request.URL.Path == route {
+		h.MCPRegistry.ServeHTTP(response, request)
+		return
+	}
+	clone := request.Clone(request.Context())
+	urlCopy := *request.URL
+	urlCopy.Path, urlCopy.RawPath = route, ""
+	clone.URL = &urlCopy
+	clone.RequestURI = route
+	if request.URL.RawQuery != "" {
+		clone.RequestURI += "?" + request.URL.RawQuery
+	}
+	h.MCPRegistry.ServeHTTP(response, clone)
+}
+
+func canvasCredentialQuery(request *http.Request) bool {
+	if request == nil || request.URL == nil {
+		return false
+	}
+	for key := range request.URL.Query() {
+		switch strings.ToLower(key) {
+		case "token", "access_token", "authorization", "bearer", "credential", "credentials":
+			return true
+		}
+	}
+	return false
+}
+
+// isManagementOwnedRoute reports management ownership using the live
+// registry's own definitions when available (including test fixtures),
+// falling back to the compiled defaults. One ownership rule, no module-name
+// branch.
+func isManagementOwnedRoute(registry http.Handler, route string) bool {
+	if scoped, ok := registry.(*mcpserver.Registry); ok && scoped != nil {
+		return scoped.IsManagementRoute(route)
+	}
+	return mcpserver.IsRegisteredManagementRoute(route)
+}
+
+// managementOwningDefinition resolves the owning management definition through
+// the live registry when available, otherwise through the compiled defaults.
+func managementOwningDefinition(registry http.Handler, route string) (mcpserver.ModuleDefinition, bool) {
+	if scoped, ok := registry.(*mcpserver.Registry); ok && scoped != nil {
+		return scoped.DefinitionForManagementRoute(route)
+	}
+	return mcpserver.DefinitionForManagementRoute(mcpserver.DefaultModuleDefinitions(), route)
+}
+
+// isSessionScopedMCPOwnedRoute reports session-scoped MCP ownership through
+// the live registry when available, otherwise through the compiled defaults.
+func isSessionScopedMCPOwnedRoute(registry http.Handler, route string) bool {
+	if scoped, ok := registry.(*mcpserver.Registry); ok && scoped != nil {
+		if definition, found := scoped.DefinitionForRoute(route); found {
+			// Only MCP routes carry the session-capability policy; a
+			// management prefix that happens to resolve here must not inherit
+			// it.
+			if definition.Path != "" && (route == definition.Path || len(route) > len(definition.Path) && len(definition.Path) > 0 && route[:len(definition.Path)] == definition.Path && route[len(definition.Path)] == '/') {
+				return definition.SessionScoped
+			}
+			return false
+		}
+		return false
+	}
+	return mcpserver.IsSessionScopedMCPRoute(route)
+}
+
+type canvasManagementTarget struct {
+	projectID string
+	sessionID string
+}
+
+// parseScopedManagementRoute accepts the operation-first public form and the
+// equivalent target-first form used by older UI adapters for any
+// session-scoped management prefix. Neither form is authority:
+// verifiedCanvasManagementScope still checks both IDs against the
+// controller's durable project/session association. Prefix-driven, never a
+// Canvas-name branch.
+func parseCanvasManagementRoute(route string, requests ...*http.Request) (canvasManagementTarget, bool) {
+	return parseScopedManagementRoute(mcpserver.CanvasAPIPrefix, route, requests...)
+}
+
+// parseScopedManagementRoute accepts the operation-first public form and the
+// equivalent target-first form used by older UI adapters for any
+// session-scoped management prefix.
+func parseScopedManagementRoute(prefix, route string, requests ...*http.Request) (canvasManagementTarget, bool) {
+	if prefix == "" || route == "" || (route != prefix && !strings.HasPrefix(route, prefix+"/")) {
+		return canvasManagementTarget{}, false
+	}
+	suffix := strings.Trim(strings.TrimPrefix(route, prefix), "/")
+	if suffix == "" {
+		return canvasManagementTarget{}, false
+	}
+	parts := strings.Split(suffix, "/")
+	decode := func(value string) (string, bool) {
+		decoded, err := url.PathUnescape(value)
+		if err != nil || decoded == "" || strings.ContainsAny(decoded, "/\\?#") {
+			return "", false
+		}
+		for _, character := range decoded {
+			if character < 0x20 || character == 0x7f {
+				return "", false
+			}
+		}
+		return decoded, true
+	}
+	queryValue := func(name string) string {
+		if len(requests) == 0 || requests[0] == nil || requests[0].URL == nil {
+			return ""
+		}
+		return requests[0].URL.Query().Get(name)
+	}
+	queryTarget := func(sessionValue string) (canvasManagementTarget, bool) {
+		projectValue := queryValue("projectId")
+		projectID, projectOK := "", true
+		if projectValue != "" {
+			projectID, projectOK = decode(projectValue)
+		}
+		sessionID, sessionOK := decode(sessionValue)
+		if !projectOK || !sessionOK || (projectID != "" && validateIdentity(projectID, "Project id") != nil) || validatePiSessionID(sessionID) != nil {
+			return canvasManagementTarget{}, false
+		}
+		return canvasManagementTarget{projectID: projectID, sessionID: sessionID}, true
+	}
+	if len(parts) == 1 && (parts[0] == "status" || parts[0] == "remove") {
+		return queryTarget(queryValue("sessionId"))
+	}
+	if len(parts) < 2 {
+		return canvasManagementTarget{}, false
+	}
+	var projectPart, sessionPart string
+	switch parts[0] {
+	case "status", "remove":
+		if len(parts) == 2 {
+			return queryTarget(parts[1])
+		}
+		if len(parts) != 3 {
+			return canvasManagementTarget{}, false
+		}
+		projectPart, sessionPart = parts[1], parts[2]
+	case "artifact", "artifacts":
+		if len(parts) == 4 {
+			return queryTarget(parts[1])
+		}
+		if len(parts) != 5 {
+			return canvasManagementTarget{}, false
+		}
+		projectPart, sessionPart = parts[1], parts[2]
+	default:
+		// Target-first aliases: /api/canvas/{project}/{session}/status and
+		// /api/canvas/{project}/{session}/artifact/{canvas}/{key}.png.
+		if len(parts) == 2 && (parts[1] == "status" || parts[1] == "remove") {
+			return queryTarget(parts[0])
+		}
+		if len(parts) == 4 && (parts[1] == "artifact" || parts[1] == "artifacts") {
+			return queryTarget(parts[0])
+		}
+		if len(parts) < 3 || (parts[2] != "status" && parts[2] != "remove" && parts[2] != "artifact" && parts[2] != "artifacts") {
+			return canvasManagementTarget{}, false
+		}
+		if (parts[2] == "status" || parts[2] == "remove") && len(parts) != 3 {
+			return canvasManagementTarget{}, false
+		}
+		if (parts[2] == "artifact" || parts[2] == "artifacts") && len(parts) != 5 {
+			return canvasManagementTarget{}, false
+		}
+		projectPart, sessionPart = parts[0], parts[1]
+	}
+	projectID, ok := decode(projectPart)
+	if !ok {
+		return canvasManagementTarget{}, false
+	}
+	sessionID, ok := decode(sessionPart)
+	if !ok {
+		return canvasManagementTarget{}, false
+	}
+	if validateIdentity(projectID, "Project id") != nil || validatePiSessionID(sessionID) != nil {
+		return canvasManagementTarget{}, false
+	}
+	return canvasManagementTarget{projectID: projectID, sessionID: sessionID}, true
+}
+
+func (h *HTTPHandler) verifiedCanvasManagementScope(target canvasManagementTarget) (canvasManagementTarget, bool) {
+	if h == nil || h.Projects == nil || h.SessionRecords == nil {
+		return canvasManagementTarget{}, false
+	}
+	records, err := h.SessionRecords.List()
+	if err != nil {
+		return canvasManagementTarget{}, false
+	}
+	if target.projectID == "" {
+		for _, record := range records {
+			if record.SessionID != target.sessionID {
+				continue
+			}
+			if target.projectID != "" && target.projectID != record.ProjectID {
+				return canvasManagementTarget{}, false
+			}
+			target.projectID = record.ProjectID
+		}
+	}
+	if target.projectID == "" {
+		return canvasManagementTarget{}, false
+	}
+	if _, err := h.Projects.Get(target.projectID); err != nil {
+		return canvasManagementTarget{}, false
+	}
+	for _, record := range records {
+		if record.ProjectID == target.projectID && record.SessionID == target.sessionID {
+			return target, true
+		}
+	}
+	return canvasManagementTarget{}, false
 }
 
 // normalizeRoutePath collapses duplicate slashes and dot segments so reserved
@@ -176,6 +462,24 @@ func (h *HTTPHandler) isAuthorizedMCPRequest(request *http.Request) bool {
 	}
 	values := request.Header.Values("Authorization")
 	return len(values) == 1 && strings.HasPrefix(values[0], "Bearer ") && constantTimeStringEqual(strings.TrimPrefix(values[0], "Bearer "), h.Auth.MCPToken)
+}
+
+// isAllowedSessionMCPRequest keeps the controller's browser-origin and
+// same-origin protections on session-scoped modules while leaving bearer
+// capability validation to the owning service. Session capabilities are not
+// interchangeable with PIXIE_MCP_TOKEN and must not be accepted by the
+// publisher-wide check above.
+func (h *HTTPHandler) isAllowedSessionMCPRequest(request *http.Request) bool {
+	if request == nil {
+		return false
+	}
+	if origins := request.Header.Values("Origin"); len(origins) > 0 && !h.Auth.IsExpectedOrigin(request) {
+		return false
+	}
+	if site := request.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
+		return false
+	}
+	return true
 }
 
 func (h *HTTPHandler) serveAuth(response http.ResponseWriter, request *http.Request) {

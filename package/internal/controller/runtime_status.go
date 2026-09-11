@@ -38,6 +38,8 @@ type runtimeStatusReport struct {
 	Application runtimeServiceStatus `json:"application"`
 	Agent       runtimeAgentStatus   `json:"agent"`
 	Browser     runtimeServiceStatus `json:"browser"`
+	Canvas      runtimeServiceStatus `json:"canvas"`
+	Design      runtimeServiceStatus `json:"design"`
 }
 
 type browserReadiness struct {
@@ -101,6 +103,8 @@ func (s *runtimeStatusProvider) snapshot(ctx context.Context) runtimeStatusRepor
 		Application: s.applicationStatus(),
 		Agent:       runtimeAgentStatus{State: "unavailable", Detail: "Agent service is unavailable."},
 		Browser:     unavailableBrowser("Browser service is unavailable."),
+		Canvas:      s.moduleStatus("canvas", "Canvas"),
+		Design:      s.moduleStatus("design", "Design"),
 	}
 	for pending := 2; pending > 0; {
 		select {
@@ -115,6 +119,20 @@ func (s *runtimeStatusProvider) snapshot(ctx context.Context) runtimeStatusRepor
 		}
 	}
 	return report
+}
+
+func (s *runtimeStatusProvider) moduleStatus(id, displayName string) runtimeServiceStatus {
+	if s.registry == nil {
+		return runtimeServiceStatus{State: "unavailable", Detail: displayName + " service is unavailable."}
+	}
+	snapshot := s.registry.ModuleLifecycle(id)
+	if snapshot.Ready {
+		return runtimeServiceStatus{State: "ready"}
+	}
+	if snapshot.Detail == "" {
+		snapshot.Detail = displayName + " service is unavailable."
+	}
+	return runtimeServiceStatus{State: "unavailable", Detail: snapshot.Detail}
 }
 
 func (s *runtimeStatusProvider) applicationStatus() runtimeServiceStatus {

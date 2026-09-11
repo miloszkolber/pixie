@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/miloszkolber/pixie/internal/browser"
+	"github.com/miloszkolber/pixie/internal/canvas"
+	"github.com/miloszkolber/pixie/internal/design"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/persist"
 )
@@ -26,6 +28,14 @@ const (
 	// BrowserRoute is the Browser module path on the controller listener; the
 	// publisher now lives in the main Pixie process (Stage F merge).
 	BrowserRoute = "/mcp/browser"
+	// CanvasRoute is the Canvas module path on the controller listener.
+	CanvasRoute = "/mcp/canvas"
+	// DesignRoute is the Design module path on the controller listener.
+	DesignRoute = "/mcp/design"
+	// CanvasAPIPrefix owns Canvas human management/artifact routes.
+	CanvasAPIPrefix = "/api/canvas"
+	// DesignAPIPrefix owns Design human management/query/artifact routes.
+	DesignAPIPrefix = "/api/design"
 	// CatalogPath and StatusPath are the in-process publisher API. They mirror
 	// the former separate host's /v1/mcp/modules and /v1/mcp/status shape with
 	// the in-process route; exact paths remain an implementation detail.
@@ -51,9 +61,8 @@ const (
 	envDisabled = "PIXIE_MCP_DISABLED_MODULES"
 )
 
-// Module is the registry record for one published Pixie MCP module. Browser
-// is currently the only module; additions stay compile-time and behind the
-// same storage and trust boundary.
+// Module is the registry record for one published Pixie MCP module. Registered
+// modules stay compile-time and behind the same storage and trust boundary.
 type Module struct {
 	ID            string `json:"id"`
 	ExtensionName string `json:"extensionName"`
@@ -87,11 +96,31 @@ type GatewaySummary struct {
 func (r *Registry) Health(id string) (ready bool, detail string) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if id != browserID || !r.enabled[browserID] {
-		return false, "The Browser module is disabled in Pixie MCP servers."
+	return r.healthLocked(id)
+}
+
+func (r *Registry) healthLocked(id string) (bool, string) {
+	definition, ok := r.definitionLocked(id)
+	if !ok {
+		return false, fmt.Sprintf("unknown in-process MCP module %q", id)
 	}
-	if r.browser == nil || !r.browser.Ready() {
-		return false, "The Browser module is not ready."
+	if !r.enabled[id] {
+		return false, fmt.Sprintf("The %s module is disabled in Pixie MCP servers.", definition.DisplayName)
+	}
+	runtime := r.modules[id]
+	if runtime == nil {
+		if detail := r.failures[id]; detail != "" {
+			return false, detail
+		}
+		return false, fmt.Sprintf("The %s module is not ready.", definition.DisplayName)
+	}
+	if runtime.ready != nil && !runtime.ready() {
+		if runtime.readinessDetail != nil {
+			if detail := runtime.readinessDetail(); detail != "" {
+				return false, detail
+			}
+		}
+		return false, fmt.Sprintf("The %s module is not ready.", definition.DisplayName)
 	}
 	return true, ""
 }
@@ -110,6 +139,12 @@ type Config struct {
 	// storage roots. Network and authentication stay publisher-owned.
 	// Production leaves this nil; tests point it at fixtures.
 	Binaries *BinaryConfig
+	// CanvasConfig and DesignConfig are explicit optional worker/parser
+	// compositions. The registry never discovers or substitutes a launcher or
+	// parser from PATH; nil dependencies leave only their owning module
+	// unavailable.
+	CanvasConfig *canvas.Config
+	DesignConfig *design.Config
 }
 
 // BinaryConfig overrides Browser process and storage paths for tests.
@@ -128,9 +163,9 @@ type persistedModule struct {
 	Enabled bool `json:"enabled"`
 }
 
-// Registry is the in-process Pixie MCP publisher. It wraps one Browser module
-// behind enable/disable state owned by the Pixie persist store, served on the
-// controller listener by the main Pixie process.
+// Registry is the in-process Pixie MCP publisher. Browser, Canvas and Design
+// share one persisted module map and one route/lifecycle boundary while each
+// service keeps its own authority, storage and worker policy.
 type Registry struct {
 	config  Config
 	build   diagnostics.BuildInfo
@@ -138,17 +173,38 @@ type Registry struct {
 	store   persist.Store
 	started time.Time
 
-	mu        sync.RWMutex
-	browser   *browser.Service
-	enabled   map[string]bool
-	nativeMCP *NativeMCPRegistry
+	mu          sync.RWMutex
+	mutationMu  sync.Mutex
+	browser     *browser.Service
+	canvas      *canvas.Service
+	design      *design.Service
+	modules     map[string]*moduleRuntime
+	failures    map[string]string
+	definitions []ModuleDefinition
+	persisted   persistedState
+	enabled     map[string]bool
+	nativeMCP   *NativeMCPRegistry
 }
 
-// NewRegistry loads persisted module enablement (defaulting to enabled) and
-// starts the enabled modules. Retired PIXIE_MCP_MODULES/DISABLED variables
-// are ignored with a startup warning. A Browser module that cannot start
-// (for example a missing agent-browser binary in the application image)
-// degrades the catalog instead of failing the publisher.
+// moduleRuntime is the small lifecycle adapter shared by Browser, Canvas and
+// Design. Slow construction happens before it is installed in Registry.modules;
+// callers never hold Registry.mu while a service starts or stops.
+type moduleRuntime struct {
+	handler         http.Handler
+	shutdown        func()
+	enable          func()
+	disable         func()
+	ready           func() bool
+	readinessDetail func() string
+	browser         *browser.Service
+	canvas          *canvas.Service
+	design          *design.Service
+}
+
+// NewRegistry loads persisted module enablement and starts the registered
+// services. Retired PIXIE_MCP_MODULES/DISABLED variables are ignored with a
+// startup warning. Optional module construction failures stay local and leave
+// desired enablement durable for a later explicit restart.
 func NewRegistry(config Config, build diagnostics.BuildInfo, logger *slog.Logger) (*Registry, error) {
 	if logger == nil {
 		logger = diagnostics.NewLogger("mcpserver", build)
@@ -163,13 +219,19 @@ func NewRegistry(config Config, build diagnostics.BuildInfo, logger *slog.Logger
 		config.Host = "127.0.0.1"
 	}
 	registry := &Registry{
-		config:    config,
-		build:     diagnostics.NormalizeBuild(build.Version, build.Revision),
-		logger:    logger,
-		store:     persist.Store{Dir: config.DataDir},
-		started:   time.Now(),
-		enabled:   map[string]bool{browserID: true},
-		nativeMCP: NewNativeMCPRegistry(),
+		config:      config,
+		build:       diagnostics.NormalizeBuild(build.Version, build.Revision),
+		logger:      logger,
+		store:       persist.Store{Dir: config.DataDir},
+		started:     time.Now(),
+		enabled:     make(map[string]bool),
+		modules:     make(map[string]*moduleRuntime),
+		failures:    make(map[string]string),
+		definitions: DefaultModuleDefinitions(),
+		nativeMCP:   NewNativeMCPRegistry(),
+	}
+	for _, definition := range registry.definitions {
+		registry.enabled[definition.ID] = definition.DefaultEnabled
 	}
 	if err := registry.loadEnabled(); err != nil {
 		return nil, err
@@ -178,7 +240,7 @@ func NewRegistry(config Config, build diagnostics.BuildInfo, logger *slog.Logger
 	// wrote it; enablement lives in mcp-modules.json and Chromium is the
 	// only backend, so the file carries no information.
 	_ = os.Remove(filepath.Join(config.DataDir, "browser.json"))
-	registry.startLocked()
+	registry.startInitial()
 	return registry, nil
 }
 
@@ -197,13 +259,14 @@ func (r *Registry) loadEnabled() error {
 		return fmt.Errorf("read in-process MCP module state: %w", err)
 	}
 	if !found {
-		r.enabled = map[string]bool{browserID: true}
+		r.persisted = persistedState{Modules: make(map[string]persistedModule)}
 		return nil
 	}
-	if state, ok := saved.Modules[browserID]; ok {
-		r.enabled[browserID] = state.Enabled
-	} else {
-		r.enabled[browserID] = true
+	r.persisted = clonePersistedState(saved)
+	for _, definition := range r.definitions {
+		if state, ok := saved.Modules[definition.ID]; ok {
+			r.enabled[definition.ID] = state.Enabled
+		}
 	}
 	return nil
 }
@@ -242,10 +305,36 @@ func (r *Registry) Revoke(registrationID string) {
 // broader than one module/server so stale credentials cannot survive a delete
 // or generation replacement.
 func (r *Registry) RevokeSession(sessionID string) int {
-	if r == nil || r.nativeMCP == nil {
+	if r == nil {
 		return 0
 	}
-	return r.nativeMCP.RevokeSession(sessionID)
+	revoked := 0
+	if r.nativeMCP != nil {
+		revoked += r.nativeMCP.RevokeSession(sessionID)
+	}
+	r.mu.RLock()
+	canvasService := r.canvas
+	r.mu.RUnlock()
+	if canvasService != nil {
+		revoked += canvasService.RevokeSession(sessionID)
+	}
+	return revoked
+}
+
+// DeleteSession tombstones the Canvas document owned by a confirmed native
+// session deletion. The Canvas service remains the owner of its storage and
+// cleanup semantics; a registry without a composed Canvas is a no-op.
+func (r *Registry) DeleteSession(sessionID string) error {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	canvasService := r.canvas
+	r.mu.RUnlock()
+	if canvasService == nil {
+		return nil
+	}
+	return canvasService.DeleteSession(sessionID)
 }
 
 // RevokeModule removes every native MCP registration belonging to a module.
@@ -256,6 +345,47 @@ func (r *Registry) RevokeModule(moduleID string) int {
 		return 0
 	}
 	return r.nativeMCP.RevokeModule(moduleID)
+}
+
+// AttachCanvas issues the Canvas package's session-scoped capability through
+// the registry-owned lifecycle. It is intentionally unavailable while Canvas
+// has not been composed or is disabled; callers must not manufacture a token
+// from a native session ID.
+func (r *Registry) AttachCanvas(sessionID string, generation ...uint64) (canvas.Authority, error) {
+	if r == nil {
+		return canvas.Authority{}, fmt.Errorf("Canvas module is not configured")
+	}
+	r.mu.RLock()
+	service := r.canvas
+	enabled := r.enabled["canvas"]
+	r.mu.RUnlock()
+	if !enabled || service == nil {
+		return canvas.Authority{}, fmt.Errorf("Canvas module is unavailable")
+	}
+	if ready, detail := r.Health("canvas"); !ready {
+		if detail == "" {
+			detail = "Canvas module is unavailable"
+		}
+		return canvas.Authority{}, fmt.Errorf("%s", detail)
+	}
+	return service.Attach(sessionID, generation...)
+}
+
+// AttachCanvasManagement issues a controller-only capability for one verified
+// project/session request. Unlike model-facing AttachCanvas it intentionally
+// does not require Canvas to be enabled or its optional worker to be ready:
+// retained documents must remain inspectable/removable during an outage.
+func (r *Registry) AttachCanvasManagement(sessionID string, generation ...uint64) (canvas.Authority, error) {
+	if r == nil {
+		return canvas.Authority{}, fmt.Errorf("Canvas module is not configured")
+	}
+	r.mu.RLock()
+	service := r.canvas
+	r.mu.RUnlock()
+	if service == nil {
+		return canvas.Authority{}, fmt.Errorf("Canvas module is unavailable")
+	}
+	return service.AttachManagement(sessionID, generation...)
 }
 
 // AdvanceGeneration invalidates registrations from older generations for one
@@ -279,82 +409,102 @@ func (r *Registry) revokeAll() int {
 }
 
 func validateState(value persistedState) error {
-	if value.Modules == nil {
-		return fmt.Errorf("modules must be an object")
-	}
-	for id := range value.Modules {
-		if id != browserID {
-			return fmt.Errorf("unknown in-process MCP module %q", id)
-		}
-	}
-	return nil
+	return validateCompleteState(value)
 }
 
-// SetEnabled persists module enablement in the Pixie app state and starts or
-// stops the module. Unknown modules fail closed; Browser is the only module.
+// SetEnabled persists module enablement in the Pixie app state and reconciles
+// the owning service. Unknown modules fail closed. Persisted desired state is
+// published before a service is enabled, while slow construction happens
+// outside the registry request lock.
 func (r *Registry) SetEnabled(id string, enabled bool) error {
-	if id != browserID {
+	if _, ok := r.ModuleDefinition(id); !ok {
 		return fmt.Errorf("unknown in-process MCP module %q", id)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.enabled[id] == enabled {
+	r.mutationMu.Lock()
+	defer r.mutationMu.Unlock()
+	r.mu.RLock()
+	unchanged := r.enabled[id] == enabled
+	current := clonePersistedState(r.persisted)
+	r.mu.RUnlock()
+	if unchanged {
 		if !enabled {
 			// A repeated disable is still a lifecycle boundary. Do not leave a
 			// registration issued before a previous cleanup usable.
-			r.nativeMCP.RevokeModule(id)
+			r.RevokeModule(id)
 		}
 		return nil
 	}
-	state := persistedState{Modules: map[string]persistedModule{id: {Enabled: enabled}}}
-	if err := persist.Write(r.store, storeFile, state, validateState); err != nil {
+	candidate := CompleteStateWithDesired(current, id, enabled)
+	outcome, err := WriteCompleteStateWithOutcome(r.store, candidate, persist.PublishFaults{})
+	if err != nil {
+		if outcome.Kind == persist.OutcomeDurabilityUncertain {
+			if reconciled, reconcileErr := ReconcileCompleteState(r.store); reconcileErr == nil {
+				r.mu.Lock()
+				r.persisted = clonePersistedState(reconciled)
+				for _, definition := range r.definitions {
+					if state, ok := reconciled.Modules[definition.ID]; ok {
+						r.enabled[definition.ID] = state.Enabled
+					}
+				}
+				r.mu.Unlock()
+			}
+		}
 		return fmt.Errorf("persist in-process MCP module state: %w", err)
 	}
-	// Publish the desired state only after persist.Write has completed its
-	// pre-publication work. A failed write must leave the live catalog and
-	// module handle aligned with the last committed state.
+	if !outcome.MayDispatch() {
+		return fmt.Errorf("persist in-process MCP module state: mutation was not committed")
+	}
+	// Publish the desired state only after the complete map is durably
+	// installed. A failed write leaves the prior catalog and runtime untouched.
+	r.mu.Lock()
+	r.persisted = clonePersistedState(candidate)
 	r.enabled[id] = enabled
+	r.mu.Unlock()
 	if !enabled {
 		// Revocation happens before stopping the module so no new privileged
 		// continuation can use a credential after disablement is committed.
-		r.nativeMCP.RevokeModule(id)
+		r.RevokeModule(id)
 	}
-	r.startLocked()
-	return nil
+	return r.reconcileModule(id, enabled)
 }
 
 // Restart reconstructs an enabled module without changing its persisted
 // desired state. It is intentionally separate from SetEnabled so a retry of an
 // unchanged enablement cannot interrupt a healthy Browser service.
 func (r *Registry) Restart(id string) error {
-	if id != browserID {
+	definition, ok := r.ModuleDefinition(id)
+	if !ok {
 		return fmt.Errorf("unknown in-process MCP module %q", id)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.enabled[id] {
+	r.mutationMu.Lock()
+	defer r.mutationMu.Unlock()
+	r.mu.RLock()
+	enabled := r.enabled[id]
+	r.mu.RUnlock()
+	if !enabled {
 		return fmt.Errorf("cannot restart disabled in-process MCP module %q", id)
 	}
-	config := r.browserConfig()
-	service, err := browser.NewService(config, r.build, r.logger)
+	runtime, err := r.constructModule(definition.ID, true)
 	if err != nil {
-		r.logger.Error("in-process Browser module restart failed", "error", err)
+		r.recordFailure(definition.ID, err)
+		r.logger.Error("in-process MCP module restart failed", "module", definition.ID, "error", err)
 		return fmt.Errorf("restart in-process MCP module %q: %w", id, err)
 	}
-	previous := r.browser
-	r.browser = service
 	// Restart creates a new module runtime generation. Credentials issued to
-	// the previous runtime must not cross that boundary.
-	r.nativeMCP.RevokeModule(id)
-	if previous != nil {
-		previous.Shutdown()
+	// the previous runtime must not cross that boundary. Revoke before exposing
+	// the replacement so there is no interval where new routing observes a new
+	// handler while old credentials remain accepted.
+	r.RevokeModule(id)
+	previous := r.installRuntime(definition.ID, runtime)
+	if previous != nil && previous.shutdown != nil {
+		previous.shutdown()
 	}
 	return nil
 }
 
 // Catalog returns the in-process publisher catalog with Pixie-owned
-// enablement. The Browser extension name, tools, and resource surface are
-// fixed: Chromium is the only backend.
+// enablement. Registered modules remain visible while disabled or unavailable
+// so the UI can explain and explicitly retry each independent lifecycle.
 func (r *Registry) Catalog() Catalog {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -362,51 +512,69 @@ func (r *Registry) Catalog() Catalog {
 }
 
 func (r *Registry) catalogLocked() Catalog {
-	enabled := r.enabled[browserID]
-	detail := ""
-	state := "ready"
-	if !enabled {
-		state, detail = "unavailable", "The Browser module is disabled in Pixie MCP servers."
-	} else if r.browser == nil || !r.browser.Ready() {
-		state, detail = "unavailable", "The Browser module is not ready."
-	}
-	module := Module{
-		ID: browserID, ExtensionName: "pixie-browser", DisplayName: "Pixie Browser",
-		Description: "Bounded browser automation and browser guidance.",
-		Path:        BrowserRoute, Transport: transports,
-		Enabled: enabled, State: state, Endpoint: r.endpointLocked(),
-	}
-	if detail != "" {
-		module.Detail = detail
+	modules := make([]Module, 0, len(r.definitions))
+	degraded := false
+	for _, definition := range r.definitions {
+		ready, detail := r.healthLocked(definition.ID)
+		state := "ready"
+		if !ready {
+			state = "unavailable"
+			// Disabled optional modules do not make the gateway degraded. The
+			// legacy Browser disabled state remains degraded for compatibility
+			// with the existing Tools UI and readiness semantics. Flag-driven,
+			// never a module-name comparison.
+			if r.enabled[definition.ID] || definition.DegradesGatewayWhenDisabled {
+				degraded = true
+			}
+		}
+		module := Module{
+			ID: definition.ID, ExtensionName: definition.ExtensionName,
+			DisplayName: definition.DisplayName, Description: definition.Description,
+			Path: definition.Path, Transport: definition.Transport,
+			Enabled: r.enabled[definition.ID], State: state,
+			Endpoint: r.endpointForLocked(definition.Path),
+		}
+		if detail != "" {
+			module.Detail = detail
+		}
+		modules = append(modules, module)
 	}
 	gateway := GatewaySummary{State: "ready"}
-	if state != "ready" {
+	if degraded {
 		gateway.State, gateway.Detail = "degraded", "One or more published modules are unavailable."
 	}
 	return Catalog{
-		SchemaVersion: 1, Revision: r.revisionLocked(enabled), Gateway: gateway,
-		Modules: []Module{module}, Engine: "in-process",
+		SchemaVersion: 1, Revision: r.revisionLocked(), Gateway: gateway,
+		Modules: modules, Engine: "in-process",
 	}
 }
 
-func (r *Registry) revisionLocked(enabled bool) string {
-	digest := sha256.Sum256([]byte(strings.Join([]string{
-		browserID, "pixie-browser", "Pixie Browser",
-		"Bounded browser automation and browser guidance.",
-		BrowserRoute, transports, strconv.FormatBool(enabled),
-	}, "\x00")))
+func (r *Registry) revisionLocked() string {
+	// json.Marshal sorts map keys, making unknown persisted entries part of a
+	// deterministic committed-state revision without routing or executing them.
+	value := struct {
+		Definitions []ModuleDefinition `json:"definitions"`
+		Enabled     map[string]bool    `json:"enabled"`
+		Persisted   persistedState     `json:"persisted"`
+	}{Definitions: r.definitions, Enabled: r.enabled, Persisted: r.persisted}
+	encoded, _ := json.Marshal(value)
+	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:])[:16]
 }
 
 func (r *Registry) endpointLocked() string {
+	return r.endpointForLocked(BrowserRoute)
+}
+
+func (r *Registry) endpointForLocked(route string) string {
 	if r.config.Port <= 0 {
-		return BrowserRoute
+		return route
 	}
 	host := r.config.Host
 	if host == "" || host == "0.0.0.0" {
 		host = "127.0.0.1"
 	}
-	return "http://" + net.JoinHostPort(host, strconv.Itoa(r.config.Port)) + BrowserRoute
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(r.config.Port)) + route
 }
 
 // Endpoint returns the controller-local URL Pi clients use for the Browser
@@ -420,12 +588,23 @@ func (r *Registry) Endpoint() string {
 // Shutdown stops the published modules. The persist store keeps enablement
 // for the next start.
 func (r *Registry) Shutdown() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mutationMu.Lock()
+	defer r.mutationMu.Unlock()
 	r.revokeAll()
-	if r.browser != nil {
-		r.browser.Shutdown()
-		r.browser = nil
+	r.mu.Lock()
+	runtimes := make([]*moduleRuntime, 0, len(r.modules))
+	for id, runtime := range r.modules {
+		runtimes = append(runtimes, runtime)
+		delete(r.modules, id)
+	}
+	r.browser = nil
+	r.canvas = nil
+	r.design = nil
+	r.mu.Unlock()
+	for _, runtime := range runtimes {
+		if runtime != nil && runtime.shutdown != nil {
+			runtime.shutdown()
+		}
 	}
 }
 
@@ -451,86 +630,6 @@ func (r *Registry) BrowserLegacyHandler() func() http.Handler {
 			service.ServeHTTP(response, clone)
 		})
 	}
-}
-
-func (r *Registry) startLocked() {
-	if !r.enabled[browserID] {
-		r.nativeMCP.RevokeModule(browserID)
-		if r.browser != nil {
-			r.browser.Shutdown()
-			r.browser = nil
-		}
-		return
-	}
-	config := r.browserConfig()
-	service, err := browser.NewService(config, r.build, r.logger)
-	if err != nil {
-		r.logger.Error("in-process Browser module unavailable", "error", err)
-		return
-	}
-	if r.browser != nil {
-		r.browser.Shutdown()
-	}
-	r.browser = service
-}
-
-func (r *Registry) browserConfig() browser.Config {
-	lookup := r.config.Getenv
-	if lookup == nil {
-		lookup = func(string) (string, bool) { return "", false }
-	}
-	config, err := browser.ConfigFromEnvironment(func(key string) (string, bool) {
-		switch key {
-		case "PIXIE_BROWSER_HOST":
-			return r.config.Host, true
-		case "PIXIE_BROWSER_PORT":
-			return strconv.Itoa(portOrDefault(r.config.Port)), true
-		case "PIXIE_BROWSER_AUTH":
-			return strconv.FormatBool(r.config.Token != ""), true
-		case "PIXIE_BROWSER_TOKEN":
-			return r.config.Token, r.config.Token != ""
-		case "PIXIE_BROWSER_PUBLIC_ORIGIN":
-			return r.config.PublicOrigin, r.config.PublicOrigin != ""
-		}
-		// PIXIE_BROWSER_* operator settings (binary path, config file,
-		// timeouts) still apply; network settings stay publisher-owned.
-		return lookup(key)
-	})
-	if err != nil {
-		// ConfigFromEnvironment only fails on malformed operator overrides;
-		// fall back to publisher-owned settings so one bad variable degrades
-		// the module instead of the whole publisher.
-		r.logger.Error("in-process Browser operator config invalid, using publisher defaults", "error", err)
-		config = browser.Config{}
-	}
-	if config.Host == "" {
-		config.Host = r.config.Host
-	}
-	if config.Port == 0 {
-		config.Port = portOrDefault(r.config.Port)
-	}
-	config.Authentication = r.config.Token != ""
-	config.Token = r.config.Token
-	config.PublicOrigin = r.config.PublicOrigin
-	// Storage isolation: this publisher stores Browser state under the
-	// controller data directory instead of the image-level browser roots.
-	config.ArtifactRoot = filepath.Join(r.config.DataDir, "browser", "artifacts")
-	config.StateRoot = filepath.Join(r.config.DataDir, "browser", "state")
-	if binaries := r.config.Binaries; binaries != nil {
-		if binaries.AgentBrowser != "" {
-			config.AgentBrowser = binaries.AgentBrowser
-		}
-		if binaries.BrowserConfig != "" {
-			config.BrowserConfig = binaries.BrowserConfig
-		}
-		if binaries.ArtifactRoot != "" {
-			config.ArtifactRoot = binaries.ArtifactRoot
-		}
-		if binaries.StateRoot != "" {
-			config.StateRoot = binaries.StateRoot
-		}
-	}
-	return config
 }
 
 func portOrDefault(port int) int {
@@ -565,31 +664,79 @@ func (r *Registry) ServeHTTP(response http.ResponseWriter, request *http.Request
 		writeJSON(response, http.StatusOK, map[string]any{
 			"build": r.build, "startedAt": r.started.UTC().Format(time.RFC3339), "catalog": catalog,
 		})
-	case request.URL.Path == BrowserRoute || strings.HasPrefix(request.URL.Path, BrowserRoute+"/"):
-		r.mu.RLock()
-		service := r.browser
-		enabled := r.enabled[browserID]
-		r.mu.RUnlock()
-		if !enabled || service == nil {
+	case r.IsMCPRoute(request.URL.Path) || r.IsManagementRoute(request.URL.Path):
+		id, runtime, enabled := r.serviceForRoute(request.URL.Path)
+		definition, haveDefinition := r.ModuleDefinition(id)
+		scoped := haveDefinition && definition.SessionScoped
+		isMCP := r.IsMCPRoute(request.URL.Path)
+		isManagement := r.IsManagementRoute(request.URL.Path)
+		// Session-scoped modules authenticate each MCP request with their own
+		// per-session capability in the module handler; requiring the
+		// publisher bearer here would replace that session credential and
+		// make scoped MCP calls impossible. Every other module MCP surface
+		// uses the publisher bearer at this boundary. Flag-driven, never a
+		// module-name comparison.
+		if isMCP && !scoped && !r.authorized(request) {
+			writeJSON(response, http.StatusUnauthorized, map[string]string{"code": "unauthorized"})
+			return
+		}
+		if runtime == nil {
+			if !enabled && isMCP {
+				writeJSON(response, http.StatusNotFound, map[string]string{"code": "not_found"})
+				return
+			}
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"code": "unavailable"})
+			return
+		}
+		if isMCP && !enabled {
 			writeJSON(response, http.StatusNotFound, map[string]string{"code": "not_found"})
 			return
 		}
-		// The Browser service keeps its own bearer, host, and origin checks
-		// against the controller-facing configuration; it stays the trust
-		// boundary for module traffic.
-		clone := request.Clone(request.Context())
-		urlCopy := *request.URL
-		trimmed := strings.TrimPrefix(request.URL.Path, BrowserRoute)
-		if trimmed == "" {
-			trimmed = "/mcp"
+		// Route ownership is registered independently of readiness so retained
+		// management/removal data remains reachable, but model-facing MCP work
+		// must fail closed when a mandatory worker or other dependency is absent.
+		guideRoute := strings.HasSuffix(request.URL.Path, "/guide")
+		if isMCP && !guideRoute && runtime.ready != nil && !runtime.ready() {
+			detail := "module is unavailable"
+			if runtime.readinessDetail != nil {
+				if candidate := runtime.readinessDetail(); candidate != "" {
+					detail = candidate
+				}
+			}
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"code": "unavailable", "detail": detail})
+			return
 		}
-		urlCopy.Path, urlCopy.RawPath = trimmed, ""
-		clone.URL = &urlCopy
-		clone.RequestURI = trimmed
-		if request.URL.RawQuery != "" {
-			clone.RequestURI += "?" + request.URL.RawQuery
+		if runtime.handler == nil {
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"code": "unavailable"})
+			return
 		}
-		service.ServeHTTP(response, clone)
+		delegated := r.moduleRequest(id, request.URL.Path, request)
+		if isManagement && scoped {
+			scope, ok := ManagementScopeFromContext(request.Context())
+			if ok {
+				authority, err := r.AttachCanvasManagement(scope.SessionID, scope.Generation)
+				if err != nil {
+					writeJSON(response, http.StatusServiceUnavailable, map[string]string{"code": "unavailable"})
+					return
+				}
+				service := runtime.canvas
+				if service == nil {
+					writeJSON(response, http.StatusServiceUnavailable, map[string]string{"code": "unavailable"})
+					return
+				}
+				delegated.Header.Del("Cookie")
+				delegated.Header.Del("Authorization")
+				delegated = delegated.WithContext(canvas.ContextWithManagementAuthority(delegated.Context(), authority))
+				defer service.Revoke(authority)
+			} else if unscopedHealthAlias(definition, request.URL.Path) == "" {
+				// Direct registry callers must explicitly provide the controller's
+				// verified scope for the scoped management surface. Keep the legacy
+				// unscoped status compatibility route for health/catalog tests.
+				writeJSON(response, http.StatusUnauthorized, map[string]string{"code": "unauthorized"})
+				return
+			}
+		}
+		runtime.handler.ServeHTTP(response, delegated)
 	default:
 		writeJSON(response, http.StatusNotFound, map[string]string{"code": "not_found"})
 	}
@@ -672,4 +819,18 @@ func writeJSON(response http.ResponseWriter, status int, body any) {
 func methodNotAllowed(response http.ResponseWriter, allowed string) {
 	response.Header().Set("Allow", allowed)
 	writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"code": "method_not_allowed"})
+}
+
+// unscopedHealthAlias reports the legacy unscoped status compatibility route
+// for a session-scoped definition. Direct callers without a controller-verified
+// scope may still reach the module health probe there; every other scoped
+// management route requires an explicit scope.
+func unscopedHealthAlias(definition ModuleDefinition, route string) string {
+	if len(definition.ManagementPaths) == 0 {
+		return ""
+	}
+	if route == definition.ManagementPaths[0]+"/status" {
+		return "/health"
+	}
+	return ""
 }

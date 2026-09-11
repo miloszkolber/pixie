@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/miloszkolber/pixie/internal/canvas"
+	"github.com/miloszkolber/pixie/internal/design"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/persist"
@@ -41,6 +43,10 @@ type RuntimeConfig struct {
 	PiURL  string
 	Policy *workspace.PathPolicy
 	Getenv func(string) string
+	// Optional worker/parser composition is explicit. Runtime never discovers
+	// Canvas/Design helpers from PATH or substitutes an unrestricted fallback.
+	CanvasConfig *canvas.Config
+	DesignConfig *design.Config
 }
 
 type Runtime struct {
@@ -117,6 +123,8 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		Token:        authConfig.MCPToken,
 		PublicOrigin: authConfig.PublicOrigin,
 		DataDir:      store.Dir,
+		CanvasConfig: config.CanvasConfig,
+		DesignConfig: config.DesignConfig,
 		Getenv: func(key string) (string, bool) {
 			if config.Getenv == nil {
 				return "", false
@@ -242,6 +250,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		return nil, err
 	}
 	httpHandler.MCPRegistry = mcpRegistry
+	httpHandler.SessionRecords = records
 	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, registry: mcpRegistry}, nil
 }
 
