@@ -1,10 +1,34 @@
+import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { compile } from "svelte/compiler";
 
 const repositoryRoot = resolve(import.meta.dir, "../../..");
 const webuiRoot = join(repositoryRoot, "webui");
 const modules = new Map<string, Promise<unknown>>();
+let ssrDirectory: Promise<string> | undefined;
+
+function ssrTempDirectory(): Promise<string> {
+	const pending = ssrDirectory ?? (ssrDirectory = mkdtemp(join(tmpdir(), "pixie-webui-ssr-")));
+	return pending.then(async (directory) => {
+		await mkdir(directory, { recursive: true });
+		return directory;
+	});
+}
+
+function ssrFileName(specifier: string): string {
+	const slug =
+		specifier
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.slice(0, 80) || "component";
+	const digest = createHash("sha256").update(specifier).digest("hex").slice(0, 12);
+	return `${slug}-${digest}.mjs`;
+}
 
 function resolveSource(path: string): string | undefined {
 	const candidates = extname(path)
@@ -96,7 +120,16 @@ function componentModule(path: string): Promise<unknown> {
 		const output = result.outputs.find((artifact) => artifact.kind === "entry-point");
 		if (!output) throw new Error(`No server bundle was produced for ${path}.`);
 		const source = await output.text();
-		return import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+		// Bun 1.3.14 fails large data-URL imports with NameTooLong because the
+		// bundled SSR output (often 100+ KiB) exceeds the resolvable specifier
+		// length. Write the already-bundled output to a disposable temp file and
+		// import it by file URL instead. The bundle is self-contained, so the
+		// temp location does not change module resolution.
+		const directory = await ssrTempDirectory();
+		const filename = ssrFileName(path);
+		const file = join(directory, filename);
+		await writeFile(file, source, "utf8");
+		return import(pathToFileURL(file).href);
 	})();
 	modules.set(path, pending);
 	return pending;
