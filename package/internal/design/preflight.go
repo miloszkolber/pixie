@@ -252,11 +252,12 @@ func parseFixtureJSON(ctx context.Context, source []byte) (NormalizedDocument, e
 		return NormalizedDocument{}, err
 	}
 	if len(design) == 0 {
-		// A valid opaque canvas.fig archive remains inspectable through a
-		// deterministic one-page fixture projection. This is intentionally a
-		// fixture parser behavior, not an upstream parser claim.
-		hash := hashBytes(source)
-		return NormalizedDocument{Name: "Offline fixture", ParserVersion: "fixture-parser-v1", Pages: []Page{{ID: "page-1", Name: "Page 1", Position: 0}}, Nodes: []Node{{ID: "node-1-" + hash[:12], PageID: "page-1", Position: 0, Depth: 0, Type: "DOCUMENT", Name: "Fixture source", Visible: true}}, CoverPNG: cover}, nil
+		// The fixture adapter only understands an explicit design/fixture JSON
+		// document. An opaque or unrecognized archive must fail closed: inventing
+		// a one-page projection would mask an unsupported source as if it had been
+		// decoded. A real .fig needs the licensed upstream parser, which this
+		// adapter deliberately does not implement.
+		return NormalizedDocument{}, designError("invalid_request", fmt.Errorf("fixture archive is missing design.json: %w", ErrInvalidRequest))
 	}
 	var value struct {
 		Name          string   `json:"name"`

@@ -311,3 +311,11 @@ func zipArchive(t *testing.T, entries map[string][]byte) []byte {
 	}
 	return output.Bytes()
 }
+
+func TestFixtureParserRejectsOpaqueArchiveWithoutDesignJSON(t *testing.T) {
+	service, _ := newService(t)
+	opaque := zipArchive(t, map[string][]byte{"canvas.fig": []byte("not-a-fixture")})
+	if _, err := service.Upload(context.Background(), design.UploadRequest{Name: "opaque.fig", Bytes: opaque}); !errors.Is(err, design.ErrInvalidRequest) {
+		t.Fatalf("opaque archive error = %v, want ErrInvalidRequest", err)
+	}
+}

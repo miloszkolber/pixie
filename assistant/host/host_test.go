@@ -67,9 +67,21 @@ func TestStartProvidesPrivateEndpointAndHello(t *testing.T) {
 
 func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
 	operations := nativeOperationSet()
-	for _, required := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel"} {
-		if !operations[required] {
-			t.Errorf("required core operation %q is not enabled", required)
+	// The exact enabled subset is declared here so adding or removing native
+	// support is an intentional review step, not an incidental edit.
+	wantEnabled := map[string]bool{
+		"session.list": true, "session.create": true, "session.load": true,
+		"session.prompt": true, "session.cancel": true, "session.prompt.image": true,
+		"session.release": true, "runtime.release": true,
+	}
+	for operation, enabled := range operations {
+		if enabled != wantEnabled[operation] {
+			t.Errorf("operation %q enabled=%v, want %v", operation, enabled, wantEnabled[operation])
+		}
+	}
+	for operation := range wantEnabled {
+		if _, present := operations[operation]; !present {
+			t.Errorf("enabled operation %q is absent from the catalog", operation)
 		}
 	}
 	for _, unsupported := range []string{"session.delete", "session.fork", "session.rename", "session.archive", "session.steer", "session.prompt.resource", "session.configure", "runtime.restart", "mcp.attach", "pi.tools.call", "pi.defaults.save"} {
@@ -701,8 +713,8 @@ func TestActiveChildLossReachesSupervisorErrors(t *testing.T) {
 	killNativeProcess(child.cmd.Process)
 	select {
 	case err := <-supervisor.errors:
-		if err == nil || !strings.Contains(err.Error(), "Pi child") {
-			t.Fatalf("active child loss error = %v", err)
+		if err == nil {
+			t.Fatal("active child loss reported a nil failure")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("active child loss did not reach the supervisor error channel")

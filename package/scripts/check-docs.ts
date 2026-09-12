@@ -106,11 +106,21 @@ function localPathReference(value: string): string | null {
 	return normalizePath(path);
 }
 
+// Checked sources are the operating docs plus the central roadmap and the
+// assistant README. Planning copies must not hide broken links or stale paths.
+function isCheckedSource(path: string): boolean {
+	return (
+		path === "README.md" ||
+		path.startsWith("docs/") ||
+		path === "roadmap/README.md" ||
+		path === "assistant/README.md"
+	);
+}
+
 function checkLinks(files: Readonly<Record<string, string>>, violations: string[]): number {
 	let count = 0;
 	for (const [source, markdown] of Object.entries(files)) {
-		if (!source.endsWith(".md") || !(source === "README.md" || source.startsWith("docs/")))
-			continue;
+		if (!source.endsWith(".md") || !isCheckedSource(source)) continue;
 		for (const match of markdown.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)) {
 			const target = (match[1] ?? "").trim().split(/\s+/, 1)[0] ?? "";
 			if (
@@ -150,8 +160,7 @@ function checkPathReferences(
 ): number {
 	let count = 0;
 	for (const [source, markdown] of Object.entries(files)) {
-		if (!source.endsWith(".md") || !(source === "README.md" || source.startsWith("docs/")))
-			continue;
+		if (!source.endsWith(".md") || !isCheckedSource(source)) continue;
 		for (const match of markdown.matchAll(/`([^`]+)`/g)) {
 			const reference = localPathReference(match[1] ?? "")?.replace(/\/+$/, "");
 			if (reference === undefined || reference === null) continue;

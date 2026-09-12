@@ -4,7 +4,8 @@ import "context"
 
 // DeterministicParser is a small offline fixture adapter for focused tests and
 // development. It accepts a preflighted ZIP archive containing fixture.json or
-// design.json and never claims to implement openfig-core or Figma decoding.
+// design.json, rejects any archive without one, and never claims to implement
+// openfig-core or Figma decoding.
 type DeterministicParser struct{}
 
 // NewDeterministicParser returns the explicit fixture parser adapter.
