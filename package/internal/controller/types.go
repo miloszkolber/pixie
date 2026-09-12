@@ -9,18 +9,23 @@ type AgentOperations struct {
 	Steer                 bool `json:"steer"`
 	RenameSession         bool `json:"renameSession"`
 	ArchiveSession        bool `json:"archiveSession"`
-	Administration        bool `json:"administration"`
 }
 
 type AgentProfile struct {
 	Capabilities    map[string]int  `json:"capabilities"`
 	Name            string          `json:"name"`
 	Version         string          `json:"version"`
+	BootID          string          `json:"bootId,omitempty"`
 	Pi              bool            `json:"pi"`
 	Compatible      bool            `json:"compatible"`
 	MissingRequired []string        `json:"missingRequired"`
 	Operations      AgentOperations `json:"operations"`
-	identity        string
+	// OperationSet is negotiated by host hello and contains a support bit for
+	// each retained operation. It is intentionally distinct from the specific
+	// operation projections above so unsupported optional routes remain visible.
+	OperationSet           map[string]bool `json:"operationSet,omitempty"`
+	operationSetNegotiated bool
+	identity               string
 }
 
 type WireModel struct {

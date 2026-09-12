@@ -52,10 +52,19 @@ type Settings struct {
 	cached  *AppConfig
 	publish func(AppConfig)
 	client  *http.Client
+	faults  persist.PublishFaults
 }
 
 func NewSettings(store persist.Store, publish func(AppConfig)) *Settings {
 	return &Settings{store: store, publish: publish, client: &http.Client{Timeout: 2 * time.Second}}
+}
+
+// SetPublishFaults injects deterministic publication faults for X04 coverage.
+// Production code leaves it zero-valued.
+func (s *Settings) SetPublishFaults(faults persist.PublishFaults) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.faults = faults
 }
 
 func (s *Settings) Get() (AppConfig, error) {
@@ -115,7 +124,17 @@ func (s *Settings) mutate(update func(*AppConfig)) (AppConfig, error) {
 	next := current
 	update(&next)
 	next = normalizeConfig(next)
-	if err := persist.Write(s.store, "config.json", next, nil); err != nil {
+	outcome, err := persist.WriteWithOutcome(s.store, "config.json", next, nil, s.faults)
+	if err != nil {
+		// A durability-uncertain publish leaves the new primary visible while
+		// the write reports failure. Reconcile the validated primary so the
+		// cache cannot diverge from disk, then still surface the uncertainty.
+		if outcome.MustReconcileLedger() {
+			if reconciled, reconcileErr := persist.ReconcilePrimary[AppConfig](s.store, "config.json", nil); reconcileErr == nil {
+				normalized := normalizeConfig(reconciled)
+				s.cached = &normalized
+			}
+		}
 		s.mu.Unlock()
 		return AppConfig{}, err
 	}

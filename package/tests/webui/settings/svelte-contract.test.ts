@@ -4,14 +4,15 @@ import { compile } from "svelte/compiler";
 const settingsRoot = new URL("../../../webui/src/settings/", import.meta.url);
 const requiredComponents = [
 	"login/login-dialog.svelte",
+	"settings-area.svelte",
 	"sections/agent-settings.svelte",
+	"sections/deletion-recovery.svelte",
 	"sections/pi-settings.svelte",
 	"sections/pi-tools-settings.svelte",
 	"sections/models-settings.svelte",
 	"sections/provider-card.svelte",
 	"sections/providers-settings.svelte",
 	"sections/system-settings.svelte",
-	"settings-dialog.svelte",
 ] as const;
 
 test("every settings Svelte component parses without compiler warnings or React imports", async () => {
@@ -31,12 +32,14 @@ test("the Svelte settings surface retains the settings and login selectors", asy
 	);
 	const source = sources.join("\n");
 	for (const testId of [
-		"settings-dialog",
 		"settings-pi",
 		"settings-pi-tools",
 		"settings-models",
 		"settings-providers",
 		"system-settings",
+		"deletion-recovery",
+		"deletion-recovery-confirm",
+		"deletion-recovery-retain",
 		"tool-inventory",
 		"in-process-mcp-module-row",
 		"model-row",
@@ -67,11 +70,24 @@ test("the Svelte settings surface retains the settings and login selectors", asy
 	expect(source).toMatch(/data-testid=\{`system-card-\$\{name\.toLowerCase\(\)\}`\}/);
 });
 
-test("closed settings retain the native dialog lifecycle without retaining section effects", async () => {
-	const source = await Bun.file(new URL("settings-dialog.svelte", settingsRoot)).text();
-	const dialogStart = source.indexOf("<Dialog");
-	const openGuard = source.indexOf("{#if $appStore.settingsOpen}", dialogStart);
-	expect(dialogStart).toBeGreaterThanOrEqual(0);
-	expect(openGuard).toBeGreaterThan(dialogStart);
-	expect(source.indexOf("<Section />", openGuard)).toBeGreaterThan(openGuard);
+test("the settings modal is gone and the primary-area view owns settings navigation", async () => {
+	const workArea = await Bun.file(
+		new URL("../../../webui/src/workspace/views/project-work-area.svelte", import.meta.url),
+	).text();
+	expect(await Bun.file(new URL("settings-dialog.svelte", settingsRoot)).exists()).toBe(false);
+	expect(workArea).toContain('data-testid="settings-detail"');
+	expect(workArea).toContain('data-testid="settings-section-row"');
+	expect(workArea).toContain('role="tablist"');
+	expect(workArea).not.toContain("settings-dialog.svelte");
+
+	// The standalone fallback surface is a primary-area region, not a modal.
+	const shell = await Bun.file(
+		new URL("../../../webui/src/workspace/shell.svelte", import.meta.url),
+	).text();
+	const standalone = await Bun.file(new URL("settings-area.svelte", settingsRoot)).text();
+	expect(shell).toContain("<SettingsArea");
+	expect(standalone).toContain('data-testid="settings-area"');
+	expect(standalone).not.toContain('role="dialog"');
+	expect(shell).not.toContain('data-testid="settings-dialog"');
+	expect(standalone).not.toContain("settings-dialog.svelte");
 });

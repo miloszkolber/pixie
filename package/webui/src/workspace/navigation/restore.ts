@@ -5,8 +5,20 @@ import {
 	selectProjectAreaById,
 	selectProjectAreaNavTick,
 } from "../../store";
+import {
+	selectPrimary,
+	selectSecondary,
+	selectSecondaryArea,
+	type WorkspaceSelectionSnapshot,
+} from "../store/selection-state";
 import type { NavigationDriver } from "./driver";
-import { type NavigationLocation, parseFragment, serializeLocation } from "./location";
+import {
+	isNavigationLocationV2,
+	type NavigationLocation,
+	type NavigationLocationV2,
+	parseFragment,
+	serializeLocation,
+} from "./location";
 
 export interface NavigationDeps {
 	driver: NavigationDriver;
@@ -19,7 +31,35 @@ export function deriveLocation(state: {
 	projectAreas: Record<string, ProjectArea[]>;
 	tabsByProjectArea: Record<string, { id: string; kind: string; sessionId?: string }[]>;
 	activeTabByProjectArea: Record<string, string | null>;
+	workspaceSelection?: WorkspaceSelectionSnapshot;
 }): NavigationLocation | null {
+	if (state.workspaceSelection) {
+		const projectArea = state.activeProjectAreaId
+			? selectProjectAreaById(state, state.activeProjectAreaId)
+			: null;
+		const secondary = state.workspaceSelection.secondarySelection;
+		const selectionProjectId =
+			state.workspaceSelection.primarySelection?.kind === "session"
+				? (state.workspaceSelection.primarySelection.projectId ?? null)
+				: state.workspaceSelection.primarySelection?.kind === "schedule"
+					? state.workspaceSelection.primarySelection.projectId
+					: secondary?.kind === "file" || secondary?.kind === "diff"
+						? secondary.projectId
+						: secondary?.kind === "module" && secondary.context.scope === "project"
+							? secondary.context.projectId
+							: secondary?.kind === "module" && secondary.context.scope === "session"
+								? (secondary.context.projectId ?? null)
+								: null;
+		return {
+			version: 2,
+			primaryArea: state.workspaceSelection.primaryArea,
+			primarySelection: state.workspaceSelection.primarySelection,
+			secondaryArea: state.workspaceSelection.secondaryArea,
+			secondarySelection: state.workspaceSelection.secondarySelection,
+			projectId: projectArea?.projectId ?? selectionProjectId ?? state.selectedProjectId,
+			projectAreaId: projectArea?.id ?? state.activeProjectAreaId,
+		};
+	}
 	const projectAreaId = state.activeProjectAreaId;
 	if (projectAreaId) {
 		const projectArea = selectProjectAreaById(state, projectAreaId);
@@ -46,6 +86,7 @@ interface NavigationIntentState {
 	selectedProjectId: string | null;
 	activeProjectAreaId: string | null;
 	navTickByProjectArea: Record<string, number>;
+	workspaceSelection: WorkspaceSelectionSnapshot;
 }
 
 function isUserNavigationEdge(
@@ -54,6 +95,7 @@ function isUserNavigationEdge(
 ): boolean {
 	if (state.selectedProjectId !== previous.selectedProjectId) return true;
 	if (state.activeProjectAreaId !== previous.activeProjectAreaId) return true;
+	if (state.workspaceSelection !== previous.workspaceSelection) return true;
 	const projectAreaId = state.activeProjectAreaId;
 	if (!projectAreaId) return false;
 	return (
@@ -62,12 +104,45 @@ function isUserNavigationEdge(
 	);
 }
 
+function projectIdForLocation(location: NavigationLocationV2): string | null {
+	if (location.projectId) return location.projectId;
+	if (location.primarySelection?.kind === "session")
+		return location.primarySelection.projectId ?? null;
+	if (location.primarySelection?.kind === "schedule") return location.primarySelection.projectId;
+	const secondary = location.secondarySelection;
+	if (secondary?.kind === "file" || secondary?.kind === "diff") return secondary.projectId;
+	if (secondary?.kind === "module") {
+		if (secondary.context.scope === "project") return secondary.context.projectId;
+		if (secondary.context.scope === "session") return secondary.context.projectId ?? null;
+	}
+	return null;
+}
+
+function locationNeedsProjectArea(location: NavigationLocationV2): boolean {
+	if (location.projectAreaId) return true;
+	if (location.primarySelection?.kind === "session") return true;
+	const secondary = location.secondarySelection;
+	if (secondary?.kind === "file" || secondary?.kind === "diff") return true;
+	return secondary?.kind === "module" && secondary.context.scope !== "instance";
+}
+
+function applyWorkspaceLocation(location: NavigationLocationV2): void {
+	const state = appStoreApi.getState();
+	state.dispatchWorkspaceSelection(selectPrimary(location.primarySelection, location.primaryArea));
+	state.dispatchWorkspaceSelection(
+		selectSecondary(location.secondarySelection, location.secondaryArea),
+	);
+	if (location.secondarySelection === null)
+		appStoreApi.getState().dispatchWorkspaceSelection(selectSecondaryArea(location.secondaryArea));
+}
+
 export function startNavigation({ driver, listProjectAreas }: NavigationDeps): () => void {
 	let generation = 0;
 	let pending: { generation: number; location: NavigationLocation } | null = null;
 	const attempting = new Set<number>();
 	let lastWritten = "";
 	let armedPush = false;
+	let legacyRouteActive = false;
 	let applyingRoute = false;
 
 	const applyRoute = (write: () => void) => {
@@ -87,6 +162,10 @@ export function startNavigation({ driver, listProjectAreas }: NavigationDeps): (
 		if (!location) return;
 		const fragment = serializeLocation(location);
 		if (fragment === lastWritten) return;
+		// An incoming v1 link is a supported migration boundary. Keep its
+		// address stable until the user makes a canonical selection change;
+		// that avoids adding a history entry while reconnecting or hydrating it.
+		if (legacyRouteActive && !armedPush && isNavigationLocationV2(location)) return;
 		if (armedPush) driver.push(fragment);
 		else driver.replace(fragment);
 		armedPush = false;
@@ -101,12 +180,35 @@ export function startNavigation({ driver, listProjectAreas }: NavigationDeps): (
 	const attempt = async (gen: number) => {
 		if (pending?.generation !== gen || attempting.has(gen)) return;
 		const location = pending.location;
-		if (location.kind === "main") {
+		const state = appStoreApi.getState();
+		if (!isNavigationLocationV2(location) && location.kind === "main") {
 			applyRoute(() => appStoreApi.getState().selectMain());
 			resolvePending(gen);
 			return;
 		}
-		const state = appStoreApi.getState();
+		const v2 = isNavigationLocationV2(location);
+		const projectId = v2 ? projectIdForLocation(location) : location.projectId;
+		const requestedProjectAreaId = v2
+			? location.projectAreaId
+			: location.kind === "project"
+				? null
+				: location.projectAreaId;
+		// A v2 schedule/settings route still carries its project area for shell
+		// chrome; honor it so the selection restores in its own column instead
+		// of dropping to the project home.
+		const needsProjectArea = v2
+			? locationNeedsProjectArea(location) || requestedProjectAreaId !== null
+			: location.kind !== "project";
+		if (!projectId) {
+			if (!v2) return;
+			applyRoute(() => {
+				const current = appStoreApi.getState();
+				if (current.activeProjectAreaId) current.selectMain();
+				applyWorkspaceLocation(location);
+			});
+			resolvePending(gen);
+			return;
+		}
 		if (
 			state.status !== "connected" ||
 			state.welcomeGeneration === 0 ||
@@ -114,20 +216,23 @@ export function startNavigation({ driver, listProjectAreas }: NavigationDeps): (
 		) {
 			return;
 		}
-		if (!state.projects.some((p) => p.id === location.projectId)) {
+		if (!state.projects.some((project) => project.id === projectId)) {
 			applyRoute(() => appStoreApi.getState().selectMain());
 			resolvePending(gen);
 			return;
 		}
-		if (location.kind === "project") {
-			applyRoute(() => appStoreApi.getState().selectProject(location.projectId));
+		if (!needsProjectArea) {
+			applyRoute(() => {
+				appStoreApi.getState().selectProject(projectId);
+				if (v2) applyWorkspaceLocation(location);
+			});
 			resolvePending(gen);
 			return;
 		}
 		attempting.add(gen);
 		let rows: ProjectArea[];
 		try {
-			rows = await listProjectAreas(location.projectId);
+			rows = await listProjectAreas(projectId);
 		} catch {
 			attempting.delete(gen);
 			return;
@@ -135,26 +240,37 @@ export function startNavigation({ driver, listProjectAreas }: NavigationDeps): (
 		attempting.delete(gen);
 		if (pending?.generation !== gen) return;
 		const now = appStoreApi.getState();
-		if (!now.projects.some((p) => p.id === location.projectId)) {
+		if (!now.projects.some((project) => project.id === projectId)) {
 			applyRoute(() => appStoreApi.getState().selectMain());
 			resolvePending(gen);
 			return;
 		}
-		applyRoute(() => now.setProjectAreas(location.projectId, rows));
-		const projectArea = rows.find((w) => w.id === location.projectAreaId);
+		applyRoute(() => now.setProjectAreas(projectId, rows));
+		const projectArea = requestedProjectAreaId
+			? rows.find((candidate) => candidate.id === requestedProjectAreaId)
+			: rows[0];
 		if (!projectArea) {
-			applyRoute(() => appStoreApi.getState().selectProject(location.projectId));
+			applyRoute(() => {
+				appStoreApi.getState().selectProject(projectId);
+				if (v2) applyWorkspaceLocation(location);
+			});
 			resolvePending(gen);
 			return;
 		}
-		applyRoute(() =>
-			appStoreApi
-				.getState()
-				.activateProjectAreaFromRoute(
+		applyRoute(() => {
+			const current = appStoreApi.getState();
+			if (v2) {
+				if (location.primaryArea === "chats" && location.primarySelection?.kind === "session")
+					current.activateProjectAreaFromRoute(projectArea, location.primarySelection.sessionId);
+				else current.activateProjectArea(projectArea);
+				applyWorkspaceLocation(location);
+			} else {
+				current.activateProjectAreaFromRoute(
 					projectArea,
 					location.kind === "chat" ? location.sessionId : undefined,
-				),
-		);
+				);
+			}
+		});
 		resolvePending(gen);
 	};
 
@@ -163,6 +279,7 @@ export function startNavigation({ driver, listProjectAreas }: NavigationDeps): (
 		generation += 1;
 		pending = { generation, location };
 		armedPush = false;
+		legacyRouteActive = !isNavigationLocationV2(location);
 		applyRoute(() => {
 			const state = appStoreApi.getState();
 			if (state.activeProjectAreaId) state.noteNavigation(state.activeProjectAreaId);
@@ -176,15 +293,18 @@ export function startNavigation({ driver, listProjectAreas }: NavigationDeps): (
 
 	const unsubscribeDriver = driver.onIncoming(acceptFragment);
 	const unsubscribeStore = appStoreApi.subscribe((state, previous) => {
+		if (previous.routeChatTarget && !state.routeChatTarget) armedPush = false;
 		if (!applyingRoute && isUserNavigationEdge(state, previous)) {
 			armedPush = true;
+			legacyRouteActive = false;
 		}
 		if (
 			!applyingRoute &&
 			pending &&
 			(state.selectedProjectId !== previous.selectedProjectId ||
 				state.activeProjectAreaId !== previous.activeProjectAreaId ||
-				state.navTickByProjectArea !== previous.navTickByProjectArea)
+				state.navTickByProjectArea !== previous.navTickByProjectArea ||
+				state.workspaceSelection !== previous.workspaceSelection)
 		) {
 			pending = null;
 		}

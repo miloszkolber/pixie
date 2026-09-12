@@ -278,7 +278,11 @@ export class Providers {
 						if (v.key === "piThinkingEffort") {
 							if (v.value === null) delete s.defaultThinkingLevel;
 							else {
-								if (!["off", "minimal", "low", "medium", "high", "xhigh"].includes(text(v.value)))
+								if (
+									!["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+										text(v.value),
+									)
+								)
 									throw new Error("Unsupported thinking effort");
 								s.defaultThinkingLevel = v.value;
 							}

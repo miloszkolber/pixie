@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 	"github.com/miloszkolber/pixie/internal/identifier"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 )
 
 type ImageContent struct {
@@ -36,6 +37,9 @@ type TextResourceAttachment struct {
 }
 
 func (m *SessionManager) Prompt(ctx context.Context, sessionID, text string, images []ImageContent, resources []TextResourceAttachment) error {
+	if _, err := promptBlocks(text, images, resources); err != nil {
+		return err
+	}
 	entry, err := m.queueEntry(sessionID)
 	if err != nil {
 		return err
@@ -370,6 +374,9 @@ func requireQueueReplayLocked(entry *sessionEntry) {
 }
 
 func (m *SessionManager) Steer(ctx context.Context, sessionID, text string, images []ImageContent, resources []TextResourceAttachment) error {
+	if _, err := promptBlocks(text, images, resources); err != nil {
+		return err
+	}
 	entry, err := m.entry(sessionID)
 	if err != nil {
 		return err
@@ -421,41 +428,210 @@ func (m *SessionManager) Steer(ctx context.Context, sessionID, text string, imag
 }
 
 func (m *SessionManager) Abort(ctx context.Context, sessionID string) error {
+	outcome, err := m.Stop(ctx, sessionID)
+	if err != nil {
+		// Abort keeps its historical contract: a caller deadline surfaces as
+		// the context error even though Stop reports the richer uncertain
+		// outcome for its own callers.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	if outcome.Status == StopStatusUncertain {
+		if outcome.Reason != "" {
+			return fmt.Errorf("stop outcome is uncertain: %s", outcome.Reason)
+		}
+		return fmt.Errorf("stop outcome is uncertain")
+	}
+	return nil
+}
+
+// Stop freezes controller dispatch first, clears continuation, aborts
+// boundedly and verifies generation quiescence with distinct
+// stopping/stopped/uncertain reporting. Unsent outbox items are retained
+// paused; resume or discard stays an explicit user decision and never happens
+// automatically here.
+func (m *SessionManager) Stop(ctx context.Context, sessionID string) (StopOutcome, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	entry, err := m.entry(sessionID)
 	if err != nil {
-		return err
+		return StopOutcome{Status: StopStatusUncertain, Reason: err.Error()}, err
 	}
 	defer m.releaseEntry(entry)
 	if err := m.lockEntryContext(ctx, sessionID, entry); err != nil {
-		return err
+		return StopOutcome{Status: StopStatusUncertain, Reason: err.Error()}, err
 	}
-	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
+	// Freeze dispatch first. The lifecycle flag blocks admitFollowUp,
+	// retryFollowUp and new operations while the settling generation may
+	// still clear itself through lockEntryForSettlement.
+	m.mu.Lock()
+	if m.closed || m.lifecycle[sessionID] {
+		m.mu.Unlock()
 		entry.op.Unlock()
-		return err
+		err := fmt.Errorf("wait for the chat lifecycle operation to finish")
+		return StopOutcome{Status: StopStatusUncertain, Reason: err.Error()}, err
+	}
+	if m.lifecycle == nil {
+		m.lifecycle = make(map[string]bool)
+	}
+	m.lifecycle[sessionID] = true
+	m.mu.Unlock()
+	unfreeze := func() {
+		m.mu.Lock()
+		delete(m.lifecycle, sessionID)
+		m.mu.Unlock()
 	}
 	entry.state.Lock()
+	if entry.drainRetry != nil {
+		entry.drainRetry.Stop()
+		entry.drainRetry = nil
+	}
+	generation := entry.promptGeneration
+	// Clear continuation: rewind an un-attempted dispatch to paused follow-up.
+	// An attempted dispatch stays for settlement to mark Blocked/uncertain.
+	rewindErrMessage := ""
+	if entry.queue.Dispatch != nil && !entry.queue.Dispatch.Attempted {
+		next := entry.queue.clone()
+		item := queuedFollowUp{ID: next.Dispatch.ID, Text: next.Dispatch.Text}
+		next.Dispatch = nil
+		next.FollowUp = append([]queuedFollowUp{item}, next.FollowUp...)
+		next.Revision = identifier.New()
+		if saveErr := m.saveQueueLocked(sessionID, entry, next); saveErr != nil {
+			rewindErrMessage = saveErr.Error()
+			m.emitQueueProjection(sessionID, entry, true)
+		} else {
+			m.emitQueue(sessionID, entry)
+		}
+	}
 	done := entry.promptDone
 	entry.state.Unlock()
-
+	m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": StopStatusStopping, "generation": generation}})
+	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
+		entry.state.Lock()
+		paused := pausedOutboxCount(entry.queue)
+		entry.state.Unlock()
+		entry.op.Unlock()
+		forcedGeneration, forcedPaused, forceErr := m.forceTerminateGeneration(sessionID, entry, generation)
+		unfreeze()
+		reason := err.Error()
+		if rewindErrMessage != "" {
+			reason = rewindErrMessage + "; " + reason
+		}
+		if forceErr != nil {
+			reason += "; forced generation teardown: " + forceErr.Error()
+		}
+		if forcedPaused > paused {
+			paused = forcedPaused
+		}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: forcedGeneration, RetainedPaused: paused, ForcedTermination: true, Reason: reason}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": forcedGeneration, "reason": reason}})
+		return outcome, err
+	}
 	// Stop unwinds blocked UI on the controller side as well: dismiss the
 	// browser modal immediately. The host settles its awaiting extension call
 	// through session.cancel, which fans back as ui_cancel (idempotent here).
 	m.cancelDialogs(sessionID)
-	err = m.client.Cancel(entry.context(ctx), sessionID)
+	cancelErr := m.client.Cancel(entry.context(ctx), sessionID)
 	entry.op.Unlock()
-	if err != nil || done == nil {
-		return err
-	}
 	// Cancellation is a notification. Its acknowledgement is prompt settlement,
 	// which must acquire the operation lock we just released.
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			// Bounded abort: fall through to quiescence verification below,
+			// which will report uncertain while the generation is still active.
+		}
 	}
+	// Verify generation quiescence. A forwarded abort response alone is never
+	// evidence; only an unchanged generation with no active prompt, native
+	// continuation or scheduled dispatch counts as stopped.
+	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	verifyErr := entry.op.LockContext(verifyCtx)
+	verifyCancel()
+	if verifyErr != nil {
+		entry.state.Lock()
+		paused := pausedOutboxCount(entry.queue)
+		entry.state.Unlock()
+		forcedGeneration, forcedPaused, forceErr := m.forceTerminateGeneration(sessionID, entry, generation)
+		unfreeze()
+		reason := "could not verify generation quiescence"
+		if cancelErr != nil {
+			reason = cancelErr.Error()
+		} else if ctx.Err() != nil {
+			reason = ctx.Err().Error()
+		}
+		if rewindErrMessage != "" {
+			reason = rewindErrMessage + "; " + reason
+		}
+		if forceErr != nil {
+			reason += "; forced generation teardown: " + forceErr.Error()
+		}
+		if forcedPaused > paused {
+			paused = forcedPaused
+		}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: forcedGeneration, RetainedPaused: paused, ForcedTermination: true, Reason: reason}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": forcedGeneration, "reason": reason}})
+		if cancelErr != nil {
+			return outcome, cancelErr
+		}
+		return outcome, fmt.Errorf("stop outcome is uncertain: %s", reason)
+	}
+	entry.state.Lock()
+	paused := pausedOutboxCount(entry.queue)
+	quiescent, quiesceReason := stopQuiescentLocked(entry, generation)
+	if quiescent {
+		// Advance the projection generation after a verified stop so delayed
+		// callbacks from the just-settled turn cannot resurrect activity.
+		entry.promptGeneration++
+		generation = entry.promptGeneration
+	}
+	entry.state.Unlock()
+	entry.op.Unlock()
+	if rewindErrMessage != "" {
+		reason := rewindErrMessage
+		if cancelErr != nil {
+			reason = reason + "; " + cancelErr.Error()
+		}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: reason}
+		unfreeze()
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": reason}})
+		return outcome, fmt.Errorf("stop outcome is uncertain: %s", reason)
+	}
+	if cancelErr != nil {
+		forcedGeneration, forcedPaused, forceErr := m.forceTerminateGeneration(sessionID, entry, generation)
+		if forcedPaused > paused {
+			paused = forcedPaused
+		}
+		reason := cancelErr.Error()
+		if forceErr != nil {
+			reason += "; forced generation teardown: " + forceErr.Error()
+		}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: forcedGeneration, RetainedPaused: paused, ForcedTermination: true, Reason: reason}
+		unfreeze()
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": forcedGeneration, "reason": reason}})
+		return outcome, cancelErr
+	}
+	if !quiescent {
+		forcedGeneration, forcedPaused, forceErr := m.forceTerminateGeneration(sessionID, entry, generation)
+		if forcedPaused > paused {
+			paused = forcedPaused
+		}
+		reason := quiesceReason
+		if forceErr != nil {
+			reason += "; forced generation teardown: " + forceErr.Error()
+		}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: forcedGeneration, RetainedPaused: paused, ForcedTermination: true, Reason: reason}
+		unfreeze()
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": forcedGeneration, "reason": reason}})
+		return outcome, fmt.Errorf("stop outcome is uncertain: %s", quiesceReason)
+	}
+	unfreeze()
+	outcome := StopOutcome{Status: StopStatusStopped, Generation: generation, RetainedPaused: paused}
+	m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": StopStatusStopped, "generation": generation, "retainedPaused": paused}})
+	return outcome, nil
 }
 
 func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry, text string, images []ImageContent, resources []TextResourceAttachment, queueID string) error {
@@ -509,10 +685,17 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 		// prompt, after the SDK has drained the prior turn's notifications.
 		entry.pendingToolOutputs = nil
 	}
-	entry.messages = append(entry.messages, map[string]any{"role": "user", "content": content})
+	optimistic := map[string]any{"role": "user", "content": content}
+	messageIndex := len(entry.messages)
+	entry.messages = append(entry.messages, optimistic)
 	entry.userResourceBytes = resourceBytes
 	entry.pendingEcho = &userEcho{
-		text:            text,
+		text:         text,
+		messageIndex: messageIndex,
+		// Keep an independent deep copy so the rollback guard can detect a
+		// native echo that merged or mutated the live optimistic message
+		// instead of comparing a map against itself.
+		optimistic:      cloneJSON(optimistic),
 		images:          echoImages,
 		resources:       echoResources,
 		matched:         make([]bool, len(echoImages)),
@@ -522,6 +705,7 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 	entry.stats.TotalMessages = len(entry.messages)
 	entry.streaming = true
 	entry.promptActive = true
+	entry.detachedWork = detachedWorkActive
 	entry.promptDone = make(chan struct{})
 	done := entry.promptDone
 	entry.promptGeneration++
@@ -539,7 +723,7 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 		defer close(done)
 		defer m.releaseWork(entry)
 		response, promptErr := m.client.Prompt(promptContext, piwire.PromptRequest{SessionId: piwire.SessionId(sessionID), Prompt: prompt})
-		if err := m.lockEntry(sessionID, entry); err != nil {
+		if err := m.lockEntryForSettlement(sessionID, entry); err != nil {
 			return
 		}
 		defer entry.op.Unlock()
@@ -550,6 +734,9 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 		}
 		entry.promptActive = false
 		entry.streaming = false
+		provenRejected := provenPromptRejection(promptErr)
+		provenRejectionRolledBack := provenRejected && rollbackOptimisticPromptLocked(entry)
+		ambiguousNativeOutcome := promptErr != nil && !provenRejectionRolledBack
 		acknowledged := entry.promptAcknowledged
 		entry.promptAcknowledged = false
 		queueErr := m.settleQueuedPromptLocked(sessionID, entry, queueID, promptErr == nil || acknowledged, promptErr != nil)
@@ -561,6 +748,11 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 			}
 		}
 		if promptErr != nil {
+			if ambiguousNativeOutcome {
+				entry.detachedWork = detachedWorkUncertain
+			} else {
+				entry.detachedWork = detachedWorkNone
+			}
 			entry.settlement = &SessionSettlement{StopReason: "error", ErrorMessage: promptErr.Error()}
 			m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "error", "error": promptErr.Error()}})
 			entry.state.Unlock()
@@ -571,6 +763,7 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 		if stopReason == "" {
 			stopReason = "complete"
 		}
+		entry.detachedWork = detachedWorkNone
 		entry.settlement = &SessionSettlement{StopReason: stopReason}
 		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "complete", "status": stopReason}})
 		entry.state.Unlock()
@@ -578,6 +771,26 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 	}()
 	handedOff = true
 	return nil
+}
+
+func provenPromptRejection(err error) bool {
+	var requestError *piwire.RequestError
+	return errors.As(err, &requestError) && requestError.Code == -32004
+}
+
+// rollbackOptimisticPromptLocked removes only the exact object installed for
+// this still-pending prompt. Any native echo/acknowledgement clears pendingEcho
+// first, so accepted or uncertain turns are retained for transcript recovery.
+func rollbackOptimisticPromptLocked(entry *sessionEntry) bool {
+	echo := entry.pendingEcho
+	if echo == nil || echo.messageIndex < 0 || echo.messageIndex >= len(entry.messages) || !reflect.DeepEqual(entry.messages[echo.messageIndex], echo.optimistic) {
+		return false
+	}
+	entry.messages = append(entry.messages[:echo.messageIndex], entry.messages[echo.messageIndex+1:]...)
+	entry.pendingEcho = nil
+	entry.userResourceBytes = 0
+	entry.stats.TotalMessages = len(entry.messages)
+	return true
 }
 
 func (m *SessionManager) scheduleFollowUp(sessionID string, entry *sessionEntry) {
@@ -600,6 +813,7 @@ func (m *SessionManager) admitFollowUp(sessionID string, entry *sessionEntry) bo
 	}
 	entry.drainScheduled = true
 	entry.refs++
+	m.activeWork++
 	m.work.Add(1)
 	entry.state.Unlock()
 	m.mu.Unlock()
@@ -909,6 +1123,9 @@ func promptBlocks(text string, images []ImageContent, resources []TextResourceAt
 			},
 		}))
 	}
+	if err := (piwire.PromptRequest{SessionId: "session", Prompt: blocks}).Validate(); err != nil {
+		return nil, err
+	}
 	return blocks, nil
 }
 
@@ -1018,6 +1235,9 @@ func queuedText(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" || containsNUL(value) || !utf8.ValidString(value) {
 		return "", fmt.Errorf("queued message is invalid")
+	}
+	if len(value) > piwire.PromptTextMaxBytes {
+		return "", fmt.Errorf("queued message exceeds the %d-byte limit", piwire.PromptTextMaxBytes)
 	}
 	return value, nil
 }

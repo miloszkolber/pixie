@@ -1,6 +1,12 @@
 import type { GitDiffScope, Project } from "@pixie/contracts";
 import { isAbsolutePath, normalizePath } from "../../lib";
-import type { ClosedChat, ContentTab, ProjectArea, RouteChatTarget } from "./model";
+import {
+	type ClosedChat,
+	type ContentTab,
+	contentSessionId,
+	type ProjectArea,
+	type RouteChatTarget,
+} from "./model";
 
 interface ActiveProjectAreaState {
 	activeProjectAreaId: string | null;
@@ -99,9 +105,10 @@ export function selectProjectAreaSessionIds(
 	projectAreaId: string,
 ): string[] {
 	const sessionIds = new Set(
-		(state.tabsByProjectArea[projectAreaId] ?? []).flatMap((tab) =>
-			tab.kind === "chat" ? [tab.sessionId] : [],
-		),
+		(state.tabsByProjectArea[projectAreaId] ?? []).flatMap((tab) => {
+			const sessionId = contentSessionId(tab);
+			return sessionId ? [sessionId] : [];
+		}),
 	);
 	for (const chat of state.closedChatsByProjectArea[projectAreaId] ?? []) {
 		sessionIds.add(chat.sessionId);

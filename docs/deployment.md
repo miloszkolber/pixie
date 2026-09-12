@@ -1,36 +1,24 @@
 # Deployment
 
-The primary setup is Linux x86-64 or arm64 with Docker Compose and Bun on the host. Pi runs as the host user through the source SDK service. No custom Pi executable is built.
+The intended setup is Linux x86-64 or arm64 with the Go `pixie-assistant` binary on the host and either the Go full-host binary or the controller-only Docker image. Pi runs as the host user through its public executable in RPC mode. Bun is a source build/test tool, not an assistant runtime dependency.
 
 ## Host service
 
-```sh
-git clone https://github.com/miloszkolber/pixie.git
-cd pixie
-bun install --frozen-lockfile --production --filter @pixie_ai/pixie-assistant
-```
+Install `pixie-assistant` from the matching commit-named binary archive. For a source build, run `CGO_ENABLED=0 go build -trimpath -o ../package/dist/pixie-assistant ./cmd/pixie-assistant` from `assistant/`. Install and configure optional extensions through Pi's native mechanisms.
 
-This installs the assistant's runtime dependencies without optional packages or the web development toolchain. Install and configure optional extensions through Pi's native mechanisms.
-
-Generate separate random values for `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file. The optional Browser connection expands its token from the host environment.
+Generate separate random values for `PIXIE_PI_SECRET_KEY`, `PIXIE_MCP_TOKEN`, and controller `PIXIE_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file. The optional Browser connection expands its token from the host environment.
 
 ```sh
-bun assistant/src/main.ts --llama
+PIXIE_PI_SECRET_KEY=<at-least-32-characters> \
+PI_CODING_AGENT_DIR="$HOME/.pi/agent" \
+pixie-assistant serve --config "$HOME/.config/pixie/assistant.json"
 ```
 
-`--agent-dir /absolute/path` selects Pi state, defaulting to `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The service listens at `127.0.0.1:3284`. `--host` and `--port` change it. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration. Existing native user and project resources load without a prescribed extension bundle. List optional packages by file path or preinstall them: bare package names wait on Pi's missing-source approval in headless use. This host enables five packages by absolute path in `/home/core/.pi/settings.json` `extensions` (backups `settings.json.bak-20260907` and `settings.json.bak-20260907-adapter` beside it), installed permanently under `/home/core/.pi/packages/` (own `package.json` with exact pins, `core`-owned; refresh with `bun install --cwd /home/core/.pi/packages`, then re-apply the Bun child-launch patch from `patches/` to `node_modules/@mjakl/pi-subagent`), deliberately decoupled from the `/repo/pixie` checkout so repo moves, branch changes or dev-dependency pruning cannot break the live Pi environment: `@mjakl/pi-subagent` (subagents, patched), `@juicesharp/rpiv-todo` (todo), `@juicesharp/rpiv-web-tools` (web search/fetch), `@juicesharp/rpiv-ask-user-question` (structured questions) and `pi-mcp-adapter` 2.32.1 (the native MCP client runtime; without it Pi sessions have no MCP tools at all, while the assistant's admin bridge stays fail-closed and basic sessions still work). Verified live 2026-09-07: headless `pi -p` turns executed the `todo` tool end to end from the permanent tree, and after adding the adapter, live settings resolve all five user resources and an isolated assistant host loading the same absolute paths reports the `mcp` capability, the native `mcp` proxy tool and zero extension errors. Deliberately excluded: `@signetai/connector-pi` (a library without a Pi extension manifest; Signet stays an operator-owned external service).
-
-The npm workflow uses `pixie-assistant-v*` tags for `@pixie_ai/pixie-assistant`, with OIDC trusted publishing and provenance. Publication is a separate approval gate. `0.1.1` and `0.1.2` are published from their tags; `0.1.0` stays immutable. For an approved release containing this loading path:
-
-```sh
-bunx @pixie_ai/pixie-assistant@<version>
-```
-
-Subagents stay optional: the production install ships no subagent package. To enable them standalone, install the exact pinned version alongside (`bun add @mjakl/pi-subagent@3.0.1` or `npm install -S @mjakl/pi-subagent@3.0.1`) and apply the Bun child-launch patch from the repository's `patches/`; without the patch, Bun-run children cannot launch, and without the package, Pi simply offers no subagent extension.
+The JSON configuration selects the literal loopback host, port, agent directory, and optional Pi executable; see `package/systemd/assistant.json`. Environment values override the secret and selected Pi paths. Provider setup and optional extensions remain native Pi configuration. The Go adapter is not ready for production cutover until the critical session-routing, settlement, capability, recovery, and restart gaps in the [roadmap](../roadmap/README.md#confirmed-defects-and-integration-risks) close, so do not replace a working legacy service merely because the binary builds.
 
 ## Optional local models
 
-Use `--llama` to load Pi's built-in llama.cpp provider inside assistant sessions. The embedded SDK does not automatically supply this CLI built-in. The endpoint comes from `LLAMA_BASE_URL` in the service environment, and authentication falls back to the dummy key `local`. This stays opt-in and uses Pi's existing provider implementation, not a Pixie model database.
+Configure local providers through the selected Pi installation. `LLAMA_BASE_URL` is passed to the native Pi child when present; Pixie does not maintain a separate provider database.
 
 ## Containers
 
@@ -41,7 +29,7 @@ cp .pixie.example .pixie
 chmod 600 .pixie
 ```
 
-Set `PIXIE_DATA_PATH`, `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. The [example](../.pixie.example) lists optional addresses, authentication and resource limits. Create `app`, `browser/artifacts` and `browser/state` inside the data directory. They must be writable by container UID/GID `1000:1000`. The `browser` directory mounts into the same Pixie container at `/var/lib/pixie-browser`.
+Set `PIXIE_DATA_PATH`, `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. The [example](../.pixie.example) lists optional addresses, authentication and resource limits. Create `browser/artifacts` and `browser/state` inside the data directory. They must be writable by container UID/GID `1000:1000`. The data directory mounts into the Pixie container at `/var/lib/pixie`, so Browser state lives at `/var/lib/pixie/browser`.
 
 Add project roots to the `pixie` service's mounts, preserving host absolute paths:
 
@@ -58,110 +46,40 @@ Add project roots to the `pixie` service's mounts, preserving host absolute path
 docker compose --env-file .pixie up -d --build
 ```
 
-Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. For remote access either enable authentication with HTTPS and an exact public origin, or run on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`. Pi stays on loopback; set only `PIXIE_PI_PORT`.
+Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. Controller-owned service calls may use cleartext HTTP only from an actual loopback peer with a literal `localhost`, `127.0.0.1` or `::1` Host at the configured listener port; route-specific bearer and session checks still apply. For remote access either enable authentication with HTTPS and an exact public origin, or run on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`, leaving `PIXIE_TRUSTED_PROXY_CIDRS` unset. A TLS-terminating reverse proxy requires controller authentication, a peer CIDR explicitly listed in `PIXIE_TRUSTED_PROXY_CIDRS`, a `Host` rewrite to the exact public authority, and `X-Forwarded-Proto: https`; only that header from the listed peer is honored, and arbitrary forwarding headers are ignored. Pi stays on loopback; set only `PIXIE_PI_PORT`.
 
 ## MCP and Signet
 
 The Browser MCP publisher lives inside the main Pixie process on `PIXIE_CONTROLLER_PORT` (default `7312`): Browser tools are served at `/mcp/browser`, the module catalog at `/api/mcp/modules` and status at `/api/mcp/status`, authenticated with `PIXIE_MCP_TOKEN`. Enable Browser in Settings → Tools with a compatible MCP extension loaded. The universal MCP adapter also accepts unrelated stdio, HTTP and SSE servers.
 
-Optional Signet memory is an operator-owned external service, not a Pixie-managed MCP connection. This host runs the managed `extensions/signet-pi.js` file extension (generated 2026-09-07 with the workspace connector's public `PiConnector.install()` API against a staging directory, so the operator's global `~/.config/signet/pi.json` was never touched; backup `pi.json.bak-20260907` beside it), and Pi loads it through native `<agentDir>/extensions` discovery with fail-open lifecycle hooks and hidden auto-recall. Verified live 2026-09-07: inventory shows the file with zero load errors and a headless turn executed `signet_recall` against the operator daemon successfully. Pixie never reads or writes `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`), `signet.json` or per-session `SIGNET_ENABLED`.
+Optional Signet memory is an operator-owned external service, not a Pixie-managed MCP connection. Pi loads a managed file extension through native `<agentDir>/extensions` discovery with fail-open lifecycle hooks and hidden auto-recall. Pixie never reads or writes `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`), `signet.json` or per-session `SIGNET_ENABLED`.
 
 ## Without Docker
 
-Docker stays the primary method. Where containers are unavailable, the supported non-Docker installation is a single self-contained `pixie` binary with the web UI embedded at build time plus the published `pixie-assistant` package (no checkout, web toolchain or asset directory needed at run time). The Browser module stays optional and degrades to `disabled` without Chromium and `agent-browser` on `PATH`.
+The intended non-Docker topology is one self-contained full-host `pixie` binary containing the assistant, controller, and embedded web UI. It must not run beside a separate `pixie-assistant` service for the same sessions. Neither final binary needs Bun at run time.
 
-Build once from a checkout (build time needs the Go, Bun and Node toolchains):
+This topology is not yet an approved deployment recipe. Full-host startup now requires an absolute Pi agent directory and a resolvable Pi executable, joins assistant engine failure to the controller, degrades readiness while a lost session awaits reload, and supports an explicit `runtime.restart` that exits status 75. Fresh-archive install/start/stop/restart/upgrade/rollback/uninstall evidence under real systemd is still missing. See the [roadmap](../roadmap/README.md#confirmed-defects-and-integration-risks).
 
-```sh
-bun install --frozen-lockfile
-bun run build   # builds the web UI first so the Go binary embeds it
-```
+Architecture status: the current host campaign covers `linux/amd64` only. The arm64 archives and `linux/arm64` image are still required release artifacts, but arm64 installation, systemd lifecycle and image runs are deferred to a separate Mac/arm64 pass and remain an open evidence gap; do not treat amd64 results as arm64 acceptance.
 
-Install the result as your own user (no root, no privileged services): copy `package/dist/pixie` to `~/.local/bin/pixie` and install the assistant from the registry:
-
-```sh
-bun add --global @pixie_ai/pixie-assistant@<version>
-```
-
-Generate separate random values for `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. Store them in a private environment file such as `~/.config/pixie/pixie.env` with mode `0600`:
-
-```sh
-PIXIE_PI_SECRET_KEY=<secret>
-PIXIE_MCP_TOKEN=<token>
-```
-
-Both secrets live in that one file: the assistant reads `PIXIE_PI_SECRET_KEY` for its Bearer credential, and `pixie` reads both. Reuse your existing Pi configuration; no Pi setup is needed beyond what the TUI already uses, and uninstalling Pixie never touches native Pi state.
-
-The service listens on loopback (`127.0.0.1:7312` by default; `--host`/`--port` on the assistant, `PIXIE_CONTROLLER_HOST`/`PIXIE_CONTROLLER_PORT` on `pixie`). The remote-access rules from the container layout apply unchanged: either enable authentication with HTTPS and an exact public origin, or stay on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`. State defaults to `$XDG_DATA_HOME/pixie` (`~/.local/share/pixie`) when `PIXIE_DATA_DIR` is unset; set it explicitly only to use a different directory.
-
-Foreground (two terminals, or one service manager):
-
-```sh
-pixie-assistant --agent-dir "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-```
-
-```sh
-pixie
-```
-
-`pixie --version` prints the stamped version and revision. Logs go to stderr as JSON; under a service manager, read them with `journalctl --user -u pixie` and `journalctl --user -u pixie-assistant`.
-
-Optional systemd user units (`~/.config/systemd/user/`). `pixie-assistant.service`:
-
-```ini
-[Unit]
-Description=Pixie assistant (native Pi host)
-After=network-online.target
-
-[Service]
-Type=simple
-EnvironmentFile=%h/.config/pixie/pixie.env
-ExecStart=%h/.bun/bin/pixie-assistant --port 3284
-Restart=on-failure
-NoNewPrivileges=true
-
-[Install]
-WantedBy=default.target
-```
-
-`pixie.service`:
-
-```ini
-[Unit]
-Description=Pixie web application
-After=network-online.target pixie-assistant.service
-Requires=pixie-assistant.service
-
-[Service]
-Type=simple
-EnvironmentFile=%h/.config/pixie/pixie.env
-ExecStart=%h/.local/bin/pixie
-Restart=on-failure
-NoNewPrivileges=true
-
-[Install]
-WantedBy=default.target
-```
-
-Adjust the `ExecStart` paths to the actual install locations, then:
-
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now pixie-assistant.service pixie.service
-```
-
-Whole-host reload: `pi.reload` asks the assistant to end itself so the service manager brings a fresh process up, applying configured native extensions to every session at once. Enable it on the assistant unit with `Restart=always` and `PIXIE_ALLOW_SELF_RESTART=1`. In-flight runs interrupt ([Pi integration](pi.md)); session transcripts stay durable on disk.
-
-Upgrade by replacing the binary and reinstalling the assistant package, then restarting both units. Keep the previous binary (for example as `pixie.prev`) for instant rollback: the binary is self-contained, so rollback is just swapping the file back and restarting. Back up `PIXIE_DATA_DIR` and the private environment file after active work settles; both survive upgrades and rollbacks in place.
-
-Removal: stop and disable both units, delete the binary (`~/.local/bin/pixie`), remove the global package (`bun remove --global @pixie_ai/pixie-assistant`), and delete the environment file. Optionally delete `PIXIE_DATA_DIR`. Native Pi state (`PI_CODING_AGENT_DIR` or `~/.pi/agent`) is left intact.
+For development inspection only, `bun run build:host` builds the embedded UI and full-host binary at `package/dist/pixie`. Do not replace a working service until final archive installation, native Pi selection, readiness, failure propagation, restart, upgrade, rollback, and uninstall checks pass.
 
 Advanced override only: `PIXIE_STATIC_DIR` serves the web UI from a disk directory instead of the embedded bundle (development use). A Go binary built before `bun run build:web` embeds only a placeholder and falls back to `PIXIE_STATIC_DIR`, then to the container asset path.
+
+## Pairing the deletion authority
+
+`PIXIE_DELETION_AUTHORITY=paired` needs one explicit pairing between the controller data directory and the selected Pi host/native storage before destructive recovery can replay. From the full-host binary, select the same agent directory the service uses:
+
+```sh
+pixie pair --data-dir "$HOME/.local/share/pixie" --agent-dir "$HOME/.pi/agent"
+```
+
+`pair` prints the generated ceremony secret once; store it out of band with the deployment's private environment and treat it as unrecoverable, because only its verifier hash is persisted. A controller-only deployment passes the explicit `--host-identity` and `--storage-key` instead of `--agent-dir`. Pairing while already paired fails until `pixie revoke-pairing` records an explicit revocation, and `pixie rotate-pairing --secret <current>` issues a fresh secret while keeping the durable host identity and storage. Both commands write the pairing record to the data directory; `--json` emits the same status without the secret hash.
 
 ## Operations
 
 Application `/health` and `/livez` check liveness; `/readyz` checks state, UI and Pi connectivity. The in-process MCP publisher shares the application listener. See [MCP publisher](mcp.md) for diagnostics.
 
-Schedules run while Pixie is up. Ask a chat with MCP support to create, list, pause, resume, run or stop a schedule. Each scheduled run is a separate chat in that project. For example, `schedule_manage` with `action: "create", prompt: "Review open tasks", cron: "0 9 * * 1-5", timezone: "Europe/Warsaw", mutationId: "weekday-review-1"` runs at 09:00 on weekdays. It uses the current project; repeat the mutation ID only for a retry of the same request. Cron has five fields and an IANA timezone (UTC by default). Pause prevents future dispatch; stop cancels the current run; run-now starts one immediately. See [state and restart behavior](architecture.md#state-and-lifecycle).
+Schedules run while Pixie is up. Ask a chat with MCP support to create, list, pause, resume, run or stop a schedule, or use the workspace Schedules list/detail views and the Settings schedules section. Each scheduled run is a separate chat in that project. For example, `schedule_manage` with `action: "create", prompt: "Review open tasks", cron: "0 9 * * 1-5", timezone: "Europe/Warsaw", mutationId: "weekday-review-1"` runs at 09:00 on weekdays. It uses the current project; repeat the mutation ID only for a retry of the same request. Cron has five fields and an IANA timezone (UTC by default). Pause prevents future dispatch; stop cancels the current run; run-now starts one immediately. See [state and restart behavior](architecture.md#state-and-lifecycle).
 
 Back up Pi state, Pixie data and private environment files after active work settles. A publishing workflow produces digest references; set `PIXIE_IMAGE` to that reference and use Compose `pull` followed by `up -d --no-build` for a prebuilt deployment.

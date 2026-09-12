@@ -70,6 +70,29 @@ func TestSessionExtensionsRejectMissingAndDuplicateKeys(t *testing.T) {
 	}
 }
 
+func TestSessionCreateOmitsOptionalObjectiveMCPWhenAttachUnsupported(t *testing.T) {
+	server, calls := sessionExtensionPiProfile(t, nil, false)
+	defer server.Close()
+	runtime, host, root := sessionExtensionRuntime(t, server.URL)
+	defer runtime.Shutdown(context.Background())
+	connection := dialRuntimeSocket(t, context.Background(), host, "client")
+	projectID := callBrowser(t, connection, "open", "project.open", map[string]any{"path": root})["result"].(map[string]any)["id"].(string)
+	response := callBrowser(t, connection, "create", "session.create", map[string]any{"projectId": projectID})
+	if response["ok"] != true {
+		t.Fatalf("ordinary create was blocked by optional MCP: %#v", response)
+	}
+	for _, call := range calls.snapshot() {
+		if call.method == "session.create" {
+			servers, _ := call.params["mcpServers"].([]any)
+			if len(servers) != 0 {
+				t.Fatalf("optional MCP servers were sent to unsupported host: %#v", servers)
+			}
+			return
+		}
+	}
+	t.Fatal("session.create was not dispatched")
+}
+
 type sessionExtensionCall struct {
 	method string
 	params map[string]any
@@ -93,6 +116,10 @@ func (c *sessionExtensionCalls) snapshot() []sessionExtensionCall {
 }
 
 func sessionExtensionPi(t *testing.T, extensions []any) (*httptest.Server, *sessionExtensionCalls) {
+	return sessionExtensionPiProfile(t, extensions, true)
+}
+
+func sessionExtensionPiProfile(t *testing.T, extensions []any, mcp bool) (*httptest.Server, *sessionExtensionCalls) {
 	t.Helper()
 	calls := &sessionExtensionCalls{}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -119,6 +146,11 @@ func sessionExtensionPi(t *testing.T, extensions []any) (*httptest.Server, *sess
 			switch rpc.Method {
 			case "runtime.hello":
 				result = piInitializeResponse()
+				if !mcp {
+					profile := result.(map[string]any)
+					profile["capabilities"].(map[string]any)["mcp"] = 0
+					profile["operationSet"].(map[string]bool)["mcp.attach"] = false
+				}
 			case "pi.session.extensions.list":
 				result = map[string]any{"extensions": extensions}
 			case "session.list":

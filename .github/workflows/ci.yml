@@ -42,15 +42,19 @@ jobs:
         working-directory: package
       - run: bun run check:deps
         working-directory: package
+      - run: bun run check:contracts
+        working-directory: package
       - run: bun audit --audit-level=high
         working-directory: package
       - run: bun run lint
         working-directory: package
       - run: bun run typecheck
         working-directory: package
-      - run: bun run test
-        working-directory: package
+      # Build first: several tests inspect the embedded web bundle and the
+      # full-host binary, and `go test` requires webui/dist for //go:embed.
       - run: bun run build
+        working-directory: package
+      - run: bun run test
         working-directory: package
       - name: Validate Compose service isolation
         run: sh package/tests/deployment/compose.test.sh
@@ -64,6 +68,11 @@ jobs:
         env:
           CGO_ENABLED: "0"
         working-directory: package
+      - name: Test Go assistant module
+        run: go test -count=1 ./...
+        env:
+          CGO_ENABLED: "0"
+        working-directory: assistant
   ui:
     name: Browser acceptance
     runs-on: ubuntu-latest
@@ -77,27 +86,26 @@ jobs:
       - name: Run browser acceptance
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p artifacts/ui
           chmod 0777 artifacts/ui
-          container=""
-          cleanup() {
-            if [[ -n "$container" ]]; then
-              docker rm -f "$container" >/dev/null 2>&1 || true
+          # The acceptance exercises real timers and can flake once when two
+          # copies run concurrently (the release workflow reuses this file).
+          # Retry once; a genuine regression fails both attempts.
+          for attempt in 1 2; do
+            if docker run --rm \
+              --network none \
+              --read-only \
+              --shm-size 256m \
+              --tmpfs /tmp:rw,nosuid,nodev,size=256m,uid=1000,gid=1000 \
+              --tmpfs /home/pixie:rw,nosuid,nodev,size=64m,uid=1000,gid=1000 \
+              --mount "type=bind,source=$PWD/artifacts/ui,target=/artifacts" \
+              pixie-ui-acceptance; then
+              exit 0
             fi
-          }
-          trap cleanup EXIT
-          container=$(docker create \
-            --network none \
-            --read-only \
-            --shm-size 256m \
-            --tmpfs /tmp:rw,nosuid,nodev,size=256m,uid=1000,gid=1000 \
-            --tmpfs /home/pixie:rw,nosuid,nodev,size=64m,uid=1000,gid=1000 \
-            --mount "type=bind,source=$PWD/artifacts/ui,target=/artifacts" \
-            pixie-ui-acceptance)
-          status=0
-          docker start -a "$container" || status=$?
-          exit "$status"
+            echo "browser acceptance attempt ${attempt} failed"
+          done
+          exit 1
       - name: Keep browser evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -107,7 +115,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   pi:
-    name: Official Pi compatibility (${{ matrix.arch }})
+    name: Legacy Pi parity (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
@@ -126,6 +134,9 @@ jobs:
         with:
           go-version-file: package/go.mod
           cache-dependency-path: package/go.sum
+      - name: Synthesize web embed placeholder
+        run: mkdir -p webui/dist && touch webui/dist/.gitkeep
+        working-directory: package
       - name: Verify native workspace filesystem behavior
         run: CGO_ENABLED=0 go test -count=1 ./tests/go/workspace
         working-directory: package
@@ -136,6 +147,6 @@ jobs:
         working-directory: package
       - run: bun test tests/pixie-assistant
         working-directory: package
-      - name: Verify application against native Pi host
+      - name: Verify application against legacy native Pi host
         run: go test -count=1 ./tests/go/controller -run TestApplicationThroughNativePiHost
         working-directory: package

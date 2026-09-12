@@ -8,14 +8,19 @@ import {
 	appStore,
 	appStoreApi,
 	matchesChangePath,
-	selectActiveContentTab,
 	selectDiffScope,
 	selectProjectAreaTick,
 	type TabIntent,
 } from "../../store";
 import { openDiffInTab } from "../tabs/open-tabs";
 import ChangeRowActions from "./change-row-actions.svelte";
-import { branchName, scopeKey, splitPath, statusNameClass } from "./changes-model";
+import {
+	branchName,
+	repositoryDisplayName,
+	scopeKey,
+	splitPath,
+	statusNameClass,
+} from "./changes-model";
 import ChangesTree from "./changes-tree.svelte";
 import DiffStatBadge from "./diff-stat-badge.svelte";
 import GitScopeMenu from "./git-scope-menu.svelte";
@@ -58,9 +63,14 @@ let loadingScope = $derived(
 );
 let loadingRepositories = $derived(catalog?.projectAreaId !== projectAreaId && error === null);
 let changesView = $derived($appStore.changesView);
+let visibleWarnings = $derived([...warnings, ...(status?.warnings ?? [])]);
 let projectTick = $derived(selectProjectAreaTick($appStore, projectAreaId));
 let activeDiffTab = $derived.by(() => {
-	const tab = selectActiveContentTab($appStore, projectAreaId);
+	const selection = $appStore.workspaceSelection.secondarySelection;
+	if (selection?.kind !== "diff" || selection.projectId !== projectAreaId) return null;
+	const tab = ($appStore.tabsByProjectArea[projectAreaId] ?? []).find(
+		(candidate) => candidate.kind === "diff" && candidate.id === selection.resourceId,
+	);
 	return tab?.kind === "diff" &&
 		tab.repository === repository?.root &&
 		scopeKey(tab.scope) === scopeKey(scope)
@@ -212,6 +222,7 @@ function isActive(path: string): boolean {
 			{#if repositories.length > 1}
 				<select
 					aria-label="Git repository"
+					data-testid="git-repository-select"
 					value={repository?.root ?? ""}
 					onchange={(event) => {
 						selectedRepository = event.currentTarget.value;
@@ -220,7 +231,7 @@ function isActive(path: string): boolean {
 					class="select min-w-0 border-0 bg-transparent text-text-muted"
 				>
 					{#each repositories as candidate (candidate.id)}
-						<option value={candidate.root}>{candidate.relativePath || candidate.name}</option>
+						<option value={candidate.root}>{repositoryDisplayName(candidate)}</option>
 					{/each}
 				</select>
 			{:else}
@@ -269,9 +280,13 @@ function isActive(path: string): boolean {
 		</div>
 	{/if}
 	<div class="min-h-0 flex-1 overflow-auto">
-		{#if warnings.length > 0}
-			<p role="status" class="border-border-muted border-b px-sm py-xs tr-text-metadata text-feedback-warning">
-				{warnings.join(" ")}
+		{#if visibleWarnings.length > 0}
+			<p
+				role="status"
+				data-testid="git-warnings"
+				class="border-border-muted border-b px-sm py-xs tr-text-metadata text-feedback-warning"
+			>
+				{visibleWarnings.join(" ")}
 			</p>
 		{/if}
 		{#if visibleError}

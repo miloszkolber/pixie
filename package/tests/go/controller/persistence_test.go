@@ -1,6 +1,7 @@
 package controller_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,38 @@ func TestIndependentModelVisibilityChangesSurviveConcurrentClients(t *testing.T)
 	recovered, err := controller.NewSettings(store, nil).Get()
 	if err != nil || len(recovered.HiddenModels) != 4 {
 		t.Fatalf("independent updates lost: %#v, %v", recovered, err)
+	}
+}
+
+func TestUncertainSettingsPublishReconcilesCacheWithVisiblePrimary(t *testing.T) {
+	store := persist.Store{Dir: t.TempDir()}
+	settings := controller.NewSettings(store, nil)
+	if _, err := settings.SetModelVisibility("provider", "seed", true); err != nil {
+		t.Fatal(err)
+	}
+	settings.SetPublishFaults(persist.PublishFaults{FailDirSync: errors.New("injected dir-sync failure")})
+	if _, err := settings.SetModelVisibility("provider", "uncertain", true); err == nil {
+		t.Fatal("durability-uncertain write reported success")
+	}
+	fromCache, err := settings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := controller.NewSettings(store, nil).Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromCache.HiddenModels) != len(fresh.HiddenModels) {
+		t.Fatalf("cache diverged from visible primary: cache=%#v disk=%#v", fromCache.HiddenModels, fresh.HiddenModels)
+	}
+	found := false
+	for _, model := range fromCache.HiddenModels {
+		if model.ID == "uncertain" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("reconciled cache lost the visible mutation: %#v", fromCache.HiddenModels)
 	}
 }
 

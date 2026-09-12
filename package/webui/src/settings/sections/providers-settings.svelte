@@ -183,7 +183,7 @@ async function closeLogin(): Promise<void> {
 			disabled={refreshing}
 			onclick={() => void load()}
 		>
-			<Icon name="refresh-cw" size={14} class={refreshing ? "animate-spin" : ""} />
+			<Icon name="refresh-cw" size={14} class={refreshing ? "animate-spin motion-reduce:animate-none" : ""} />
 			Refresh
 		</Button>
 	</div>

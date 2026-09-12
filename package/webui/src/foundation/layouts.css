@@ -1,0 +1,433 @@
+/*
+ * MEWA-03 content-filled layout probes.
+ *
+ * Five named desktop fixtures from roadmap/README.md, each
+ * exercised with content (chat transcript plus file or diff preview, long
+ * names, large history) in light and dark via the pinned Mewa contract.
+ * Pixie owns composition here: grid tracks, independent overflow regions,
+ * panel relationships, and focus chrome. Mewa owns semantic colors,
+ * typography, borders, shapes, and spacing primitives (pin record in
+ * ./tokens.css; cascade owner in ../mewa.css).
+ *
+ * This file defines no color, spacing, typography, border, shape, or motion
+ * values, so it cannot become a second generated visual system. It reads
+ * Mewa roles such as --border-secondary and --border-focus but never
+ * redefines them. Geometry uses literal track sizes (rails, sidebars,
+ * content minima) owned by Pixie.
+ *
+ * Presentation-only contract: probes change visibility through grid tracks
+ * and inertness only. Canonical runtime, transcript, draft, queue, and
+ * pending dialogs live outside probe lifetime. Hiding, collapsing, focusing,
+ * or unmounting a probe view never stops accepted work; restore returns to
+ * split without clearing selections, drafts, or streams. See
+ * workspace/views/project-work-area.svelte restoreLayout.
+ *
+ * Zoom contract: 200% zoom halves the effective CSS viewport, so probes
+ * follow the same single-column collapse as narrow viewports
+ * (@media width < 64rem). Text never forces page scroll; long names
+ * truncate with ellipsis inside their own scroll region.
+ *
+ * Keyboard contract: resizer and split handles stay keyboard-operable
+ * (ArrowLeft/ArrowRight/Home/End in shell-resizer.svelte and
+ * split-view.svelte). This file only guarantees a visible focus indicator
+ * and that collapsed tracks never trap focus.
+ */
+
+/* Base probe canvas: six stable slots, viewport-bounded, no page scroll. */
+.mewa-layout-probe {
+	display: grid;
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	overflow: hidden;
+	position: relative;
+	grid-template-rows: minmax(0, 1fr);
+	grid-template-columns:
+		3rem
+		minmax(0, 16rem)
+		minmax(0, 1fr)
+		minmax(0, 0px)
+		minmax(0, 16rem)
+		3rem;
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+/* Content-filled regions: each pane scrolls independently. */
+.mewa-layout-probe__slot {
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+
+/* Keep the slot contract self-contained for fixtures as well as the
+   production shell. The Pixie shell also supplies these names through its
+   product classes, but probes must not depend on that implementation detail. */
+.mewa-layout-probe__slot[data-slot="primary-rail"] {
+	grid-area: primary-rail;
+}
+
+.mewa-layout-probe__slot[data-slot="primary-sidebar"] {
+	grid-area: primary-sidebar;
+}
+
+.mewa-layout-probe__slot[data-slot="primary-view"] {
+	grid-area: primary-view;
+}
+
+.mewa-layout-probe__slot[data-slot="secondary-view"] {
+	grid-area: secondary-view;
+}
+
+.mewa-layout-probe__slot[data-slot="secondary-sidebar"] {
+	grid-area: secondary-sidebar;
+}
+
+.mewa-layout-probe__slot[data-slot="secondary-rail"] {
+	grid-area: secondary-rail;
+}
+
+.mewa-layout-probe__scroll {
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	overflow: auto;
+	overscroll-behavior: contain;
+}
+
+.mewa-layout-probe__header {
+	display: flex;
+	min-height: 2.5rem;
+	flex-shrink: 0;
+	align-items: center;
+	position: sticky;
+	top: 0;
+}
+
+.mewa-layout-probe__composer {
+	display: flex;
+	flex-shrink: 0;
+	position: sticky;
+	bottom: 0;
+}
+
+/* Long names truncate inside their region; they never widen the grid. */
+.mewa-layout-probe__long-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+	flex: 1;
+}
+
+/* Theme fixtures share geometry. Color resolves upstream through the pinned
+   Mewa tokens; probes only declare the color-scheme hint. */
+.mewa-layout-probe[data-theme="light"] {
+	color-scheme: light;
+}
+
+.mewa-layout-probe[data-theme="dark"] {
+	color-scheme: dark;
+}
+
+/* Mode 1: split. Chat and the selected secondary resource coexist. */
+.mewa-layout-probe[data-layout="split"] {
+	grid-template-columns:
+		3rem
+		minmax(0, 16rem)
+		minmax(22.5rem, 1fr)
+		minmax(22.5rem, 1fr)
+		minmax(0, 16rem)
+		3rem;
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+/* Mode 2: secondary focus. Primary view track collapses; primary selection,
+   draft, and stream stay intact outside probe lifetime. */
+.mewa-layout-probe[data-layout="secondary-focus"] {
+	grid-template-columns:
+		3rem
+		minmax(0, 16rem)
+		minmax(0, 0px)
+		minmax(22.5rem, 1fr)
+		minmax(0, 16rem)
+		3rem;
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+.mewa-layout-probe[data-layout="secondary-focus"]
+	.mewa-layout-probe__slot[data-slot="primary-view"] {
+	visibility: hidden;
+}
+
+/* Mode 3: primary with context. Secondary sidebar open without a preview. */
+.mewa-layout-probe[data-layout="primary-context"] {
+	grid-template-columns:
+		3rem
+		minmax(0, 16rem)
+		minmax(22.5rem, 1fr)
+		minmax(0, 0px)
+		minmax(0, 16rem)
+		3rem;
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+.mewa-layout-probe[data-layout="primary-context"]
+	.mewa-layout-probe__slot[data-slot="secondary-view"] {
+	visibility: hidden;
+}
+
+/* Mode 4: primary with sidebar. Right sidebar and preview hidden; rail stays. */
+.mewa-layout-probe[data-layout="primary-sidebar"] {
+	grid-template-columns:
+		3rem
+		minmax(0, 16rem)
+		minmax(22.5rem, 1fr)
+		minmax(0, 0px)
+		minmax(0, 0px)
+		3rem;
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+.mewa-layout-probe[data-layout="primary-sidebar"]
+	.mewa-layout-probe__slot[data-slot="secondary-view"],
+.mewa-layout-probe[data-layout="primary-sidebar"]
+	.mewa-layout-probe__slot[data-slot="secondary-sidebar"] {
+	visibility: hidden;
+}
+
+/* Mode 5: primary focus. Both sidebars hidden; selections preserved. */
+.mewa-layout-probe[data-layout="primary-focus"] {
+	grid-template-columns:
+		3rem
+		minmax(0, 0px)
+		minmax(22.5rem, 1fr)
+		minmax(0, 0px)
+		minmax(0, 0px)
+		3rem;
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+.mewa-layout-probe[data-layout="primary-focus"]
+	.mewa-layout-probe__slot[data-slot="primary-sidebar"],
+.mewa-layout-probe[data-layout="primary-focus"]
+	.mewa-layout-probe__slot[data-slot="secondary-view"],
+.mewa-layout-probe[data-layout="primary-focus"]
+	.mewa-layout-probe__slot[data-slot="secondary-sidebar"] {
+	visibility: hidden;
+}
+
+/* Collapsed tracks never trap keyboard focus: hidden slots are inert. */
+.mewa-layout-probe__slot[aria-hidden="true"] {
+	visibility: hidden;
+}
+
+.mewa-layout-probe__slot[inert] {
+	visibility: hidden;
+}
+
+/* Keyboard and focus: visible indicator only; behavior lives in the
+   shell resizer and split handle components. */
+.mewa-layout-probe :focus {
+	outline: none;
+}
+
+.mewa-layout-probe :focus-visible {
+	outline: 2px solid var(--border-focus);
+	outline-offset: -1px;
+}
+
+.mewa-layout-probe__resizer:focus-visible {
+	outline: var(--focus-ring-width, 2px) solid var(--border-focus);
+	outline-offset: -1px;
+}
+
+/* Production resizers keep their Pixie adapter class; apply the same focus
+   contract when they are mounted inside the Mewa-owned shell. */
+.mewa-layout-probe .pixie-resizer:focus-visible,
+.mewa-layout-probe .pixie-split-handle:focus-visible {
+	outline: var(--focus-ring-width, 2px) solid var(--border-focus);
+	outline-offset: -1px;
+}
+
+/* Slot chrome reads Mewa roles; no literals live here. */
+.mewa-layout-probe__slot[data-slot="primary-rail"],
+.mewa-layout-probe__slot[data-slot="primary-sidebar"] {
+	border-right: 1px solid var(--border-secondary);
+}
+
+.mewa-layout-probe__slot[data-slot="secondary-view"],
+.mewa-layout-probe__slot[data-slot="secondary-sidebar"],
+.mewa-layout-probe__slot[data-slot="secondary-rail"] {
+	border-left: 1px solid var(--border-secondary);
+}
+
+.mewa-layout-probe__slot[data-active="true"] {
+	background: var(--surface-secondary);
+}
+
+/* Large history stays virtualized inside its own scroll region. */
+.mewa-layout-probe__history {
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+/* The fixture page is opt-in and intentionally uses the same primitives as
+   the production shell. Its own scroll container keeps probes from creating
+   document overflow while testing long content. */
+.mewa-layout-probe-fixtures {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+	gap: var(--space-lg);
+	overflow: auto;
+	padding: var(--space-lg);
+}
+
+.mewa-layout-probe-fixtures__header {
+	display: flex;
+	min-width: 0;
+	flex-shrink: 0;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--space-sm);
+}
+
+.mewa-layout-probe-fixture {
+	display: flex;
+	min-height: 34rem;
+	min-width: 0;
+	flex-shrink: 0;
+	flex-direction: column;
+	gap: var(--space-xs);
+}
+
+.mewa-layout-probe-fixture > .mewa-layout-probe {
+	min-height: 30rem;
+}
+
+.mewa-layout-probe__code {
+	min-width: 0;
+	max-width: 100%;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+/* Narrow viewports and 200% zoom: one content surface, same selection model.
+   Drawers preserve selection; hidden regions are inert and restore focus. */
+@media (width < 64rem) {
+	.mewa-layout-probe,
+	.mewa-layout-probe[data-layout="split"],
+	.mewa-layout-probe[data-layout="secondary-focus"],
+	.mewa-layout-probe[data-layout="primary-context"],
+	.mewa-layout-probe[data-layout="primary-sidebar"],
+	.mewa-layout-probe[data-layout="primary-focus"] {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr);
+		grid-template-areas: "mobile";
+	}
+
+	.mewa-layout-probe__resizer {
+		display: none;
+	}
+
+	/* Mobile drawer selection may expose a slot that is collapsed on desktop;
+	   its aria state is the authority for visibility at this breakpoint. */
+	.mewa-layout-probe .mewa-layout-probe__slot[aria-hidden="false"] {
+		visibility: visible;
+	}
+
+	/* The opt-in fixture mirrors the production mobile drawer choice: one
+	   content surface is painted, while the remaining slots stay out of the
+	   tab order instead of stacking into a second page. */
+	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="split"]
+		[data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture
+		.mewa-layout-probe[data-layout="primary-context"]
+		[data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture
+		.mewa-layout-probe[data-layout="primary-sidebar"]
+		[data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture
+		.mewa-layout-probe[data-layout="primary-focus"]
+		[data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture
+		.mewa-layout-probe[data-layout="secondary-focus"]
+		[data-slot]:not([data-slot="secondary-view"]) {
+		display: none;
+	}
+}
+
+/* Between the full desktop budget and the narrow single-surface breakpoint,
+   collapse sidebars before either content pane becomes unreadable. This is a
+   layout preference only; the canonical selections remain mounted and the
+   caller still exposes the drawers/restore controls. */
+@media (64rem <= width < 80rem) {
+	.mewa-layout-probe[data-layout="split"] {
+		grid-template-columns:
+			3rem
+			minmax(0, 12rem)
+			minmax(20rem, 1fr)
+			minmax(20rem, 1fr)
+			minmax(0, 12rem)
+			3rem;
+	}
+
+	.mewa-layout-probe[data-layout="secondary-focus"] {
+		grid-template-columns:
+			3rem
+			minmax(0, 12rem)
+			minmax(0, 0px)
+			minmax(20rem, 1fr)
+			minmax(0, 12rem)
+			3rem;
+	}
+
+	.mewa-layout-probe[data-layout="primary-context"] {
+		grid-template-columns:
+			3rem
+			minmax(0, 12rem)
+			minmax(20rem, 1fr)
+			minmax(0, 0px)
+			minmax(0, 12rem)
+			3rem;
+	}
+
+	.mewa-layout-probe[data-layout="primary-sidebar"],
+	.mewa-layout-probe[data-layout="primary-focus"] {
+		grid-template-columns:
+			3rem
+			minmax(0, 12rem)
+			minmax(20rem, 1fr)
+			minmax(0, 0px)
+			minmax(0, 0px)
+			3rem;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.mewa-layout-probe *,
+	.mewa-layout-probe *::before,
+	.mewa-layout-probe *::after {
+		animation: none;
+		transition: none;
+		scroll-behavior: auto;
+	}
+}
+
+@media (forced-colors: active) {
+	.mewa-layout-probe__slot[data-slot="primary-rail"],
+	.mewa-layout-probe__slot[data-slot="primary-sidebar"],
+	.mewa-layout-probe__slot[data-slot="secondary-view"],
+	.mewa-layout-probe__slot[data-slot="secondary-sidebar"],
+	.mewa-layout-probe__slot[data-slot="secondary-rail"] {
+		border-color: CanvasText;
+	}
+
+	.mewa-layout-probe :focus-visible {
+		outline: 2px solid Highlight;
+	}
+}

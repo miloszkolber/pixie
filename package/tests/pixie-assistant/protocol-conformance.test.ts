@@ -82,9 +82,10 @@ describe("assistant wire contract", () => {
 	test("welcome envelope matches the documented protocol version and capability baseline", async () => {
 		const a = connect();
 		await a.opened;
-		const hello = await a.call("runtime.hello");
+		const hello = await a.call("runtime.hello", { protocolVersion: 1 });
 		expect(hello.protocolVersion).toBe(1);
 		expect(typeof hello.runtimeId).toBe("string");
+		expect(typeof hello.bootId).toBe("string");
 		expect(typeof hello.version).toBe("string");
 		expect(hello.capabilities).toMatchObject({ sessions: 1, providers: 1, agents: 1 });
 		expect(await a.call("runtime.capabilities")).toEqual(hello.capabilities);
@@ -94,6 +95,7 @@ describe("assistant wire contract", () => {
 	test("unknown methods return error frames with the documented code", async () => {
 		const a = connect();
 		await a.opened;
+		await a.call("runtime.hello", { protocolVersion: 1 });
 		const failure = await callError(a, "no.such.method");
 		expect(failure.code).toBe(-32000);
 		expect(failure.message).toContain("no.such.method");
@@ -125,6 +127,15 @@ describe("assistant wire contract", () => {
 		});
 		const frames: Array<{ id?: number; error?: { code: number; message: string } }> = [];
 		ws.onmessage = (e) => frames.push(JSON.parse(String(e.data)));
+		const hello = new Promise<void>((resolve) => {
+			ws.onmessage = (e) => {
+				const frame = JSON.parse(String(e.data));
+				frames.push(frame);
+				if (frame.id === 1 && frame.result) resolve();
+			};
+		});
+		ws.send(JSON.stringify({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } }));
+		await hello;
 		ws.send(
 			JSON.stringify({ id: 9, method: "pi.slash-commands.list", params: { sessionId: "missing" } }),
 		);
@@ -140,5 +151,27 @@ describe("assistant wire contract", () => {
 		]);
 		expect(code).toBe(0); // still open
 		ws.close();
+	});
+
+	test("strict envelopes reject coerced IDs, non-object params and missing hello", async () => {
+		for (const frame of [
+			{ id: "1", method: "runtime.hello", params: { protocolVersion: 1 } },
+			{ id: 1, method: "runtime.hello", params: [] },
+			{ id: 1, method: "runtime.hello", params: {} },
+			{ id: 1, method: "", params: { protocolVersion: 1 } },
+			{ id: 1, method: "runtime.capabilities", params: {} },
+		]) {
+			const bad = connect();
+			await bad.opened;
+			bad.ws.send(JSON.stringify(frame));
+			expect(await bad.closed).toBe(1008);
+		}
+	});
+
+	test("hello rejects unsupported protocol versions", async () => {
+		const bad = connect();
+		await bad.opened;
+		bad.ws.send(JSON.stringify({ id: 1, method: "runtime.hello", params: { protocolVersion: 2 } }));
+		expect(await bad.closed).toBe(1008);
 	});
 });

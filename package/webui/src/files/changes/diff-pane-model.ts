@@ -14,3 +14,13 @@ export function diffUnavailableNotice(tab: DiffTab): string {
 				: "File is unavailable for preview")
 	);
 }
+
+export function rawPreviewNotice(tab: {
+	unavailable?: boolean | undefined;
+	binary?: boolean | undefined;
+	tooLarge?: boolean | undefined;
+	message?: string | undefined;
+}): string {
+	if (tab.unavailable || tab.binary || tab.tooLarge) return "";
+	return tab.message ?? "";
+}

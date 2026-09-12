@@ -41,6 +41,7 @@ type GitRepository struct {
 	ComparisonID string          `json:"comparisonId,omitempty"`
 	Clean        bool            `json:"clean"`
 	Changes      []GitFileChange `json:"changes"`
+	Warnings     []string        `json:"warnings,omitempty"`
 }
 
 type GitRepositoryList struct {
@@ -71,6 +72,44 @@ type gitStatusFlight struct {
 	dirty                 bool
 	result                GitRepository
 	err                   error
+}
+
+// gitRepositoryIdentity is the small amount of path identity we can retain
+// without keeping a directory descriptor open for the duration of an
+// inspection.  Git inspection is read-only, but an admitted path can still be
+// replaced between two pathname operations.  Rechecking the canonical path and
+// filesystem identity makes that replacement fail closed; it does not claim
+// descriptor binding for the subprocess itself.
+type gitRepositoryIdentity struct {
+	canonical string
+	info      os.FileInfo
+}
+
+func captureGitRepositoryIdentity(path string) (gitRepositoryIdentity, error) {
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return gitRepositoryIdentity{}, err
+	}
+	info, err := os.Stat(canonical)
+	if err != nil {
+		return gitRepositoryIdentity{}, err
+	}
+	if !info.IsDir() {
+		return gitRepositoryIdentity{}, fmt.Errorf("Git repository is not a directory")
+	}
+	return gitRepositoryIdentity{canonical: canonical, info: info}, nil
+}
+
+func (identity gitRepositoryIdentity) matches(path string) bool {
+	current, err := captureGitRepositoryIdentity(path)
+	return err == nil && current.canonical == identity.canonical && os.SameFile(current.info, identity.info)
+}
+
+func revalidateGitRepositoryIdentity(path string, identity gitRepositoryIdentity) error {
+	if !identity.matches(path) {
+		return fmt.Errorf("Git repository changed while it was inspected")
+	}
+	return nil
 }
 
 func NewGit(projects *Projects, policy *PathPolicy) *Git {
@@ -267,10 +306,17 @@ func (g *Git) discover(ctx context.Context, project Project) (repositoryDiscover
 				break
 			}
 			probes++
+			if err := validateGitRepositoryMetadata(ctx, root, canonical); err != nil {
+				continue
+			}
+			identity, identityErr := captureGitRepositoryIdentity(canonical)
+			if identityErr != nil {
+				continue
+			}
 			probe := runGit(ctx, canonical, []string{"rev-parse", "--show-toplevel"}, gitOutputLimit)
 			if probe.ok {
 				top, evalErr := filepath.EvalSymlinks(strings.TrimSpace(probe.out))
-				if evalErr == nil && top == canonical {
+				if evalErr == nil && top == canonical && identity.matches(canonical) {
 					result.paths = append(result.paths, canonical)
 				}
 			}
@@ -340,12 +386,46 @@ func (g *Git) repositoryFor(ctx context.Context, projectID, requested string) (P
 }
 
 func (g *Git) projectRepository(ctx context.Context, project Project, repository string, scope GitDiffScope) (GitRepository, error) {
-	changes, comparisonID, err := g.changes(ctx, repository, scope)
+	identity, err := captureGitRepositoryIdentity(repository)
+	if err != nil {
+		return GitRepository{}, fmt.Errorf("could not verify Git repository: %w", err)
+	}
+	projectRoot, err := project.Root()
 	if err != nil {
 		return GitRepository{}, err
 	}
+	if err := validateGitRepositoryMetadata(ctx, projectRoot, repository); err != nil {
+		return GitRepository{}, err
+	}
+	changes, comparisonID, warnings, err := g.changes(ctx, repository, scope)
+	if err != nil {
+		return GitRepository{}, err
+	}
+	if err := revalidateGitRepositoryIdentity(repository, identity); err != nil {
+		return GitRepository{}, err
+	}
+	head := gitHead(ctx, repository)
+	if err := revalidateGitRepositoryIdentity(repository, identity); err != nil {
+		return GitRepository{}, err
+	}
 	digest := sha256.Sum256([]byte(repository))
-	return GitRepository{ID: hex.EncodeToString(digest[:])[:24], Root: repository, RelativePath: projectRelativePath(project, repository), Name: filepath.Base(repository), Head: gitHead(ctx, repository), ComparisonID: comparisonID, Clean: len(changes) == 0, Changes: changes}, nil
+	return GitRepository{ID: hex.EncodeToString(digest[:])[:24], Root: repository, RelativePath: projectRelativePath(project, repository), Name: filepath.Base(repository), Head: head, ComparisonID: comparisonID, Clean: gitStatusClean(changes, warnings), Changes: changes, Warnings: warnings}, nil
+}
+
+func gitStatusClean(changes []GitFileChange, warnings []string) bool {
+	if len(changes) != 0 {
+		return false
+	}
+	// The raw-byte limitation is informational: it describes the comparison
+	// semantics even when no changed paths were found.  Safety/read failures
+	// remain non-clean so callers do not mistake an indeterminate inspection for
+	// a clean repository.
+	for _, warning := range warnings {
+		if warning != gitRawPreviewNote {
+			return false
+		}
+	}
+	return true
 }
 
 func gitHead(ctx context.Context, repository string) GitHead {

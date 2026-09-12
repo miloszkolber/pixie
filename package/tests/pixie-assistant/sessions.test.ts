@@ -12,7 +12,7 @@ afterEach(async () => {
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 async function fixture(factories: ExtensionFactory[] = []) {
-	const dir = await mkdtemp(tmpdir() + "/pixie-pi-test-");
+	const dir = await mkdtemp(`${tmpdir()}/pixie-pi-test-`);
 	cleanups.push(() => rm(dir, { recursive: true, force: true }));
 	const events: unknown[] = [];
 	const sessions = new Sessions(dir, factories, (_id, event) => events.push(event));
@@ -292,8 +292,8 @@ test("agent edits preserve metadata and reject oversized replacement beside malf
 	const entry = await sessions.create(dir);
 	const call = (method: string, params: Record<string, unknown>) =>
 		entry.capabilities.call(method, params, sessions.context(entry)) as Promise<{
-			source: { path: string; properties: Record<string, unknown> };
-			sources: unknown[];
+			source: { path: string; revision: string; properties: Record<string, unknown> };
+			sources: { path: string; revision: string }[];
 			warnings: string[];
 		}>;
 	const { source } = await call("pi.sources.create", {
@@ -304,6 +304,7 @@ test("agent edits preserve metadata and reject oversized replacement beside malf
 	await writeFile(join(dir, "agents", "broken.md"), "---\nbad: [\n---\n");
 	const updated = await call("pi.sources.update", {
 		path: source.path,
+		expectedRevision: source.revision,
 		name: "Renamed",
 		description: "Changed",
 		content: "Review carefully",
@@ -315,11 +316,34 @@ test("agent edits preserve metadata and reject oversized replacement beside malf
 	});
 	const before = await readFile(source.path, "utf8");
 	await expect(
-		call("pi.sources.update", { path: source.path, name: "Renamed", content: "é".repeat(40000) }),
+		call("pi.sources.update", {
+			path: source.path,
+			expectedRevision: updated.source.revision,
+			name: "Renamed",
+			content: "é".repeat(40000),
+		}),
 	).rejects.toThrow("65536 bytes");
 	expect(await readFile(source.path, "utf8")).toBe(before);
+	await writeFile(
+		source.path,
+		"---\nname: Renamed\ndescription: External\ncustom: keep\n---\nExternal edit\n",
+	);
+	await expect(
+		call("pi.sources.update", {
+			path: source.path,
+			expectedRevision: updated.source.revision,
+			name: "Renamed",
+			description: "Stale",
+			content: "Stale edit",
+		}),
+	).rejects.toThrow("changed on disk");
+	expect(await readFile(source.path, "utf8")).toContain("External edit");
+	await expect(
+		call("pi.sources.delete", { path: source.path, expectedRevision: updated.source.revision }),
+	).rejects.toThrow("changed on disk");
 	const cleared = await call("pi.sources.update", {
 		path: source.path,
+		expectedRevision: (await call("pi.sources.list", {})).sources[0].revision,
 		name: "Renamed",
 		content: "Review",
 		properties: { model: null },
@@ -329,6 +353,27 @@ test("agent edits preserve metadata and reject oversized replacement beside malf
 	const catalog = await call("pi.sources.list", {});
 	expect(catalog.sources).toHaveLength(1);
 	expect(catalog.warnings).toHaveLength(1);
+});
+
+test("agent creation is exclusive and rejects a symlinked agent root", async () => {
+	const { dir, sessions } = await fixture();
+	const entry = await sessions.create(dir);
+	const call = (method: string, params: Record<string, unknown>) =>
+		entry.capabilities.call(method, params, sessions.context(entry));
+	const results = await Promise.allSettled([
+		call("pi.sources.create", { name: "Concurrent", content: "First" }),
+		call("pi.sources.create", { name: "Concurrent", content: "Second" }),
+	]);
+	expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+	expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+
+	const outside = await mkdtemp(`${tmpdir()}/pixie-agent-outside-`);
+	await rm(join(dir, "agents"), { recursive: true, force: true });
+	await symlink(outside, join(dir, "agents"));
+	await expect(call("pi.sources.create", { name: "Escaped", content: "Nope" })).rejects.toThrow(
+		"rooted",
+	);
+	await rm(outside, { recursive: true, force: true });
 });
 
 test("native summaries, visible custom messages and plans survive replay without hidden entries", async () => {

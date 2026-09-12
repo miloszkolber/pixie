@@ -204,7 +204,7 @@ async function dismiss(): Promise<void> {
 						class="flex items-center gap-sm text-text-muted tr-text-ui"
 						data-testid="login-progress"
 					>
-						<Icon name="loader-circle" size={16} class="animate-spin" />
+						<Icon name="loader-circle" size={16} class="animate-spin motion-reduce:animate-none" />
 						{loginState.progress}
 					</p>
 				{:else if !loginState.url && !loginState.deviceCode && !loginState.input}
@@ -212,7 +212,7 @@ async function dismiss(): Promise<void> {
 						class="flex items-center gap-sm text-text-muted tr-text-ui"
 						data-testid="login-working"
 					>
-						<Icon name="loader-circle" size={16} class="animate-spin" />
+						<Icon name="loader-circle" size={16} class="animate-spin motion-reduce:animate-none" />
 						Working…
 					</p>
 				{/if}

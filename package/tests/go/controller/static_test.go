@@ -16,7 +16,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/controller"
 )
 
-func newStaticHandler(t *testing.T) http.Handler {
+func newStaticHandler(t *testing.T) *controller.HTTPHandler {
 	t.Helper()
 	staticDir := t.TempDir()
 	files := map[string]string{
@@ -120,6 +120,64 @@ func TestMissingStaticAssetsDoNotFallBackToTheApplication(t *testing.T) {
 			t.Fatalf("missing asset %q cache policy = %q", target, cache)
 		}
 	}
+}
+
+func TestUnknownAPIMCPRoutesDoNotFallBackToTheApplication(t *testing.T) {
+	handler := newStaticHandler(t)
+	for _, target := range []string{
+		"https://pixie.example/api/unknown",
+		"https://pixie.example/api",
+		"https://pixie.example/mcp/unknown",
+		"https://pixie.example/mcp",
+		"https://pixie.example/api/mcp/modules",
+		"https://pixie.example/mcp/browser",
+	} {
+		response := requestStatic(t, handler, http.MethodGet, target)
+		if response.Code < http.StatusBadRequest {
+			t.Fatalf("reserved route %q returned success: %d", target, response.Code)
+		}
+		if strings.Contains(response.Body.String(), "<main>application</main>") {
+			t.Fatalf("reserved route %q returned the SPA document", target)
+		}
+		if contentType := response.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+			t.Fatalf("reserved route %q content type = %q", target, contentType)
+		}
+	}
+}
+
+func TestRegisteredMCPRoutesUseTheAssembledHandler(t *testing.T) {
+	handler := newStaticHandler(t)
+	const token = "mcp-token-0123456789abcdef0123456789"
+	handler.Auth.MCPToken = token
+	handler.MCPRegistry = http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/mcp/fixture" || request.URL.Path == "/api/fixture" {
+			writeFixtureJSON(response, http.StatusOK)
+			return
+		}
+		http.NotFound(response, request)
+	})
+	for _, path := range []string{"/mcp/fixture", "/api/fixture"} {
+		request := httptest.NewRequest(http.MethodGet, "https://pixie.example"+path, nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "<main>application</main>") {
+			t.Fatalf("registered route %q = %d %q", path, response.Code, response.Body.String())
+		}
+	}
+	unknown := httptest.NewRequest(http.MethodGet, "https://pixie.example/mcp/missing", nil)
+	unknown.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, unknown)
+	if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), "<main>application</main>") {
+		t.Fatalf("unknown registered route = %d %q", response.Code, response.Body.String())
+	}
+}
+
+func writeFixtureJSON(response http.ResponseWriter, status int) {
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(status)
+	_, _ = response.Write([]byte(`{"ok":true}`))
 }
 
 func TestStaticAssetsUsePrecompressedRepresentations(t *testing.T) {

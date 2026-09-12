@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { Capability, CapabilityContext } from "../capabilities.ts";
 import { JsonStore, object, type RecordValue, required, text } from "../storage.ts";
+import { blockedPiToolsCall, emitRuntimeRegister } from "./adapter-mcp.ts";
 
 interface Registration {
 	dispose(): Promise<void>;
@@ -13,6 +13,14 @@ interface Connection {
 	source: RecordValue;
 }
 type Membership = { add: Record<string, RecordValue>; remove: string[] };
+
+// Canvas is a controller-owned, session-scoped runtime contribution. The
+// controller issues a fresh bearer authority when a native Pi generation is
+// replaced, so this one reserved name is the only runtime registration that
+// may be replaced by `mcp.attach`. Operator connections keep the adapter's
+// ordinary first-registration-wins behavior below.
+const CANVAS_RUNTIME_NAME = "pixie-canvas";
+const AUTHORIZATION_HEADER = "authorization";
 
 // Compatibility for persisted Pixie connection records only. Registration and
 // all execution belong to the upstream adapter, not an MCP client here.
@@ -138,8 +146,7 @@ export function mcpConnectionsBridge(
 		await previous.registration.dispose();
 		live.delete(name);
 	};
-	const register = (value: unknown) => {
-		const c = connection(value, agentDir);
+	const registerConnection = (c: ReturnType<typeof connection>) => {
 		const previous = live.get(c.name);
 		if (previous) {
 			if (JSON.stringify(previous.definition) !== JSON.stringify(c.definition))
@@ -147,16 +154,57 @@ export function mcpConnectionsBridge(
 			return;
 		}
 		if (c.source.enabled === false) return;
-		const request: {
-			version: 1;
-			name: string;
-			definition: RecordValue;
-			result?: { ok: boolean; registration?: Registration; error?: Error };
-		} = { version: 1, name: c.name, definition: c.definition };
-		pi.events.emit("pi-mcp-adapter:runtime-register:v1", request);
-		if (!request.result?.ok || !request.result.registration)
-			throw request.result?.error ?? new Error("MCP runtime registration unavailable");
-		live.set(c.name, { ...c, registration: request.result.registration });
+		const registration = emitRuntimeRegister(
+			(channel, data) => pi.events.emit(channel, data),
+			c.name,
+			c.definition,
+		);
+		live.set(c.name, { ...c, registration });
+	};
+	const register = (value: unknown) => registerConnection(connection(value, agentDir));
+	const authorizationHeader = (definition: RecordValue): string | undefined => {
+		const headers = object(definition.headers);
+		for (const [name, value] of Object.entries(headers))
+			if (name.toLowerCase() === AUTHORIZATION_HEADER && typeof value === "string") return value;
+		return undefined;
+	};
+	const canReplaceCanvas = (previous: Connection, next: ReturnType<typeof connection>): boolean => {
+		if (next.name !== CANVAS_RUNTIME_NAME) return false;
+		const previousAuthorization = authorizationHeader(previous.definition);
+		const nextAuthorization = authorizationHeader(next.definition);
+		if (
+			previousAuthorization === undefined ||
+			nextAuthorization === undefined ||
+			previousAuthorization === nextAuthorization ||
+			!/^Bearer \S+$/i.test(previousAuthorization) ||
+			!/^Bearer \S+$/i.test(nextAuthorization)
+		)
+			return false;
+		const withoutAuthorization = (definition: RecordValue): RecordValue => ({
+			...definition,
+			headers: Object.fromEntries(
+				Object.entries(object(definition.headers)).filter(
+					([name]) => name.toLowerCase() !== AUTHORIZATION_HEADER,
+				),
+			),
+		});
+		return (
+			JSON.stringify(withoutAuthorization(previous.definition)) ===
+			JSON.stringify(withoutAuthorization(next.definition))
+		);
+	};
+	const registerAttached = async (value: unknown) => {
+		const c = connection(value, agentDir);
+		const previous = live.get(c.name);
+		if (previous && JSON.stringify(previous.definition) !== JSON.stringify(c.definition)) {
+			if (!attached.has(c.name) || !canReplaceCanvas(previous, c))
+				throw new Error(`MCP connection already registered: ${c.name}`);
+			// The public adapter contract is dispose-then-register. Awaiting the
+			// owned handle also ensures its MCP client is closed before the fresh
+			// Canvas authority can be used; no second client is created here.
+			await remove(c.name);
+		}
+		registerConnection(c);
 	};
 	const close = async () => {
 		closed = true;
@@ -182,17 +230,6 @@ export function mcpConnectionsBridge(
 		});
 	});
 	pi.on("session_shutdown", close);
-	const call = async (params: RecordValue, ctx: CapabilityContext) => {
-		ctx.signal.throwIfAborted();
-		if (closed) throw new Error("MCP bridge is closed");
-		const proxy = ctx.session.agent.state.tools.find((tool) => tool.name === "mcp");
-		if (!proxy) throw new Error("MCP proxy is unavailable");
-		const result = await proxy.execute(randomUUID(), params, ctx.signal);
-		const details = object(result.details);
-		if (details.error && details.error !== "tool_error")
-			throw new Error(`MCP proxy: ${text(details.error)}`);
-		return details;
-	};
 	const wrap = (source: RecordValue) => ({
 		type: "mcp",
 		server: {
@@ -201,17 +238,6 @@ export function mcpConnectionsBridge(
 			type: source.type === "streamable_http" ? "http" : source.type,
 		},
 	});
-	const requireServer = async (server: string, ctx: CapabilityContext) => {
-		if (live.has(server)) return;
-		// Native file/programmatic configuration remains upstream-owned. Its
-		// public status catalog is scoped to this same Pi instance as the APIs.
-		const status = await call({}, ctx);
-		if (
-			!Array.isArray(status.servers) ||
-			!status.servers.some((value) => object(value).name === server)
-		)
-			throw new Error("Unknown MCP connection");
-	};
 	return {
 		close,
 		operations: {
@@ -232,7 +258,7 @@ export function mcpConnectionsBridge(
 					for (const c of servers) {
 						ctx.signal.throwIfAborted();
 						try {
-							register(c.source);
+							await registerAttached(c.source);
 							attached.add(c.name);
 						} catch {
 							unavailable.push(`MCP connection unavailable: ${c.name}`);
@@ -332,19 +358,7 @@ export function mcpConnectionsBridge(
 				});
 				return { ok: true };
 			},
-			"pi.tools.call": async (p, ctx) => {
-				authorize(ctx);
-				const encoded = required(p.toolName ?? p.name, "tool");
-				const separator = encoded.indexOf("__");
-				const explicit = text(p.extensionName ?? p.extension);
-				const server = explicit || (separator > 0 ? encoded.slice(0, separator) : "");
-				const tool = !explicit && separator > 0 ? encoded.slice(separator + 2) : encoded;
-				await requireServer(server, ctx);
-				const details = await call({ server, tool, args: object(p.arguments) }, ctx);
-				if (!details.mcpResult) throw new Error("MCP proxy did not return a raw tool result");
-				const result = object(details.mcpResult);
-				return { ...result, isError: result.isError === true };
-			},
+			"pi.tools.call": () => blockedPiToolsCall(),
 		},
 	};
 }

@@ -1,16 +1,25 @@
 /*
- * Mewa owns shared foundations and component contracts. Pixie's product-specific layout and
- * utility layer loads first; Mewa loads second so overlapping foundation roles resolve to the pinned
- * library contract. Component entry styles include their declared style dependencies.
+ * Mewa owns shared foundations and component contracts (pinned: mewa-ui 0.1.2,
+ * revision c1bfb64a5874f2ca15d81c5ad78a2060360a37c0; pin record in
+ * ./foundation/tokens.css; lock in vendor/mewa.lock.json).
+ * This file is the single foundation cascade owner: it imports the pin first, then the
+ * vendor base/tokens foundations and the pinned component entries. Pixie's product-specific
+ * layout and utility layer (src/index.css) loads first via src/main.ts; Mewa loads second so
+ * overlapping foundation roles resolve to the pinned library contract. Component entry styles
+ * include their declared style dependencies (form entry covers field/label/text-field/checkbox/
+ * switch/button; label is also imported directly so the dependency is explicit).
  */
+@import "./foundation/tokens.css";
 @import "../vendor/mewa-ui/css/base.css";
 @import "../vendor/mewa-ui/css/tokens.css";
 @import "../vendor/mewa-ui/css/typography.css";
 @import "../vendor/mewa-ui/css/layout.css";
+@import "./foundation/layouts.css";
 @import "../vendor/mewa-ui/css/icon.css";
 @import "../vendor/mewa-ui/css/button.css";
 @import "../vendor/mewa-ui/css/button-group.css";
 @import "../vendor/mewa-ui/css/toolbar.css";
+@import "../vendor/mewa-ui/css/label.css";
 @import "../vendor/mewa-ui/css/field.css";
 @import "../vendor/mewa-ui/css/text-field.css";
 @import "../vendor/mewa-ui/css/textarea.css";
@@ -43,6 +52,7 @@
 @import "../vendor/mewa-ui/css/nav.css";
 @import "../vendor/mewa-ui/css/sidebar.css";
 @import "../vendor/mewa-ui/css/scroll-area.css";
+@import "../vendor/mewa-ui/css/separator.css";
 @import "../vendor/mewa-ui/css/resizable.css";
 @import "../vendor/mewa-ui/css/message-scroller.css";
 @import "../vendor/mewa-ui/css/message.css";
@@ -54,3 +64,25 @@
 @import "../vendor/mewa-ui/css/agent-activity.css";
 @import "../vendor/mewa-ui/css/todo-list.css";
 @import "../vendor/mewa-ui/css/tree-view.css";
+
+/* The production shell supplies persisted track variables. Keep the MEWA probe
+ * contract on that shell without replacing its resizable geometry. */
+.pixie-shell-grid.mewa-layout-probe {
+	grid-template-columns:
+		3rem
+		minmax(0, var(--pixie-primary-sidebar-track, 16rem))
+		minmax(var(--pixie-primary-content-min, 0px), var(--pixie-primary-view-track, 1fr))
+		minmax(var(--pixie-secondary-content-min, 0px), var(--pixie-secondary-view-track, 0px))
+		minmax(0, var(--pixie-secondary-sidebar-track, 16rem))
+		3rem;
+	grid-template-rows: minmax(0, 1fr);
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+@media (width < 64rem) {
+	.pixie-shell-grid.mewa-layout-probe {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr);
+		grid-template-areas: "mobile";
+	}
+}

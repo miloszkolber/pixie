@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/miloszkolber/pixie/internal/identifier"
 )
 
 type connectionGenerationKey struct{}
 type recognizedPiConnectionKey struct{}
+
+const (
+	detachedWorkNone      = "none"
+	detachedWorkActive    = "active"
+	detachedWorkUncertain = "uncertain"
+)
 
 // sessionOperationGate keeps Pi calls serialized per session while allowing
 // a request that has not entered the session yet to stop waiting when canceled.
@@ -125,4 +133,149 @@ func (m *SessionManager) beginLifecycle(sessionID string, entry *sessionEntry) (
 			m.scheduleFollowUp(sessionID, entry)
 		}
 	}, nil
+}
+
+// LIFE-01/X10-X11: distinct Stop reporting and explicit idle-runtime release.
+// Close/Archive/Delete never imply Stop; they require an already settled
+// session through beginLifecycle's running check above. Stop freezes dispatch
+// first and verifies generation quiescence; idle release frees only eligible
+// settled residents.
+
+const (
+	StopStatusStopping  = "stopping"
+	StopStatusStopped   = "stopped"
+	StopStatusUncertain = "uncertain"
+)
+
+// StopOutcome reports a verified Stop with distinct stopped/uncertain states.
+// A forwarded abort/UI response is never treated as acceptance by itself;
+// Status is stopped only after generation quiescence is verified.
+type StopOutcome struct {
+	Status            string `json:"status"`
+	Generation        uint64 `json:"generation"`
+	RetainedPaused    int    `json:"retainedPaused"`
+	ForcedTermination bool   `json:"forcedTermination"`
+	Reason            string `json:"reason,omitempty"`
+}
+
+// stopQuiescentLocked reports whether no dispatch authority remains.
+// The caller holds entry.state.
+func stopQuiescentLocked(entry *sessionEntry, generation uint64) (bool, string) {
+	if entry.promptGeneration != generation {
+		return false, "prompt generation changed during stop"
+	}
+	if entry.promptActive || entry.streaming {
+		return false, "prompt still active"
+	}
+	if entry.runID != "" {
+		return false, "native continuation still active"
+	}
+	if entry.drainScheduled || entry.drainRetry != nil || entry.replay != nil {
+		return false, "dispatch still scheduled"
+	}
+	return true, ""
+}
+
+// pausedOutboxCount counts unsent items Stop retains paused.
+func pausedOutboxCount(queue sessionQueueState) int {
+	return len(queue.FollowUp)
+}
+
+// idleStateEligibleLocked reports whether the projection itself is settled
+// with no pending outbox or scheduled work. Liveness pins and dialogs are
+// checked by the caller holding SessionManager.mu. The caller holds
+// entry.state.
+func idleStateEligibleLocked(entry *sessionEntry) (bool, string) {
+	if entry.streaming || entry.promptActive || entry.runID != "" {
+		return false, "session still running"
+	}
+	if entry.detachedWork != "" && entry.detachedWork != detachedWorkNone {
+		return false, "detached work outcome is uncertain"
+	}
+	if entry.queue.Dispatch != nil || entry.queue.Blocked != nil {
+		return false, "delivery still uncertain or dispatching"
+	}
+	if len(entry.queue.FollowUp) > 0 || len(entry.queue.Steering) > 0 {
+		return false, "queued work still pending"
+	}
+	if entry.drainScheduled || entry.drainRetry != nil || entry.replay != nil {
+		return false, "dispatch still scheduled"
+	}
+	return true, ""
+}
+
+// lockEntryForSettlement lets a prompt settlement clear its own generation
+// while Stop holds the dispatch freeze (lifecycle). New dispatch stays
+// blocked through admitFollowUp; only the settling generation may proceed.
+func (m *SessionManager) lockEntryForSettlement(sessionID string, entry *sessionEntry) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := entry.op.LockContext(ctx); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	current := !m.closed && m.sessions[sessionID] == entry
+	m.mu.Unlock()
+	if !current {
+		entry.op.Unlock()
+		return fmt.Errorf("session changed while waiting for an operation")
+	}
+	return nil
+}
+
+// forceTerminateGeneration invalidates a generation whose native cancellation
+// could not be verified. Reset drops the managed host connection (and therefore
+// fences every callback from that generation); the projection is then marked
+// blocked or uncertain before the lifecycle freeze is released. This is only a
+// transport-generation fence: PiClient does not own the remote assistant
+// process, so callers must not present it as proof that that process exited.
+// No queued work is resumed automatically after this path.
+func (m *SessionManager) forceTerminateGeneration(sessionID string, entry *sessionEntry, generation uint64) (uint64, int, error) {
+	if m.client != nil {
+		m.client.Reset()
+	}
+	// Reset fences the managed transport generation. Revoke native MCP
+	// credentials before the interrupted projection can be reused.
+	m.revokeNativeMCPSession(sessionID)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := entry.op.LockContext(ctx); err != nil {
+		entry.state.Lock()
+		paused := pausedOutboxCount(entry.queue)
+		entry.state.Unlock()
+		return generation, paused, err
+	}
+	defer entry.op.Unlock()
+
+	entry.state.Lock()
+	defer entry.state.Unlock()
+	// A settlement callback may have won the race after Reset. It is still safe
+	// to advance the generation: any callback carrying the old value is stale.
+	if entry.promptGeneration <= generation {
+		entry.promptGeneration = generation + 1
+	}
+	entry.promptActive = false
+	entry.streaming = false
+	entry.runID = ""
+	entry.detachedWork = detachedWorkUncertain
+	entry.attached = 0
+	entry.drainScheduled = false
+	if entry.drainRetry != nil {
+		entry.drainRetry.Stop()
+		entry.drainRetry = nil
+	}
+	entry.settlement = &SessionSettlement{StopReason: "interrupted", ErrorMessage: "The managed Pi generation was terminated before Stop could be verified; check the transcript before retrying."}
+	var saveErr error
+	if entry.queue.Dispatch != nil {
+		next := entry.queue.clone()
+		item := queuedFollowUp{ID: next.Dispatch.ID, Text: next.Dispatch.Text}
+		next.Dispatch = nil
+		next.Blocked = &item
+		next.Revision = identifier.New()
+		saveErr = m.saveQueueLocked(sessionID, entry, next)
+		if saveErr == nil {
+			m.emitQueue(sessionID, entry)
+		}
+	}
+	return entry.promptGeneration, pausedOutboxCount(entry.queue), saveErr
 }

@@ -11,20 +11,22 @@ The service listens on loopback `/pi` over WebSocket. Requests carry `Authorizat
 The first request is `runtime.hello`:
 
 ```json
-{ "id": 1, "method": "runtime.hello", "params": {} }
+{ "id": 1, "method": "runtime.hello", "params": { "protocolVersion": 1 } }
 ```
 
-The result carries `protocolVersion` (`1`), a stable `runtimeId`, the host SDK `version`, and a capability map. `sessions`, `providers` and `agents` are always `1`; optional feature groups (for example `mcp`, `llama`) appear only when a supported native runtime is loaded. Clients must check capability versions before using their methods.
+The result carries `protocolVersion` (`1`), a stable `runtimeId`, a fresh `bootId` for the current host process, the host SDK `version`, and a capability map. `sessions`, `providers` and `agents` are always `1`; optional feature groups (for example `mcp`, `llama`) appear only when a supported native runtime is loaded. Clients must check capability versions before using their methods.
 
 ## Frames
 
-Client requests are `{ "id": <positive safe integer>, "method": string, "params": object }`. Replies are `{ "id", "result" }` or `{ "id", "error": { "code", "message" } }`. Events carry a `method` and `params` without an id; `session.event` frames carry `sessionId` and a monotonically increasing `sequence` used by snapshot checkpoints.
+Client requests are `{ "id": <positive safe integer>, "method": string, "params": object }`; the first request must be `runtime.hello` with `params.protocolVersion` set to `1`. The host does not coerce IDs or params. Replies are `{ "id", "result" }` or `{ "id", "error": { "code", "message" } }`. Events carry a `method` and `params` without an id; `session.event` frames carry `sessionId` and a monotonically increasing `sequence` used by snapshot checkpoints.
 
 - Malformed JSON closes the connection with `1007`.
+- A non-object envelope, non-number id, empty/non-string method, non-object params or invalid/missing first hello closes the connection with `1008`.
 - An id that is not a positive safe integer closes the connection with `1008`.
 - A reused in-flight id answers with an error frame (code `-32000`) and keeps the connection open.
 - Frames above 32 MiB close the connection with `1009`; a consumer slower than a 32 MiB send or session-attachment buffer closes with `1013`.
 - More than 128 pending requests per connection answer with a `-32000` error frame.
+- `runtime.hello` has a 10-second deadline; provider/extension/default/preference administration has a 30-second deadline; interactive provider authentication retains a 10-minute deadline. A service drain shares a 25-second deadline across construction, administration, extensions, in-flight dispatches and teardown.
 - Operation failures answer with a `-32000` error frame unless the failure carries a specific code (for example `-32002` for an unknown or ambiguous session).
 - An event payload that cannot be serialized degrades to a `host.unserializable` stub with `sessionId` and `sequence` preserved; unserializable replies degrade to an error frame.
 
@@ -33,7 +35,7 @@ Client requests are `{ "id": <positive safe integer>, "method": string, "params"
 | Group | Shape |
 | --- | --- |
 | `runtime.hello`, `runtime.capabilities` | Service identity, protocol version and capability versions |
-| `runtime.restart` | End the process for the service manager; enabled per deployment with `PIXIE_ALLOW_SELF_RESTART=1` and rejected otherwise. Replies `ok`, then closes peers and exits ([deployment](deployment.md)) |
+| `runtime.restart` | End the process for the service manager; enabled per deployment with `PIXIE_ALLOW_SELF_RESTART=1` and rejected otherwise. The accepted request blocks new work, replies `ok`, and the production entrypoint drains for up to 25 seconds before exiting with status 75 ([deployment](deployment.md)) |
 | `pi.extensions.list` / `configure` | Native resource inventory and deferred configuration |
 | `pi.providers.*`, `pi.defaults.*`, `pi.preferences.*`, `provider.login*` | Provider catalog, credentials and OAuth flows; secrets never leave the host |
 | `session.create` / `fork` / `load` / `list` / `prompt` / `steer` / `abort` / `queue*` / `delete` / `rename` / `archive` / `setModel` / `setThinkingLevel` and related | Session lifecycle, runs and configuration |

@@ -114,11 +114,11 @@ function retryRefresh(): void {
 {#snippet readOnlyToolbar()}
 	<div class="toolbar flex h-8 shrink-0 items-center gap-sm border-border-default border-b bg-container-header-bg px-sm">
 		<span class="min-w-0 flex-1 truncate text-text-muted tr-text-metadata" title={tab.path}>{tab.path}</span>
-		<span class="text-text-subtle tr-text-metadata">Read-only</span>
+		<span class="shrink-0 text-text-subtle tr-text-metadata">Read-only</span>
 	</div>
 {/snippet}
 
-<div class="app-content flex h-full min-h-0 flex-col">
+<div data-testid="file-pane" class="app-content flex min-h-0 flex-1 flex-col">
 	{#if refreshError}
 		<div
 			data-testid="file-refresh-error"
@@ -144,7 +144,7 @@ function retryRefresh(): void {
 			class="toolbar flex h-8 shrink-0 items-center gap-xs border-border-default border-b bg-container-header-bg px-sm"
 		>
 			<span class="mr-auto min-w-0 truncate text-text-muted tr-text-metadata" title={tab.path}>{tab.path}</span>
-			<span class="text-text-subtle tr-text-metadata">Read-only</span>
+			<span class="shrink-0 text-text-subtle tr-text-metadata">Read-only</span>
 			<ToggleSegment
 				testid="md-toggle-preview"
 				label="Preview"
@@ -175,7 +175,11 @@ function retryRefresh(): void {
 		{@render readOnlyToolbar()}
 		{#if kind === "image"}
 			{#if !imageSource || failedImageSource === imageSource}
-				<div role="alert" class="flex flex-col items-start gap-sm p-lg tr-text-ui text-text-muted">
+				<div
+					role="alert"
+					data-testid="file-image-unavailable"
+					class="flex flex-col items-start gap-sm p-lg tr-text-ui text-text-muted"
+				>
 					<p>Image preview is unavailable. The file may have changed, exceeded the preview limit, or left the project roots.</p>
 					{#if imageSource}
 						<button type="button" data-testid="image-preview-retry" onclick={retryRefresh} class="btn" data-variant="ghost" data-size="sm">Retry</button>
@@ -186,6 +190,7 @@ function retryRefresh(): void {
 					<img
 						src={imageSource}
 						alt={tab.name}
+						data-testid="file-image"
 						onload={imageLoaded}
 						onerror={imageFailed}
 						class="image max-h-full max-w-full object-contain"
@@ -193,7 +198,7 @@ function retryRefresh(): void {
 				</div>
 			{/if}
 		{:else if kind === "binary"}
-			<p class="p-lg tr-text-ui text-text-muted">{BINARY_FILE_NOTICE}</p>
+			<p data-testid="file-binary-notice" role="status" class="p-lg tr-text-ui text-text-muted">{BINARY_FILE_NOTICE}</p>
 		{:else}
 			<div class="min-h-0 flex-1"><SourcePreview path={tab.path} content={tab.content} /></div>
 		{/if}

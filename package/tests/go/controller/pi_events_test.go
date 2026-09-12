@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/coder/websocket"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 	"github.com/miloszkolber/pixie/internal/controller"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 )
 
 type nativeProjection struct {

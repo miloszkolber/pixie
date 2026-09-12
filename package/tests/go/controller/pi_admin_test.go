@@ -143,7 +143,7 @@ func TestPiAdminUsesReleaseMatchedExtensionsAndGenericPreferenceRemoval(t *testi
 			case "pi.preferences.read":
 				result = map[string]any{"values": []any{
 					map[string]any{"key": "compactionReserveTokens", "value": nil},
-					map[string]any{"key": "piThinkingEffort", "value": nil},
+					map[string]any{"key": "piThinkingEffort", "value": "max"},
 				}}
 			}
 			if writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}) != nil {
@@ -166,6 +166,14 @@ func TestPiAdminUsesReleaseMatchedExtensionsAndGenericPreferenceRemoval(t *testi
 	available := catalog["available"].([]map[string]any)
 	if len(available) != 0 {
 		t.Fatalf("unexpected bundled extension catalog: %#v", available)
+	}
+	preferences, err := admin.ReadPreferences(ctx)
+	if err != nil || preferences.PiThinkingEffort == nil || *preferences.PiThinkingEffort != "max" {
+		t.Fatalf("maximum thinking effort was not preserved: %#v, %v", preferences, err)
+	}
+	maxThinking := "max"
+	if _, err := admin.SavePreferences(ctx, controller.PiPreferences{PiThinkingEffort: &maxThinking}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := admin.ResetPreferences(ctx, []string{"compactionReserveTokens", "piThinkingEffort"}); err != nil {
 		t.Fatal(err)

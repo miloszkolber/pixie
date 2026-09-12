@@ -42,12 +42,25 @@ RUN bun run build:web \
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS go-source
 WORKDIR /work
 COPY package/go.mod package/go.sum ./
+# The published image is deliberately controller-only. Drop the optional
+# full-host facade requirement in this isolated build context so Docker never
+# needs to copy or compile assistant sources.
 RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
-    go mod download
+    go mod edit \
+        -droprequire=github.com/miloszkolber/pixie/assistant \
+        -dropreplace=github.com/miloszkolber/pixie/assistant \
+    && go mod download
 COPY package/cmd/ cmd/
 COPY package/internal/ internal/
+COPY package/contracts/piprotocol/ contracts/piprotocol/
 COPY package/webui/*.go webui/
-COPY package/webui/dist/.gitkeep webui/dist/.gitkeep
+# Never COPY anything from package/webui/dist/ here: `bun run build` wipes that
+# directory (including the tracked .gitkeep), which used to break every container
+# build after a local web build with a missing-.gitkeep checksum error. The Go
+# `//go:embed all:dist` directive needs the directory to exist with at least one
+# file, so synthesize the placeholder instead. The real bundle arrives later via
+# COPY --from=web-build; this placeholder only feeds the disk-fallback path.
+RUN mkdir -p webui/dist && touch webui/dist/.gitkeep
 
 FROM go-source AS go-build
 ARG TARGETOS
@@ -60,8 +73,8 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     set -eu; \
     mkdir -p /out/licenses/pixie/go; \
     cp /usr/local/go/LICENSE /out/licenses/pixie/go/LICENSE; \
-    go build -trimpath -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie ./cmd; \
-    go list -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd \
+    go build -trimpath -tags=controller -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie ./cmd; \
+    go list -tags=controller -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd \
         > /tmp/modules.unsorted; \
     sort -u /tmp/modules.unsorted > /tmp/modules; \
     cut -d ' ' -f1 /tmp/modules > /out/licenses/pixie/modules.txt; \
@@ -200,4 +213,7 @@ USER 1000:1000
 EXPOSE 7312
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["/app/pixie", "healthcheck"]
-ENTRYPOINT ["/app/pixie"]
+# Run under tini so PID 1 reaps orphaned managed-group descendants (Git and
+# Browser helpers) instead of leaving zombies. The intermediate
+# browser-packages stage already uses tini; the final stage must keep it.
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie", "serve", "--mode", "controller"]

@@ -1,4 +1,10 @@
-import type { GitCommit, GitDiffScope, GitFileChange, GitFileStatus } from "@pixie/contracts";
+import type {
+	GitCommit,
+	GitDiffScope,
+	GitFileChange,
+	GitFileStatus,
+	GitRepository,
+} from "@pixie/contracts";
 import { tupleKey } from "../../lib";
 import { extendFolderChain, startFolderChain } from "../tree/folder-chains";
 
@@ -74,6 +80,12 @@ export function scopeTitle(scope: GitDiffScope, commits: readonly GitCommit[] = 
 	if (scope.kind !== "commit") return `Diff scope: ${scopeLabel(scope)}`;
 	const known = commits.find((c) => c.sha === scope.sha);
 	return known?.subject ? `${known.shortSha} · ${known.subject}` : scopeLabel(scope, commits);
+}
+
+export function repositoryDisplayName(
+	repository: Pick<GitRepository, "relativePath" | "name" | "root">,
+): string {
+	return repository.relativePath || repository.name || repository.root;
 }
 
 export function splitPath(path: string): { dir: string; base: string } {

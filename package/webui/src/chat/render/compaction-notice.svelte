@@ -26,7 +26,7 @@ let tokens = $derived(
 	</div>
 {:else}
 	<div data-testid="compaction-notice" data-status={status} class="flex items-center justify-center gap-sm text-text-muted tr-text-metadata">
-		<Icon name={status === "running" ? "rotate-cw" : "fold-vertical"} size={12} class={status === "running" ? "animate-spin" : ""} />
+		<Icon name={status === "running" ? "rotate-cw" : "fold-vertical"} size={12} class={status === "running" ? "animate-spin motion-reduce:animate-none" : ""} />
 		<span>{label}</span>{#if tokens}<span>({tokens})</span>{/if}
 	</div>
 {/if}

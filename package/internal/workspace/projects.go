@@ -384,6 +384,30 @@ func (p *Projects) Close(id string) (result Project, err error) {
 	return projects[index], nil
 }
 
+// Remove deletes a project grouping without deleting conversations. Sessions,
+// drafts and layouts stay keyed by session and become ungrouped; this method
+// never touches native sessions or durable session records.
+func (p *Projects) Remove(id string) (Project, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	projects, err := p.load()
+	if err != nil {
+		return Project{}, err
+	}
+	index := projectIndex(projects, id)
+	if index < 0 {
+		return Project{}, fmt.Errorf("unknown project: %s", id)
+	}
+	removed := projects[index]
+	remaining := make([]Project, 0, len(projects)-1)
+	remaining = append(remaining, projects[:index]...)
+	remaining = append(remaining, projects[index+1:]...)
+	if err := p.save(remaining); err != nil {
+		return Project{}, err
+	}
+	return removed, nil
+}
+
 func (p *Projects) finishMutation(result *Project, err *error) {
 	publish := p.publish
 	p.mu.Unlock()
@@ -393,6 +417,15 @@ func (p *Projects) finishMutation(result *Project, err *error) {
 }
 
 func (p *Projects) AssertCWD(projectID, cwd string) (string, error) {
+	// STATE-01 nullable grouping: an empty project ID means an ungrouped
+	// session. Filesystem admission still applies, but there is no
+	// project-root containment to check and no hidden all-files project.
+	if projectID == "" {
+		if strings.TrimSpace(cwd) == "" {
+			return "", fmt.Errorf("session directory is required for an ungrouped session")
+		}
+		return p.policy.Directory(cwd, "Session directory")
+	}
 	project, err := p.Get(projectID)
 	if err != nil {
 		return "", err
@@ -403,6 +436,9 @@ func (p *Projects) AssertCWD(projectID, cwd string) (string, error) {
 			return "", err
 		}
 	}
+	// Explicit native cwd stays separate from filesystem admission: admission
+	// proves the candidate is under a discovered mount, containment proves it
+	// belongs to this project grouping.
 	candidate, err := p.policy.Directory(cwd, "Session directory")
 	if err != nil {
 		return "", err
@@ -411,7 +447,13 @@ func (p *Projects) AssertCWD(projectID, cwd string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if Within(root, candidate) {
+	// Re-admit the stored root so a stale or unmounted root fails closed
+	// instead of checking containment against a stale string.
+	admittedRoot, err := p.policy.Directory(root, "Project root")
+	if err != nil {
+		return "", err
+	}
+	if Within(admittedRoot, candidate) {
 		return candidate, nil
 	}
 	return "", fmt.Errorf("session directory is outside the project root")
@@ -426,10 +468,11 @@ func (p *Projects) AssertRoot(projectID, root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Get already resolves and authorizes the root against the current mount.
-	if admitted == root {
-		return root, nil
+	if strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("project root is required")
 	}
+	// Always admit through the current policy; a stored string match alone is
+	// not filesystem admission.
 	candidate, err := p.policy.Directory(root, "Project root")
 	if err != nil {
 		return "", err

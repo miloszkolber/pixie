@@ -1,6 +1,14 @@
 import type { PiPreferences, ProviderStatus, WireModel } from "@pixie/contracts";
 
-export const THINKING_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const THINKING_EFFORTS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+] as const;
 
 export function parseCompactionReserveTokens(
 	tokens: number | undefined,

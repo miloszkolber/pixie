@@ -8,6 +8,7 @@ import {
 	defaultProviderSelectable,
 	parseCompactionReserveTokens,
 	shouldClearAgentEditorAfterMutation,
+	THINKING_EFFORTS,
 	unavailableDefaultProviderOption,
 } from "@/settings/sections/pi-settings";
 
@@ -71,6 +72,10 @@ test("normalizes Svelte number-input threshold values, including a cleared field
 	expect(parseCompactionReserveTokens(0)).toEqual({ valid: false });
 	expect(parseCompactionReserveTokens(Number.NaN)).toEqual({ valid: false });
 	expect(parseCompactionReserveTokens(100.1)).toEqual({ valid: false });
+});
+
+test("global thinking preferences include the native maximum level", () => {
+	expect(THINKING_EFFORTS).toContain("max");
 });
 
 test("reconciles a cleared threshold with the canonical save response", () => {
