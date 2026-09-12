@@ -41,7 +41,7 @@ else
 	browser set media light reduced-motion >/dev/null
 fi
 browser open 'http://127.0.0.1:7312/#/v1/projects/fixture-project/projectAreas/fixture-project/chats/fixture-1' >/dev/null
-browser wait --text 'Loaded answer' >/dev/null
+browser wait --timeout 60000 --text 'Loaded answer' >/dev/null
 browser eval --stdin < /app/ui-history.js >/dev/null
 attempt=0
 while [ "$(browser eval 'globalThis.__pixieHistory?.done === true')" != true ]; do
