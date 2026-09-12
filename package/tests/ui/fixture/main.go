@@ -422,7 +422,7 @@ func fixtureOperationSet() map[string]bool {
 	operations := map[string]bool{}
 	for _, method := range []string{
 		"session.list", "session.create", "session.load", "session.prompt", "session.cancel",
-		"session.configure", "runtime.capabilities",
+		"session.configure", "session.prompt.image", "runtime.capabilities",
 		"pi.config.extensions.list", "pi.defaults.read", "pi.preferences.read",
 		"pi.providers.config.read", "pi.providers.inventory.refresh", "pi.providers.list",
 		"pi.session.extensions.list", "pi.session.info", "pi.sources.list",
