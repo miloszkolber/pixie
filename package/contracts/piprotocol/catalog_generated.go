@@ -75,6 +75,14 @@ var CatalogHostOperations = []string{
 	"adapter.session.forget",
 	"pi.llama",
 	"pi.native-extensions",
+	"session.clone",
+	"session.compact",
+	"session.commands",
+	"session.followUp",
+	"session.clearQueue",
+	"session.getMessages",
+	"session.stats",
+	"session.switch",
 }
 
 // CatalogHostOperationSet indexes CatalogHostOperations for exact lookup.
@@ -147,6 +155,14 @@ var CatalogHostOperationSet = map[string]bool{
 	"adapter.session.forget":            true,
 	"pi.llama":                          true,
 	"pi.native-extensions":              true,
+	"session.clone":                     true,
+	"session.compact":                   true,
+	"session.commands":                  true,
+	"session.followUp":                  true,
+	"session.clearQueue":                true,
+	"session.getMessages":               true,
+	"session.stats":                     true,
+	"session.switch":                    true,
 }
 
 // CatalogControllerMethods lists the browser/controller method names from ws-protocol.ts.

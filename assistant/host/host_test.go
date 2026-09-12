@@ -60,7 +60,7 @@ func TestStartProvidesPrivateEndpointAndHello(t *testing.T) {
 		t.Fatalf("hello response = %s", response)
 	}
 	operations, ok := envelope.Result["operationSet"].(map[string]any)
-	if !ok || operations["session.prompt"] != true || operations["session.prompt.image"] != true || operations["session.delete"] != false || operations["session.configure"] != false || operations["runtime.restart"] != false || operations["mcp.attach"] != false {
+	if !ok || operations["session.prompt"] != true || operations["session.prompt.image"] != true || operations["session.delete"] != false || operations["session.configure"] != true || operations["runtime.restart"] != false || operations["mcp.attach"] != false {
 		t.Fatalf("hello operationSet is incomplete or unsafe: %#v", operations)
 	}
 }
@@ -116,6 +116,10 @@ func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
 		"session.list": true, "session.create": true, "session.load": true,
 		"session.prompt": true, "session.cancel": true, "session.prompt.image": true,
 		"session.release": true, "runtime.release": true,
+		"session.configure": true, "session.fork": true, "session.clone": true,
+		"session.getMessages": true, "session.stats": true, "session.compact": true,
+		"session.rename": true, "session.commands": true, "session.steer": true,
+		"session.followUp": true, "session.clearQueue": true, "session.switch": true,
 	}
 	for operation, enabled := range operations {
 		if enabled != wantEnabled[operation] {
@@ -127,7 +131,7 @@ func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
 			t.Errorf("enabled operation %q is absent from the catalog", operation)
 		}
 	}
-	for _, unsupported := range []string{"session.delete", "session.fork", "session.rename", "session.archive", "session.steer", "session.prompt.resource", "session.configure", "runtime.restart", "mcp.attach", "pi.tools.call", "pi.defaults.save"} {
+	for _, unsupported := range []string{"session.delete", "session.archive", "session.prompt.resource", "runtime.restart", "mcp.attach", "pi.tools.call", "pi.defaults.save"} {
 		if value, present := operations[unsupported]; !present || value {
 			t.Errorf("unsupported operation %q = %v, present %v", unsupported, value, present)
 		}
@@ -209,18 +213,33 @@ func startStatefulPiFixture(t *testing.T) (*nativeSupervisor, string, string) {
 state=initial-$$
 path="$PI_CODING_AGENT_DIR/$state.jsonl"
 : > "$path"
+n=0
+thinking=medium
+modelid=fixture
+provider=fixture
 printf 'launch:%s:%s\n' "$$" "$PWD" >> 'LOG'
 printf '{"type":"agent_settled"}\n'
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
   case "$line" in
-    *'"type":"get_state"'*) printf '{"id":%s,"type":"response","command":"get_state","success":true,"data":{"sessionId":"%s","sessionFile":"%s","isStreaming":false,"thinkingLevel":"medium","model":{"id":"fixture","provider":"fixture"}}}\n' "$id" "$state" "$path" ;;
+    *'"type":"get_state"'*) printf '{"id":%s,"type":"response","command":"get_state","success":true,"data":{"sessionId":"%s","sessionFile":"%s","isStreaming":false,"thinkingLevel":"%s","model":{"id":"%s","provider":"%s"}}}\n' "$id" "$state" "$path" "$thinking" "$modelid" "$provider" ;;
+    *'"type":"get_available_models"'*) printf '{"id":%s,"type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"fixture","provider":"fixture"},{"id":"other-model","provider":"other"}]}}\n' "$id" ;;
     *'"type":"get_messages"'*) printf '{"id":%s,"type":"response","command":"get_messages","success":true,"data":{"messages":[]}}\n' "$id" ;;
-		*'"type":"new_session"'*) state=session-$$; path="$PI_CODING_AGENT_DIR/$state.jsonl"; : > "$path"; printf 'new:%s\n' "$state" >> 'LOG'; printf '{"id":%s,"type":"response","command":"new_session","success":true,"data":{"cancelled":false}}\n' "$id" ;;
-		*'"type":"switch_session"'*) path=$(printf '%s' "$line" | sed -n 's/.*"sessionPath":"\([^"]*\)".*/\1/p'); state=$(basename "$path" .jsonl); printf 'switch:%s\n' "$path" >> 'LOG'; printf '{"id":%s,"type":"response","command":"switch_session","success":true,"data":{"cancelled":false}}\n' "$id" ;;
-		*'"type":"clear_queue"'*) printf 'clear_queue\n' >> 'LOG'; printf '{"id":%s,"type":"response","command":"clear_queue","success":true,"data":{}}\n' "$id" ;;
-		*'"type":"prompt"'*) printf 'prompt:%s\n' "$state" >> 'LOG'; printf '{"id":%s,"type":"response","command":"prompt","success":true,"data":{"accepted":true}}\n' "$id"; printf '{"type":"agent_start"}\n'; (sleep 0.2; printf '{"type":"message_end","message":{"role":"assistant","stopReason":"end_turn"}}\n'; printf 'settled:%s\n' "$state" >> 'LOG'; printf '{"type":"agent_settled"}\n') & ;;
-		*'"type":"abort"'*) printf 'abort\n' >> 'LOG'; printf '{"type":"agent_settled"}\n'; printf '{"id":%s,"type":"response","command":"abort","success":true,"data":{"aborted":false}}\n' "$id" ;;
+    *'"type":"get_session_stats"'*) printf '{"id":%s,"type":"response","command":"get_session_stats","success":true,"data":{"messageCount":3,"tokenCount":42}}\n' "$id" ;;
+    *'"type":"get_commands"'*) printf '{"id":%s,"type":"response","command":"get_commands","success":true,"data":{"commands":[{"name":"compact","source":"builtin"}]}}\n' "$id" ;;
+    *'"type":"set_model"'*) provider=$(printf '%s' "$line" | sed -n 's/.*"provider":"\([^"]*\)".*/\1/p'); modelid=$(printf '%s' "$line" | sed -n 's/.*"modelId":"\([^"]*\)".*/\1/p'); printf 'set_model:%s/%s\n' "$provider" "$modelid" >> 'LOG'; printf '{"id":%s,"type":"response","command":"set_model","success":true,"data":{"id":"%s","provider":"%s"}}\n' "$id" "$modelid" "$provider" ;;
+    *'"type":"set_thinking_level"'*) thinking=$(printf '%s' "$line" | sed -n 's/.*"level":"\([^"]*\)".*/\1/p'); printf 'set_thinking_level:%s\n' "$thinking" >> 'LOG'; printf '{"id":%s,"type":"response","command":"set_thinking_level","success":true}\n' "$id" ;;
+    *'"type":"set_session_name"'*) name=$(printf '%s' "$line" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p'); printf 'set_session_name:%s\n' "$name" >> 'LOG'; printf '{"id":%s,"type":"response","command":"set_session_name","success":true}\n' "$id" ;;
+    *'"type":"compact"'*) printf 'compact\n' >> 'LOG'; printf '{"id":%s,"type":"response","command":"compact","success":true,"data":{"summary":"compacted"}}\n' "$id" ;;
+    *'"type":"steer"'*) message=$(printf '%s' "$line" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p'); printf 'steer:%s\n' "$message" >> 'LOG'; printf '{"id":%s,"type":"response","command":"steer","success":true}\n' "$id" ;;
+    *'"type":"follow_up"'*) message=$(printf '%s' "$line" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p'); printf 'follow_up:%s\n' "$message" >> 'LOG'; printf '{"id":%s,"type":"response","command":"follow_up","success":true}\n' "$id" ;;
+    *'"type":"new_session"'*) state=session-$$; path="$PI_CODING_AGENT_DIR/$state.jsonl"; : > "$path"; printf 'new:%s\n' "$state" >> 'LOG'; printf '{"id":%s,"type":"response","command":"new_session","success":true,"data":{"cancelled":false}}\n' "$id" ;;
+    *'"type":"switch_session"'*) path=$(printf '%s' "$line" | sed -n 's/.*"sessionPath":"\([^"]*\)".*/\1/p'); state=$(basename "$path" .jsonl); printf 'switch:%s\n' "$path" >> 'LOG'; printf '{"id":%s,"type":"response","command":"switch_session","success":true,"data":{"cancelled":false}}\n' "$id" ;;
+    *'"type":"fork"'*) entry=$(printf '%s' "$line" | sed -n 's/.*"entryId":"\([^"]*\)".*/\1/p'); n=$((n+1)); state="fork-$n-$$"; path="$PI_CODING_AGENT_DIR/$state.jsonl"; : > "$path"; printf 'fork:%s\n' "$entry" >> 'LOG'; printf '{"id":%s,"type":"response","command":"fork","success":true,"data":{"text":"","cancelled":false}}\n' "$id" ;;
+    *'"type":"clone"'*) n=$((n+1)); state="clone-$n-$$"; path="$PI_CODING_AGENT_DIR/$state.jsonl"; : > "$path"; printf 'clone\n' >> 'LOG'; printf '{"id":%s,"type":"response","command":"clone","success":true,"data":{"cancelled":false}}\n' "$id" ;;
+    *'"type":"clear_queue"'*) printf 'clear_queue\n' >> 'LOG'; printf '{"id":%s,"type":"response","command":"clear_queue","success":true,"data":{}}\n' "$id" ;;
+    *'"type":"prompt"'*) printf 'prompt:%s\n' "$state" >> 'LOG'; printf '{"id":%s,"type":"response","command":"prompt","success":true,"data":{"accepted":true}}\n' "$id"; printf '{"type":"agent_start"}\n'; (sleep 0.2; printf '{"type":"message_end","message":{"role":"assistant","stopReason":"end_turn"}}\n'; printf 'settled:%s\n' "$state" >> 'LOG'; printf '{"type":"agent_settled"}\n') & ;;
+    *'"type":"abort"'*) printf 'abort\n' >> 'LOG'; printf '{"type":"agent_settled"}\n'; printf '{"id":%s,"type":"response","command":"abort","success":true,"data":{"aborted":false}}\n' "$id" ;;
     *'"type":"shutdown"'*) exit 0 ;;
   esac
 done
@@ -256,6 +275,189 @@ func createFixtureSession(t *testing.T, supervisor *nativeSupervisor, cwd string
 		t.Fatalf("create result = %s, %v", raw, err)
 	}
 	return result.SessionID
+}
+
+func TestSessionConfigureMapsModelAndThinking(t *testing.T) {
+	supervisor, logPath, cwd := startStatefulPiFixture(t)
+	id := createFixtureSession(t, supervisor, cwd)
+	call := func(params map[string]any) json.RawMessage {
+		t.Helper()
+		raw, err := supervisor.callHost(context.Background(), "session.configure", params)
+		if err != nil {
+			t.Fatalf("session.configure %#v: %v", params, err)
+		}
+		return raw
+	}
+	raw := call(map[string]any{"sessionId": id, "configId": "thinking", "value": "high"})
+	if !strings.Contains(string(raw), `"currentValue":"high"`) {
+		t.Fatalf("thinking configure result = %s", raw)
+	}
+	raw = call(map[string]any{"sessionId": id, "configId": "model", "value": "chosen-model"})
+	if !strings.Contains(string(raw), `"currentValue":"chosen-model"`) || !strings.Contains(string(raw), `"provider":"fixture"`) {
+		t.Fatalf("model configure result = %s", raw)
+	}
+	raw = call(map[string]any{"sessionId": id, "configId": "provider", "value": "other"})
+	if !strings.Contains(string(raw), `"currentValue":"other-model"`) {
+		t.Fatalf("provider configure result = %s", raw)
+	}
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"set_thinking_level:high\n", "set_model:fixture/chosen-model\n", "set_model:other/other-model\n"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("configure log missing %q: %s", want, raw)
+		}
+	}
+	if _, err := supervisor.callHost(context.Background(), "session.configure", map[string]any{"sessionId": id, "configId": "provider", "value": "unknown", "mcpServers": []any{map[string]any{"name": "x"}}}); err == nil {
+		t.Fatal("create-time MCP override was accepted by session.configure")
+	}
+}
+
+func TestSessionBranchMapsForkAndClone(t *testing.T) {
+	supervisor, logPath, cwd := startStatefulPiFixture(t)
+	parent := createFixtureSession(t, supervisor, cwd)
+	for _, test := range []struct {
+		name    string
+		method  string
+		params  map[string]any
+		wantLog string
+	}{
+		{name: "fork with entry", method: "session.fork", params: map[string]any{"sessionId": parent, "entryId": "entry-1"}, wantLog: "fork:entry-1\n"},
+		{name: "fork without entry clones", method: "session.fork", params: map[string]any{"sessionId": parent}, wantLog: "clone\n"},
+		{name: "clone", method: "session.clone", params: map[string]any{"sessionId": parent}, wantLog: "clone\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			raw, err := supervisor.callHost(context.Background(), test.method, test.params)
+			if err != nil {
+				t.Fatalf("%s: %v", test.method, err)
+			}
+			var result struct {
+				SessionID string `json:"sessionId"`
+			}
+			if json.Unmarshal(raw, &result) != nil || result.SessionID == "" || result.SessionID == parent {
+				t.Fatalf("%s result = %s", test.method, raw)
+			}
+			if _, registered := supervisor.testSession(result.SessionID); !registered {
+				t.Fatalf("%s was not registered: %s", test.method, raw)
+			}
+			if supervisor.testChild(result.SessionID) == nil {
+				t.Fatalf("%s child is not resident: %s", test.method, raw)
+			}
+			log, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(log), test.wantLog) {
+				t.Fatalf("%s log missing %q: %s", test.method, test.wantLog, log)
+			}
+		})
+	}
+}
+
+func TestSessionReadQueueAndRenameMapToPiCommands(t *testing.T) {
+	supervisor, logPath, cwd := startStatefulPiFixture(t)
+	id := createFixtureSession(t, supervisor, cwd)
+	call := func(method string, params map[string]any) json.RawMessage {
+		t.Helper()
+		raw, err := supervisor.callHost(context.Background(), method, params)
+		if err != nil {
+			t.Fatalf("%s: %v", method, err)
+		}
+		return raw
+	}
+	if raw := call("session.getMessages", map[string]any{"sessionId": id}); !strings.Contains(string(raw), `"messages"`) {
+		t.Fatalf("session.getMessages result = %s", raw)
+	}
+	if raw := call("session.stats", map[string]any{"sessionId": id}); !strings.Contains(string(raw), `"messageCount":3`) {
+		t.Fatalf("session.stats result = %s", raw)
+	}
+	if raw := call("session.compact", map[string]any{"sessionId": id}); !strings.Contains(string(raw), `"summary":"compacted"`) {
+		t.Fatalf("session.compact result = %s", raw)
+	}
+	if raw := call("session.commands", map[string]any{"sessionId": id}); !strings.Contains(string(raw), `"name":"compact"`) {
+		t.Fatalf("session.commands result = %s", raw)
+	}
+	call("session.rename", map[string]any{"sessionId": id, "name": "Renamed"})
+	call("session.steer", map[string]any{"sessionId": id, "content": []any{map[string]any{"type": "text", "text": "steer-text"}}})
+	call("session.followUp", map[string]any{"sessionId": id, "message": "follow-up"})
+	call("session.clearQueue", map[string]any{"sessionId": id})
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"set_session_name:Renamed\n", "steer:steer-text\n", "follow_up:follow-up\n", "clear_queue\n", "compact\n"} {
+		if !strings.Contains(string(log), want) {
+			t.Fatalf("operation log missing %q: %s", want, log)
+		}
+	}
+}
+
+func TestSessionSwitchUsesVerifiedNativePath(t *testing.T) {
+	supervisor, logPath, cwd := startStatefulPiFixture(t)
+	id := createFixtureSession(t, supervisor, cwd)
+	ref, _ := supervisor.testSession(id)
+	if _, err := supervisor.callHost(context.Background(), "session.release", map[string]any{"sessionId": id, "cwd": cwd}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := supervisor.callHost(context.Background(), "session.switch", map[string]any{"sessionId": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		SessionID string `json:"sessionId"`
+	}
+	if json.Unmarshal(raw, &result) != nil || result.SessionID != id {
+		t.Fatalf("session.switch result = %s", raw)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(log), "switch:"+ref.Path+"\n") {
+		t.Fatalf("session.switch did not use the verified native path: %s", log)
+	}
+	if _, err := supervisor.callHost(context.Background(), "session.switch", map[string]any{"sessionId": id, "sessionPath": filepath.Join(cwd, "unverified.jsonl")}); err == nil {
+		t.Fatal("session.switch accepted an unverified session path")
+	}
+	second := createFixtureSession(t, supervisor, cwd)
+	secondRef, _ := supervisor.testSession(second)
+	if _, err := supervisor.callHost(context.Background(), "session.release", map[string]any{"sessionId": second, "cwd": cwd}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = supervisor.callHost(context.Background(), "session.switch", map[string]any{"sessionPath": secondRef.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal(raw, &result) != nil || result.SessionID != second {
+		t.Fatalf("path-only session.switch result = %s", raw)
+	}
+	if _, err := supervisor.callHost(context.Background(), "session.switch", map[string]any{"sessionId": id, "sessionPath": secondRef.Path}); err == nil {
+		t.Fatal("session.switch accepted a path belonging to another session")
+	}
+}
+
+func TestNativeOperationsFailClosedWithoutResidentChild(t *testing.T) {
+	supervisor, _, cwd := startStatefulPiFixture(t)
+	id := createFixtureSession(t, supervisor, cwd)
+	if _, err := supervisor.callHost(context.Background(), "session.release", map[string]any{"sessionId": id, "cwd": cwd}); err != nil {
+		t.Fatal(err)
+	}
+	resident := []string{"session.configure", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue"}
+	for _, method := range resident {
+		params := map[string]any{"sessionId": id, "configId": "thinking", "value": "high", "name": "x", "message": "m", "content": []any{map[string]any{"type": "text", "text": "m"}}}
+		if _, err := supervisor.callHost(context.Background(), method, params); err == nil {
+			t.Errorf("%s accepted a session without a resident child", method)
+		}
+	}
+	for _, method := range []string{"session.fork", "session.clone", "session.switch"} {
+		if _, err := supervisor.callHost(context.Background(), method, map[string]any{"sessionId": "missing"}); err == nil {
+			t.Errorf("%s accepted an unknown session", method)
+		}
+	}
+	if _, err := supervisor.callHost(context.Background(), "session.delete", map[string]any{"sessionId": id}); err == nil {
+		t.Fatal("unimplemented operation did not fail closed")
+	}
 }
 
 func TestOfficialPiUsesOneImmutableChildPerSessionIncludingSameCWD(t *testing.T) {

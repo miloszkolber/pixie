@@ -879,20 +879,13 @@ func (c *nativeChild) snapshot(ctx context.Context) (json.RawMessage, error) {
 		Messages []any `json:"messages"`
 	}
 	_ = json.Unmarshal(messagesReply.Data, &messages)
-	options := []any{}
+	options := configOptionsFromState(state)
 	metadata := map[string]any{}
-	provider, _ := state.Model["provider"].(string)
-	model, _ := state.Model["id"].(string)
-	if provider != "" {
-		options = append(options, map[string]any{"id": "provider", "currentValue": provider})
+	if provider, _ := state.Model["provider"].(string); provider != "" {
 		metadata["providerId"] = provider
 	}
-	if model != "" {
-		options = append(options, map[string]any{"id": "model", "currentValue": model})
+	if model, _ := state.Model["id"].(string); model != "" {
 		metadata["modelId"] = model
-	}
-	if state.ThinkingLevel != "" {
-		options = append(options, map[string]any{"id": "thinking", "currentValue": state.ThinkingLevel})
 	}
 	c.mu.Lock()
 	runID := ""
@@ -995,6 +988,38 @@ func (s *nativeSupervisor) callHost(ctx context.Context, method string, params m
 			return nil, err
 		}
 		return child.cancel(ctx, id)
+	case "session.configure":
+		return s.configure(ctx, params)
+	case "session.fork":
+		return s.branchSession(ctx, params, false)
+	case "session.clone":
+		return s.branchSession(ctx, params, true)
+	case "session.getMessages":
+		return s.forwardPi(ctx, params, "get_messages", nil, false)
+	case "session.stats":
+		return s.forwardPi(ctx, params, "get_session_stats", nil, true)
+	case "session.compact":
+		return s.forwardPi(ctx, params, "compact", compactPayload(params), true)
+	case "session.rename":
+		return s.renameSession(ctx, params)
+	case "session.commands":
+		return s.forwardPi(ctx, params, "get_commands", nil, true)
+	case "session.steer":
+		payload, err := steerPayload(params)
+		if err != nil {
+			return nil, err
+		}
+		return s.forwardPi(ctx, params, "steer", payload, false)
+	case "session.followUp":
+		payload, err := steerPayload(params)
+		if err != nil {
+			return nil, err
+		}
+		return s.forwardPi(ctx, params, "follow_up", payload, false)
+	case "session.clearQueue":
+		return s.forwardPi(ctx, params, "clear_queue", nil, true)
+	case "session.switch":
+		return s.switchSession(ctx, params)
 	case "session.release", "runtime.release":
 		id, _ := params["sessionId"].(string)
 		cwd, _ := params["cwd"].(string)
@@ -1462,10 +1487,14 @@ func nativeOperationSet() map[string]bool {
 	for _, operation := range []string{
 		"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.configure", "session.delete", "session.fork", "session.steer", "session.rename", "session.archive", "session.release", "runtime.release", "runtime.releaseToTui",
 		"session.prompt.image", "session.prompt.resource", "session.uiResponse", "session.uiCancel", "pi.session.info", "pi.session.rename", "pi.session.archive", "pi.session.unarchive", "pi.session.steer", "pi.tools.list", "pi.tools.call", "runtime.capabilities", "runtime.restart", "pi.reload", "pi.slash-commands.list", "pi.providers.list", "pi.providers.canonical-model-info", "pi.providers.inventory.refresh", "pi.providers.readiness.check", "provider.loginStart", "provider.loginBegin", "provider.loginReply", "provider.loginCancel", "pi.providers.config.read", "pi.providers.config.delete", "pi.defaults.read", "pi.defaults.save", "pi.defaults.clear", "pi.preferences.read", "pi.preferences.save", "pi.preferences.reset", "pi.extensions.list", "pi.extensions.configure", "pi.sources.list", "pi.sources.create", "pi.sources.update", "pi.sources.delete", "pi.agent-mentions.list", "pi.subagent.execute", "pi.todo.plan", "pixie.goals.questions", "mcp.attach", "pi.config.extensions.list", "pi.config.extensions.add", "pi.config.extensions.set-enabled", "pi.config.extensions.remove", "pi.session.extensions.list", "pi.session.extensions.add", "pi.session.extensions.remove", "adapter.status", "adapter.registerBrowser", "adapter.session.forget", "pi.llama", "pi.native-extensions",
+		// Vanilla Pi RPC operations implemented in native_operations.go. They
+		// are listed here so callHost admits them; package/contracts still owns
+		// adding them to the generated protocol catalog.
+		"session.clone", "session.compact", "session.commands", "session.followUp", "session.clearQueue", "session.getMessages", "session.stats", "session.switch",
 	} {
 		result[operation] = false
 	}
-	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.prompt.image", "session.release", "runtime.release"} {
+	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch"} {
 		result[operation] = true
 	}
 	return result

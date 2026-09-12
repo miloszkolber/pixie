@@ -71,6 +71,14 @@ export const HOST_OPERATIONS = [
 	"adapter.session.forget",
 	"pi.llama",
 	"pi.native-extensions",
+	"session.clone",
+	"session.compact",
+	"session.commands",
+	"session.followUp",
+	"session.clearQueue",
+	"session.getMessages",
+	"session.stats",
+	"session.switch",
 ] as const;
 
 export type HostOperation = (typeof HOST_OPERATIONS)[number];
