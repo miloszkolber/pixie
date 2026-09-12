@@ -1385,7 +1385,7 @@ function signOut(): void {
 							{/if}
 						</div>
 					{:else}
-						<div data-testid="settings-detail" class="mewa-layout-probe__scroll flex min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+						<div data-testid="settings-detail" class="mewa-layout-probe__scroll flex max-h-[calc(100dvh-4.5rem)] min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
 							{#each settingsVisited as section (section)}
 								<div
 									id={`settings-panel-${section}`}
