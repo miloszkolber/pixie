@@ -18,6 +18,7 @@ import agentAuthoring from "./agents.ts";
 import { CAPABILITY_EVENT, Capabilities, type CapabilityContext } from "./capabilities.ts";
 import { mcpAdminBridgeWithConfig } from "./extensions/mcp-admin-bridge.ts";
 import { createUiBridge, type UiBridge } from "./extensions/ui-bridge.ts";
+import type { Deadline } from "./lifecycle.ts";
 import {
 	atomicWrite,
 	HostError,
@@ -56,7 +57,7 @@ export interface ManagedSession {
 	partialTools: Map<string, RecordValue>;
 	/** Extension-owned work only pins residence, never changes native run state. */
 	hasExtensionWork?: () => boolean;
-	close: () => Promise<void>;
+	close: (deadline?: Deadline) => Promise<void>;
 	forgetMcp?: () => Promise<unknown>;
 }
 
@@ -100,6 +101,7 @@ export class Sessions {
 	private evicting = new Map<string, Promise<void>>();
 	private opening = new Map<string, Promise<ManagedSession>>();
 	private bridges = new Map<string, UiBridge>();
+	private closingDeadline?: Deadline;
 	private readonly trust: ProjectTrustStore;
 	readonly catalog;
 	private sequences = new Map<string, number>();
@@ -195,7 +197,7 @@ export class Sessions {
 			this.listing = undefined;
 			return entry;
 		} catch (error) {
-			await entry.close();
+			await entry.close(this.closingDeadline);
 			throw error;
 		}
 	}
@@ -218,7 +220,7 @@ export class Sessions {
 				const metadata = await this.metadata(id);
 				const entry = await this.build(metadata.cwd, SessionManager.open(metadata.path));
 				if (this.closed) {
-					await entry.close();
+					await entry.close(this.closingDeadline);
 					throw new Error("Pi host is stopping");
 				}
 				this.entries.set(id, entry);
@@ -251,7 +253,14 @@ export class Sessions {
 	}
 	private build(cwd: string, manager: SessionManager): Promise<ManagedSession> {
 		if (this.closed) return Promise.reject(new Error("Pi host is stopping"));
-		const pending = this.construct(cwd, manager);
+		const pending = (async () => {
+			const entry = await this.construct(cwd, manager);
+			if (this.closed) {
+				await entry.close(this.closingDeadline);
+				throw new Error("Pi host is stopping");
+			}
+			return entry;
+		})();
 		this.building.add(pending);
 		void pending.finally(() => this.building.delete(pending)).catch(() => {});
 		return pending;
@@ -352,27 +361,44 @@ export class Sessions {
 				inputs: [],
 				partialTools: new Map(),
 				hasExtensionWork: () => extensionWork.size > 0,
-				close: () =>
-					(closing ??= (async () => {
-						stopLiveness();
-						extensionWork.clear();
-						bridge.dispose();
-						this.bridges.delete(sessionId);
-						try {
-							await abortBounded(session);
-						} finally {
+				close: (deadline?: Deadline) => {
+					if (!closing)
+						closing = (async () => {
+							stopLiveness();
+							extensionWork.clear();
+							bridge.dispose();
+							this.bridges.delete(sessionId);
+							let abortError: unknown;
 							try {
-								await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
-							} finally {
-								try {
-									await capabilities.close();
-								} finally {
-									session.dispose();
-									await settings.flush();
-								}
+								const aborted = await abortBounded(
+									session,
+									Math.min(ABORT_TIMEOUT_MS, deadline?.remaining() ?? ABORT_TIMEOUT_MS),
+								);
+								if (!aborted && deadline?.signal.aborted)
+									abortError = new Error("Pi session abort was interrupted by service shutdown");
+							} catch (error) {
+								abortError = error;
 							}
-						}
-					})()),
+							const cleanup = Promise.allSettled([
+								Promise.resolve().then(() =>
+									session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }),
+								),
+								Promise.resolve().then(() => capabilities.close(deadline?.signal)),
+								Promise.resolve().then(() => settings.flush()),
+							]);
+							try {
+								if (deadline) await deadline.race(cleanup, `Pi session ${sessionId} teardown`);
+								else await cleanup;
+							} finally {
+								session.dispose();
+							}
+							if (abortError) throw abortError;
+						})();
+					const operation = closing;
+					return deadline
+						? deadline.race(operation, `Pi session ${sessionId} teardown`)
+						: operation;
+				},
 			};
 			const forget =
 				capabilities.snapshot().mcp === 1
@@ -489,12 +515,14 @@ export class Sessions {
 		} catch (error) {
 			stopLiveness();
 			extensionWork.clear();
-			try {
-				await capabilities.close();
-			} finally {
-				built?.dispose();
-				await settings.flush();
-			}
+			const cleanup = Promise.allSettled([
+				Promise.resolve().then(() => capabilities.close(this.closingDeadline?.signal)),
+				Promise.resolve().then(() => settings.flush()),
+			]);
+			if (this.closingDeadline)
+				await this.closingDeadline.race(cleanup, "Pi session construction cleanup").catch(() => {});
+			else await cleanup;
+			built?.dispose();
 			throw error;
 		}
 	}
@@ -545,12 +573,14 @@ export class Sessions {
 				.map(([id]) => this.release(id)),
 		);
 	}
-	context(entry: ManagedSession, signal = AbortSignal.timeout(120000)): CapabilityContext {
+	context(entry: ManagedSession, signal?: AbortSignal): CapabilityContext {
 		return {
 			cwd: entry.session.sessionManager.getCwd(),
 			agentDir: this.agentDir,
 			session: entry.session,
-			signal,
+			signal: signal
+				? AbortSignal.any([signal, AbortSignal.timeout(120000)])
+				: AbortSignal.timeout(120000),
 			notify: (event) => this.publish(entry.session.sessionId, event),
 		};
 	}
@@ -833,7 +863,7 @@ export class Sessions {
 			throw new Error("Prompt exceeds limits");
 		return { text: prompt, images };
 	}
-	async call(method: string, p: RecordValue): Promise<unknown> {
+	async call(method: string, p: RecordValue, signal?: AbortSignal): Promise<unknown> {
 		if (method === "session.list") return this.list(text(p.cursor));
 		if (method === "session.create")
 			return this.snapshot(await this.create(required(p.cwd, "project")));
@@ -988,24 +1018,41 @@ export class Sessions {
 							})),
 					};
 				default:
-					return entry.capabilities.call(method, p, this.context(entry));
+					return entry.capabilities.call(method, p, this.context(entry, signal));
 			}
 		});
 	}
-	async close(): Promise<void> {
+	async close(deadline?: Deadline): Promise<void> {
 		this.closed = true;
+		this.closingDeadline = deadline;
 		clearInterval(this.timer);
 		for (const bridge of this.bridges.values()) bridge.dispose();
 		this.bridges.clear();
-		await Promise.allSettled([
+		let deadlineError: unknown;
+		const pending = Promise.allSettled([
 			...this.creating,
 			...this.building,
 			...this.opening.values(),
 			...this.evicting.values(),
 		]);
-		await Promise.allSettled([...this.entries.values()].map((e) => e.close()));
+		if (deadline) {
+			try {
+				await deadline.race(pending, "Pi session construction and opening");
+			} catch (error) {
+				deadlineError = error;
+			}
+		} else await pending;
+		const entries = Promise.allSettled([...this.entries.values()].map((e) => e.close(deadline)));
+		if (deadline) {
+			try {
+				await deadline.race(entries, "Pi session teardown");
+			} catch (error) {
+				deadlineError ??= error;
+			}
+		} else await entries;
 		this.entries.clear();
 		this.pages.clear();
 		this.listing = undefined;
+		if (deadlineError) throw deadlineError;
 	}
 }

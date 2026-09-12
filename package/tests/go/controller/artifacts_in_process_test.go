@@ -112,6 +112,9 @@ func TestBrowserArtifactInProcessAuthenticatedImage(t *testing.T) {
 			before := moduleCalls.Load()
 			request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7312/v1/artifacts/panel/screen.png", nil)
 			request.Header.Set("Sec-Fetch-Site", "same-origin")
+			request.Header.Set("Forwarded", "for=192.0.2.1;host=evil.example;proto=https")
+			request.Header.Set("X-Forwarded-Host", "evil.example")
+			request.Header.Set("X-Forwarded-Proto", "https")
 			if tc.authorized {
 				request.AddCookie(cookie)
 			}

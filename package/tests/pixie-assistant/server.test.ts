@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ADMIN_OPERATIONS } from "../../../assistant/src/admin-profiles/index.ts";
 import { startHost } from "../../../assistant/src/server.ts";
 
 const cleanup: (() => Promise<unknown>)[] = [];
@@ -28,7 +29,7 @@ async function rpc(url: string, secret: string) {
 			else p?.resolve(value.result);
 		} else events.push(value);
 	};
-	return {
+	const client = {
 		events,
 		call: (method: string, params: unknown = {}) =>
 			new Promise<any>((resolve, reject) => {
@@ -37,6 +38,8 @@ async function rpc(url: string, secret: string) {
 				ws.send(JSON.stringify({ id, method, params }));
 			}),
 	};
+	await client.call("runtime.hello", { protocolVersion: 1 });
+	return client;
 }
 
 test("host authenticates transport and routes native provider prompts to the owning connection", async () => {
@@ -57,10 +60,15 @@ test("host authenticates transport and routes native provider prompts to the own
 	).toBe(403);
 	const a = await rpc(base.replace("http:", "ws:") + "/pi", secret),
 		b = await rpc(base.replace("http:", "ws:") + "/pi", secret);
-	expect(await a.call("runtime.hello")).toMatchObject({
+	const hello = await a.call("runtime.hello");
+	expect(hello).toMatchObject({
 		protocolVersion: 1,
 		capabilities: { sessions: 1, providers: 1 },
+		operationSet: { "pi.tools.call": false, "pi.sources.list": true },
 	});
+	for (const operation of ADMIN_OPERATIONS) {
+		expect(Object.hasOwn(hello.operationSet, operation.id)).toBe(true);
+	}
 	const login = await a.call("provider.loginStart", {
 		providerId: "openai",
 		type: "api_key",
@@ -90,12 +98,12 @@ test("host authenticates transport and routes native provider prompts to the own
 	await a.call("pi.preferences.save", {
 		values: [
 			{ key: "compactionReserveTokens", value: 16384 },
-			{ key: "piThinkingEffort", value: "high" },
+			{ key: "piThinkingEffort", value: "max" },
 		],
 	});
 	expect(await a.call("pi.preferences.read")).toEqual({
 		values: [
-			{ key: "piThinkingEffort", value: "high" },
+			{ key: "piThinkingEffort", value: "max" },
 			{ key: "compactionReserveTokens", value: 16384 },
 		],
 	});
@@ -158,28 +166,44 @@ test("native MCP attaches and preserves peer authorization after idle reload", a
 	];
 	const session = await owner.call("session.create", { cwd: dir, mcpServers });
 	const params = { sessionId: session.sessionId, name: "objective__echo", arguments: {} };
-	expect(await owner.call("pi.tools.call", params)).toMatchObject({
-		content: [{ text: `session-scoped:${dir}` }],
-		isError: false,
-	});
-	await expect(other.call("pi.tools.call", params)).rejects.toThrow("Attach the session");
 	const entry = await host.sessions.get(session.sessionId);
 	expect(entry.session.getActiveToolNames().filter((name) => name === "mcp")).toHaveLength(1);
 	expect(entry.session.getActiveToolNames().some((name) => name.startsWith("objective__"))).toBe(
 		false,
 	);
+	// Native MCP execution remains owned by Pi. The administration bridge does
+	// not expose a private AgentSession tool-array proxy to Web callers.
+	const nativeMcp = entry.session.agent.state.tools.find((tool) => tool.name === "mcp");
+	if (!nativeMcp) throw new Error("native MCP proxy unavailable");
+	expect(
+		await nativeMcp.execute(
+			"fixture",
+			{ server: "objective", tool: "echo", args: {} },
+			new AbortController().signal,
+		),
+	).toMatchObject({ content: [{ text: `session-scoped:${dir}` }] });
+	await expect(owner.call("pi.tools.call", params)).rejects.toThrow("BRIDGE-02 blocker");
+	await expect(other.call("pi.tools.call", params)).rejects.toThrow("Attach the session");
 	entry.lastUsed = 0;
 	await host.sessions.sweep();
-	expect(await owner.call("pi.tools.call", params)).toMatchObject({
-		content: [{ text: `session-scoped:${dir}` }],
-	});
-	expect((await host.sessions.get(session.sessionId)).session).not.toBe(entry.session);
+	await owner.call("session.load", { sessionId: session.sessionId, cwd: dir, mcpServers });
+	const reopened = await host.sessions.get(session.sessionId);
+	expect(reopened.session).not.toBe(entry.session);
+	const reopenedMcp = reopened.session.agent.state.tools.find((tool) => tool.name === "mcp");
+	if (!reopenedMcp) throw new Error("reloaded native MCP proxy unavailable");
+	expect(
+		await reopenedMcp.execute(
+			"fixture-reload",
+			{ server: "objective", tool: "echo", args: {} },
+			new AbortController().signal,
+		),
+	).toMatchObject({ content: [{ text: `session-scoped:${dir}` }] });
 	await owner.call("pi.session.extensions.remove", {
 		sessionId: session.sessionId,
 		extensionKey: "objective",
 	});
 	await owner.call("session.load", { sessionId: session.sessionId, cwd: dir, mcpServers });
-	await expect(owner.call("pi.tools.call", params)).rejects.toThrow("Unknown MCP connection");
+	await expect(owner.call("pi.tools.call", params)).rejects.toThrow("BRIDGE-02 blocker");
 });
 
 test("native configuration defers application until reopen and preserves the resident runtime", async () => {

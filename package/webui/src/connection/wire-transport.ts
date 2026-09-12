@@ -11,6 +11,7 @@ import type {
 	SessionLifecycleChangedPayload,
 } from "@pixie/contracts";
 import { WS_CHANNELS } from "@pixie/contracts";
+import { normalizeDeletionRecovery } from "../settings/deletion-recovery";
 import { appStoreApi } from "../store";
 import { WsTransport } from "./transport";
 
@@ -38,7 +39,7 @@ export function initTransport(): WsTransport {
 	});
 
 	transport.subscribe(WS_CHANNELS.serverWelcome, (data) => {
-		const welcome = data as Partial<ServerWelcome>;
+		const welcome = data as Partial<ServerWelcome> & { deletionRecovery?: unknown };
 		if (typeof welcome.protocolVersion !== "number" || !Array.isArray(welcome.projects)) return;
 		appStoreApi
 			.getState()
@@ -49,6 +50,11 @@ export function initTransport(): WsTransport {
 				welcome.config,
 				welcome.agentProfile,
 			);
+		if (welcome.deletionRecovery !== undefined) {
+			appStoreApi
+				.getState()
+				.setDeletionRecovery(normalizeDeletionRecovery(welcome.deletionRecovery));
+		}
 	});
 	transport.subscribe(WS_CHANNELS.agentProfileChanged, (data) => {
 		appStoreApi.getState().replaceAgentProfile(data as AgentProfile);

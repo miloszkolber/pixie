@@ -1,5 +1,6 @@
 <script lang="ts">
 import type {
+	DeletionRecovery,
 	RuntimeAgentStatus,
 	RuntimeAvailability,
 	RuntimeRequestMetrics,
@@ -9,8 +10,10 @@ import type {
 import { onDestroy } from "svelte";
 import Button from "@/components/button.svelte";
 import Icon from "@/components/icon.svelte";
-import { getTransport } from "@/connection";
+import { errorText, getTransport } from "@/connection";
 import { appStore, appStoreApi } from "@/store";
+import { deletionRecoveryKey } from "../deletion-recovery";
+import DeletionRecoverySection from "./deletion-recovery.svelte";
 import {
 	formatBytes,
 	formatCount,
@@ -28,6 +31,9 @@ let loadedGeneration = $state<number | null>(null);
 let connected = $derived($appStore.status === "connected");
 let connectionGeneration = $derived($appStore.connectionGeneration);
 let unavailable = $derived(!connected || failed);
+let recoveryPendingKey = $state<string | null>(null);
+let recoveryError = $state<string | null>(null);
+let recoveryRecords = $derived($appStore.deletionRecovery);
 
 async function load(generation = connectionGeneration): Promise<void> {
 	if (!connected) return;
@@ -57,6 +63,46 @@ async function load(generation = connectionGeneration): Promise<void> {
 	}
 }
 
+async function loadDeletionRecovery(generation = connectionGeneration): Promise<void> {
+	if (!connected) return;
+	try {
+		const records = await getTransport().request(
+			"session.deletionRecovery",
+			{},
+			{ timeoutMs: 5_000 },
+		);
+		if (appStoreApi.getState().connectionGeneration === generation)
+			appStoreApi.getState().setDeletionRecovery(records);
+	} catch {
+		// A failed read keeps the last retained list visible instead of clearing
+		// tombstones the operator has not reconciled.
+	}
+}
+
+async function confirmDeletion(record: DeletionRecovery): Promise<void> {
+	const key = deletionRecoveryKey(record);
+	const generation = connectionGeneration;
+	recoveryPendingKey = key;
+	recoveryError = null;
+	try {
+		await getTransport().request(
+			"session.confirmExternalDeletion",
+			{ projectId: record.projectId, sessionId: record.sessionId },
+			{ timeoutMs: 10_000 },
+		);
+		if (appStoreApi.getState().connectionGeneration === generation)
+			appStoreApi.getState().removeDeletionRecovery(record.projectId, record.sessionId);
+	} catch (cause) {
+		recoveryError = errorText(cause);
+	} finally {
+		if (recoveryPendingKey === key) recoveryPendingKey = null;
+	}
+}
+
+function retainDeletion(): void {
+	// Retaining is an explicit no-op: it never mutates the tombstone or server.
+}
+
 $effect(() => {
 	if (!connected) {
 		activeRequest?.abort();
@@ -68,6 +114,7 @@ $effect(() => {
 	if (loadedGeneration === connectionGeneration) return;
 	loadedGeneration = connectionGeneration;
 	void load(connectionGeneration);
+	void loadDeletionRecovery(connectionGeneration);
 });
 
 onDestroy(() => {
@@ -181,7 +228,7 @@ onDestroy(() => {
 			disabled={!connected || loading}
 			onclick={() => void load()}
 		>
-			<Icon name="refresh-cw" size={14} class={loading ? "animate-spin" : ""} />
+			<Icon name="refresh-cw" size={14} class={loading ? "animate-spin motion-reduce:animate-none" : ""} />
 			{loading ? "Refreshing…" : "Refresh"}
 		</Button>
 	</div>
@@ -209,4 +256,12 @@ onDestroy(() => {
 			{@render ServiceCard("Browser", report.browser)}
 		</div>
 	{/if}
+
+	<DeletionRecoverySection
+		records={recoveryRecords}
+		pendingKey={recoveryPendingKey}
+		error={recoveryError}
+		onConfirm={(record) => void confirmDeletion(record)}
+		onRetain={retainDeletion}
+	/>
 </div>

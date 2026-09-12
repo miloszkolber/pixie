@@ -96,7 +96,7 @@ function open(event: SubmitEvent): void {
 <div
 	data-testid="browser-panel"
 	data-state={screenState}
-	class="app-content flex h-full min-h-0 flex-col"
+	class="app-content flex min-h-0 flex-1 flex-col"
 >
 	<form onsubmit={open} class="toolbar flex shrink-0 flex-wrap items-center gap-xs border-b p-sm">
 		<Button variant="ghost" size="icon-sm" aria-label="Back" disabled={controlsDisabled} onclick={() => void runWithScreenshot({ type: "back" })}>
@@ -111,6 +111,7 @@ function open(event: SubmitEvent): void {
 		<label class="visually-hidden" for={`browser-address-${panelId}`}>Requested address</label>
 		<input
 			id={`browser-address-${panelId}`}
+			data-testid="browser-address"
 			value={panel.address}
 			oninput={(event) => setPanel({ address: event.currentTarget.value })}
 			placeholder="https://example.com"
@@ -151,7 +152,7 @@ function open(event: SubmitEvent): void {
 		<Button variant="outline" size="sm" disabled={controlsDisabled} onclick={() => void command({ type: "viewport", ...panel.viewport })}>Apply</Button>
 		{#if panel.loading}
 			<span role="status" class="inline-flex items-center gap-xs text-text-muted tr-text-metadata">
-				<Icon name="loader-circle" size={14} class="animate-spin" /> Working…
+				<Icon name="loader-circle" size={14} class="animate-spin motion-reduce:animate-none" /> Working…
 			</span>
 		{/if}
 	</div>
@@ -160,7 +161,7 @@ function open(event: SubmitEvent): void {
 			<div class="callout-content"><p class="callout-description">Controller disconnected. Browser controls will recover after reconnection.</p></div>
 		</div>
 		{:else if expired}
-			<div role="alert" class="callout shrink-0" data-variant="warning">
+			<div role="alert" data-testid="browser-lease-expired" class="callout shrink-0" data-variant="warning">
 				<div class="callout-content flex items-center justify-between gap-sm">
 					<p class="callout-description">This browser session ended while Pixie was disconnected.</p>
 					<Button variant="outline" size="sm" disabled={restartInFlight} onclick={() => void restart()}>Restart browser</Button>
@@ -174,7 +175,7 @@ function open(event: SubmitEvent): void {
 	<div class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
 		<section aria-label="Latest browser screenshot" class="flex min-h-0 items-center justify-center overflow-auto p-md">
 			{#if panel.screenshot}
-				<img src={panel.screenshot} onerror={() => setPanel({ screenshot: null, error: "The screenshot could not be loaded. Request a new screenshot." })} alt="Latest browser screenshot" class="image max-h-full max-w-full object-contain" />
+				<img src={panel.screenshot} data-testid="browser-screenshot" onerror={() => setPanel({ screenshot: null, error: "The screenshot could not be loaded. Request a new screenshot." })} alt="Latest browser screenshot" class="image max-h-full max-w-full object-contain" />
 			{:else}
 				<p class="app-empty text-center">Open a URL, then use Screenshot to render the current page.</p>
 			{/if}
@@ -182,7 +183,7 @@ function open(event: SubmitEvent): void {
 		<section aria-label="Snapshot and interactions" class="min-h-0 overflow-auto border-t p-sm lg:border-t-0 lg:border-l">
 			<h2 class="tr-text-ui text-text-default">Snapshot</h2>
 			{#if panel.snapshot}
-				<textarea readonly aria-label="Browser snapshot output" value={panel.snapshot} rows={8} class="textarea mt-xs max-h-48 w-full resize-none overflow-auto tr-code-text"></textarea>
+				<textarea readonly data-testid="browser-snapshot" aria-label="Browser snapshot output" value={panel.snapshot} rows={8} class="textarea mt-xs max-h-48 w-full resize-none overflow-auto tr-code-text"></textarea>
 			{:else}
 				<p class="mt-xs text-text-muted tr-text-metadata">Take a snapshot to inspect available element references.</p>
 			{/if}

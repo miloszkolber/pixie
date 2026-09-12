@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"time"
 )
 
@@ -36,6 +37,9 @@ func (p *BrowserPanels) renewPanelLeases() {
 	if len(ids) == 0 {
 		return
 	}
+	// Deterministic renewal order keeps the lease payload stable across
+	// controllers and avoids map-iteration flakiness in regressions.
+	sort.Strings(ids)
 	body, err := json.Marshal(map[string]any{"sessions": ids})
 	if err != nil {
 		return

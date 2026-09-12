@@ -42,7 +42,7 @@ let {
 	{onclick}
 	{ondblclick}
 	{oncontextmenu}
-	class={`tree-leaf flex min-h-7 w-full min-w-0 items-center gap-xs rounded-[var(--radius-sm)] px-xs text-left tr-text-ui text-text-muted ${
+	class={`tree-leaf flex min-h-7 w-full min-w-0 items-center gap-xs rounded-none px-xs text-left tr-text-ui ${
 		highlight === "self"
 			? `hover:bg-control-bg-hovered ${active ? "bg-control-bg-selected" : ""}`
 			: ""

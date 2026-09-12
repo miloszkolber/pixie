@@ -157,7 +157,14 @@ test("passive UI projects while unsupported composer and TUI factories report th
 		{ type: UI_STATUS_EVENT, sessionId: "session-project", key: "signet" },
 	]);
 	expect(uiEvents(published, UI_WORKING_EVENT)).toEqual([
-		{ type: UI_WORKING_EVENT, sessionId: "session-project", message: "Thinking…" },
+		expect.objectContaining({
+			type: UI_WORKING_EVENT,
+			sessionId: "session-project",
+			message: "Thinking…",
+			kind: "pixie-local-working-hint",
+			nativeAccepted: false,
+			blocker: expect.objectContaining({ fcId: "FC15" }),
+		}),
 	]);
 	expect(uiEvents(published, UI_WIDGET_EVENT)).toEqual([
 		{

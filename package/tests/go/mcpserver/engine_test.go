@@ -38,6 +38,7 @@ func engineRegistry(t *testing.T, root string, getenv func(string) (string, bool
 		t.Fatal(err)
 	}
 	t.Cleanup(registry.Shutdown)
+	enableBrowser(t, registry)
 	return registry
 }
 

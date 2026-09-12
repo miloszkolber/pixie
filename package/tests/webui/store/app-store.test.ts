@@ -538,6 +538,11 @@ test("missed archive reconciliation does not tombstone a restorable chat", () =>
 		sessionId: "archived",
 		name: "Restored chat",
 	});
+	expect(appStoreApi.getState().workspaceSelection.primarySelection).toEqual({
+		kind: "session",
+		sessionId: "archived",
+		projectId: "p1",
+	});
 });
 
 test("missed deletion reconciliation tombstones late hydration", () => {

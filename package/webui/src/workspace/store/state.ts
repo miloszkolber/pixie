@@ -6,12 +6,16 @@ import {
 	type ProjectWorkspaceState,
 	projectSnapshot,
 } from "./project-state";
+import { createWorkspaceSelectionState, type WorkspaceSelectionState } from "./selection-state";
 import { createSessionWorkspaceState, type SessionWorkspaceState } from "./session-state";
+import { createShellLayoutState, type ShellLayoutState } from "./shell-layout-state";
 
 export interface WorkspaceState
 	extends ProjectWorkspaceState,
 		ContentWorkspaceState,
-		SessionWorkspaceState {}
+		SessionWorkspaceState,
+		ShellLayoutState,
+		WorkspaceSelectionState {}
 
 export { projectSnapshot };
 
@@ -19,4 +23,6 @@ export const createWorkspaceState: StateCreator<AppState, [], [], WorkspaceState
 	...createProjectWorkspaceState(...args),
 	...createContentWorkspaceState(...args),
 	...createSessionWorkspaceState(...args),
+	...createShellLayoutState(...args),
+	...createWorkspaceSelectionState(...args),
 });

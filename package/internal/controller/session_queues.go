@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,11 +74,20 @@ type storedSessionQueues struct {
 }
 
 type SessionQueues struct {
-	mu    sync.Mutex
-	store persist.Store
+	mu            sync.Mutex
+	store         persist.Store
+	publishFaults persist.PublishFaults
 }
 
 func NewSessionQueues(store persist.Store) *SessionQueues { return &SessionQueues{store: store} }
+
+// SetPublishFaults injects deterministic post-rename faults into queue
+// publication for X04 coverage. Production code leaves it zero-valued.
+func (queues *SessionQueues) SetPublishFaults(faults persist.PublishFaults) {
+	queues.mu.Lock()
+	defer queues.mu.Unlock()
+	queues.publishFaults = faults
+}
 
 func newSessionQueueState() sessionQueueState {
 	return sessionQueueState{Revision: identifier.New(), Steering: []string{}, FollowUp: []queuedFollowUp{}, Handled: []queueOperation{}}
@@ -237,7 +247,21 @@ func (queues *SessionQueues) save(records []storedSessionQueue) error {
 	if records == nil {
 		records = []storedSessionQueue{}
 	}
-	return persist.Write(queues.store, "pi-session-queues.json", storedSessionQueues{Version: 1, Engine: "pi", Records: records}, validateStoredQueues)
+	outcome, err := persist.WriteWithOutcome(queues.store, "pi-session-queues.json", storedSessionQueues{Version: 1, Engine: "pi", Records: records}, validateStoredQueues, queues.publishFaults)
+	decision := DecideQueuePublish(outcome)
+	if decision.MayDispatch {
+		return nil
+	}
+	if outcome.Kind == persist.OutcomeDurabilityUncertain {
+		// The candidate primary stays visible with its mutation/delivery
+		// identity. Reconcile the validated primary without restoring the
+		// older backup, and keep the publish blocked until resolved.
+		if _, reconcileErr := ReconcileQueueAfterPublish(queues.store, outcome); reconcileErr != nil {
+			return fmt.Errorf("uncertain queue publish remains unresolved: %w", errors.Join(err, reconcileErr))
+		}
+		return err
+	}
+	return err
 }
 
 func queueRecord(projectID, sessionID string, state sessionQueueState) storedSessionQueue {

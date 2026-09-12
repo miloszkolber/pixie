@@ -28,7 +28,8 @@ afterEach(() => {
 test("MCP tools and connection removal remain scoped to the extension", async () => {
 	const dir = await mkdtemp(tmpdir() + "/pixie-pi-mcp-");
 	isolate(dir);
-	async function serve(token = "") {
+	async function serve(token = "", header = "X-Fixture") {
+		let expected = token;
 		const mcp = new Server(
 			{ name: "fixture", version: "1.0.0" },
 			{ capabilities: { tools: {}, resources: {} } },
@@ -61,12 +62,12 @@ test("MCP tools and connection removal remain scoped to the extension", async ()
 			port: 0,
 			hostname: "127.0.0.1",
 			fetch: (request) =>
-				token && request.headers.get("X-Fixture") !== token
+				expected && request.headers.get(header) !== expected
 					? new Response("Unauthorized", { status: 401 })
 					: transport.handleRequest(request),
 		});
 
-		return { mcp, http };
+		return { mcp, http, setToken: (value: string) => (expected = value) };
 	}
 	const { mcp, http } = await serve();
 	const rotated = await serve("rotated");
@@ -85,13 +86,13 @@ test("MCP tools and connection removal remain scoped to the extension", async ()
 		);
 		expect(entry.session.getActiveToolNames()).toContain("mcp");
 		expect(entry.session.getActiveToolNames()).not.toContain("fixture__show");
-		expect(
-			await entry.capabilities.call(
+		await expect(
+			entry.capabilities.call(
 				"pi.tools.call",
 				{ extensionName: "fixture", toolName: "alpha__beta" },
 				ctx,
 			),
-		).toMatchObject({ isError: false });
+		).rejects.toThrow("BRIDGE-02 blocker");
 		expect(entry.session.getActiveToolNames()).toContain("bash");
 		const tool = entry.session.agent.state.tools.find((t) => t.name === "mcp")!;
 		const args = { server: "fixture", tool: "show", args: {} };
@@ -101,9 +102,9 @@ test("MCP tools and connection removal remain scoped to the extension", async ()
 				mcpResult: { structuredContent: { ok: true } },
 			},
 		});
-		expect(
-			await entry.capabilities.call("pi.tools.call", { name: "fixture__show", arguments: {} }, ctx),
-		).toMatchObject({ isError: false, structuredContent: { ok: true } });
+		await expect(
+			entry.capabilities.call("pi.tools.call", { name: "fixture__show", arguments: {} }, ctx),
+		).rejects.toThrow("BRIDGE-02 blocker");
 		expect(await entry.capabilities.call("pi.session.extensions.list", {}, ctx)).toMatchObject({
 			extensions: [{ extensionKey: "fixture", extension: { type: "mcp" } }],
 		});
@@ -185,6 +186,102 @@ test("MCP tools and connection removal remain scoped to the extension", async ()
 		await rotated.http.stop(true);
 		await mcp.close();
 		await http.stop(true);
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("same-name Canvas attachment replaces revoked credentials without retaining the old client", async () => {
+	const dir = await mkdtemp(`${tmpdir()}/pixie-pi-mcp-canvas-replace-`);
+	isolate(dir);
+	const canvas = await (async () => {
+		const active = new Set<Server>();
+		const makeServer = () => {
+			const mcp = new Server(
+				{ name: "canvas-fixture", version: "1.0.0" },
+				{ capabilities: { tools: {}, resources: {} } },
+			);
+			mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+				tools: [
+					{ name: "show", description: "Show Canvas fixture", inputSchema: { type: "object" } },
+				],
+			}));
+			mcp.setRequestHandler(CallToolRequestSchema, async () => ({
+				content: [{ type: "text", text: "Canvas completed" }],
+				structuredContent: { ok: true },
+			}));
+			return mcp;
+		};
+		let expected = "Bearer revoked";
+		const seenAuth: string[] = [];
+		const http = Bun.serve({
+			port: 0,
+			hostname: "127.0.0.1",
+			fetch: async (request) => {
+				const authorization = request.headers.get("Authorization") ?? "";
+				seenAuth.push(authorization);
+				if (authorization !== expected) return new Response("Unauthorized", { status: 401 });
+				const mcp = makeServer();
+				active.add(mcp);
+				const transport = new WebStandardStreamableHTTPServerTransport({
+					sessionIdGenerator: undefined,
+					enableJsonResponse: true,
+				});
+				await mcp.connect(transport);
+				return transport.handleRequest(request);
+			},
+		});
+		return {
+			mcp: { close: async () => Promise.allSettled([...active].map((mcp) => mcp.close())) },
+			http,
+			setToken: (value: string) => (expected = `Bearer ${value}`),
+			seenAuth,
+		};
+	})();
+	const sessions = new Sessions(dir, [(pi) => mcpExtension(pi, dir)], () => {});
+	try {
+		const entry = await sessions.create(dir);
+		const context = sessions.context(entry);
+		const attach = (token: string) =>
+			entry.capabilities.call(
+				"mcp.attach",
+				{
+					servers: [
+						{
+							name: "pixie-canvas",
+							type: "http",
+							url: `http://127.0.0.1:${canvas.http.port}/mcp`,
+							headers: { Authorization: `Bearer ${token}` },
+						},
+					],
+				},
+				context,
+			);
+		const tool = entry.session.agent.state.tools.find((candidate) => candidate.name === "mcp");
+		if (!tool) throw new Error("MCP tool unavailable");
+		expect(await attach("revoked")).toEqual({ ok: true, unavailable: [] });
+		expect(
+			await tool.execute(
+				"canvas-before-replacement",
+				{ server: "pixie-canvas", tool: "show", args: {} },
+				new AbortController().signal,
+			),
+		).toMatchObject({ details: { mcpResult: { structuredContent: { ok: true } } } });
+		const beforeReplacement = canvas.seenAuth.length;
+		canvas.setToken("fresh");
+		expect(await attach("fresh")).toEqual({ ok: true, unavailable: [] });
+		expect(
+			await tool.execute(
+				"canvas-after-replacement",
+				{ server: "pixie-canvas", tool: "show", args: {} },
+				new AbortController().signal,
+			),
+		).toMatchObject({ details: { mcpResult: { structuredContent: { ok: true } } } });
+		expect(canvas.seenAuth.slice(beforeReplacement)).not.toContain("Bearer revoked");
+		expect(canvas.seenAuth.slice(beforeReplacement)).toContain("Bearer fresh");
+	} finally {
+		await sessions.close();
+		await canvas.mcp.close();
+		await canvas.http.stop(true);
 		await rm(dir, { recursive: true, force: true });
 	}
 });
@@ -349,18 +446,16 @@ test("standalone MCP supports authenticated SSE and cancels a blocked tool", asy
 	try {
 		const entry = await sessions.create(dir);
 		expect(entry.session.getActiveToolNames()).toContain("mcp");
-		const abort = new AbortController();
-		const call = entry.capabilities.call(
-			"pi.tools.call",
-			{ extensionName: "sse", toolName: "wait__here" },
-			{ ...sessions.context(entry), signal: abort.signal },
-		);
-		setTimeout(() => abort.abort(), 50);
-		await expect(call).rejects.toThrow();
-		// Cancellation is asynchronous; tolerate scheduler delays on loaded
-		// machines before asserting the fixture observed the abort.
-		for (let i = 0; i < 100 && !cancelled; i++) await Bun.sleep(10);
-		expect(cancelled).toBe(true);
+		// The native adapter owns execution and cancellation. Pixie's ordinary
+		// extension context intentionally exposes no private direct-call route.
+		await expect(
+			entry.capabilities.call(
+				"pi.tools.call",
+				{ extensionName: "sse", toolName: "wait__here" },
+				{ ...sessions.context(entry), signal: AbortSignal.timeout(50) },
+			),
+		).rejects.toThrow("BRIDGE-02 blocker");
+		expect(cancelled).toBe(false);
 	} finally {
 		await sessions.close();
 		await server.close();

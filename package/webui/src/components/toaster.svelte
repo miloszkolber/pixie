@@ -132,5 +132,8 @@ onDestroy(() => {
 </div>
 
 <style>
- .toast-container { top: var(--space-400); bottom: auto; max-height: 40dvh; overflow-y: auto; }
+ /* Mewa default parks toasts bottom-right. A previous local override pinned them to
+    the top, where they covered the panel headers and tab strip. Keep the height
+    cap so a toast burst never blankets the composer. */
+ .toast-container { max-height: 40dvh; overflow-y: auto; }
 </style>

@@ -1,0 +1,385 @@
+/* Pixie shell layout. Placement, width, alignment, and page-level spacing only.
+   Appearance comes from Mewa component classes. Borders use Mewa roles;
+   no color literals live here. */
+
+/* The shell owns viewport fill. Percentage heights are banned below: the app-shell
+   only guarantees a *minimum* height, so every level grows with flex instead. */
+.pixie-shell {
+	display: flex;
+	min-height: 100dvh;
+	flex-direction: column;
+}
+
+.pixie-work-area {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+/* Desktop six-slot shell: primary rail | primary sidebar | primary view |
+   secondary view | secondary sidebar | secondary rail. The secondary view
+   track is zero-width until the canonical secondary selection exists. */
+.pixie-shell-grid {
+	display: grid;
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	overflow: hidden;
+	position: relative;
+	grid-template-columns:
+		3rem
+		minmax(0, var(--pixie-primary-sidebar-track, 16rem))
+		minmax(var(--pixie-primary-content-min, 0px), var(--pixie-primary-view-track, 1fr))
+		minmax(var(--pixie-secondary-content-min, 0px), var(--pixie-secondary-view-track, 0px))
+		minmax(0, var(--pixie-secondary-sidebar-track, 16rem))
+		3rem;
+	grid-template-rows: minmax(0, 1fr);
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+}
+
+.pixie-slot {
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	grid-area: auto;
+}
+
+.pixie-slot-primary-rail {
+	grid-area: primary-rail;
+	border-right: 1px solid var(--border-secondary);
+}
+
+.pixie-slot-primary-sidebar {
+	grid-area: primary-sidebar;
+	border-right: 1px solid var(--border-secondary);
+}
+
+.pixie-slot-primary-view {
+	grid-area: primary-view;
+}
+
+.pixie-slot-secondary-view {
+	grid-area: secondary-view;
+	border-left: 1px solid var(--border-secondary);
+}
+
+.pixie-slot-secondary-sidebar {
+	grid-area: secondary-sidebar;
+	border-left: 1px solid var(--border-secondary);
+}
+
+.pixie-slot-secondary-rail {
+	grid-area: secondary-rail;
+	border-left: 1px solid var(--border-secondary);
+}
+
+/* The shell owns all three desktop dividers. Handles overlay the track edge so
+   they never consume a slot or create an implicit grid column. */
+.pixie-resizer {
+	position: relative;
+	z-index: 3;
+	width: 0.5rem;
+	min-height: 2.5rem;
+	align-self: stretch;
+	justify-self: center;
+	cursor: col-resize;
+	touch-action: none;
+}
+
+.pixie-resizer::after {
+	position: absolute;
+	inset-block: 0;
+	left: 50%;
+	width: 1px;
+	content: "";
+	background: transparent;
+	transform: translateX(-50%);
+}
+
+.pixie-resizer:hover::after,
+.pixie-resizer[data-resizing]::after {
+	background: var(--border-focus);
+}
+
+.pixie-resizer:focus {
+	outline: none;
+}
+
+.pixie-resizer:focus-visible {
+	outline: var(--focus-ring-width, 2px) solid var(--border-focus);
+	outline-offset: -1px;
+}
+
+.pixie-resizer-left {
+	grid-column: 2;
+	grid-row: 1;
+	justify-self: end;
+}
+
+.pixie-resizer-primary {
+	grid-column: 3;
+	grid-row: 1;
+	justify-self: end;
+}
+
+.pixie-resizer-right {
+	grid-column: 5;
+	grid-row: 1;
+	justify-self: start;
+}
+
+/* Mewa caps `.app-content` to a centered reading column. Inside the workspace
+   grid the slot canvas must bleed to its track instead. */
+.pixie-shell-grid .app-content {
+	inline-size: auto;
+	max-inline-size: none;
+	margin-inline: 0;
+}
+
+.pixie-panel-box {
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.pixie-slot-primary-sidebar .pixie-panel-box,
+.pixie-slot-secondary-sidebar .pixie-panel-box {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+@media (width < 64rem) {
+	.pixie-shell-grid {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr);
+		grid-template-areas: "mobile";
+	}
+
+	.pixie-shell-grid > .pixie-slot {
+		grid-area: auto;
+	}
+
+	.pixie-panel-box {
+		width: 100%;
+		flex: 1;
+	}
+
+	.pixie-slot-primary-sidebar,
+	.pixie-slot-secondary-view,
+	.pixie-slot-secondary-sidebar,
+	.pixie-slot-secondary-rail {
+		border-right: 0;
+		border-left: 0;
+	}
+
+	.pixie-resizer {
+		display: none;
+	}
+}
+
+/* Icon rails: square chrome, no shadows. */
+.pixie-rail {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+	justify-content: space-between;
+	align-items: stretch;
+	padding-block: var(--space-xs);
+	padding-inline: 0;
+}
+
+.pixie-rail-top,
+.pixie-rail-bottom {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--space-2xs);
+}
+
+.pixie-rail .btn {
+	border-radius: 0;
+}
+
+.pixie-rail [aria-pressed="true"] {
+	background: var(--surface-secondary);
+}
+
+/* Panels: square chrome, internal scroll, sticky blurred headers. */
+.pixie-panel {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+.pixie-panel-scroll {
+	min-height: 0;
+	flex: 1;
+	overflow-y: auto;
+}
+
+.pixie-panel-header {
+	display: flex;
+	min-height: 2rem;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-xs);
+	padding-inline: var(--space-sm);
+}
+
+.pixie-panel-header-actions {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	gap: var(--space-2xs);
+}
+
+.pixie-panel-eyebrow {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Left guide borders for nested session and file groups. */
+.pixie-guide {
+	border-left: 1px solid var(--border-secondary);
+}
+
+/* Tab strip: edge fade advertises the horizontal scroll the chevrons drive. */
+.pixie-tab-list {
+	scrollbar-width: thin;
+}
+
+.pixie-tab-list[data-overflowing-right] {
+	mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
+}
+
+/* Center column: breadcrumb header plus content canvas. */
+.pixie-center {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+.pixie-center-header {
+	display: flex;
+	min-height: 2.5rem;
+	flex-shrink: 0;
+	align-items: center;
+	gap: var(--space-xs);
+	padding-inline: var(--space-xs);
+}
+
+.pixie-breadcrumb {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	align-items: center;
+	gap: var(--space-xs);
+}
+
+.pixie-breadcrumb-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pixie-center-actions {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	gap: var(--space-2xs);
+}
+
+.pixie-center-content {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+/* Split panes: static side-by-side fallback; the resizable module may enhance. */
+.pixie-split {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+.pixie-split-group {
+	display: flex;
+	min-height: 0;
+	flex: 1;
+	flex-direction: row;
+}
+
+.pixie-split-panel {
+	display: flex;
+	min-height: 0;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.pixie-split-panel + .pixie-split-panel {
+	border-left: 1px solid var(--border-secondary);
+}
+
+/* On narrow viewports the split stacks vertically so both panes stay usable. */
+@media (width < 64rem) {
+	.pixie-split-group {
+		flex-direction: column;
+	}
+
+	.pixie-split-panel + .pixie-split-panel {
+		border-left: 0;
+		border-top: 1px solid var(--border-secondary);
+	}
+}
+
+.pixie-split-handle {
+	flex-shrink: 0;
+}
+
+.pixie-split-handle:focus {
+	outline: none;
+}
+
+.pixie-split-handle:focus-visible {
+	outline: var(--focus-ring-width, 2px) solid var(--border-focus);
+	outline-offset: var(--border-width-025, 1px);
+}
+
+/* Shell chrome stays square. */
+.pixie-shell-grid :where(.btn, .tree-leaf, .tab-trigger, .input, .composer) {
+	border-radius: 0;
+}
+
+@media (forced-colors: active) {
+	.pixie-slot-primary-rail,
+	.pixie-slot-primary-sidebar,
+	.pixie-slot-secondary-view,
+	.pixie-slot-secondary-sidebar,
+	.pixie-slot-secondary-rail,
+	.pixie-guide,
+	.pixie-split-panel + .pixie-split-panel {
+		border-color: CanvasText;
+	}
+	.pixie-rail [aria-pressed="true"],
+	.pixie-rail [aria-current] {
+		outline: 1px solid ButtonText;
+		outline-offset: -1px;
+	}
+	.pixie-split-handle:focus-visible {
+		outline: 2px solid Highlight;
+	}
+}

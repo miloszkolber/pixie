@@ -295,13 +295,13 @@ test("persisted package entry and legacy configuration use the same upstream pro
 	const compatibilityEntry = await compatibility.create(dir);
 	expect(toolNames(compatibilityEntry).filter((name) => name.startsWith("parity__"))).toEqual([]);
 	expect(toolNames(compatibilityEntry)).toContain("mcp");
-	expect(
-		await compatibilityEntry.capabilities.call(
+	await expect(
+		compatibilityEntry.capabilities.call(
 			"pi.tools.call",
 			{ name: "parity__echo_text", arguments: { text: "legacy config" } },
 			compatibility.context(compatibilityEntry),
 		),
-	).toMatchObject({ content: [{ text: "echo:legacy config" }] });
+	).rejects.toThrow("BRIDGE-02 blocker");
 
 	const { entry } = await adapterSession({
 		mcpServers: { parity: { command: "node", args: [stdio] } },
@@ -764,13 +764,13 @@ test("adapter runtime bridge scopes attachment, tools, persisted membership and 
 	expect(await operation("mcp.attach", { servers })).toEqual({ ok: true, unavailable: [] });
 	expect(await operation("mcp.attach", { servers })).toEqual({ ok: true, unavailable: [] });
 	expect(http.seenAuth).toHaveLength(0);
-	expect(
-		await operation("pi.tools.call", {
+	await expect(
+		operation("pi.tools.call", {
 			name: "objective__echo_text",
 			arguments: { text: "scoped" },
 		}),
-	).toMatchObject({ content: [{ text: "http:scoped" }], isError: false });
-	expect(http.seenAuth.every((v) => v === "Bearer session-objective-token")).toBe(true);
+	).rejects.toThrow("BRIDGE-02 blocker");
+	expect(http.seenAuth).toHaveLength(0);
 	const other = await sessions.create(context.cwd);
 	await expect(
 		other.capabilities.call(
@@ -778,36 +778,38 @@ test("adapter runtime bridge scopes attachment, tools, persisted membership and 
 			{ name: "objective__echo_text", arguments: {} },
 			sessions.context(other),
 		),
-	).rejects.toThrow("Unknown MCP connection");
+	).rejects.toThrow("BRIDGE-02 blocker");
 	const changed = [{ ...servers[0], headers: { Authorization: "Bearer must-not-replace" } }];
 	expect(await operation("mcp.attach", { servers: changed })).toMatchObject({ ok: false });
-	expect(
-		await operation("pi.tools.call", {
+	await expect(
+		operation("pi.tools.call", {
 			name: "objective__echo_text",
 			arguments: { text: "original" },
 		}),
-	).toMatchObject({ content: [{ text: "http:original" }] });
+	).rejects.toThrow("BRIDGE-02 blocker");
 	expect(http.seenAuth).not.toContain("Bearer must-not-replace");
 	await operation("pi.session.extensions.remove", { extensionKey: "objective" });
 	await operation("mcp.attach", { servers });
 	await expect(operation("pi.tools.call", { name: "objective__echo_text" })).rejects.toThrow(
-		"Unknown MCP connection",
+		"BRIDGE-02 blocker",
 	);
 	await operation("pi.session.extensions.add", { extension: { type: "mcp", server: servers[0] } });
-	expect(
-		await operation("pi.tools.call", {
+	await expect(
+		operation("pi.tools.call", {
 			name: "objective__echo_text",
 			arguments: { text: "restored" },
 		}),
-	).toMatchObject({ content: [{ text: "http:restored" }] });
+	).rejects.toThrow("BRIDGE-02 blocker");
 	await operation("mcp.attach", { servers: [] });
-	await expect(operation("pi.tools.call", { name: "objective__echo_text" })).resolves.toMatchObject(
-		{ isError: false },
+	await expect(operation("pi.tools.call", { name: "objective__echo_text" })).rejects.toThrow(
+		"BRIDGE-02 blocker",
 	);
 	// Only owned runtime handles are disposed. The model surface has no old aliases.
 	expect(toolNames(entry).filter((n) => n.startsWith("objective"))).toEqual([]);
 	await entry.close();
-	await expect(operation("pi.tools.call", { name: "objective__echo_text" })).rejects.toThrow();
+	await expect(operation("pi.tools.call", { name: "objective__echo_text" })).rejects.toThrow(
+		/BRIDGE-02 blocker|Unsupported capability operation/,
+	);
 });
 
 test("adapter bridge preserves legacy admin configuration and restores session membership", async () => {
@@ -849,13 +851,13 @@ test("adapter bridge preserves legacy admin configuration and restores session m
 		next.context(restored),
 	);
 	expect(list.extensions.map((e: any) => e.extensionKey)).toEqual(["local"]);
-	expect(
-		await restored.capabilities.call(
+	await expect(
+		restored.capabilities.call(
 			"pi.tools.call",
 			{ name: "local__echo_text", arguments: { text: "reopened" } },
 			next.context(restored),
 		),
-	).toMatchObject({ content: [{ text: "http:reopened" }] });
+	).rejects.toThrow("BRIDGE-02 blocker");
 	await restored.forgetMcp?.();
 	const { readFile } = await import("node:fs/promises");
 	expect(JSON.parse(await readFile(join(dir, "mcp-sessions.json"), "utf8"))[id]).toBeUndefined();

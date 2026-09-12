@@ -1,0 +1,22 @@
+[Unit]
+Description=Pixie web application (full host)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+EnvironmentFile=%h/.config/pixie/pixie.env
+ExecStart=%h/.local/bin/pixie serve --config %h/.config/pixie/pixie.json
+Restart=on-failure
+RestartSec=2
+RestartForceExitStatus=75
+TimeoutStopSec=30
+KillMode=mixed
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -556,7 +556,7 @@ func normalizePreferences(values []struct {
 				continue
 			}
 			value, ok := entry.Value.(string)
-			if !ok || !map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}[value] {
+			if !ok || !map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}[value] {
 				return PiPreferences{}, fmt.Errorf("Pi thinking effort is invalid")
 			}
 			result.PiThinkingEffort = &value
@@ -576,7 +576,7 @@ func preferenceValues(value PiPreferences) ([]map[string]any, error) {
 		result = append(result, map[string]any{"key": "compactionReserveTokens", "value": *value.CompactionReserveTokens})
 	}
 	if value.PiThinkingEffort != nil {
-		if !map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}[*value.PiThinkingEffort] {
+		if !map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}[*value.PiThinkingEffort] {
 			return nil, fmt.Errorf("malformed Pi preferences request")
 		}
 		result = append(result, map[string]any{"key": "piThinkingEffort", "value": *value.PiThinkingEffort})

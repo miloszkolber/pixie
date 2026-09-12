@@ -4,6 +4,19 @@ import type {
 	ExtensionUIDialogOptions,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
+import {
+	createCancellationForward as createCancellationHint,
+	createWorkingHint as createWorkingProjection,
+} from "./native-ui-hints.ts";
+import type { FinalResponse } from "./native-ui-mapping.ts";
+import {
+	type BlockingPrimitive,
+	dismissedValue,
+	NATIVE_UI_BOUNDS,
+	type NativeUiPrimitive,
+	nativeUiRow,
+	SingleFinalResponse,
+} from "./native-ui-mapping.ts";
 
 // Generic Pi extension UI bridge.
 //
@@ -60,11 +73,11 @@ export const UI_WORKING_EVENT = "pixie:ui:working";
 
 // Backstop so a lost controller never leaves a tool call waiting forever.
 // Matches the controller's pending-dialog timeout.
-export const DEFAULT_UI_TIMEOUT_MS = 30 * 60 * 1000;
-export const MAX_PENDING_UI_REQUESTS = 16;
-export const MAX_UI_KEYS = 16;
-export const MAX_WIDGET_LINES = 32;
-export const MAX_UI_TEXT = 2000;
+export const DEFAULT_UI_TIMEOUT_MS = NATIVE_UI_BOUNDS.defaultTimeoutMs;
+export const MAX_PENDING_UI_REQUESTS = NATIVE_UI_BOUNDS.maxPendingPerSession;
+export const MAX_UI_KEYS = NATIVE_UI_BOUNDS.maxStatusKeys;
+export const MAX_WIDGET_LINES = NATIVE_UI_BOUNDS.maxWidgetLines;
+export const MAX_UI_TEXT = NATIVE_UI_BOUNDS.maxTextChars;
 
 export interface UiBridgeRequest {
 	requestId: string;
@@ -87,15 +100,12 @@ export interface UiBridgeResponse {
 }
 
 interface PendingDialog {
-	primitive: UiPrimitive;
+	primitive: BlockingPrimitive;
 	request: UiBridgeRequest;
+	finalResponse: SingleFinalResponse;
 	settle: (value: string | boolean | undefined, cancelled: boolean) => void;
 	timer: ReturnType<typeof setTimeout>;
 	onAbort: (() => void) | undefined;
-}
-
-function dismissedValue(primitive: UiPrimitive): string | boolean | undefined {
-	return primitive === "confirm" ? false : undefined;
 }
 
 export interface UiBridge {
@@ -154,21 +164,30 @@ export function createUiBridge(
 			windowStart = Date.now();
 			updates = 0;
 		}
-		return ++updates <= 64;
+		return ++updates <= NATIVE_UI_BOUNDS.maxUpdatesPerSecond;
 	};
 	const text = (value: string) => value.slice(0, MAX_UI_TEXT);
+	/**
+	 * Keep the runtime dispatch table-driven. A row with no Pixie projection is
+	 * deliberately a no-op here (the native RPC side owns that surface).
+	 */
+	const emitMapped = (primitive: NativeUiPrimitive, payload: Record<string, unknown>): boolean => {
+		const row = nativeUiRow(primitive);
+		if (!row.pixieEvent) return false;
+		publish({ type: row.pixieEvent, ...payload });
+		return true;
+	};
 	const unavailable = (method: string) => {
 		if (closed || unsupported.has(method)) return;
 		unsupported.add(method);
-		publish({
-			type: UI_NOTIFY_EVENT,
+		emitMapped("notify", {
 			sessionId,
 			level: "warning",
 			message: `${method} is unsupported in the Web UI. No composer draft was changed.`,
 		});
 	};
 	const admitKey = (keys: Set<string>, key: string, removing: boolean) => {
-		if (closed || !key || key.length > 128) return false;
+		if (closed || !key || key.length > NATIVE_UI_BOUNDS.maxKeyChars) return false;
 		if (removing) {
 			keys.delete(key);
 			return true;
@@ -188,15 +207,20 @@ export function createUiBridge(
 	};
 
 	const cancelOne = (requestId: string, reason: string): boolean => {
+		const candidate = pending.get(requestId);
+		if (!candidate) return false;
+		const mapped = candidate.finalResponse.settle({ cancelled: true });
+		if (!mapped.accepted) return false;
 		const found = remove(requestId);
 		if (!found) return false;
-		publish({ type: UI_CANCEL_EVENT, sessionId, requestId, reason });
-		found.settle(dismissedValue(found.primitive), true);
+		const forwarded = createCancellationHint({ sessionId, requestId, reason });
+		publish({ type: UI_CANCEL_EVENT, ...forwarded });
+		found.settle(mapped.nativeValue, true);
 		return true;
 	};
 
 	const request = <T>(
-		primitive: UiPrimitive,
+		primitive: BlockingPrimitive,
 		payload: {
 			title: string;
 			message?: string;
@@ -221,14 +245,16 @@ export function createUiBridge(
 			return Promise.reject(new Error("Too many pending UI requests"));
 		if (
 			!payload.title ||
-			payload.title.length > 2000 ||
+			payload.title.length > NATIVE_UI_BOUNDS.maxTitleChars ||
 			[payload.message, payload.placeholder, payload.prefill].some(
-				(value) => value !== undefined && value.length > 8000,
+				(value) => value !== undefined && value.length > NATIVE_UI_BOUNDS.maxPayloadChars,
 			) ||
 			(primitive === "select" &&
 				(!payload.options?.length ||
-					payload.options.length > 24 ||
-					payload.options.some((value) => !value || value.length > 500)))
+					payload.options.length > NATIVE_UI_BOUNDS.maxSelectOptions ||
+					payload.options.some(
+						(value) => !value || value.length > NATIVE_UI_BOUNDS.maxSelectOptionChars,
+					)))
 		) {
 			return Promise.reject(new Error("UI request exceeds supported text or option limits"));
 		}
@@ -252,7 +278,17 @@ export function createUiBridge(
 				...(payload.placeholder !== undefined ? { placeholder: payload.placeholder } : {}),
 				...(payload.prefill !== undefined ? { prefill: payload.prefill } : {}),
 			};
-			pending.set(requestId, { primitive, request: event, settle, timer, onAbort });
+			pending.set(requestId, {
+				primitive,
+				request: event,
+				finalResponse: new SingleFinalResponse({
+					primitive,
+					...(payload.options !== undefined ? { selectOptions: payload.options } : {}),
+				}),
+				settle,
+				timer,
+				onAbort,
+			});
 			if (payload.signal && onAbort)
 				payload.signal.addEventListener("abort", onAbort, { once: true });
 		});
@@ -263,7 +299,7 @@ export function createUiBridge(
 		};
 		void done.then(cleanup, cleanup);
 		const event = pending.get(requestId)?.request;
-		if (event) publish({ type: UI_REQUEST_EVENT, ...event });
+		if (event) emitMapped(primitive, event as unknown as Record<string, unknown>);
 		return done;
 	};
 
@@ -301,8 +337,7 @@ export function createUiBridge(
 			),
 		notify: (message, type) => {
 			if (allowUpdate())
-				publish({
-					type: UI_NOTIFY_EVENT,
+				emitMapped("notify", {
 					sessionId,
 					message: text(message),
 					level: type ?? "info",
@@ -313,8 +348,7 @@ export function createUiBridge(
 		// session and never block a tool call.
 		setStatus: (key, text) => {
 			if (!admitKey(statuses, key, text === undefined)) return;
-			publish({
-				type: UI_STATUS_EVENT,
+			emitMapped("setStatus", {
 				sessionId,
 				key,
 				...(text === undefined ? {} : { text: text.slice(0, MAX_UI_TEXT) }),
@@ -322,10 +356,10 @@ export function createUiBridge(
 		},
 		setWorkingMessage: (message) => {
 			if (closed || (message !== undefined && !allowUpdate())) return;
+			const hint = createWorkingProjection({ sessionId, message });
 			publish({
 				type: UI_WORKING_EVENT,
-				sessionId,
-				...(message === undefined ? {} : { message: text(message) }),
+				...hint,
 			});
 		},
 		setWidget: (key, content, options) => {
@@ -337,8 +371,7 @@ export function createUiBridge(
 			}
 			if (content !== undefined && !Array.isArray(content)) return;
 			if (!admitKey(widgets, key, content === undefined)) return;
-			publish({
-				type: UI_WIDGET_EVENT,
+			emitMapped("setWidget", {
 				sessionId,
 				key,
 				...(content === undefined
@@ -351,12 +384,13 @@ export function createUiBridge(
 		},
 		setTitle: (title) => {
 			if (closed || (title !== "" && !allowUpdate())) return;
-			publish({ type: UI_TITLE_EVENT, sessionId, title: text(title) });
+			emitMapped("setTitle", { sessionId, title: text(title) });
 		},
 		// Terminal-only members stay no-ops: the RPC host renders dialogs in
 		// the Web UI and has no terminal widgets, overlays, or editor chrome.
-		// Editor text has no clean projection either: pushing text into the
-		// browser composer would clobber what the user is typing.
+		// Draft rows are looked up through the mapping, but have no host-side
+		// projection in this runtime; report that limitation rather than
+		// pretending a browser draft was changed.
 		onTerminalInput: () => () => {},
 		setWorkingVisible: () => {},
 		setWorkingIndicator: () => {},
@@ -364,8 +398,12 @@ export function createUiBridge(
 		setFooter: () => {},
 		setHeader: () => {},
 		custom,
-		pasteToEditor: () => unavailable("pasteToEditor"),
-		setEditorText: () => unavailable("setEditorText"),
+		pasteToEditor: (value) => {
+			if (!emitMapped("pasteToEditor", { sessionId, text: value })) unavailable("pasteToEditor");
+		},
+		setEditorText: (value) => {
+			if (!emitMapped("setEditorText", { sessionId, text: value })) unavailable("setEditorText");
+		},
 		getEditorText: () => {
 			unavailable("getEditorText");
 			return "";
@@ -394,22 +432,16 @@ export function createUiBridge(
 		pendingCount: () => pending.size,
 		pendingRequests: () => [...pending.values()].map((entry) => ({ ...entry.request })),
 		republishPending: () => {
-			for (const entry of pending.values()) publish({ type: UI_REQUEST_EVENT, ...entry.request });
+			for (const entry of pending.values())
+				emitMapped(entry.primitive, entry.request as unknown as Record<string, unknown>);
 		},
 		resolve: (response) => {
 			if (response.sessionId !== sessionId)
 				return { ok: false, error: "Dialog belongs to another session" };
 			const candidate = pending.get(response.requestId);
-			if (candidate && !response.error && !response.cancelled) {
-				const valid =
-					candidate.primitive === "confirm"
-						? typeof response.value === "boolean"
-						: typeof response.value === "string" &&
-							response.value.length <= 8000 &&
-							(candidate.primitive !== "select" ||
-								candidate.request.options?.includes(response.value));
-				if (!valid) return { ok: false, error: "Invalid dialog value" };
-			}
+			if (!candidate) return { ok: false, error: "Unknown or settled dialog request" };
+			const mapped = candidate.finalResponse.settle(response as FinalResponse);
+			if (!mapped.accepted) return { ok: false, error: mapped.error ?? "Invalid dialog value" };
 			const found = remove(response.requestId);
 			if (!found) return { ok: false, error: "Unknown or settled dialog request" };
 			publish({
@@ -418,11 +450,11 @@ export function createUiBridge(
 				requestId: response.requestId,
 				reason: "settled",
 			});
-			if (response.error || response.cancelled) {
-				found.settle(dismissedValue(found.primitive), true);
+			if (mapped.reason === "dismissed") {
+				found.settle(mapped.nativeValue, true);
 				return { ok: true };
 			}
-			found.settle(response.value, false);
+			found.settle(mapped.nativeValue, false);
 			return { ok: true };
 		},
 		cancel: (requestId, reason) => cancelOne(requestId, reason ?? "cancelled"),
@@ -440,10 +472,10 @@ export function createUiBridge(
 			if (closed) return;
 			closed = true;
 			for (const id of [...pending.keys()]) cancelOne(id, "context closed");
-			for (const key of statuses) publish({ type: UI_STATUS_EVENT, sessionId, key });
-			for (const key of widgets) publish({ type: UI_WIDGET_EVENT, sessionId, key });
-			publish({ type: UI_TITLE_EVENT, sessionId, title: "" });
-			publish({ type: UI_WORKING_EVENT, sessionId });
+			for (const key of statuses) emitMapped("setStatus", { sessionId, key });
+			for (const key of widgets) emitMapped("setWidget", { sessionId, key });
+			emitMapped("setTitle", { sessionId, title: "" });
+			publish({ type: UI_WORKING_EVENT, ...createWorkingProjection({ sessionId }) });
 			statuses.clear();
 			widgets.clear();
 		},

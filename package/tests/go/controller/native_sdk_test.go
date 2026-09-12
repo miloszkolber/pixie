@@ -132,9 +132,27 @@ func TestApplicationThroughNativePiHost(t *testing.T) {
 					t.Fatalf("agent create: %#v", created)
 				}
 				agent := created["result"].(map[string]any)
-				updated := callBrowser(t, ws, "edit", "pi.agentUpdate", map[string]any{"id": agent["id"], "name": "Reviewer", "description": "Edited", "instructions": "Inspect carefully"})
+				updated := callBrowser(t, ws, "edit", "pi.agentUpdate", map[string]any{
+					"id": agent["id"], "revision": agent["revision"], "name": "Reviewer",
+					"description": "Edited", "instructions": "Inspect carefully",
+				})
 				if updated["ok"] != true || updated["result"].(map[string]any)["modelId"] != "fixture/echo" {
 					t.Fatalf("model lost across native boundary: %#v", updated)
+				}
+				staleRevision := updated["result"].(map[string]any)["revision"]
+				if err := os.WriteFile(filepath.Join(agentDir, "agents", "Reviewer.md"), []byte("---\nname: Reviewer\ndescription: External\n---\nExternal edit\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				stale := callBrowser(t, ws, "stale-edit", "pi.agentUpdate", map[string]any{
+					"id": agent["id"], "revision": staleRevision, "name": "Reviewer",
+					"description": "Stale", "instructions": "Stale",
+				})
+				if stale["ok"] == true {
+					t.Fatal("stale agent update accepted")
+				}
+				catalogAfterConflict := callBrowser(t, ws, "catalog-after-conflict", "pi.agentList", map[string]any{})["result"].(map[string]any)
+				if catalogAfterConflict["agents"].([]any)[0].(map[string]any)["description"] != "External" {
+					t.Fatalf("external agent edit was overwritten: %#v", catalogAfterConflict)
 				}
 				if err := os.WriteFile(filepath.Join(agentDir, "agents", "broken.md"), []byte("---\nbad: [\n---\n"), 0600); err != nil {
 					t.Fatal(err)

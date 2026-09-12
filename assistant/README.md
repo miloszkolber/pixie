@@ -1,14 +1,21 @@
-# @pixie_ai/pixie-assistant
+# Pixie assistant
 
-Small Pi SDK service with native resource loading, agent authoring, optional MCP administration and a generic extension UI bridge. The unmodified `@earendil-works/pi-coding-agent` SDK owns execution. Optional packages are installed and configured through Pi, not bundled by the assistant.
+The intended runtime is the Go `pixie-assistant` binary in `cmd/pixie-assistant`. It supervises the user's selected Pi executable through native RPC and exposes the private loopback service consumed by the Pixie controller. The release build has no Bun runtime dependency.
 
-Requires [Bun](https://bun.sh) 1.4.0 or compatible. See [deployment](https://github.com/miloszkolber/pixie/blob/main/docs/deployment.md) for setup. Publication uses `pixie-assistant-v*` tags and requires explicit release approval. Published `0.1.0` remains unchanged.
+Build from source:
 
 ```sh
-PIXIE_PI_SECRET_KEY=<at-least-16-chars> bunx @pixie_ai/pixie-assistant@<version> \
-	--agent-dir ~/.pi/agent
+CGO_ENABLED=0 go build -trimpath -o ../package/dist/pixie-assistant ./cmd/pixie-assistant
 ```
 
-The service listens on `127.0.0.1:3284` by default (`--host`/`--port` override it). Provider authentication, model selection and extension configuration remain native Pi operations. Local `llama.cpp` can use `--llama` plus `LLAMA_BASE_URL` in the environment.
+Run it with an absolute private configuration file:
 
-The workspace's [subagent patch](../patches/README.md) does not travel with an independently installed optional package. Native child-launch compatibility remains a separate verification gate. The assistant does not install or patch the user's optional packages.
+```sh
+PIXIE_PI_SECRET_KEY=<at-least-32-characters> \
+PI_CODING_AGENT_DIR="$HOME/.pi/agent" \
+./package/dist/pixie-assistant serve --config "$HOME/.config/pixie/assistant.json"
+```
+
+The configuration selects the literal loopback host, port, Pi agent directory, and optional Pi executable. Provider authentication, model selection, and extension configuration remain native Pi operations.
+
+`src/`, this directory's private package manifest, and the root optional-extension patches are retained legacy implementation and compatibility-test inputs. They are not an npm distribution path. The Go adapter is not ready to replace the deployed legacy service until the session-routing, settlement, capability, recovery, restart, and native-profile gaps in the [roadmap](../roadmap/README.md#confirmed-defects-and-integration-risks) are closed.

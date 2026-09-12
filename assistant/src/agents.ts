@@ -1,8 +1,9 @@
-import { open, readdir, readFile, realpath, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, open, readdir, realpath, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { parse, stringify } from "yaml";
 import type { Capability } from "./capabilities.ts";
-import { atomicWrite, object, type RecordValue, required, text } from "./storage.ts";
+import { atomicCreate, atomicWrite, object, type RecordValue, required, text } from "./storage.ts";
 
 interface Definition {
 	type: "agent";
@@ -10,6 +11,7 @@ interface Definition {
 	name: string;
 	description: string;
 	content: string;
+	revision: string;
 	global: boolean;
 	writable: boolean;
 	executionEligibility: "unknown";
@@ -31,8 +33,11 @@ export default function agentAuthoring(agentDir: string): Capability {
 	const list = async (cwd?: string, warnings: string[] = []): Promise<Definition[]> => {
 		const result: Definition[] = [];
 		for (const dir of directories(cwd)) {
+			let root: string;
 			let names: string[];
 			try {
+				root = await realpath(dir.path);
+				if (root !== dir.path) continue;
 				names = await readdir(dir.path);
 			} catch (e) {
 				if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
@@ -57,15 +62,19 @@ export default function agentAuthoring(agentDir: string): Capability {
 					} finally {
 						await file.close();
 					}
+					if ((await realpath(path)) !== path || dirname(await realpath(path)) !== root)
+						throw new Error("Agent path changed while reading");
 					const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
 					if (!match) throw new Error("Missing agent frontmatter");
 					const metadata = object(parse(match[1]));
+					const revision = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
 					result.push({
 						type: "agent",
 						path,
 						name: text(metadata.name) || basename(name, ".md"),
 						description: text(metadata.description),
 						content: match[2],
+						revision,
 						global: dir.global,
 						writable: true,
 						executionEligibility: "unknown",
@@ -86,22 +95,42 @@ export default function agentAuthoring(agentDir: string): Capability {
 		const scope = target.scope === "projectDir" ? text(target.projectDir) : undefined;
 		let path: string;
 		let previous: RecordValue = {};
+		let expectedRevision = "";
 		if (p.path) {
 			const existing = (await list(cwd)).find((a) => a.path === p.path);
 			if (!existing) throw new Error("Unknown agent source");
+			expectedRevision = required(p.expectedRevision, "agent revision", 128);
+			if (existing.revision !== expectedRevision)
+				throw new Error("Agent changed on disk; reload before editing");
 			path = existing.path;
 			previous = existing.properties;
 		} else {
+			if (p.expectedRevision !== undefined)
+				throw new Error("Agent revision is not valid for create");
 			path = join(
 				scope ? join(await realpath(scope), ".pi", "agents") : join(agentDir, "agents"),
 				`${name}.md`,
 			);
+			await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+			const root = await realpath(dirname(path)).catch(() => "");
+			if (root !== dirname(path)) throw new Error("Agent directory is not rooted");
 			try {
-				await readFile(path);
+				await realpath(path);
 				throw new Error("Agent already exists");
 			} catch (e) {
-				if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+				if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+					if ((e as Error).message === "Agent already exists") throw e;
+					throw new Error("Agent already exists");
+				}
 			}
+		}
+		const current = (await list(scope ?? cwd)).find((a) => a.path === path);
+		if (p.path) {
+			if (!current || current.revision !== expectedRevision)
+				throw new Error("Agent changed on disk; reload before editing");
+			previous = current.properties;
+		} else if (current) {
+			throw new Error("Agent already exists");
 		}
 		const properties: RecordValue = {
 			...previous,
@@ -114,7 +143,14 @@ export default function agentAuthoring(agentDir: string): Capability {
 		const document = `---\n${stringify(properties)}---\n${text(p.content)}`;
 		if (Buffer.byteLength(document) > 65536)
 			throw new Error("Agent must fit within 65536 bytes including frontmatter");
-		await atomicWrite(path, document);
+		try {
+			if (p.path) await atomicWrite(path, document);
+			else await atomicCreate(path, document);
+		} catch (error) {
+			if (!p.path && (error as NodeJS.ErrnoException).code === "EEXIST")
+				throw new Error("Agent already exists");
+			throw error;
+		}
 		const source = (await list(scope ?? cwd)).find((a) => a.path === path);
 		if (!source) throw new Error("Saved agent could not be loaded");
 		return { source };
@@ -134,6 +170,12 @@ export default function agentAuthoring(agentDir: string): Capability {
 			"pi.sources.delete": async (p, ctx) => {
 				const source = (await list(ctx.cwd)).find((a) => a.path === p.path);
 				if (!source) throw new Error("Unknown agent source");
+				const expectedRevision = required(p.expectedRevision, "agent revision", 128);
+				if (source.revision !== expectedRevision)
+					throw new Error("Agent changed on disk; reload before deleting");
+				const current = (await list(ctx.cwd)).find((a) => a.path === source.path);
+				if (!current || current.revision !== expectedRevision)
+					throw new Error("Agent changed on disk; reload before deleting");
 				await rm(source.path);
 				return { ok: true };
 			},

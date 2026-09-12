@@ -157,13 +157,21 @@ test("assistant inventory requests never reopen an evicted session and include t
 		socket.onopen = () => resolve();
 		socket.onerror = () => reject(new Error("socket failed"));
 	});
-	const response = new Promise<unknown>((resolve) => {
-		socket.onmessage = (event) => resolve(JSON.parse(String(event.data)));
-	});
-	socket.send(
-		JSON.stringify({ id: 1, method: "pi.extensions.list", params: { sessionId: id, cwd } }),
-	);
-	expect(await response).toMatchObject({
+	let serial = 0;
+	const pending = new Map<number, (value: unknown) => void>();
+	socket.onmessage = (event) => {
+		const frame = JSON.parse(String(event.data)) as { id: number; result: unknown };
+		pending.get(frame.id)?.(frame);
+		pending.delete(frame.id);
+	};
+	const call = (method: string, params: unknown) => {
+		const id = ++serial;
+		const result = new Promise<unknown>((resolve) => pending.set(id, resolve));
+		socket.send(JSON.stringify({ id, method, params }));
+		return result;
+	};
+	await call("runtime.hello", { protocolVersion: 1 });
+	expect(await call("pi.extensions.list", { sessionId: id, cwd })).toMatchObject({
 		result: { context: { reader: "not-resident", sessionId: id }, extensions: [] },
 	});
 	expect(host.sessions.entries.has(id)).toBe(false);

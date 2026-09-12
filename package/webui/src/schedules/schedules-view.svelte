@@ -4,7 +4,7 @@ import { tick, untrack } from "svelte";
 import Button from "../components/button.svelte";
 import Dialog from "../components/dialog.svelte";
 import { getTransport } from "../connection";
-import { appStore, appStoreApi } from "../store";
+import { appStore } from "../store";
 import ScheduleForm from "./schedule-form.svelte";
 import {
 	activeExecution,
@@ -127,7 +127,7 @@ async function save(values: { prompt: string; cron: string; timezone: string }):
 								{#if run.finishedAt}<span class="tr-text-metadata text-text-muted">Finished: {scheduleTime(run.finishedAt, selected.timezone)}</span>{/if}
 								{#if run.error}<p class="break-words tr-text-ui text-feedback-error">{run.error}</p>{/if}
 								{#if run.status === "interrupted"}<p class="tr-text-metadata text-text-muted">Inspect the native session before retrying. An ambiguous execution after restart pauses its schedule.</p>{/if}
-								{#if href}<a class="btn self-start break-all text-left" data-variant="link" {href} onclick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) appStoreApi.getState().closeSettings(); }}>Open Pi session {run.sessionId}</a>{:else}<span class="tr-text-metadata text-text-muted">No native session recorded yet.</span>{/if}
+								{#if href}<a class="btn self-start break-all text-left" data-variant="link" {href}>Open Pi session {run.sessionId}</a>{:else}<span class="tr-text-metadata text-text-muted">No native session recorded yet.</span>{/if}
 							</li>
 						{/each}
 					</ol>

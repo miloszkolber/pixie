@@ -1,0 +1,44 @@
+/*
+ * MEWA-01/MEWA-02 pinned foundation pin.
+ *
+ * Pinned release: mewa-ui 0.1.2 (v0.1.2), revision c1bfb64a5874f2ca15d81c5ad78a2060360a37c0.
+ * Lock: package/webui/vendor/mewa.lock.json. Manifest: package/webui/vendor/mewa-ui/manifest.json.
+ * Foundations: css/base.css (palette, type primitives, space/size/border/motion scales, base layer
+ * defaults) and css/tokens.css (semantic color roles). Fonts load separately via main.ts from
+ * vendor/mewa-ui/fonts/geist-sans.css and geist-mono.css; icons resolve via vendor/mewa-icons
+ * selected.json, which must match the lock icon list.
+ *
+ * Ownership: Mewa owns semantic colors, typography, borders, shapes and spacing primitives.
+ * Pixie owns shell widths, panel relationships and feature layout (styles/shell.css), which reads
+ * Mewa roles such as --border-secondary/--surface-secondary/--border-focus but never redefines
+ * them. This file is the pin record only: it defines no color, spacing, typography, border or
+ * motion values, so it cannot become a second generated visual system.
+ *
+ * Cascade: src/mewa.css is the single foundation cascade owner. It imports this pin first, then
+ * vendor base/tokens and the pinned component entries (each entry includes its declared style
+ * dependencies). The product layer (src/index.css) loads before mewa.css via src/main.ts, so
+ * overlapping foundation roles resolve to the pinned Mewa contract. No other src CSS file imports
+ * vendor CSS.
+ *
+ * Pinned semantic roles (defined by vendor css/tokens.css, listed here for review only):
+ * surfaces: --background, --surface-primary/--surface-secondary/--surface-hover/--surface-selected/
+ *   --surface-disabled/--surface-positive/--surface-negative/--surface-caution/--surface-inverted/
+ *   --surface-destructive, plus *-glass variants and --overlay-subtle/--overlay-moderate/--overlay-strong.
+ * text: --text-primary/--text-secondary/--text-muted/--text-disabled/--text-inverted/
+ *   --text-positive/--text-negative/--text-caution.
+ * borders: --border-primary/--border-secondary/--border-control/--border-muted/--border-subtle/
+ *   --border-hover/--border-selected/--border-disabled/--border-focus/--border-positive/
+ *   --border-negative/--border-caution.
+ * focus: --focus-ring-width/--focus-ring-outer-width. Numeric scales (--space-*, --size-*,
+ * --border-width-*, --border-radius-*, --motion-*, --font-*) live in vendor css/base.css.
+ */
+
+:root {
+	--mewa-foundation-version: "0.1.2";
+	--mewa-foundation-release: "v0.1.2";
+	--mewa-foundation-revision: "c1bfb64a5874f2ca15d81c5ad78a2060360a37c0";
+	--mewa-foundation-base: "css/base.css";
+	--mewa-foundation-tokens: "css/tokens.css";
+	--mewa-foundation-manifest: "vendor/mewa-ui/manifest.json";
+	--mewa-foundation-lock: "vendor/mewa.lock.json";
+}

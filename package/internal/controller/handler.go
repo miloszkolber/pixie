@@ -93,6 +93,17 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, err
 		}
 		return h.MCPRegistry.Catalog(), nil
+	case "mcpRegistry.moduleRestart":
+		var request struct {
+			ModuleID string `json:"moduleId"`
+		}
+		if h.MCPRegistry == nil || decodeParams(raw, &request) != nil || request.ModuleID == "" {
+			return nil, fmt.Errorf("malformed MCP module restart request")
+		}
+		if err := h.MCPRegistry.Restart(request.ModuleID); err != nil {
+			return nil, err
+		}
+		return h.MCPRegistry.Catalog(), nil
 	case "mcpAdapter.status":
 		return h.Admin.AdapterStatus(ctx), nil
 	case "history.search":
@@ -368,12 +379,23 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		if h.Sessions == nil || decodeParams(raw, &request) != nil {
 			return nil, fmt.Errorf("malformed session request")
 		}
-		cwd, err := h.Sessions.RecordedCWD(request.ProjectID, request.SessionID)
-		if err != nil {
-			return nil, err
+		// session.release is the explicit idle-runtime action. Require the
+		// caller's session lease so another browser cannot evict its resident.
+		return ack(h.Sessions.ReleaseIdleRuntimeForClient(ctx, request.SessionID, request.ProjectID, clientKey))
+	case "session.deletionRecovery":
+		if h.Sessions == nil {
+			return nil, fmt.Errorf("session manager is unavailable")
 		}
-		h.Sessions.Release(request.SessionID, request.ProjectID, cwd, clientKey)
-		return map[string]bool{"ok": true}, nil
+		return h.Sessions.DeletionRecoveryStatus(), nil
+	case "session.confirmExternalDeletion":
+		var request struct {
+			ProjectID string `json:"projectId"`
+			SessionID string `json:"sessionId"`
+		}
+		if h.Sessions == nil || decodeParams(raw, &request) != nil {
+			return nil, fmt.Errorf("malformed session request")
+		}
+		return ack(h.Sessions.ConfirmExternalDeletion(request.ProjectID, request.SessionID))
 	case "session.rename", "session.archive", "session.delete":
 		var request struct {
 			ProjectID string `json:"projectId"`

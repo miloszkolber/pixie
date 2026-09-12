@@ -8,6 +8,11 @@ import {
 	selectProjectAreaTick,
 	type TabIntent,
 } from "../../store";
+import {
+	captureNavigationOwner,
+	navigationOwnerIsCurrent,
+	navigationOwnerProjectIsCurrent,
+} from "../../workspace/navigation/ownership";
 import { diffTabId, diffTabName, scopeKey } from "../changes/changes-model";
 import { isImagePath } from "../tree/file-kind";
 
@@ -23,8 +28,17 @@ function resourceIdentity(tab: ReadContentTab): string {
 		: tupleKey("file", tab.projectAreaId, tab.root, tab.path);
 }
 
-const inFlight = new Map<string, { intent: TabIntent; claimPreview: boolean }>();
+const inFlight = new Map<string, { intent: TabIntent; claimPreview: boolean; epoch: number }>();
 const previewEpochByProjectArea = new Map<string, number>();
+
+function projectIsAvailable(
+	state: ReturnType<typeof appStoreApi.getState>,
+	snapshot: Parameters<typeof navigationOwnerProjectIsCurrent>[1],
+): boolean {
+	// Some low-level viewer tests (and the pre-welcome shell) have no catalog yet;
+	// retain the old cache behavior until the project catalog is authoritative.
+	return state.projects.length === 0 || navigationOwnerProjectIsCurrent(state, snapshot);
+}
 
 function previewEpoch(projectAreaId: string, intent: TabIntent): number {
 	if (intent !== "preview") return previewEpochByProjectArea.get(projectAreaId) ?? 0;
@@ -43,6 +57,9 @@ async function openReadTab<T>(
 ): Promise<boolean> {
 	const store = appStoreApi.getState();
 	if (store.removedProjectAreaIds[projectAreaId]) return false;
+	const projectId = selectProjectAreaById(store, projectAreaId)?.projectId ?? projectAreaId;
+	const navigation = captureNavigationOwner(store, projectAreaId, projectId);
+	const requireActiveOwner = store.activeProjectAreaId === projectAreaId;
 	const pending = inFlight.get(id);
 	if (pending) {
 		pending.claimPreview ||= intent === "preview";
@@ -67,12 +84,20 @@ async function openReadTab<T>(
 			(tab) => (tab.kind === "file" || tab.kind === "diff") && resourceIdentity(tab) === identity,
 		);
 		if (cached) {
+			const activate = navigationOwnerIsCurrent(latest, navigation, "secondary", {
+				requireActive: requireActiveOwner,
+				allowUnknownProject: true,
+			});
 			latest.openTab(
 				cached,
-				flight.intent,
-				flight.intent === "keep" && flight.claimPreview ? { claimPreview: true } : undefined,
+				activate ? flight.intent : "keep",
+				activate && flight.intent === "keep" && flight.claimPreview
+					? { claimPreview: true }
+					: activate
+						? undefined
+						: { activate: false },
 			);
-			return true;
+			return activate;
 		}
 		const loadedTick = selectProjectAreaTick(latest, projectAreaId);
 		const payload = await read();
@@ -83,18 +108,33 @@ async function openReadTab<T>(
 		) {
 			return false;
 		}
+		if (!projectIsAvailable(current, navigation)) return false;
+		const activate = navigationOwnerIsCurrent(current, navigation, "secondary", {
+			requireActive: requireActiveOwner,
+			allowUnknownProject: true,
+		});
+		const effectiveIntent = activate ? flight.intent : "keep";
 		const installed = (current.tabsByProjectArea[projectAreaId] ?? []).find(
 			(tab) => (tab.kind === "file" || tab.kind === "diff") && resourceIdentity(tab) === identity,
 		);
 		current.openTab(
 			installed ?? build(payload, loadedTick),
-			flight.intent,
-			flight.intent === "keep" && flight.claimPreview ? { claimPreview: true } : undefined,
+			effectiveIntent,
+			activate && flight.intent === "keep" && flight.claimPreview
+				? { claimPreview: true }
+				: activate
+					? undefined
+					: { activate: false },
 		);
-		return !appStoreApi.getState().removedProjectAreaIds[projectAreaId];
+		return (
+			projectIsAvailable(appStoreApi.getState(), navigation) &&
+			activate &&
+			!appStoreApi.getState().removedProjectAreaIds[projectAreaId]
+		);
 	} catch (error) {
 		if (
 			!appStoreApi.getState().removedProjectAreaIds[projectAreaId] &&
+			navigationOwnerIsCurrent(appStoreApi.getState(), navigation, "secondary") &&
 			(flight.intent !== "preview" || flight.epoch === previewEpochByProjectArea.get(projectAreaId))
 		) {
 			appStoreApi.getState().pushToast({

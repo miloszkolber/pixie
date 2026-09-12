@@ -3,7 +3,7 @@ import { registerCapability } from "../capabilities.ts";
 
 // Load Pi's built-in provider through the current SDK export patch.
 // The native CLI migration and patch-retirement gate are FC27 in
-// roadmap/feature-coverage.md. The /llama management command needs a TUI;
+// roadmap/README.md. The /llama management command needs a TUI;
 // provider registration, model discovery and inference remain headless.
 const upstreamLlama: ExtensionFactory | undefined = await import(
 	"@earendil-works/pi-coding-agent/extensions"

@@ -718,7 +718,7 @@ function openChanges(path: string): void {
 	</div>
 {/snippet}
 
-<div class="flex h-full min-h-0 flex-col bg-container-project-bg">
+<div class="flex min-h-0 flex-1 flex-col bg-container-project-bg">
 
 	<ChatTranscript
 		bind:this={transcriptView}

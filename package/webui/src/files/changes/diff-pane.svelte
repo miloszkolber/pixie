@@ -10,8 +10,8 @@ import {
 	decideLiveTabChange,
 	runLiveTabRefresh,
 } from "../tabs/use-live-tab-content";
-import { splitPath } from "./changes-model";
-import { diffIsUnavailable, diffUnavailableNotice } from "./diff-pane-model";
+import { scopeLabel, splitPath } from "./changes-model";
+import { diffIsUnavailable, diffUnavailableNotice, rawPreviewNotice } from "./diff-pane-model";
 import { simpleUnifiedDiff } from "./line-diff";
 import SourceDiff from "./source-diff.svelte";
 
@@ -27,6 +27,8 @@ let ignoreWhitespace = $derived(tab.ignoreWhitespace ?? false);
 let unavailable = $derived(diffIsUnavailable(tab));
 let notice = $derived(diffUnavailableNotice(tab));
 let pathParts = $derived(splitPath(tab.path));
+let reviewScope = $derived(scopeLabel(tab.scope));
+let rawNotice = $derived(rawPreviewNotice(tab));
 let diff = $derived(
 	unavailable
 		? ""
@@ -142,7 +144,7 @@ onDestroy(() => {
 });
 </script>
 
-<div data-testid="diff-pane" class="app-content flex h-full min-h-0 flex-col">
+<div data-testid="diff-pane" class="app-content flex min-h-0 flex-1 flex-col">
 	{#if refreshError}
 		<div
 			data-testid="diff-refresh-error"
@@ -160,6 +162,15 @@ onDestroy(() => {
 			>Retry</button>
 		</div>
 	{/if}
+	{#if rawNotice}
+		<div
+			data-testid="diff-raw-notice"
+			role="status"
+			class="shrink-0 border-border-muted border-b bg-feedback-warning-subtle px-sm py-xs text-feedback-warning tr-text-metadata"
+		>
+			{rawNotice}
+		</div>
+	{/if}
 	<div class="toolbar flex h-8 shrink-0 items-center gap-xs border-border-default border-b bg-container-header-bg px-sm">
 		<span
 			data-testid="diff-path"
@@ -172,6 +183,11 @@ onDestroy(() => {
 			{#if pathParts.dir}<span class="min-w-0 shrink truncate text-text-muted">{pathParts.dir}</span>{/if}
 			<span class="max-w-full shrink-0 truncate text-text-muted">{pathParts.base}</span>
 		</span>
+		<span
+			data-testid="diff-scope"
+			title={`${tab.repository} · ${reviewScope}`}
+			class="max-w-[12rem] shrink-0 truncate text-text-muted tr-text-metadata"
+		>{reviewScope}</span>
 		<button
 			type="button"
 			data-testid="diff-toggle-whitespace"

@@ -124,6 +124,32 @@ export async function buildWeb(options: WebBuildOptions = {}): Promise<number> {
 				return [path, metadata];
 			}),
 		);
+	// Bun's HTML entry rewriting can point the document at a non-entry chunk when
+	// splitting emits many outputs; that chunk evaluates cleanly but never mounts the
+	// application, so the shipped page stays blank while every existence check passes.
+	// Pin the document to the manifest entry before hashing companions.
+	const entryScripts = Object.entries(outputs).filter(
+		([path, metadata]) => path.endsWith(".js") && metadata.entryPoint === "index.html",
+	);
+	if (entryScripts.length !== 1) {
+		throw new Error(`Expected one Web UI JavaScript entry bundle, found ${entryScripts.length}`);
+	}
+	const entryScript = entryScripts[0]?.[0] ?? "";
+	const builtIndex = join(outputRoot, "index.html");
+	const builtDocument = await readFile(builtIndex, "utf8");
+	if (!/<script[^>]*\btype="module"[^>]*\bsrc="[^"]*"[^>]*>/.test(builtDocument)) {
+		throw new Error("Web UI entry script is missing from the built index.html");
+	}
+	const rewrittenDocument = builtDocument.replace(
+		/<script([^>]*)\bsrc="[^"]*"([^>]*)>/g,
+		(match, before, after) =>
+			/\btype="module"/.test(match) ? `<script${before}src="/${entryScript}"${after}>` : match,
+	);
+	if (!rewrittenDocument.includes(`src="/${entryScript}"`)) {
+		throw new Error(`Web UI index.html does not load the entry bundle ${entryScript}`);
+	}
+	await writeFile(builtIndex, rewrittenDocument);
+
 	for (const path of Object.keys(outputs)) {
 		if (!/\.(?:css|js)$/.test(path)) continue;
 		const source = await readFile(join(outputRoot, path));

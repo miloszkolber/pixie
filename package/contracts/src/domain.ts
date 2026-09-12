@@ -65,6 +65,8 @@ export interface RuntimeStatusReport {
 	application: RuntimeServiceStatus;
 	agent: RuntimeAgentStatus;
 	browser: RuntimeServiceStatus;
+	canvas?: RuntimeServiceStatus;
+	design?: RuntimeServiceStatus;
 }
 
 export type McpGatewayState =
@@ -372,6 +374,7 @@ export interface GitRepository {
 	clean: boolean;
 	changes: GitFileChange[];
 	comparisonId?: string;
+	warnings?: string[];
 }
 
 export interface GitRepositoryList {
@@ -449,7 +452,7 @@ export interface AgentMentionInfo {
 /** The focused, allowlisted Pi preference projection. */
 export interface PiPreferences {
 	compactionReserveTokens?: number;
-	piThinkingEffort?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	piThinkingEffort?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 /** Pi's global provider/model default, never persisted by Pixie. */
@@ -461,6 +464,8 @@ export interface PiProviderDefaults {
 /** Opaque catalog identity. Paths and arbitrary source properties never cross this boundary. */
 export interface PiAgentCatalogEntry {
 	id: string;
+	/** Opaque source revision required for conditional update/delete. */
+	revision: string;
 	name: string;
 	description: string;
 	instructions: string;

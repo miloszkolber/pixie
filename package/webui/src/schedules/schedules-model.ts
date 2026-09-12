@@ -3,7 +3,6 @@ import { errorText } from "../connection/error-text";
 import type { WsTransport } from "../connection/transport";
 import { randomId } from "../lib";
 import { createExternalStore, toReadableStore } from "../store/external-store";
-import { serializeLocation } from "../workspace/navigation/location";
 
 type MutationMethod =
 	| "schedule.create"
@@ -34,12 +33,7 @@ export function activeExecution(job: Schedule) {
 
 export function scheduleSessionHref(projectId: string, run: ScheduleRun): string | null {
 	return run.sessionId
-		? serializeLocation({
-				kind: "chat",
-				projectId,
-				projectAreaId: projectId,
-				sessionId: run.sessionId,
-			})
+		? `#/v1/projects/${encodeURIComponent(projectId)}/projectAreas/${encodeURIComponent(projectId)}/chats/${encodeURIComponent(run.sessionId)}`
 		: null;
 }
 

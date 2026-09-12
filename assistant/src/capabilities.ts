@@ -16,7 +16,7 @@ export interface Capability {
 		string,
 		(params: RecordValue, context: CapabilityContext) => unknown | Promise<unknown>
 	>;
-	close?: () => void | Promise<void>;
+	close?: (signal?: AbortSignal) => void | Promise<void>;
 }
 // Extensions remain ordinary Pi extensions. Registration only exposes additive
 // services to a compatible host; no model hooks or tool interception are used.
@@ -78,8 +78,8 @@ export class Capabilities {
 			if (Object.hasOwn(c.operations, method)) return c.operations[method](params, context);
 		throw new Error(`Unsupported capability operation: ${method}`);
 	}
-	async close(): Promise<void> {
-		await Promise.allSettled([...this.cleanups].map((close) => close()));
+	async close(signal?: AbortSignal): Promise<void> {
+		await Promise.allSettled([...this.cleanups].map((close) => close(signal)));
 		this.cleanups.clear();
 		this.entries.clear();
 	}

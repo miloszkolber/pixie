@@ -32,13 +32,13 @@ func TestProjectImageReadsInternalSymlinksAndRejectsSwaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, projects, workspace.NewFiles(projects, policy), controller.AuthConfig{}, "", nil)
+	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, projects, workspace.NewFiles(projects, policy), controller.AuthConfig{ControllerPort: 7312}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request := func() *httptest.ResponseRecorder {
 		response := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, "http://controller/files/"+project.ID+"/preview.png", nil)
+		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7312/files/"+project.ID+"/preview.png", nil)
 		request.Header.Set("Sec-Fetch-Site", "same-origin")
 		handler.ServeHTTP(response, request)
 		return response
@@ -47,7 +47,7 @@ func TestProjectImageReadsInternalSymlinksAndRejectsSwaps(t *testing.T) {
 		t.Fatalf("internal image symlink: status=%d body=%q", response.Code, response.Body.String())
 	}
 	direct := httptest.NewRecorder()
-	directRequest := httptest.NewRequest(http.MethodGet, "http://controller/files/"+project.ID+"/image.png", nil)
+	directRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7312/files/"+project.ID+"/image.png", nil)
 	directRequest.Header.Set("Sec-Fetch-Site", "same-origin")
 	handler.ServeHTTP(direct, directRequest)
 	if direct.Code != http.StatusOK || direct.Header().Get("Content-Type") != "image/png" {

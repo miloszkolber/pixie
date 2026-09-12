@@ -11,6 +11,11 @@ import {
 	selectProjectAreaSessionIds,
 	toast,
 } from "../../store";
+import {
+	captureNavigationOwner,
+	navigationOwnerIsCurrent,
+	navigationOwnerProjectIsCurrent,
+} from "./ownership";
 
 const sessionHydration = new Map<
 	string,
@@ -37,6 +42,7 @@ export function hydrateChatResource(
 ): Promise<boolean> {
 	const state = appStoreApi.getState();
 	const projectId = selectProjectAreaById(state, projectAreaId)?.projectId ?? projectAreaId;
+	const navigation = captureNavigationOwner(state, projectAreaId, projectId);
 	if (
 		!state.projects.some((project) => project.id === projectId) ||
 		state.removedProjectAreaIds[projectAreaId] ||
@@ -76,7 +82,7 @@ export function hydrateChatResource(
 			const current = appStoreApi.getState();
 			if (!isConnectedGeneration(current, generation)) return false;
 			if (
-				!current.projects.some((project) => project.id === projectId) ||
+				!navigationOwnerProjectIsCurrent(current, navigation) ||
 				current.closedChatsByProjectArea[projectAreaId]?.find(
 					(chat) => chat.sessionId === sessionId,
 				) !== closedChat ||
@@ -149,6 +155,11 @@ export function initProjectAreaChatReconciliation(projectAreaId: string): () => 
 	function reconcileCatalog(): void {
 		const snapshot = appStoreApi.getState();
 		const { status, connectionGeneration } = snapshot;
+		const navigation = captureNavigationOwner(
+			snapshot,
+			projectAreaId,
+			selectProjectAreaById(snapshot, projectAreaId)?.projectId ?? projectAreaId,
+		);
 		const routeTarget =
 			snapshot.routeChatTarget?.projectAreaId === projectAreaId ? snapshot.routeChatTarget : null;
 		if (status !== "connected" || connectionGeneration === 0) {
@@ -175,14 +186,31 @@ export function initProjectAreaChatReconciliation(projectAreaId: string): () => 
 				if (routeTarget && targetSummary) {
 					appStoreApi.getState().validateRouteChatTarget(routeTarget.sessionId);
 					const targetTab = chatTab(appStoreApi.getState(), projectAreaId, routeTarget.sessionId);
-					if (targetTab) appStoreApi.getState().setActiveTab(targetTab.id, "keep");
-					else {
+					let routeHandled = false;
+					if (
+						targetTab &&
+						navigationOwnerIsCurrent(appStoreApi.getState(), navigation, "primary")
+					) {
+						appStoreApi.getState().setActiveTab(targetTab.id, "keep");
+						routeHandled = true;
+					} else {
 						await hydrateChatResource(projectAreaId, routeTarget.sessionId);
 						if (!live()) return;
 						const hydrated = chatTab(appStoreApi.getState(), projectAreaId, routeTarget.sessionId);
-						if (hydrated) appStoreApi.getState().setActiveTab(hydrated.id, "keep");
+						if (
+							hydrated &&
+							navigationOwnerIsCurrent(appStoreApi.getState(), navigation, "primary")
+						) {
+							appStoreApi.getState().setActiveTab(hydrated.id, "keep");
+							routeHandled = true;
+						}
 					}
-					appStoreApi.getState().clearRouteChatTarget();
+					const latest = appStoreApi.getState();
+					if (
+						latest.routeChatTarget === routeTarget &&
+						(routeHandled || !navigationOwnerIsCurrent(latest, navigation, "primary"))
+					)
+						latest.clearRouteChatTarget();
 				}
 
 				const state = appStoreApi.getState();
@@ -220,7 +248,11 @@ export function initProjectAreaChatReconciliation(projectAreaId: string): () => 
 					await hydrateChatResource(projectAreaId, summary.sessionId);
 					if (!live()) return;
 					const tab = chatTab(appStoreApi.getState(), projectAreaId, summary.sessionId);
-					if (tab && !activated) {
+					if (
+						tab &&
+						!activated &&
+						navigationOwnerIsCurrent(appStoreApi.getState(), navigation, "primary")
+					) {
 						appStoreApi.getState().setActiveTab(tab.id, "keep");
 						activated = true;
 					}
@@ -271,23 +303,33 @@ export function initProjectAreaChatReconciliation(projectAreaId: string): () => 
 		if (state.status !== "connected" || !isConnectedGeneration(state, state.connectionGeneration)) {
 			return;
 		}
+		const navigation = captureNavigationOwner(
+			state,
+			projectAreaId,
+			selectProjectAreaById(state, projectAreaId)?.projectId ?? projectAreaId,
+		);
 		const live = () => active && locationFlight === run;
 		void hydrateChatResource(projectAreaId, request.sessionId)
 			.then((installed) => {
 				if (!live()) return;
 				const latest = appStoreApi.getState();
-				if (installed) {
+				const activate = navigationOwnerIsCurrent(latest, navigation, "primary");
+				if (installed && activate) {
 					const tab = chatTab(latest, projectAreaId, request.sessionId);
 					if (tab) latest.setActiveTab(tab.id, "keep");
 				} else if (
+					!installed &&
+					activate &&
 					!latest.removedProjectAreaIds[projectAreaId] &&
 					!latest.deletedSessionsByProjectArea[projectAreaId]?.[request.sessionId]
 				)
 					toast.error("The chat could not be restored.", "Couldn't open the chat");
-				if (!installed && latest.chatLocationRequest === request) latest.clearChatLocation();
+				if (latest.chatLocationRequest === request && (!installed || activate === false))
+					latest.clearChatLocation();
 			})
 			.catch((cause) => {
-				if (live()) toast.error(errorText(cause), "Couldn't open the chat");
+				if (live() && navigationOwnerIsCurrent(appStoreApi.getState(), navigation, "primary"))
+					toast.error(errorText(cause), "Couldn't open the chat");
 				const latest = appStoreApi.getState();
 				if (latest.chatLocationRequest === request) latest.clearChatLocation();
 			});

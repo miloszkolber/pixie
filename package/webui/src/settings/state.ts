@@ -1,7 +1,14 @@
-import type { AppConfig, LoginPush, RefreshedModels, WireModel } from "@pixie/contracts";
+import type {
+	AppConfig,
+	DeletionRecovery,
+	LoginPush,
+	RefreshedModels,
+	WireModel,
+} from "@pixie/contracts";
 import { DEFAULT_CONFIG } from "@pixie/contracts";
 import type { AppState } from "../store/app-store";
 import type { StateCreator } from "../store/external-store";
+import { dropDeletionRecovery } from "./deletion-recovery";
 import { foldLoginFrame, type LoginState, newLoginState } from "./login/login-state";
 
 export function selectCatalogModel(
@@ -38,8 +45,8 @@ export interface SettingsState {
 	modelsRefreshing: boolean;
 	modelsFresh: boolean;
 	activeLogin: LoginState | null;
-	settingsOpen: boolean;
 	settingsSection: SettingsSection;
+	deletionRecovery: DeletionRecovery[];
 	config: AppConfig;
 	setModelsForProviderVersion: (providerVersion: number, models: WireModel[]) => void;
 	noteProviderChanged: () => void;
@@ -51,9 +58,9 @@ export interface SettingsState {
 	applyLoginFrame: (push: LoginPush) => void;
 	clearLoginInput: () => void;
 	clearLogin: () => void;
-	openSettings: (section?: SettingsSection) => void;
-	closeSettings: () => void;
 	setSettingsSection: (section: SettingsSection) => void;
+	setDeletionRecovery: (records: DeletionRecovery[]) => void;
+	removeDeletionRecovery: (projectId: string, sessionId: string) => void;
 	applyConfig: (config: AppConfig) => void;
 }
 
@@ -64,8 +71,8 @@ export const createSettingsState: StateCreator<AppState, [], [], SettingsState> 
 	modelsRefreshing: false,
 	modelsFresh: false,
 	activeLogin: null,
-	settingsOpen: false,
 	settingsSection: SettingsSection.Providers,
+	deletionRecovery: [],
 	config: DEFAULT_CONFIG,
 	setModelsForProviderVersion: (providerVersion, models) =>
 		set((s) => (s.providerVersion === providerVersion ? { models, modelsFresh: false } : s)),
@@ -116,20 +123,11 @@ export const createSettingsState: StateCreator<AppState, [], [], SettingsState> 
 			return { activeLogin: rest };
 		}),
 	clearLogin: () => set({ activeLogin: null }),
-	openSettings: (section) => {
-		const profile = get().agentProfile;
-		set({
-			settingsOpen: true,
-			settingsSection:
-				section ??
-				(profile === null
-					? SettingsSection.System
-					: !profile.pi || !profile.operations.administration
-						? SettingsSection.Agent
-						: SettingsSection.Providers),
-		});
-	},
-	closeSettings: () => set({ settingsOpen: false }),
 	setSettingsSection: (section) => set({ settingsSection: section }),
+	setDeletionRecovery: (deletionRecovery) => set({ deletionRecovery }),
+	removeDeletionRecovery: (projectId, sessionId) =>
+		set((state) => ({
+			deletionRecovery: dropDeletionRecovery(state.deletionRecovery, projectId, sessionId),
+		})),
 	applyConfig: (config) => set({ config }),
 });

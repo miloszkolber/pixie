@@ -271,6 +271,7 @@ async function saveAgent(): Promise<void> {
 		if (activeEditing) {
 			await getTransport().request("pi.agentUpdate", {
 				id: activeEditing.id,
+				revision: activeEditing.revision,
 				name: draft.name,
 				description: draft.description,
 				instructions: draft.instructions,
@@ -305,6 +306,7 @@ async function removeAgent(agent: PiAgentCatalogEntry): Promise<void> {
 	try {
 		await getTransport().request("pi.agentDelete", {
 			id: agent.id,
+			revision: agent.revision,
 			...(agent.scope === "project" && catalogProjectId && catalogRoot
 				? { projectId: catalogProjectId, root: catalogRoot }
 				: {}),

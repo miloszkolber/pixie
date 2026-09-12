@@ -4,15 +4,15 @@ Pixie is a lightweight web workspace for the user's installed Pi.
 
 ## Read first
 
-Read README.md and the current behavior in docs/architecture.md, docs/pi.md, docs/security.md, docs/deployment.md and docs/development.md relevant to the task. For roadmap implementation, start at [roadmap/README.md](roadmap/README.md), [roadmap/execution.md](roadmap/execution.md), [roadmap/contracts.md](roadmap/contracts.md) and [roadmap/feature-coverage.md](roadmap/feature-coverage.md).
+Read README.md and the current behavior in docs/architecture.md, docs/pi.md, docs/security.md, docs/deployment.md and docs/development.md relevant to the task. Use [roadmap/README.md](roadmap/README.md) as the central implementation status, investigation backlog, and forward plan.
 
 The canonical implementation plan and review evidence live only under roadmap/. Current operating documentation remains under docs/. Do not recreate the removed roadmap/MCP draft files or copy future behavior into current docs before it ships. Keep human prose brief, factual and present-tense; one fact has one owner.
 
 ## Target and retained behavior
 
-The current assistant uses a pinned SDK under Bun. The target is a shared Go engine supervising selected host Pi through native RPC, used by assistant-only and full-host builds. Core chat needs no native extension. The optional administration bridge must use the selected installation's public APIs and stay explicitly opt-in, not another SDK/agent daemon.
+The release target is a shared Go engine supervising selected host Pi through native RPC, used by assistant-only and full-host builds. The legacy Bun service remains only as a fallback and compatibility-test oracle until the Go gaps in roadmap/README.md close; do not present it as the release assistant or add another npm distribution path. Core chat needs no native extension. The optional administration bridge must use the selected installation's public APIs and stay explicitly opt-in, not another SDK/agent daemon.
 
-Every release includes pixie-assistant and the complete pixie host binary on amd64/arm64, plus the matching Docker controller image. One source commit produces one sha-<12> identity across Git tag, GitHub Release, archive names, binary metadata and Docker tag; full SHA/digests stay in the manifest. Follow roadmap/builds-and-releases.md. Do not create semantic-version or workflow-counter naming alongside it.
+Every release includes pixie-assistant and the complete pixie host binary on amd64/arm64, plus the matching Docker controller image. One source commit produces one sha-<12> identity across Git tag, GitHub Release, archive names, binary metadata and Docker tag; full SHA/digests stay in the manifest. Follow roadmap/README.md. Do not create semantic-version or workflow-counter naming alongside it.
 
 The full-host build contains assistant/controller/UI in one executable/service. Docker explicitly runs controller-only mode and never starts local Pi. Both share implementation, authority and state contracts, not duplicated supervisors.
 
@@ -22,7 +22,7 @@ Sharing an installation does not attach to an arbitrary running TUI. Use separat
 
 ## Workspace and modules
 
-Use the six slots in roadmap/workspace-ui.md: primary rail/sidebar/view, independent secondary view/sidebar/rail. Primary areas are Chats, Archive, Schedules and Settings. Hide/Close/Archive/Delete/Stop are different actions. View lifetime never owns accepted agent execution.
+Use the six slots in roadmap/README.md: primary rail/sidebar/view, independent secondary view/sidebar/rail. Primary areas are Chats, Archive, Schedules and Settings. Hide/Close/Archive/Delete/Stop are different actions. View lifetime never owns accepted agent execution.
 
 Projects group sessions but native identity/cwd and filesystem admission are separate. Support ungrouped sessions without a hidden all-files project. Files/Git are read-only inspection: no IDE, Monaco, LSP, terminal or automatic worktree manager.
 
@@ -32,7 +32,7 @@ Native extensions, native MCP integration and workspace modules are separate. Br
 
 ## Trust and source
 
-Native Pi intentionally has host-user authority. Untrusted browser pages/HTML/design files need the optional enforced worker boundary in roadmap/contracts.md. Same UID, filtered environment, read-only roots and host networking are not isolation. Direct-host mode does not inherit container restrictions. Missing mandatory enforcement makes the module unavailable, never unrestricted.
+Native Pi intentionally has host-user authority. Untrusted browser pages/HTML/design files need the optional enforced worker boundary in roadmap/README.md. Same UID, filtered environment, read-only roots and host networking are not isolation. Direct-host mode does not inherit container restrictions. Missing mandatory enforcement makes the module unavailable, never unrestricted.
 
 Source paths are assistant/ and package/; shared Bun tooling is at root. Keep the separate Go modules with an assistant/host facade and exact local module replacement. Do not introduce obsolete pi/ or pixie/ source roots or another module's internal imports. Shared schema ownership is package/contracts.
 

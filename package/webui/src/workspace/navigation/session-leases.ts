@@ -2,6 +2,7 @@ import type { WsParams } from "@pixie/contracts";
 import { errorText, getTransport } from "../../connection";
 import type { WsTransport } from "../../connection/transport";
 import { appStoreApi, isConnectedGeneration, toast } from "../../store";
+import { contentSessionId } from "../store/model";
 
 // The transport's client ID lasts for the page, including authentication resets.
 let revision = 0;
@@ -31,7 +32,8 @@ export function initSessionLeases(
 			const projectId = areas.get(areaId) ?? areaId;
 			if (!projects.has(projectId) || state.removedProjectAreaIds[areaId]) continue;
 			for (const tab of tabs) {
-				if (tab.kind === "chat") open.set(tab.sessionId, { projectId, sessionId: tab.sessionId });
+				const sessionId = contentSessionId(tab);
+				if (sessionId) open.set(sessionId, { projectId, sessionId });
 			}
 		}
 		const sessions = [...open.values()].sort((left, right) =>

@@ -84,13 +84,19 @@ test("provider login keeps the active flow when late frames arrive for another l
 	});
 });
 
-test("settings opens System while agent capabilities are unavailable", () => {
-	appStoreApi.setState({ agentProfile: null });
-	appStoreApi.getState().openSettings();
-	expect(appStoreApi.getState()).toMatchObject({
-		settingsOpen: true,
-		settingsSection: "system",
-	});
+test("deletion recovery state retains tombstones until one is explicitly confirmed", () => {
+	const actions = appStoreApi.getState();
+	const records = [
+		{ projectId: "project-a", sessionId: "chat-a", phase: "requested", reason: "unsupported" },
+		{ projectId: "project-b", sessionId: "chat-b", phase: "quarantined", reason: "unmatched" },
+	];
+	actions.setDeletionRecovery(records);
+	expect(appStoreApi.getState().deletionRecovery).toEqual(records);
+
+	actions.removeDeletionRecovery("project-a", "chat-a");
+	expect(appStoreApi.getState().deletionRecovery).toEqual([
+		{ projectId: "project-b", sessionId: "chat-b", phase: "quarantined", reason: "unmatched" },
+	]);
 });
 
 test("model visibility revision is stable but changes with the hidden catalog", () => {

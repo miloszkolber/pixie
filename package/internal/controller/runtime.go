@@ -12,6 +12,9 @@ import (
 	"sync"
 	"time"
 
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
+	"github.com/miloszkolber/pixie/internal/canvas"
+	"github.com/miloszkolber/pixie/internal/design"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/persist"
@@ -41,6 +44,18 @@ type RuntimeConfig struct {
 	PiURL  string
 	Policy *workspace.PathPolicy
 	Getenv func(string) string
+	// ProtocolMode is the raw PIXIE_PI_PROTOCOL value (v1, auto or v2,
+	// case-insensitive). Empty selects the byte-identical v1 default. An
+	// invalid value fails NewRuntime.
+	ProtocolMode string
+	// AgentDir is the selected full-host native agent directory. When set, the
+	// deletion pairing storage key is derived from it. Controller-only runs
+	// leave it empty and read PIXIE_PI_STORAGE_KEY instead.
+	AgentDir string
+	// Optional worker/parser composition is explicit. Runtime never discovers
+	// Canvas/Design helpers from PATH or substitutes an unrestricted fallback.
+	CanvasConfig *canvas.Config
+	DesignConfig *design.Config
 }
 
 type Runtime struct {
@@ -73,9 +88,51 @@ func defaultDataDir(getenv func(string) string) string {
 	return DefaultDataDir
 }
 
+// resolvePairingStorageKey selects the canonical key naming the native storage
+// the controller may pair with. Full-host derives it from the selected agent
+// directory so the pairing never depends on a raw path or an environment
+// value; controller-only uses the explicit PIXIE_PI_STORAGE_KEY. Paired mode
+// requires a key, while auto treats a missing key as pairing unavailable.
+func resolvePairingStorageKey(mode DeletionAuthorityMode, agentDir string, getenv func(string) string) (string, error) {
+	if strings.TrimSpace(agentDir) != "" {
+		key, err := persist.DerivePairingStorageKey(agentDir)
+		if err != nil {
+			return "", err
+		}
+		return key, nil
+	}
+	key := strings.TrimSpace(getenv("PIXIE_PI_STORAGE_KEY"))
+	if mode == DeletionAuthorityPaired && key == "" {
+		return "", fmt.Errorf("PIXIE_DELETION_AUTHORITY=paired requires a pairing storage key: select a full-host agent directory or set PIXIE_PI_STORAGE_KEY")
+	}
+	return key, nil
+}
+
 func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	if config.Getenv == nil {
 		config.Getenv = os.Getenv
+	}
+	// Destructive-recovery authority is resolved before any listener, store or
+	// client is created so an invalid selection fails startup.
+	deletionAuthority, err := ParseDeletionAuthorityMode(config.Getenv("PIXIE_DELETION_AUTHORITY"))
+	if err != nil {
+		return nil, err
+	}
+	// Host protocol negotiation is resolved before any listener or client so
+	// an invalid PIXIE_PI_PROTOCOL fails startup rather than dialing a
+	// downgraded transport. An explicit RuntimeConfig value wins; otherwise
+	// the controller resolves the process environment.
+	protocolRaw := strings.TrimSpace(config.ProtocolMode)
+	if protocolRaw == "" {
+		protocolRaw = config.Getenv(piwire.HostProtocolEnvVar)
+	}
+	protocolMode, err := piwire.ParseHostProtocolMode(protocolRaw)
+	if err != nil {
+		return nil, err
+	}
+	pairingStorageKey, err := resolvePairingStorageKey(deletionAuthority, config.AgentDir, config.Getenv)
+	if err != nil {
+		return nil, err
 	}
 	authConfig, err := ReadAuthConfig(config.Getenv)
 	if err != nil {
@@ -87,6 +144,14 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	if config.Port == 0 {
 		config.Port = DefaultControllerPort
 	}
+	if err := validateControllerRuntime(config.Host, config.Port, authConfig); err != nil {
+		return nil, err
+	}
+	// Authority checks need the same effective listener host/port as the
+	// listener itself. Keep this alongside the runtime defaults so HTTP and
+	// WebSocket handlers cannot drift to a request-derived authority.
+	authConfig.ControllerHost = config.Host
+	authConfig.ControllerPort = config.Port
 	if config.DataDir == "" {
 		config.DataDir = defaultDataDir(config.Getenv)
 	}
@@ -109,6 +174,8 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		Token:        authConfig.MCPToken,
 		PublicOrigin: authConfig.PublicOrigin,
 		DataDir:      store.Dir,
+		CanvasConfig: config.CanvasConfig,
+		DesignConfig: config.DesignConfig,
 		Getenv: func(key string) (string, bool) {
 			if config.Getenv == nil {
 				return "", false
@@ -142,6 +209,8 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	projects.SetPublisher(func(project workspace.Project) { publish("project.updated", project) })
 	settings := NewSettings(store, func(value AppConfig) { publish("settings.changed", value) })
 	sessions := NewSessionManager(projects, config.Policy, records, queues, objectives, publish)
+	sessions.SetDeletionAuthority(deletionAuthority, pairingStorageKey)
+	sessions.SetMCPRegistry(mcpRegistry)
 	if config.PiURL == "" {
 		resolved, err := resolvePiURL(config.Getenv)
 		if err != nil {
@@ -149,7 +218,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		}
 		config.PiURL = resolved
 	}
-	client := NewPiClient(config.PiURL, strings.TrimSpace(config.Getenv("PIXIE_PI_SECRET_KEY")), config.AppVersion, sessions)
+	client := NewPiClientWithProtocol(config.PiURL, strings.TrimSpace(config.Getenv("PIXIE_PI_SECRET_KEY")), config.AppVersion, sessions, protocolMode)
 	client.profileChanged = func(profile AgentProfile) { publish("agent.profileChanged", profile) }
 	sessions.SetClient(client)
 	sessions.SetSettings(settings)
@@ -170,7 +239,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	git := workspace.NewGit(projects, config.Policy)
 	watches := workspace.NewProjectWatches(projects, git, publish)
 	requests := &diagnostics.RequestCounter{}
-	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig)
+	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig, mcpRegistry)
 	statusProvider.schedules = schedules
 	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPRegistry: mcpRegistry}
 	welcome := func(ctx context.Context) (any, error) {
@@ -199,6 +268,9 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		if profile, ok := status["agentProfile"]; ok {
 			result["agentProfile"] = profile
 		}
+		if recoveries := sessions.DeletionRecoveryStatus(); len(recoveries) > 0 {
+			result["deletionRecovery"] = recoveries
+		}
 		if config.AppVersion != "" {
 			result["appVersion"] = config.AppVersion
 		}
@@ -220,6 +292,11 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		if !localReady {
 			status["applicationError"] = localDetail
 		}
+		if recoveries := sessions.DeletionRecoveryStatus(); len(recoveries) > 0 {
+			// Retained tombstones are surfaced for operator reconciliation but do
+			// not by themselves make the application unready.
+			status["deletionRecovery"] = recoveries
+		}
 		code := http.StatusOK
 		profile, _ := status["agentProfile"].(AgentProfile)
 		if !localReady || status["configured"] != true || status["reachable"] != true || !profile.Compatible {
@@ -233,11 +310,39 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		return nil, err
 	}
 	httpHandler.MCPRegistry = mcpRegistry
+	httpHandler.SessionRecords = records
 	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, registry: mcpRegistry}, nil
 }
 
+func validateControllerRuntime(host string, port int, auth AuthConfig) error {
+	if err := validateControllerHost(host); err != nil {
+		return fmt.Errorf("invalid effective controller bind: %w", err)
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("PIXIE_CONTROLLER_PORT must be a port 1-65535, got %d", port)
+	}
+	effectiveAuth := auth
+	effectiveAuth.ControllerHost = host
+	if !mcpPublisherAuthConfigured(effectiveAuth) {
+		return fmt.Errorf("PIXIE_MCP_TOKEN must be a strong printable random token for the enabled MCP publisher")
+	}
+	if err := validateTrustedProxyAuth(auth.Enabled, auth.TrustedProxyCIDRs); err != nil {
+		return err
+	}
+	if isLoopbackControllerHost(host) {
+		return nil
+	}
+	if auth.PublicOrigin == "" {
+		return fmt.Errorf("a non-loopback effective controller bind requires PIXIE_PUBLIC_ORIGIN")
+	}
+	if !auth.Enabled && !auth.AllowRemoteWithout {
+		return fmt.Errorf("a non-loopback effective controller bind requires controller authentication or explicit PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true")
+	}
+	return nil
+}
+
 func (r *Runtime) Start() (string, error) {
-	if err := r.sessions.recoverDeletions(context.Background()); err != nil {
+	if err := r.sessions.RecoverDeletions(context.Background()); err != nil {
 		return "", fmt.Errorf("resume session deletions: %w", err)
 	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(r.config.Host, strconv.Itoa(r.config.Port)))
@@ -327,6 +432,12 @@ func (m *SessionManager) shutdown(ctx context.Context) {
 		entry.state.Unlock()
 	}
 	m.mu.Unlock()
+	// Revoke registrations for active and settled residents alike. The native
+	// registry is instance-owned, so this is local cleanup rather than durable
+	// module state.
+	for _, id := range ids {
+		m.revokeNativeMCPSession(id)
+	}
 
 	// Shutdown unwinds blocked UI on every session: dismiss browser modals.
 	// The host closes its own bridges on session close.

@@ -18,11 +18,11 @@ func TestBrowserArtifactProxyUsesSameOriginResourcePolicy(t *testing.T) {
 		_, _ = response.Write([]byte("png"))
 	}))
 	defer upstream.Close()
-	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, nil, nil, controller.AuthConfig{BrowserURL: upstream.URL}, "", nil)
+	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, nil, nil, controller.AuthConfig{BrowserURL: upstream.URL, ControllerPort: 7312}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "http://controller/v1/artifacts/panel/screen.png", nil)
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7312/v1/artifacts/panel/screen.png", nil)
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

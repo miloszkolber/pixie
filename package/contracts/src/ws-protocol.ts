@@ -106,6 +106,8 @@ export const WS_METHODS = {
 	sessionQueueRetry: "session.queueRetry",
 	sessionAbort: "session.abort",
 	sessionDelete: "session.delete",
+	sessionDeletionRecovery: "session.deletionRecovery",
+	sessionConfirmExternalDeletion: "session.confirmExternalDeletion",
 	sessionRename: "session.rename",
 	sessionArchive: "session.archive",
 	sessionUnarchive: "session.unarchive",
@@ -127,6 +129,7 @@ export const WS_METHODS = {
 	modelList: "model.list",
 	modelRefresh: "model.refresh",
 	modelClampThinking: "model.clampThinking",
+	modelThinkingLevels: "model.thinkingLevels",
 	modelSetVisibility: "model.setVisibility",
 	modelSetAllVisibility: "model.setAllVisibility",
 	piPreferencesRead: "pi.preferencesRead",
@@ -148,8 +151,20 @@ export const WS_METHODS = {
 	providerLogout: "provider.logout",
 	settingsUpdate: "settings.update",
 	historySearch: "history.search",
+	scheduleList: "schedule.list",
+	schedulePreview: "schedule.preview",
+	scheduleHealth: "schedule.health",
+	scheduleCreate: "schedule.create",
+	scheduleUpdate: "schedule.update",
+	scheduleDelete: "schedule.delete",
+	scheduleRunNow: "schedule.runNow",
+	scheduleStop: "schedule.stop",
 	piStatus: "pi.status",
 	runtimeStatus: "runtime.status",
+	mcpRegistryCatalog: "mcpRegistry.catalog",
+	mcpRegistryModuleSetEnabled: "mcpRegistry.moduleSetEnabled",
+	mcpRegistryModuleRestart: "mcpRegistry.moduleRestart",
+	mcpAdapterStatus: "mcpAdapter.status",
 	browserPanelOpen: "browser.panelOpen",
 	browserPanelCommand: "browser.panelCommand",
 	browserPanelClose: "browser.panelClose",
@@ -186,6 +201,15 @@ export type WsChannel = (typeof WS_CHANNELS)[keyof typeof WS_CHANNELS];
 
 export interface Ack {
 	ok: true;
+}
+
+// A retained deletion tombstone that could not be safely resumed. Operators
+// resolve it explicitly; it is never replayed or discarded implicitly.
+export interface DeletionRecovery {
+	projectId: string;
+	sessionId: string;
+	phase: string;
+	reason: string;
 }
 
 export interface ProjectWatchReadyResult {
@@ -300,6 +324,11 @@ export interface WsMethodMap {
 	};
 	"session.abort": { params: { sessionId: string }; result: Ack };
 	"session.delete": { params: { projectId: string; sessionId: string }; result: Ack };
+	"session.deletionRecovery": { params: Record<string, never>; result: DeletionRecovery[] };
+	"session.confirmExternalDeletion": {
+		params: { projectId: string; sessionId: string };
+		result: Ack;
+	};
 	"session.rename": {
 		params: { projectId: string; sessionId: string; title: string };
 		result: Ack;
@@ -411,6 +440,7 @@ export interface WsMethodMap {
 	"pi.agentUpdate": {
 		params: {
 			id: string;
+			revision: string;
 			name: string;
 			description: string;
 			instructions: string;
@@ -421,7 +451,7 @@ export interface WsMethodMap {
 		result: PiAgentCatalogEntry;
 	};
 	"pi.agentDelete": {
-		params: { id: string; projectId?: string; root?: string };
+		params: { id: string; revision: string; projectId?: string; root?: string };
 		result: Ack;
 	};
 	"provider.status": { params: Record<string, never>; result: ProviderStatusReport };
@@ -503,6 +533,10 @@ export interface WsMethodMap {
 	};
 	"mcpRegistry.moduleSetEnabled": {
 		params: { moduleId: string; enabled: boolean };
+		result: McpRegistryCatalog;
+	};
+	"mcpRegistry.moduleRestart": {
+		params: { moduleId: string };
 		result: McpRegistryCatalog;
 	};
 	"mcpAdapter.status": {

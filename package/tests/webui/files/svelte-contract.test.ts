@@ -12,7 +12,7 @@ test("every files component compiles as Svelte 5 and retains stable automation h
 		source += component;
 		count += 1;
 	}
-	expect(count).toBe(15);
+	expect(count).toBe(16);
 	for (const testid of [
 		"change-row",
 		"change-row-menu",
@@ -42,6 +42,11 @@ test("every files component compiles as Svelte 5 and retains stable automation h
 		"md-toggle-source",
 		"markdown-preview",
 		"md-alert",
+		"details-panel",
+		"details-release",
+		"git-repository-select",
+		"git-warnings",
+		"diff-raw-notice",
 	]) {
 		expect(source).toContain(testid);
 	}

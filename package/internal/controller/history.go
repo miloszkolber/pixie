@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 const historyMaxSessions = 200

@@ -27,3 +27,21 @@ export function resolveShellAvailability(
 export function hasConfiguredProvider(report: ProviderStatusReport): boolean {
 	return report.providers.some((provider) => provider.configured);
 }
+
+export type ShellPrimarySurface = "project-work-area" | "standalone-settings" | "content";
+
+/**
+ * Choose the primary surface for the shell. A mounted project work area always
+ * wins because it owns the Settings area in the ready state. When no project
+ * area is active, a requested Settings view falls back to the standalone
+ * settings surface so unconfigured, incompatible, disconnected and error
+ * states can still reach provider/system configuration.
+ */
+export function resolveShellPrimarySurface(
+	hasActiveProjectArea: boolean,
+	settingsRequested: boolean,
+): ShellPrimarySurface {
+	if (hasActiveProjectArea) return "project-work-area";
+	if (settingsRequested) return "standalone-settings";
+	return "content";
+}

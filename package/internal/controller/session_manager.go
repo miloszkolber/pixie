@@ -6,20 +6,25 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
+	"github.com/miloszkolber/pixie/internal/canvas"
 	"github.com/miloszkolber/pixie/internal/identifier"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
 
 const (
 	maxQueuedMessages          = 20
 	maxQueueRecoveryWorkers    = 4
+	maxManagedResidents        = 16
+	maxManagedLaunching        = 4
+	maxManagedActiveWork       = 8
 	inactiveProjectionMaxCount = 24
 	inactiveProjectionMaxBytes = 8 * 1024 * 1024
 	maxPendingCommandCatalogs  = 32
@@ -28,6 +33,28 @@ const (
 var errAgentIdentityChanged = errors.New("connected Pi agent identity changed")
 
 type SessionPublisher func(channel string, data any)
+
+// nativeMCPRevoker is the narrow lifecycle seam between controller sessions
+// and the in-process publisher. Registration issuance/authorization remains
+// owned by mcpserver.Registry; sessions only revoke credentials when their
+// native identity is deleted or replaced.
+type nativeMCPRevoker interface {
+	RevokeSession(string) int
+}
+
+type nativeMCPDeletionCleaner interface {
+	DeleteSession(string) error
+}
+
+// nativeCanvasMCPAttacher is the narrow attachment seam between managed
+// native sessions and the publisher. The registry remains the authority for
+// issuing a Canvas capability; the controller only places that capability in
+// the native adapter's server definition.
+type nativeCanvasMCPAttacher interface {
+	nativeMCPRevoker
+	AttachCanvas(string, ...uint64) (canvas.Authority, error)
+	Endpoint() string
+}
 
 type sessionEntry struct {
 	capabilities map[string]int
@@ -54,8 +81,10 @@ type sessionEntry struct {
 	messageUsage       map[string]messageUsage
 	queue              sessionQueueState
 	runID              string
+	detachedWork       string
 	objectiveToken     string
 	attached           uint64
+	canvasAttached     uint64
 	replay             *sessionEntry
 	promptGeneration   uint64
 	projectionID       string
@@ -76,6 +105,8 @@ type sessionEntry struct {
 type userEcho struct {
 	text            string
 	offset          int
+	messageIndex    int
+	optimistic      any
 	images          []map[string]any
 	resources       []map[string]any
 	matched         []bool
@@ -112,11 +143,22 @@ type SessionManager struct {
 	dialogs         map[dialogKey]*pendingDialog
 	liveness        map[string]map[uint64]sessionLivenessProvider
 	creating        int
+	activeWork      int
 	pendingCommands map[string]pendingCommandCatalog
 	publish         SessionPublisher
 	now             func() time.Time
 	deviceCode      func(map[string]any)
 	history         *HistoryIndex
+	nativeMCP       nativeMCPRevoker
+
+	// deletionQuarantine retains requested records that could not be safely
+	// resumed this boot. They are never dispatched or forgotten implicitly.
+	deletionQuarantine map[string]DeletionRecovery
+	// deletionAuthority selects the destructive-recovery authority and
+	// pairingStorageKey names the native storage the controller may pair with.
+	// Both are resolved from configuration before the first recovery.
+	deletionAuthority DeletionAuthorityMode
+	pairingStorageKey string
 }
 
 type pendingCommandCatalog struct {
@@ -129,13 +171,43 @@ func NewSessionManager(projects *workspace.Projects, policy *workspace.PathPolic
 	if records != nil {
 		deletions = NewSessionDeletions(records.store)
 	}
-	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now}
+	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now, deletionQuarantine: make(map[string]DeletionRecovery), deletionAuthority: DeletionAuthorityAuto}
 	manager.history = newHistoryIndex(manager)
 	return manager
 }
 
 func (m *SessionManager) SetClient(client *PiClient)     { m.client = client }
 func (m *SessionManager) SetSettings(settings *Settings) { m.settings = settings }
+
+// SetDeletionAuthority wires the configured destructive-recovery authority and
+// the resolved pairing storage key before the first recovery. Recovery defaults
+// to auto with legacy matching when it is never called.
+func (m *SessionManager) SetDeletionAuthority(mode DeletionAuthorityMode, storageKey string) {
+	m.deletionAuthority = mode
+	m.pairingStorageKey = storageKey
+}
+
+// SetMCPRegistry attaches the live publisher's instance-owned scope registry.
+// The narrow interface keeps session lifecycle code from issuing or
+// authorizing native MCP credentials itself.
+func (m *SessionManager) SetMCPRegistry(registry *mcpserver.Registry) { m.nativeMCP = registry }
+
+func (m *SessionManager) revokeNativeMCPSession(sessionID string) {
+	if m.nativeMCP != nil && sessionID != "" {
+		m.nativeMCP.RevokeSession(sessionID)
+	}
+}
+
+func (m *SessionManager) cleanupNativeMCPSession(sessionID string) error {
+	if m.nativeMCP == nil || sessionID == "" {
+		return nil
+	}
+	cleaner, ok := m.nativeMCP.(nativeMCPDeletionCleaner)
+	if !ok {
+		return nil
+	}
+	return cleaner.DeleteSession(sessionID)
+}
 
 func (m *SessionManager) SetObjectiveURL(url string) { m.objectiveURL = url }
 
@@ -184,10 +256,24 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 	if !profile.Compatible {
 		return nil, nil, unsupportedAgentCapability(strings.Join(profile.MissingRequired, " and "))
 	}
+	// Model and thinking changes are separate native mutations. Reject them
+	// before session.create so an unsupported host cannot leave an orphan native
+	// transcript or a local record behind.
+	if (model != nil || thinking != "") && !profile.OperationSet["session.configure"] {
+		return nil, nil, unsupportedAgentCapability("create-time model/thinking overrides")
+	}
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
 		return nil, nil, fmt.Errorf("session manager has been shut down")
+	}
+	if len(m.sessions)+m.creating >= maxManagedResidents {
+		m.mu.Unlock()
+		return nil, nil, fmt.Errorf("managed runtime resident capacity is full; release an eligible idle runtime")
+	}
+	if m.creating >= maxManagedLaunching {
+		m.mu.Unlock()
+		return nil, nil, fmt.Errorf("managed runtime launch capacity is full")
 	}
 	m.creating++
 	m.mu.Unlock()
@@ -216,8 +302,35 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 	if err != nil {
 		return nil, nil, err
 	}
-	entry := newSessionEntry(sessionID, projectID, admitted, "", token)
+	// Pi allocates the native session ID during session.create. Attach the
+	// optional Canvas server only after that ID is known so its capability is
+	// bound to the authenticated native principal rather than to caller input.
+	canvasAttached := m.attachNativeCanvas(ctx, profile, sessionID, token, generation)
+	var entry *sessionEntry
+	creationCommitted := false
+	defer func() {
+		if creationCommitted {
+			return
+		}
+		if canvasAttached {
+			m.revokeNativeMCPSession(sessionID)
+		}
+		// A native session may remain in the host after a local creation
+		// failure. Fence this projection so the next operation reloads it and
+		// can establish a fresh Canvas binding instead of reusing a revoked
+		// registration.
+		if entry != nil {
+			entry.state.Lock()
+			entry.attached = 0
+			entry.canvasAttached = 0
+			entry.state.Unlock()
+		}
+	}()
+	entry = newSessionEntry(sessionID, projectID, admitted, "", token)
 	entry.capabilities = response.Capabilities
+	if canvasAttached {
+		entry.canvasAttached = generation
+	}
 	entry.configOptions = jsonValues(response.ConfigOptions)
 	entry.thinkingLevel = thinkingFromOptions(entry.configOptions)
 	entry.model = modelFromSetup(entry.configOptions, response.Meta)
@@ -271,6 +384,7 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 			m.releaseEntry(entry)
 		})
 	}
+	creationCommitted = true
 	return result, after, nil
 }
 
@@ -344,6 +458,17 @@ func (m *SessionManager) EnsureAttached(ctx context.Context, sessionID, projectI
 }
 
 func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, entry *sessionEntry) error {
+	return m.attachLockedWithCanvas(ctx, sessionID, entry, true)
+}
+
+// attachLockedWithoutCanvas is used by destructive lifecycle operations after
+// they revoke the session binding. Deleting or archiving a session must not
+// issue a replacement Canvas credential merely to load the native transcript.
+func (m *SessionManager) attachLockedWithoutCanvas(ctx context.Context, sessionID string, entry *sessionEntry) error {
+	return m.attachLockedWithCanvas(ctx, sessionID, entry, false)
+}
+
+func (m *SessionManager) attachLockedWithCanvas(ctx context.Context, sessionID string, entry *sessionEntry, allowCanvas bool) error {
 	m.mu.Lock()
 	current := !m.closed && m.sessions[sessionID] == entry
 	m.mu.Unlock()
@@ -374,11 +499,34 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		entry.state.Unlock()
 		return fmt.Errorf("%w; reopen this chat only after restoring the original agent", errAgentIdentityChanged)
 	}
-	alreadyAttached := entry.attached == generation
+	previousGeneration := entry.attached
+	alreadyAttached := previousGeneration == generation
+	canvasAttached := entry.canvasAttached == generation
 	entry.state.Unlock()
 	if alreadyAttached {
+		if allowCanvas && !canvasAttached {
+			canvasAttached = m.attachNativeCanvas(ctx, profile, sessionID, entry.objectiveToken, generation)
+			entry.state.Lock()
+			if canvasAttached {
+				entry.canvasAttached = generation
+			} else {
+				entry.canvasAttached = 0
+			}
+			entry.state.Unlock()
+		}
 		m.scheduleFollowUp(sessionID, entry)
 		return nil
+	}
+	if previousGeneration != 0 && previousGeneration != generation {
+		// A replacement Pi connection invalidates every native MCP binding for
+		// this session. The new session load below must register fresh bindings;
+		// do not let an old credential cross the transport generation boundary.
+		m.revokeNativeMCPSession(sessionID)
+	}
+	if previousGeneration == 0 || previousGeneration != generation {
+		entry.state.Lock()
+		entry.canvasAttached = 0
+		entry.state.Unlock()
 	}
 	// Pending dialogs survive re-attachment on purpose: the host keeps the
 	// matching promise and re-publishes unresolved requests on session.load
@@ -412,19 +560,28 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 		entry.state.Unlock()
 		return err
 	}
+	if allowCanvas {
+		canvasAttached = m.attachNativeCanvas(ctx, profile, sessionID, entry.objectiveToken, generation)
+	}
 	m.reconcileDialogGeneration(sessionID, generation)
 	entry.state.Lock()
 	replay.capabilities = response.Capabilities
 	replay.configOptions = jsonValues(response.ConfigOptions)
 	replay.model = modelFromSetup(replay.configOptions, response.Meta)
 	replay.thinkingLevel = thinkingFromOptions(replay.configOptions)
-	// session.load replays a completed transcript. Message and tool chunks seen
-	// during that RPC describe history, not a live prompt.
-	replay.streaming = false
+	// A native host may report an accepted run while replaying the transcript.
+	// Preserve that explicit run identity; only a snapshot without one is idle.
+	replay.streaming = replay.runID != ""
 	replay.attached = generation
+	if canvasAttached {
+		replay.canvasAttached = generation
+	}
 	replay.queue = entry.queue.clone()
 	recoveredDispatch := replay.queue.Dispatch != nil
 	if err := m.recoverQueuedDispatchLocked(sessionID, replay); err != nil {
+		if canvasAttached {
+			m.revokeNativeMCPSession(sessionID)
+		}
 		entry.replay = nil
 		entry.state.Unlock()
 		return err
@@ -448,7 +605,9 @@ func (m *SessionManager) attachLocked(ctx context.Context, sessionID string, ent
 	entry.capabilities = replay.capabilities
 	entry.planState = replay.planState
 	entry.agentIdentity = replay.agentIdentity
+	entry.detachedWork = detachedWorkNone
 	entry.attached = replay.attached
+	entry.canvasAttached = replay.canvasAttached
 	entry.projectionID = replay.projectionID
 	entry.replay = nil
 	if recoveredDispatch {
@@ -822,12 +981,21 @@ func (m *SessionManager) retainWork(sessionID string, entry *sessionEntry) error
 	if m.closed || m.sessions[sessionID] != entry || m.lifecycle[sessionID] {
 		return fmt.Errorf("session changed while starting background work")
 	}
+	if m.activeWork >= maxManagedActiveWork {
+		return fmt.Errorf("managed active-work capacity is full")
+	}
 	entry.refs++
+	m.activeWork++
 	m.work.Add(1)
 	return nil
 }
 
 func (m *SessionManager) releaseWork(entry *sessionEntry) {
+	m.mu.Lock()
+	if m.activeWork > 0 {
+		m.activeWork--
+	}
+	m.mu.Unlock()
 	m.releaseEntry(entry)
 	m.work.Done()
 }
@@ -932,6 +1100,15 @@ func (m *SessionManager) SetLeases(clientKey string, revision uint64, requested 
 		}
 		next.sessions[lease.SessionID] = lease.ProjectID
 	}
+	newResidents := 0
+	for sessionID := range next.sessions {
+		if m.sessions[sessionID] == nil && !m.lifecycle[sessionID] {
+			newResidents++
+		}
+	}
+	if len(m.sessions)+m.creating+newResidents > maxManagedResidents {
+		return fmt.Errorf("managed runtime resident capacity is full; release an eligible idle runtime")
+	}
 	if m.leases == nil {
 		m.leases = make(map[string]*clientSessionLeases)
 	}
@@ -973,6 +1150,27 @@ func (m *SessionManager) Release(sessionID, projectID, cwd, clientKey string) {
 	}
 	m.evictLocked()
 	m.mu.Unlock()
+}
+
+// ReleaseIdleRuntimeForClient requires the caller to own the session lease
+// before allowing an idle resident to be released. The lease check stays
+// separate from Release so an idle-runtime action cannot silently change view
+// selection ownership.
+func (m *SessionManager) ReleaseIdleRuntimeForClient(ctx context.Context, sessionID, projectID, clientKey string) error {
+	if strings.TrimSpace(clientKey) == "" {
+		return fmt.Errorf("session release requires caller ownership")
+	}
+	m.mu.Lock()
+	leases := m.leases[clientKey]
+	owned := leases != nil && leases.sessions[sessionID] == projectID
+	m.mu.Unlock()
+	if !owned {
+		return fmt.Errorf("session release requires caller ownership")
+	}
+	if _, err := m.RecordedCWD(projectID, sessionID); err != nil {
+		return err
+	}
+	return m.ReleaseIdleRuntime(ctx, sessionID)
 }
 
 func (m *SessionManager) isLeasedLocked(sessionID string) bool {
@@ -1018,87 +1216,35 @@ func (m *SessionManager) summary(sessionID string, entry *sessionEntry) SessionS
 
 func (m *SessionManager) summaryLocked(sessionID string, entry *sessionEntry) SessionSummary {
 	queue := entry.queue.wire(!entry.promptActive)
-	return SessionSummary{Capabilities: entry.capabilities, SessionID: sessionID, ProjectID: entry.projectID, CWD: entry.cwd, ParentSessionID: entry.parentSessionID, Title: entry.title, Model: entry.model, ThinkingLevel: entry.thinkingLevel, IsStreaming: entry.streaming || entry.promptActive, MessageCount: len(entry.messages), UpdatedAt: m.now().UnixMilli(), Live: true, Archived: false, LastSettlement: entry.settlement, Queue: &queue, ConfigOptions: projectConfigOptions(entry.configOptions)}
+	return SessionSummary{Capabilities: entry.capabilities, SessionID: sessionID, ProjectID: entry.projectID, CWD: entry.cwd, ParentSessionID: entry.parentSessionID, Title: entry.title, Model: entry.model, ThinkingLevel: entry.thinkingLevel, IsStreaming: entry.streaming || entry.promptActive || entry.runID != "", MessageCount: len(entry.messages), UpdatedAt: m.now().UnixMilli(), Live: true, Archived: false, LastSettlement: entry.settlement, Queue: &queue, ConfigOptions: projectConfigOptions(entry.configOptions)}
 }
 
 func (m *SessionManager) evictLocked() {
-	type candidate struct {
-		id    string
-		at    time.Time
-		bytes int
-	}
-	var candidates []candidate
-	total := 0
-	leased := make(map[string]bool)
-	for _, client := range m.leases {
-		for sessionID := range client.sessions {
-			leased[sessionID] = true
-		}
-	}
+	// Automatic idle eviction is deliberately disabled. A resident may own
+	// detached native/extension work that cannot be proven from a cheap local
+	// probe. Capacity pressure is surfaced through ReleaseIdleRuntime, which
+	// verifies settled state and lets the caller choose which runtime to free.
+	// History-only ephemeral projections are the exception: they are not user
+	// residents and may be discarded once their indexing operation releases its
+	// reference.
 	for id, entry := range m.sessions {
-		if entry.refs > 0 {
+		if !entry.ephemeral || entry.refs > 0 || m.isLeasedLocked(id) || m.hasActiveLivenessLocked(id) {
 			continue
-		}
-		// Liveness probes must stay trivial and non-blocking: they run while
-		// the manager lock is held and never schedule work themselves.
-		if leased[id] || m.hasActiveLivenessLocked(id) {
-			entry.state.Lock()
-			entry.inactiveAt = time.Time{}
-			entry.state.Unlock()
-			continue
-		}
-		hasDialogs := false
-		for key := range m.dialogs {
-			if key.sessionID == id {
-				hasDialogs = true
-				break
-			}
 		}
 		entry.state.Lock()
-		memoryOnlyQueue := m.queues == nil && queuedFollowUpCount(entry.queue) > 0
-		if hasDialogs || entry.streaming || entry.promptActive || entry.runID != "" || len(entry.queue.Steering) > 0 || memoryOnlyQueue || entry.drainScheduled || entry.drainRetry != nil || entry.replay != nil {
-			entry.inactiveAt = time.Time{}
-			entry.state.Unlock()
-			continue
-		}
-		if entry.ephemeral {
-			delete(m.sessions, id)
-			entry.state.Unlock()
-			continue
-		}
-		if entry.inactiveAt.IsZero() {
-			entry.inactiveAt = m.now()
-		}
-		if entry.inactiveBytes == 0 {
-			encoded, err := json.Marshal([]any{entry.messages, entry.pendingToolOutputs, entry.planState})
-			if err != nil {
-				// A projection that cannot be measured must not bypass the budget.
-				delete(m.sessions, id)
-				entry.state.Unlock()
-				continue
-			}
-			entry.inactiveBytes = len(encoded)
-		}
-		candidates = append(candidates, candidate{id: id, at: entry.inactiveAt, bytes: entry.inactiveBytes})
-		total += entry.inactiveBytes
+		removable := !entry.streaming && !entry.promptActive && entry.runID == "" &&
+			(entry.detachedWork == "" || entry.detachedWork == detachedWorkNone) &&
+			entry.queue.Dispatch == nil && entry.queue.Blocked == nil && len(entry.queue.FollowUp) == 0 &&
+			len(entry.queue.Steering) == 0 && !entry.drainScheduled && entry.drainRetry == nil && entry.replay == nil
 		entry.state.Unlock()
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].at.Equal(candidates[j].at) {
-			return candidates[i].id < candidates[j].id
+		if removable {
+			delete(m.sessions, id)
 		}
-		return candidates[i].at.Before(candidates[j].at)
-	})
-	for len(candidates) > inactiveProjectionMaxCount || total > inactiveProjectionMaxBytes {
-		item := candidates[0]
-		delete(m.sessions, item.id)
-		total -= item.bytes
-		candidates = candidates[1:]
 	}
 }
 
 func newSessionEntry(sessionID, projectID, cwd, parent, token string) *sessionEntry {
-	return &sessionEntry{projectID: projectID, cwd: cwd, parentSessionID: parent, title: "Chat", thinkingLevel: "off", messages: []any{}, commands: []map[string]any{}, stats: SessionStats{SessionID: sessionID, Reported: map[string]bool{}}, queue: newSessionQueueState(), objectiveToken: token, projectionID: identifier.New()}
+	return &sessionEntry{projectID: projectID, cwd: cwd, parentSessionID: parent, title: "Chat", thinkingLevel: "off", messages: []any{}, commands: []map[string]any{}, stats: SessionStats{SessionID: sessionID, Reported: map[string]bool{}}, queue: newSessionQueueState(), detachedWork: detachedWorkNone, objectiveToken: token, projectionID: identifier.New()}
 }
 
 func agentProfileIdentity(profile AgentProfile, generation uint64) string {
@@ -1236,7 +1382,95 @@ func (m *SessionManager) sessionServers(profile AgentProfile, token string) ([]p
 	// Signet memory attaches through the Pi-native managed extension
 	// (`~/.pi/agent/extensions/signet-pi.js`, operator-installed); Pixie
 	// connects no MCP connection for it.
+	if !profile.Operations.HTTPMCP {
+		// Objectives and Canvas are optional contributions. Their absence must not
+		// block ordinary chat when the selected host cannot attach MCP servers.
+		return []piwire.McpServer{}, nil
+	}
 	return m.objectiveServers(profile, token), nil
+}
+
+const (
+	canvasMCPServerName    = "pixie-canvas"
+	objectiveMCPServerName = "pixie_objectives"
+)
+
+// attachNativeCanvas asks the publisher for a fresh, native-session-scoped
+// Canvas capability and hands it to Pi's existing MCP adapter. Canvas is an
+// optional contribution: disabled, unavailable or unsupported deployments
+// leave core chat usable and never receive a fabricated/global credential.
+func (m *SessionManager) attachNativeCanvas(ctx context.Context, profile AgentProfile, sessionID, objectiveToken string, generation uint64) bool {
+	if m.client == nil || sessionID == "" || generation == 0 || !profile.Operations.HTTPMCP || m.nativeMCP == nil {
+		return false
+	}
+	attacher, ok := m.nativeMCP.(nativeCanvasMCPAttacher)
+	if !ok {
+		return false
+	}
+	authority, err := attacher.AttachCanvas(sessionID, generation)
+	if err != nil || authority.Token == "" {
+		return false
+	}
+	endpoint := canvasMCPEndpoint(attacher.Endpoint())
+	if endpoint == "" {
+		m.revokeNativeMCPSession(sessionID)
+		return false
+	}
+	servers := m.objectiveServers(profile, objectiveToken)
+	servers = append(servers, piwire.McpServer{Http: &piwire.McpServerHttpInline{
+		Type: "http", Name: canvasMCPServerName, Url: endpoint,
+		Headers: []piwire.HttpHeader{{Name: "Authorization", Value: "Bearer " + authority.Token}},
+	}})
+	result, err := m.client.CallPi(ctx, "mcp.attach", map[string]any{"sessionId": sessionID, "servers": servers})
+	if err != nil || canvasMCPAttachRejected(result, m.objectiveURL != "") {
+		// The adapter may have registered the definition before reporting a
+		// partial failure. Revocation makes either outcome fail closed.
+		m.revokeNativeMCPSession(sessionID)
+		return false
+	}
+	return true
+}
+
+// canvasMCPEndpoint converts the registry's canonical Browser endpoint to the
+// sibling Canvas route. Registry owns the listener origin; this helper only
+// changes the registered route and rejects credentials/query data so a token
+// can never be broadened into a URL.
+func canvasMCPEndpoint(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != mcpserver.BrowserRoute {
+		return ""
+	}
+	parsed.Path = mcpserver.CanvasRoute
+	parsed.RawPath = ""
+	return parsed.String()
+}
+
+func canvasMCPAttachRejected(result json.RawMessage, objectiveExpected bool) bool {
+	var outcome struct {
+		OK          *bool    `json:"ok"`
+		Unavailable []string `json:"unavailable"`
+	}
+	if err := json.Unmarshal(result, &outcome); err != nil || outcome.OK == nil {
+		return true
+	}
+	if *outcome.OK {
+		// The adapter's contract makes `ok` the aggregate of unavailable
+		// registrations. Treat an inconsistent success-plus-failure response as
+		// rejected rather than assuming the Canvas definition was installed.
+		return len(outcome.Unavailable) != 0
+	}
+	for _, detail := range outcome.Unavailable {
+		if strings.HasSuffix(detail, ": "+canvasMCPServerName) {
+			return true
+		}
+		if !objectiveExpected || !strings.HasSuffix(detail, ": "+objectiveMCPServerName) {
+			return true
+		}
+	}
+	// The adapter reports partial objective registration failures as unavailable
+	// while still registering the Canvas definition. Accept only that explicit,
+	// known partial outcome; every other false/empty result fails closed.
+	return len(outcome.Unavailable) == 0
 }
 
 func (m *SessionManager) objectiveServers(profile AgentProfile, token string) []piwire.McpServer {
