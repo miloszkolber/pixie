@@ -62,12 +62,13 @@ async function checkReadiness(): Promise<void> {
 }
 </script>
 
-<div
-	data-testid="provider-row"
-	data-provider={provider.id}
-	data-configured={String(provider.configured)}
-	class="flex flex-wrap items-center gap-md rounded-[var(--radius-sm)] border border-border-default bg-control-bg px-md py-sm sm:flex-nowrap"
->
+<div class="@container">
+	<div
+		data-testid="provider-row"
+		data-provider={provider.id}
+		data-configured={String(provider.configured)}
+		class="flex flex-wrap items-center gap-md rounded-[var(--radius-sm)] border border-border-default bg-control-bg px-md py-sm @2xl:flex-nowrap"
+	>
 	<span
 		class={`flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] ${
 			availability.usable
@@ -77,7 +78,7 @@ async function checkReadiness(): Promise<void> {
 	>
 		<Icon name={availability.usable ? "check" : "boxes"} size={16} />
 	</span>
-	<div class="min-w-0 flex-1 basis-48">
+	<div class="min-w-48 flex-1">
 		<div class="break-words text-text-default tr-text-ui">{provider.name}</div>
 		<div class="break-words text-text-muted tr-text-metadata">
 			{provider.id} · {modelSummary(provider)}
@@ -160,5 +161,6 @@ async function checkReadiness(): Promise<void> {
 				Managed by Pi
 			</span>
 		{/if}
+	</div>
 	</div>
 </div>

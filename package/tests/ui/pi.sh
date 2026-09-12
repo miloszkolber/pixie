@@ -79,7 +79,7 @@ browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimatio
 assert_eval "document.querySelector('[data-testid=settings-detail]')?.getBoundingClientRect().bottom <= innerHeight + 1" 'short settings view remains reachable'
 browser screenshot /artifacts/pi-short-settings.png >/dev/null
 open_chats
-browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("[data-testid=mobile-area-chats], [data-testid=rail-chats]")).some(button => button.getAttribute("aria-current") === "page")' >/dev/null
+browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("[data-testid=mobile-area-chats], [data-testid=rail-chats]")).some(button => (button.getAttribute("aria-selected") === "true" || button.getAttribute("aria-current") === "page"))' >/dev/null
 browser eval 'document.querySelector("[data-testid=mobile-primary]")?.click(); true' >/dev/null
 browser wait --timeout 60000 --fn '(() => { const input = document.querySelector("[data-testid=chat-input]"); return input?.getClientRects().length && input.closest("[aria-hidden=true]") === null; })()' >/dev/null
 for dimensions in '320 400' '390 480' '1024 500'; do
@@ -117,7 +117,7 @@ browser screenshot /artifacts/pi-login-recovery.png >/dev/null
 browser find testid login-cancel click >/dev/null
 browser wait --timeout 60000 --fn 'document.querySelector("[data-testid=login-dialog]")?.open !== true' >/dev/null
 open_chats
-browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("[data-testid=mobile-area-chats], [data-testid=rail-chats]")).some(button => button.getAttribute("aria-current") === "page")' >/dev/null
+browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("[data-testid=mobile-area-chats], [data-testid=rail-chats]")).some(button => (button.getAttribute("aria-selected") === "true" || button.getAttribute("aria-current") === "page"))' >/dev/null
 browser eval 'document.querySelector("[data-testid=mobile-primary]")?.click(); true' >/dev/null
 browser wait --timeout 60000 --fn '(() => { const input = document.querySelector("[data-testid=chat-input]"); return input?.getClientRects().length && input.closest("[aria-hidden=true]") === null; })()' >/dev/null
 browser eval "window.reviewFailures.clear();window.reviewFailures.add('session.prompt');const data=new DataTransfer();data.items.add(new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDaYAAAAASUVORK5CYII='),c=>c.charCodeAt(0))],'retained.png',{type:'image/png'}));const input=document.querySelector('input[type=file]');input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));true" >/dev/null

@@ -150,7 +150,7 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 						role="tab"
 						id={`settings-area-tab-${tab.section}`}
 						data-testid="settings-section-row"
-						class={`tree-leaf w-full text-left tr-text-ui ${settingsActiveSection === tab.section ? "tree-leaf-active" : ""}`}
+						class={`tree-leaf w-full text-left tr-text-ui ${settingsActiveSection === tab.section ? "bg-control-bg-selected" : ""}`}
 						aria-selected={settingsActiveSection === tab.section}
 						aria-controls={`settings-area-panel-${tab.section}`}
 						tabindex={settingsActiveSection === tab.section ? 0 : -1}
@@ -163,8 +163,7 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 			{/each}
 		</ul>
 		<p class="mt-sm tr-text-metadata text-text-muted">
-			Settings stays available while the agent is unavailable so provider and system
-			configuration can be reached.
+			Choose a section to review or change this Pi's configuration.
 		</p>
 	</aside>
 

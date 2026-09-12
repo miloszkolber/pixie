@@ -345,68 +345,76 @@ function changeDraftProject(projectId: string): void {
 				These are the only Pi preferences available here. Pi persists them.
 			</p>
 		</div>
-		<label class="flex flex-col gap-xs">
-			Compaction reserve tokens
-			<span class="text-text-muted tr-text-metadata">
-				Tokens Pi reserves for a response before compacting. Clearing the field keeps the saved value; reset restores Pi’s default.
-			</span>
-			<input
-				data-testid="auto-compact-threshold"
-				type="number"
-				min="1024"
-				max="1000000"
-				step="1"
-				bind:value={reserveTokens}
-				disabled={busy || !preferencesReady}
-				class="rounded border border-border-default bg-control-bg px-sm py-xs"
-			/>
-		</label>
-		<label class="flex flex-col gap-xs">
-			Thinking effort
-			<select
-				data-testid="pi-thinking-effort"
-				value={preferences.piThinkingEffort ?? ""}
-				disabled={busy || !preferencesReady}
-				onchange={(event) => {
-					const effort = event.currentTarget.value as
-						| PiPreferences["piThinkingEffort"]
-						| "";
-					thinkingReset = !effort;
+		<div class="flex flex-col gap-xs">
+			<label class="flex flex-col gap-xs">
+				Compaction reserve tokens
+				<span class="text-text-muted tr-text-metadata">
+					Tokens Pi reserves for a response before compacting. Clearing the field keeps the saved value; reset restores Pi’s default.
+				</span>
+				<input
+					data-testid="auto-compact-threshold"
+					type="number"
+					min="1024"
+					max="1000000"
+					step="1"
+					bind:value={reserveTokens}
+					disabled={busy || !preferencesReady}
+					class="rounded border border-border-default bg-control-bg px-sm py-xs"
+				/>
+			</label>
+			<div class="flex flex-wrap gap-xs">
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={busy || !preferencesReady}
+					onclick={() => void resetPreference("compactionReserveTokens")}
+				>
+					<Icon name="rotate-ccw" size={14} />
+					Reset reserve
+				</Button>
+			</div>
+		</div>
+		<div class="flex flex-col gap-xs">
+			<label class="flex flex-col gap-xs">
+				Thinking effort
+				<select
+					data-testid="pi-thinking-effort"
+					value={preferences.piThinkingEffort ?? ""}
+					disabled={busy || !preferencesReady}
+					onchange={(event) => {
+						const effort = event.currentTarget.value as
+							| PiPreferences["piThinkingEffort"]
+							| "";
+						thinkingReset = !effort;
                     if (effort) preferences = { ...preferences, piThinkingEffort: effort };
-					else {
-						const { piThinkingEffort: _unset, ...unset } = preferences;
-						preferences = unset;
-					}
-				}}
-				class="rounded border border-border-default bg-control-bg px-sm py-xs"
-			>
-				<option value="">Pi default</option>
-				{#each THINKING_EFFORTS as effort (effort)}
-					<option value={effort}>{effort}</option>
-				{/each}
-			</select>
-		</label>
+						else {
+							const { piThinkingEffort: _unset, ...unset } = preferences;
+							preferences = unset;
+						}
+					}}
+					class="rounded border border-border-default bg-control-bg px-sm py-xs"
+				>
+					<option value="">Pi default</option>
+					{#each THINKING_EFFORTS as effort (effort)}
+						<option value={effort}>{effort}</option>
+					{/each}
+				</select>
+			</label>
+			<div class="flex flex-wrap gap-xs">
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={busy || !preferencesReady}
+					onclick={() => void resetPreference("piThinkingEffort")}
+				>
+					Reset thinking
+				</Button>
+			</div>
+		</div>
 		<div class="flex flex-wrap gap-xs">
 			<Button size="sm" disabled={busy || loading || !preferencesReady} onclick={() => void savePreferences()}>
 				<Icon name="save" size={14} />
 				Save preferences
-			</Button>
-			<Button
-				size="sm"
-				variant="outline"
-				disabled={busy || !preferencesReady}
-				onclick={() => void resetPreference("compactionReserveTokens")}
-			>
-				<Icon name="rotate-ccw" size={14} />
-				Reset reserve
-			</Button>
-			<Button
-				size="sm"
-				variant="outline"
-				disabled={busy || !preferencesReady}
-				onclick={() => void resetPreference("piThinkingEffort")}
-			>
-				Reset thinking
 			</Button>
 		</div>
 	</section>

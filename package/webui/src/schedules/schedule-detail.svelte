@@ -86,7 +86,6 @@ async function save(values: { prompt: string; cron: string; timezone: string }):
 			<Button data-testid="schedule-create" disabled={locked || Boolean(editor)} onclick={() => { editor = { job: null }; }}>Create schedule</Button>
 		</div>
 	</div>
-	<p class="tr-text-metadata text-text-muted">Pixie must be running to dispatch schedules. Missed occurrences coalesce into one run. Runs never overlap for the same schedule.</p>
 	{#if !connected}<p role="status" class="tr-text-ui text-text-muted">Disconnected. Showing last known state. Reconnecting refreshes the ledger and retries in-flight requests.</p>{/if}
 	{#if $view.error}<p role="alert" class="tr-text-ui text-feedback-error">{$view.error}</p>{/if}
 	{#if $view.healthError}<p role="alert" class="tr-text-ui text-feedback-error">Scheduler persistence or dispatch error: {$view.healthError} Execution claims remain reserved until saving succeeds. A running ledger entry may be waiting for persistence.</p>{/if}
@@ -110,7 +109,6 @@ async function save(values: { prompt: string; cron: string; timezone: string }):
 	{:else if !selected}
 		<div data-testid="schedule-empty" class="flex min-w-0 flex-col gap-sm">
 			<p class="tr-text-ui text-text-muted">Select a schedule in the list to inspect its timing, next occurrence and run ledger.</p>
-			{#if $view.loaded && $view.jobs.length === 0}<p class="tr-text-ui text-text-muted">No schedules in this project.</p>{/if}
 		</div>
 	{:else}
 		<div class="flex min-w-0 flex-col gap-md">

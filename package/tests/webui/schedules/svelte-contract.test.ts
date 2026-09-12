@@ -73,3 +73,25 @@ test("the workspace shell keeps schedules and settings list/detail slots", async
 		expect(source).toContain(contract);
 	}
 });
+
+test("the schedules surfaces keep one list-level help sentence and one detail selection state", async () => {
+	const [view, list, detail] = await Promise.all(
+		["schedules-view.svelte", "schedule-list.svelte", "schedule-detail.svelte"].map((name) =>
+			Bun.file(new URL(name, schedulesRoot)).text(),
+		),
+	);
+	const explanation =
+		"Pixie must be running to dispatch schedules. Missed occurrences coalesce into one run. Runs never overlap for the same schedule.";
+	// The list owns the shared explanation; the detail does not repeat it.
+	expect(list).toContain(explanation);
+	expect(view).not.toContain(explanation);
+	expect(detail).not.toContain(explanation);
+	// The detail owns the distinct selection prompt and no list-level empty copy.
+	expect(detail).toContain(
+		"Select a schedule in the list to inspect its timing, next occurrence and run ledger.",
+	);
+	expect(detail).not.toContain("No schedules in this project.");
+	// Each list surface still states the empty case exactly once.
+	expect(list).toContain("No schedules in this project.");
+	expect(view).toContain("No schedules in this project.");
+});

@@ -125,7 +125,7 @@ onDestroy(() => {
 </script>
 
 {#snippet StatusBadge(state: RuntimeAvailability)}
-	<span class={`inline-flex items-center gap-xs tr-text-metadata ${STATE_CLASS[state]}`}>
+	<span class={`inline-flex shrink-0 items-center gap-xs whitespace-nowrap tr-text-metadata ${STATE_CLASS[state]}`}>
 		<span
 			aria-hidden="true"
 			class={`size-1.5 rounded-full ${
@@ -141,7 +141,7 @@ onDestroy(() => {
 {/snippet}
 
 {#snippet Metric(label: string, value: string)}
-	<div class="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,auto)] gap-sm py-xs">
+	<div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-sm py-xs">
 		<dt class="text-text-muted tr-text-metadata">{label}</dt>
 		<dd class="min-w-0 break-words text-right tabular-nums text-text-default tr-text-metadata">
 			{value}
@@ -162,7 +162,7 @@ onDestroy(() => {
 		data-testid={`system-card-${name.toLowerCase()}`}
 		class="card min-w-0 p-md"
 	>
-		<div class="flex items-center justify-between gap-sm">
+		<div class="flex flex-wrap items-center justify-between gap-x-sm gap-y-xs">
 			<h3 class="tr-text-ui text-text-default">{name}</h3>
 			{@render StatusBadge(status.state)}
 		</div>
@@ -173,7 +173,7 @@ onDestroy(() => {
 			<dl class="mt-sm divide-y divide-border-muted border-border-muted border-t">
 				{#if status.build}{@render Metric("Version", status.build.version)}{/if}
 				{#if status.build?.revision}
-					<div class="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,auto)] gap-sm py-xs">
+					<div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-sm py-xs">
 						<dt class="text-text-muted tr-text-metadata">Revision</dt>
 						<dd class="min-w-0 text-right tr-text-metadata">
 							<code class="break-all" title={status.build.revision}>
@@ -196,7 +196,7 @@ onDestroy(() => {
 
 {#snippet AgentCard(status: RuntimeAgentStatus)}
 	<section data-testid="system-card-agent" class="card min-w-0 p-md">
-		<div class="flex items-center justify-between gap-sm">
+		<div class="flex flex-wrap items-center justify-between gap-x-sm gap-y-xs">
 			<h3 class="tr-text-ui text-text-default">Agent</h3>
 			{@render StatusBadge(status.state)}
 		</div>
@@ -214,7 +214,7 @@ onDestroy(() => {
 
 <div
 	data-testid="system-settings"
-	class="mx-auto flex w-full max-w-[56rem] flex-col gap-lg"
+	class="@container mx-auto flex w-full max-w-[56rem] flex-col gap-lg"
 >
 	<div class="flex items-start justify-between gap-sm">
 		<div class="min-w-0">
@@ -250,7 +250,7 @@ onDestroy(() => {
 	{/if}
 
 	{#if report}
-		<div class="grid min-w-0 grid-cols-1 gap-sm md:grid-cols-3">
+		<div class="grid min-w-0 grid-cols-1 gap-sm @2xl:grid-cols-3">
 			{@render ServiceCard("Application", report.application)}
 			{@render AgentCard(report.agent)}
 			{@render ServiceCard("Browser", report.browser)}

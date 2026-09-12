@@ -70,3 +70,25 @@ test("shell routes requested settings to the standalone surface without a modal"
 	expect(shell).not.toContain('data-testid="settings-dialog"');
 	expect(shell).not.toContain('role="dialog"');
 });
+
+test("both settings surfaces mark the active section and share one user-facing sentence", async () => {
+	const [standalone, workArea] = await Promise.all([
+		source("settings-area.svelte"),
+		Bun.file(
+			new URL(
+				"../../../webui/src/workspace/views/project-work-area.svelte",
+				import.meta.url,
+			),
+		).text(),
+	]);
+	const sentence = "Choose a section to review or change this Pi's configuration.";
+	for (const surface of [standalone, workArea]) {
+		expect(surface).toContain('data-testid="settings-section-row"');
+		expect(surface).toContain("bg-control-bg-selected");
+		expect(surface).not.toContain("tree-leaf-active");
+		expect(surface).not.toContain("Settings is a primary area");
+		expect(surface).not.toContain("Settings stays available");
+	}
+	expect(standalone).toContain(sentence);
+	expect(workArea).toContain(sentence);
+});

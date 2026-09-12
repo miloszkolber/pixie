@@ -159,7 +159,11 @@
 		grid-template-areas: "mobile";
 	}
 
-	.pixie-shell-grid > .pixie-slot {
+	/* foundation/layouts.css loads after this file and still applies the
+	   desktop named `grid-area` per slot. Reset them with matching-class
+	   specificity so the one visible mobile pane stays in the single row
+	   instead of falling into implicit tracks. */
+	.pixie-shell-grid.mewa-layout-probe > .pixie-slot {
 		grid-area: auto;
 	}
 
@@ -205,7 +209,8 @@
 	border-radius: 0;
 }
 
-.pixie-rail [aria-pressed="true"] {
+.pixie-rail [aria-pressed="true"],
+.pixie-rail [aria-current] {
 	background: var(--surface-secondary);
 }
 

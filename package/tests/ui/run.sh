@@ -176,12 +176,12 @@ assert_eval "document.querySelector('[data-testid=session-plan-content]')?.close
 browser screenshot /artifacts/narrow-plan.png >/dev/null
 browser press Escape >/dev/null
 browser wait --timeout 60000 --fn "document.querySelector('[data-testid=session-plan-content]')?.closest('[popover]')?.matches(':popover-open') === false" >/dev/null
-browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("button")).some((node) => node.textContent?.trim() === "Secondary" && node.getClientRects().length > 0)' >/dev/null
-browser find role button click --name "Secondary" >/dev/null
+browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("button")).some((node) => node.textContent?.trim() === "Panel" && node.getClientRects().length > 0)' >/dev/null
+browser find testid mobile-secondary click >/dev/null
 browser wait --timeout 60000 --fn "document.querySelector('[data-testid=secondary-sidebar]')?.getAttribute('aria-hidden') === 'false'" >/dev/null
 assert_eval "document.documentElement.scrollWidth === document.documentElement.clientWidth"
-browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("button")).some((node) => node.textContent?.trim() === "Primary" && node.getClientRects().length > 0)' >/dev/null
-browser find role button click --name "Primary" >/dev/null
+browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("button")).some((node) => node.textContent?.trim() === "Workspace" && node.getClientRects().length > 0)' >/dev/null
+browser find testid mobile-primary click >/dev/null
 browser set viewport 1440 900 >/dev/null
 browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("[data-testid=open-settings]")).some((node) => node instanceof HTMLElement && node.getClientRects().length > 0)' >/dev/null
 browser eval "(() => { const button = Array.from(document.querySelectorAll('[data-testid=open-settings]')).find(candidate => candidate instanceof HTMLElement && candidate.getClientRects().length > 0); if (!(button instanceof HTMLElement)) throw new Error('Settings control is unavailable'); button.click(); return true; })()" >/dev/null

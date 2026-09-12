@@ -77,7 +77,6 @@ async function save(values: { prompt: string; cron: string; timezone: string }):
 		<div class="min-w-0"><h2 class="tr-title-entity">Schedules · {project.name}</h2><p class="break-all tr-text-metadata text-text-muted">{project.roots[0] ?? "Project root unavailable"}</p></div>
 		<div class="flex flex-wrap gap-sm"><Button variant="outline" disabled={!connected || $view.loading} onclick={() => void model.load()}>Refresh</Button><Button data-testid="schedule-create" disabled={locked || Boolean(editor)} onclick={() => { editor = { job: null }; }}>Create schedule</Button></div>
 	</header>
-	<p class="tr-text-ui text-text-muted">Pixie must be running to dispatch schedules. Missed occurrences coalesce into one run. Runs never overlap for the same schedule.</p>
 	{#if !connected}<p role="status" class="tr-text-ui text-text-muted">Disconnected. Showing last known state. Reconnecting refreshes the ledger and retries in-flight requests.</p>{/if}
 	{#if $view.error}<p role="alert" class="tr-text-ui text-feedback-error">{$view.error}</p>{/if}
 	{#if $view.healthError}<p role="alert" class="tr-text-ui text-feedback-error">Scheduler persistence or dispatch error: {$view.healthError} Execution claims remain reserved until saving succeeds. A running ledger entry may be waiting for persistence.</p>{/if}

@@ -172,13 +172,13 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 		data-model={model.id}
 		data-available={String(model.available)}
 		data-hidden={String(model.hidden)}
-		class={`grid min-w-0 grid-cols-1 items-start gap-sm px-md py-sm sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:gap-md ${
+		class={`grid min-w-0 grid-cols-1 items-start gap-sm px-md py-sm @2xl:grid-cols-[minmax(12rem,1fr)_auto_auto] @2xl:gap-md ${
 			withBorder ? "border-border-default border-t" : ""
 		} ${!model.available || model.hidden ? "opacity-55" : ""}`}
 	>
 		<div class="min-w-0">
 			<div class="flex min-w-0 items-center gap-sm">
-				<span class="truncate text-text-default tr-text-ui">{model.name || model.id}</span>
+				<span class="truncate text-text-default tr-text-ui" title={model.name || model.id}>{model.name || model.id}</span>
 				{#if !model.available}<span class="badge" data-variant="secondary">Unavailable</span>{/if}
 				{#if model.hidden}<span class="badge" data-variant="secondary">Hidden</span>{/if}
 			</div>
@@ -204,8 +204,8 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 			</div>
 		</div>
 
-		<div class="flex min-w-0 flex-col items-start gap-0.5 text-left sm:min-w-[9rem] sm:items-end sm:text-right">
-			<span class="badge" data-variant="secondary">
+		<div class="flex min-w-0 flex-col items-start gap-0.5 text-left @2xl:min-w-[9rem] @2xl:items-end @2xl:text-right">
+			<span class="badge whitespace-nowrap" data-variant="secondary">
 				{model.contextWindow === undefined ? "Unknown" : formatTokenCount(model.contextWindow)} ctx ·
 				{model.maxTokens === undefined ? "Unknown" : formatTokenCount(model.maxTokens)} out
 			</span>
@@ -235,7 +235,7 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 	</div>
 {/snippet}
 
-<div data-testid="settings-models" class="flex flex-col gap-lg">
+<div data-testid="settings-models" class="@container flex flex-col gap-lg">
 	<div class="flex flex-wrap items-start justify-between gap-sm">
 		<div class="flex min-w-0 flex-1 basis-64 flex-col gap-xs">
 			<h3 class="tr-title-section text-text-default">

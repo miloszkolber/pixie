@@ -62,4 +62,12 @@ test("session plan Svelte controls retain safe accessible markup", async () => {
 	expect(control).toContain('data-testid="session-plan-trigger"');
 	expect(control).toContain("sessionPlanLabel(planState)");
 	expect(control).toContain('"Limited"');
+	// Open into the chat pane from the trigger's start edge. Mewa's `data-align="start"`
+	// is `position-area: bottom left`, which grows left over the rail and Projects sidebar.
+	const popoverTag = control.match(/<div\s+id=\{popoverId\}[\s\S]*?>/)?.[0] ?? "";
+	expect(popoverTag).toContain("session-plan-popover");
+	expect(popoverTag).not.toContain("data-align");
+	expect(popoverTag).toContain("ontoggle={clampPopoverWidth}");
+	expect(control).toContain("position-area: bottom span-right");
+	expect(control).toContain("maxInlineSize");
 });

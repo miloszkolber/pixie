@@ -35,7 +35,7 @@ test("the primary settings area reuses section components through list/detail sl
 		"settings-panel-",
 		"AgentSettings",
 		"SETTINGS_SECTION_LOADERS",
-		"Settings is a primary area",
+		"bg-control-bg-selected",
 	]) {
 		expect(workArea).toContain(contract);
 	}

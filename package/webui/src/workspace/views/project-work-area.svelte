@@ -187,6 +187,14 @@ onMount(() => {
 type MobilePane = "projects" | "primary" | "secondary";
 type MobileSecondarySurface = "view" | "sidebar";
 
+// User-facing pane names: "projects" is the primary-area navigation sidebar,
+// "primary" is the main work surface, "secondary" is the preview/controls pane.
+const MOBILE_PANE_LABELS: Readonly<Record<MobilePane, string>> = {
+	projects: "Navigation",
+	primary: "Workspace",
+	secondary: "Panel",
+};
+
 let mobilePane = $state<MobilePane>(initialMobilePane());
 let mobileSecondarySurface = $state<MobileSecondarySurface>(initialMobileSecondarySurface());
 let browserStatus = $state<RuntimeStatusReport | null>(null);
@@ -761,6 +769,13 @@ function restoreRight(): void {
 	dispatchLayout({ rightCollapsed: false });
 }
 
+// Scoped restore for the secondary pane: it re-opens the right track and
+// clears focus without touching the primary sidebar. The primary-header
+// Restore stays the global workspace reset.
+function restoreSecondary(): void {
+	dispatchLayout({ rightCollapsed: false, focus: "none" });
+}
+
 // Narrow viewports show one surface: start on the persisted secondary
 // content when desktop focus already sits there, otherwise the grid paints
 // blank until the first tap. Later switches recompute both values explicitly.
@@ -1154,11 +1169,11 @@ function signOut(): void {
 {/snippet}
 
 <div data-testid="project-work-area" class="pixie-work-area">
-	<nav aria-label="Mobile panes" data-testid="mobile-pane-navigation" class="tab-list flex shrink-0 border-b lg:hidden">
-		<button type="button" data-testid="mobile-projects" class="tab-trigger min-h-11 flex-1 capitalize" aria-pressed={mobilePane === "projects"} onclick={showProjects}>Projects</button>
-		<button type="button" data-testid="mobile-primary" class="tab-trigger min-h-11 flex-1 capitalize" aria-pressed={mobilePane === "primary"} onclick={showPrimarySurface}>Primary</button>
-		<button type="button" data-testid="mobile-secondary" class="tab-trigger min-h-11 flex-1 capitalize" aria-pressed={mobilePane === "secondary"} onclick={showSecondarySurface}>Secondary</button>
-	</nav>
+	<div aria-label="Mobile panes" role="tablist" data-testid="mobile-pane-navigation" class="tab-list flex shrink-0 border-b lg:hidden">
+		<button type="button" role="tab" data-testid="mobile-projects" class="tab-trigger min-h-11 flex-1" aria-selected={mobilePane === "projects"} onkeydown={handleSettingsSectionKeydown} onclick={showProjects}>{MOBILE_PANE_LABELS.projects}</button>
+		<button type="button" role="tab" data-testid="mobile-primary" class="tab-trigger min-h-11 flex-1" aria-selected={mobilePane === "primary"} onkeydown={handleSettingsSectionKeydown} onclick={showPrimarySurface}>{MOBILE_PANE_LABELS.primary}</button>
+		<button type="button" role="tab" data-testid="mobile-secondary" class="tab-trigger min-h-11 flex-1" aria-selected={mobilePane === "secondary"} onkeydown={handleSettingsSectionKeydown} onclick={showSecondarySurface}>{MOBILE_PANE_LABELS.secondary}</button>
+	</div>
 	<div
 		data-testid="workspace-grid"
 		data-layout={layoutProbe}
@@ -1256,12 +1271,12 @@ function signOut(): void {
 		>
 			{#if primarySidebarVisible}
 				<div class="pixie-panel-box pixie-panel">
-					<nav data-testid="mobile-primary-area-navigation" aria-label="Primary areas" class="tab-list flex shrink-0 border-b lg:hidden">
-						<button type="button" data-testid="mobile-area-chats" class="tab-trigger min-h-10 flex-1" aria-current={primaryArea === "chats" ? "page" : undefined} onclick={() => selectPrimaryArea("chats")}>Chats</button>
-						<button type="button" data-testid="mobile-area-archive" class="tab-trigger min-h-10 flex-1" aria-current={primaryArea === "archive" ? "page" : undefined} onclick={() => selectPrimaryArea("archive")}>Archive</button>
-						<button type="button" data-testid="mobile-area-schedules" class="tab-trigger min-h-10 flex-1" aria-current={primaryArea === "schedules" ? "page" : undefined} onclick={() => selectPrimaryArea("schedules")}>Schedules</button>
-						<button type="button" data-testid="mobile-area-settings" class="tab-trigger min-h-10 flex-1" aria-current={primaryArea === "settings" ? "page" : undefined} onclick={() => selectPrimaryArea("settings")}>Settings</button>
-					</nav>
+					<div data-testid="mobile-primary-area-navigation" aria-label="Primary areas" role="tablist" class="tab-list flex shrink-0 border-b lg:hidden">
+						<button type="button" role="tab" data-testid="mobile-area-chats" class="tab-trigger min-h-10 flex-1" aria-selected={primaryArea === "chats"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("chats")}>Chats</button>
+						<button type="button" role="tab" data-testid="mobile-area-archive" class="tab-trigger min-h-10 flex-1" aria-selected={primaryArea === "archive"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("archive")}>Archive</button>
+						<button type="button" role="tab" data-testid="mobile-area-schedules" class="tab-trigger min-h-10 flex-1" aria-selected={primaryArea === "schedules"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("schedules")}>Schedules</button>
+						<button type="button" role="tab" data-testid="mobile-area-settings" class="tab-trigger min-h-10 flex-1" aria-selected={primaryArea === "settings"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("settings")}>Settings</button>
+					</div>
 					<PanelHeader title={primaryArea === "chats" ? "PROJECTS" : primaryArea.toUpperCase()}>
 						{#snippet actions()}
 							{#if primaryArea === "chats"}
@@ -1321,7 +1336,7 @@ function signOut(): void {
 											role="tab"
 											id={`settings-tab-${tab.section}`}
 											data-testid="settings-section-row"
-											class={`tree-leaf w-full text-left tr-text-ui ${settingsActiveSection === tab.section ? "tree-leaf-active" : ""}`}
+											class={`tree-leaf w-full text-left tr-text-ui ${settingsActiveSection === tab.section ? "bg-control-bg-selected" : ""}`}
 											aria-selected={settingsActiveSection === tab.section}
 											aria-controls={`settings-panel-${tab.section}`}
 											tabindex={settingsActiveSection === tab.section ? 0 : -1}
@@ -1333,7 +1348,7 @@ function signOut(): void {
 									</li>
 								{/each}
 							</ul>
-							<p class="mt-sm tr-text-metadata text-text-muted">Settings is a primary area. Sections show configured, supported, connected and available state without inventing pages.</p>
+							<p class="mt-sm tr-text-metadata text-text-muted">Choose a section to review or change this Pi's configuration.</p>
 						</div>
 					{/if}
 				</div>
@@ -1436,7 +1451,7 @@ function signOut(): void {
 						{#snippet actions()}
 							<Button variant="ghost" size="sm" class="lg:hidden" data-testid="mobile-secondary-sidebar" aria-label="Open secondary sidebar" onclick={showSecondarySidebar}>Controls</Button>
 							<Button variant="ghost" size="sm" data-testid="focus-secondary" aria-label="Focus secondary view" aria-pressed={layout.focus === "secondary"} onclick={() => setFocus("secondary")}>Focus</Button>
-							<Button variant="ghost" size="sm" data-testid="restore-secondary" aria-label="Restore workspace" onclick={restoreLayout}>Restore</Button>
+							<Button variant="ghost" size="sm" data-testid="restore-secondary" aria-label="Restore secondary pane" onclick={restoreSecondary}>Restore</Button>
 							<Button variant="ghost" size="icon-sm" data-testid="close-secondary" aria-label={`Close ${secondaryTitle}`} title={`Close ${secondaryTitle}`} onclick={closeSecondary}><Icon name="x" size={14} /></Button>
 						{/snippet}
 					</PanelHeader>
@@ -1469,7 +1484,7 @@ function signOut(): void {
 								<Button variant="ghost" size="icon-sm" data-testid="toggle-files-filter" aria-label="Filter files" title="Filter files" aria-pressed={filesFilterOpen} onclick={() => (filesFilterOpen = !filesFilterOpen)}><Icon name="search" size={16} /></Button>
 							{/if}
 							{#if hasSecondarySelection}<Button variant="ghost" size="sm" class="lg:hidden" data-testid="mobile-secondary-view" aria-label="Return to secondary preview" onclick={showSecondarySurface}>Preview</Button>{/if}
-							<Button variant="ghost" size="sm" data-testid="restore-secondary-sidebar" aria-label="Restore workspace" onclick={restoreLayout}>Restore</Button>
+							<Button variant="ghost" size="sm" data-testid="restore-secondary-sidebar" aria-label="Restore secondary pane" onclick={restoreSecondary}>Restore</Button>
 							<Button variant="ghost" size="icon-sm" data-testid="collapse-right-panel" aria-label="Close secondary sidebar" title="Close secondary sidebar" onclick={collapseRightPanel}><Icon name="chevron-right" size={16} /></Button>
 						{/snippet}
 					</PanelHeader>

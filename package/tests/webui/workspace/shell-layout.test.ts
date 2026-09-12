@@ -510,3 +510,78 @@ test("selected sessions and files keep a highlight hook with guide borders", asy
 	expect(split).toContain("resizable-panel");
 	expect(split).toContain('role="separator"');
 });
+
+function navBlock(source: string, testId: string): string {
+	const testIdAt = source.indexOf(`data-testid="${testId}"`);
+	expect(testIdAt).toBeGreaterThanOrEqual(0);
+	const start = source.lastIndexOf("<div", testIdAt);
+	expect(start).toBeGreaterThanOrEqual(0);
+	const end = source.indexOf("</div>", testIdAt);
+	expect(end).toBeGreaterThan(testIdAt);
+	return source.slice(start, end);
+}
+
+test("mobile pane and area switchers expose one persistent selected item per group", async () => {
+	const workArea = await source("workspace/views/project-work-area.svelte");
+	expect(workArea).toContain("const MOBILE_PANE_LABELS");
+	for (const label of [
+		'projects: "Navigation"',
+		'primary: "Workspace"',
+		'secondary: "Panel"',
+	]) {
+		expect(workArea).toContain(label);
+	}
+
+	const paneNav = navBlock(workArea, "mobile-pane-navigation");
+	expect(workArea).toContain('aria-label="Mobile panes"');
+	expect(paneNav).toContain('role="tablist"');
+	expect(paneNav).toContain('role="tab"');
+	expect(paneNav).toContain("aria-selected={mobilePane === \"projects\"}");
+	expect(paneNav).toContain("aria-selected={mobilePane === \"primary\"}");
+	expect(paneNav).toContain("aria-selected={mobilePane === \"secondary\"}");
+	expect(paneNav).toContain("{MOBILE_PANE_LABELS.projects}");
+	expect(paneNav).not.toContain("aria-pressed");
+	expect(paneNav).not.toContain(">Projects<");
+	expect(paneNav).not.toContain(">Primary<");
+	expect(paneNav).not.toContain(">Secondary<");
+
+	const areaNav = navBlock(workArea, "mobile-primary-area-navigation");
+	expect(workArea).toContain('aria-label="Primary areas"');
+	expect(areaNav).toContain('role="tablist"');
+	expect(areaNav).toContain('role="tab"');
+	expect(areaNav).toContain('aria-selected={primaryArea === "chats"}');
+	expect(areaNav).toContain('aria-selected={primaryArea === "settings"}');
+	expect(areaNav).not.toContain("aria-current");
+	// The Mewa tab rule styles aria-selected, so selection is persistent and
+	// distinct from the focus ring.
+	expect(areaNav).toContain('class="tab-trigger');
+
+	// The desktop icon rails keep aria-current="page" and gain a visible
+	// selected background instead of relying on the unstyled .btn default.
+	expect(workArea).toContain('data-testid="rail-chats"');
+	expect(workArea).toContain('aria-current={primaryArea === "chats" ? "page" : undefined}');
+	const shell = await source("styles/shell.css");
+	expect(shell).toContain(".pixie-rail [aria-current]");
+	expect(shell).toContain("background: var(--surface-secondary);");
+});
+
+test("the narrow grid resets named desktop slot areas so the visible pane fills the viewport", async () => {
+	const shell = await source("styles/shell.css");
+	// foundation/layouts.css loads after shell.css, so the mobile reset must
+	// out-specify `.mewa-layout-probe__slot[data-slot="…"] { grid-area: … }`.
+	expect(shell).toContain(".pixie-shell-grid.mewa-layout-probe > .pixie-slot");
+	expect(shell).not.toContain("\t.pixie-shell-grid > .pixie-slot {");
+});
+
+test("the secondary Restore is scoped and the primary Restore stays the global reset", async () => {
+	const workArea = await source("workspace/views/project-work-area.svelte");
+	expect(workArea).toContain("function restoreSecondary()");
+	expect(workArea).toContain('dispatchLayout({ rightCollapsed: false, focus: "none" })');
+	expect(workArea).toContain(
+		'data-testid="restore-primary" aria-label="Restore workspace" onclick={restoreLayout}',
+	);
+	for (const testId of ["restore-secondary", "restore-secondary-sidebar"]) {
+		expect(workArea).toContain(testId);
+	}
+	expect(workArea.match(/onclick=\{restoreSecondary\}/g)).toHaveLength(2);
+});
