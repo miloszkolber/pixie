@@ -38,6 +38,13 @@ func TestBrowserStatusUsesTheMergedPublisherWithoutAnExternalURL(t *testing.T) {
 	}
 	defer registry.Shutdown()
 
+	// Browser is fail-closed by default; mark the worker boundary verified so
+	// this test exercises the merged-publisher mapping rather than the default.
+	registry.SetWorkerBoundaryVerified(true)
+	if err := registry.SetEnabled("browser", true); err != nil {
+		t.Fatal(err)
+	}
+
 	provider := &runtimeStatusProvider{registry: registry, auth: AuthConfig{ControllerPort: DefaultControllerPort}}
 	status := provider.browserStatus(context.Background())
 	if status.State != "ready" {

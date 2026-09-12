@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -34,7 +35,16 @@ const (
 
 	// PairingBindingPrefix prefixes the random authority binding ID.
 	PairingBindingPrefix = "pairing-"
+
+	// PairingStorageKeyPrefix labels a storage key derived from one native
+	// agent directory. The digest is stable and non-reversible; the raw path
+	// never enters the pairing record.
+	PairingStorageKeyPrefix = "agent-dir-sha256:"
 )
+
+// pairingStorageKeyDomain separates derived storage keys from every other
+// digest in this package.
+const pairingStorageKeyDomain = "pixie-pairing-storage-key-v1\x00"
 
 // PairingAuthority is the durable controller pairing with one host/native
 // storage. It is independent of ephemeral dialing: a new port, boot ID or
@@ -79,6 +89,27 @@ func ValidatePairingStorageKey(value string) error {
 		return fmt.Errorf("pairing storage key is invalid")
 	}
 	return nil
+}
+
+// DerivePairingStorageKey derives a canonical, stable and non-reversible
+// pairing storage key from one native agent directory. Path separators are
+// normalized and the cleaned path is hashed with domain separation, so the same
+// directory yields the same key across restarts and spelling while the raw path
+// is never stored or exposed in the pairing record or its diagnostics.
+func DerivePairingStorageKey(agentDir string) (string, error) {
+	trimmed := strings.TrimSpace(agentDir)
+	if trimmed == "" {
+		return "", fmt.Errorf("pairing storage key requires an agent directory")
+	}
+	// Treat both separators as path separators so a Windows-spelled directory
+	// hashes identically to its slash form. Clean removes trailing separators,
+	// "." segments and duplicate separators.
+	normalized := path.Clean(strings.ReplaceAll(trimmed, "\\", "/"))
+	if normalized == "." || normalized == "/" {
+		return "", fmt.Errorf("pairing storage key requires a specific agent directory")
+	}
+	digest := sha256.Sum256([]byte(pairingStorageKeyDomain + normalized))
+	return PairingStorageKeyPrefix + hex.EncodeToString(digest[:]), nil
 }
 
 // ValidatePairingSecret checks an explicit pairing secret before it is hashed.

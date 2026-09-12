@@ -177,6 +177,46 @@ func TestAuthorityPairingFailClosed(t *testing.T) {
 	}
 }
 
+func TestDerivePairingStorageKeyIsCanonicalStableAndPathFree(t *testing.T) {
+	dir := t.TempDir()
+	first, err := persist.DerivePairingStorageKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := persist.ValidatePairingStorageKey(first); err != nil {
+		t.Fatalf("derived storage key must be a valid pairing storage key: %v", err)
+	}
+	// A trailing separator and an equivalent spelling must derive the same
+	// key, and a different directory must not collide.
+	again, err := persist.DerivePairingStorageKey(dir + string(filepath.Separator))
+	if err != nil || again != first {
+		t.Fatalf("same directory must derive a stable key: %q vs %q err=%v", first, again, err)
+	}
+	other, err := persist.DerivePairingStorageKey(t.TempDir())
+	if err != nil || other == first {
+		t.Fatalf("different directories must derive different keys: %q vs %q err=%v", first, other, err)
+	}
+	nested := filepath.Join(dir, "agent", "native")
+	slashed, err := persist.DerivePairingStorageKey(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backslashed, err := persist.DerivePairingStorageKey(strings.ReplaceAll(nested, string(filepath.Separator), "\\"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slashed != backslashed {
+		t.Fatalf("path separators must normalize: %q vs %q", slashed, backslashed)
+	}
+	// The key must not leak the raw agent directory.
+	if strings.Contains(first, dir) || strings.Contains(first, "\\") || strings.Contains(first, "/") {
+		t.Fatalf("derived key leaked path material: %q", first)
+	}
+	if _, err := persist.DerivePairingStorageKey("   "); err == nil {
+		t.Fatal("empty agent directory must not derive a storage key")
+	}
+}
+
 func TestAuthorityPairingUncertainReconcilesPrimary(t *testing.T) {
 	dir := t.TempDir()
 	store := persist.Store{Dir: dir}

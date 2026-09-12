@@ -147,6 +147,7 @@ func runFullHostWithConfig(ctx context.Context, build diagnostics.BuildInfo, con
 		StaticDir:   staticDir,
 		Port:        port,
 		PiURL:       assistant.Endpoint(),
+		AgentDir:    agentDir,
 	})
 	if err != nil {
 		return err

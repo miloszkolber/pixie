@@ -15,6 +15,37 @@ import (
 // ceremony guards. They never change any other ledger schema.
 const PairingCeremonyHelperVersion = 1
 
+// DeletionAuthorityMode selects how requested deletion records are authorized
+// for replay during recovery.
+type DeletionAuthorityMode string
+
+const (
+	// DeletionAuthorityAuto requires pairing when a durable pairing record
+	// exists and otherwise keeps the legacy agent-binding match.
+	DeletionAuthorityAuto DeletionAuthorityMode = "auto"
+	// DeletionAuthorityPaired requires a valid durable pairing for every
+	// requested record. Unpaired or mismatched recovery is quarantined.
+	DeletionAuthorityPaired DeletionAuthorityMode = "paired"
+	// DeletionAuthorityLegacy keeps the pre-pairing agent-binding behavior
+	// byte-for-byte, even when a pairing record exists.
+	DeletionAuthorityLegacy DeletionAuthorityMode = "legacy"
+)
+
+// ParseDeletionAuthorityMode resolves PIXIE_DELETION_AUTHORITY
+// case-insensitively. Empty selects auto, the compatibility default.
+func ParseDeletionAuthorityMode(value string) (DeletionAuthorityMode, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", string(DeletionAuthorityAuto):
+		return DeletionAuthorityAuto, nil
+	case string(DeletionAuthorityPaired):
+		return DeletionAuthorityPaired, nil
+	case string(DeletionAuthorityLegacy):
+		return DeletionAuthorityLegacy, nil
+	default:
+		return "", fmt.Errorf("PIXIE_DELETION_AUTHORITY must be one of auto, paired, legacy; got %q", value)
+	}
+}
+
 // InspectPairingAuthority returns the durable pairing without writes.
 func InspectPairingAuthority(store persist.Store) (persist.PairingAuthority, bool, error) {
 	return persist.LoadPairingAuthority(store)

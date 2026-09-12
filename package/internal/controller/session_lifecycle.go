@@ -375,12 +375,8 @@ func (m *SessionManager) recoverDeletionRecord(ctx context.Context, record sessi
 		if !profile.Operations.DeleteSession {
 			return unsupportedAgentCapability("session.delete").Error()
 		}
-		matches, bindingErr := m.client.matchesDeletionAgentBinding(agentProfileIdentity(profile, generation), record.AgentBinding)
-		if bindingErr != nil {
-			return bindingErr.Error()
-		}
-		if !matches {
-			return "connected Pi agent binding changed; retain for operator reconciliation and never replay against a new endpoint"
+		if reason := m.authorizeDeletionRecovery(profile, generation, record); reason != "" {
+			return reason
 		}
 		deleteContext := context.WithValue(ctx, connectionGenerationKey{}, generation)
 		if deleteErr := m.client.DeleteSession(deleteContext, record.SessionID); deleteErr != nil && !agentSessionMissing(deleteErr) {
@@ -398,6 +394,57 @@ func (m *SessionManager) recoverDeletionRecord(ctx context.Context, record sessi
 	}
 	if forgetErr := m.deletions.Forget(record.ProjectID, record.SessionID); forgetErr != nil {
 		return fmt.Sprintf("finish deletion: %v", forgetErr)
+	}
+	return ""
+}
+
+// authorizeDeletionRecovery resolves the configured destructive-recovery
+// authority for one requested record. It returns an empty reason only when a
+// dispatch is authorized; every other result retains the tombstone and blocks
+// replay. The live host identity comes from the authenticated runtime.hello
+// handshake that produced this profile, so a successful Profile is itself the
+// authenticated-hello signal.
+func (m *SessionManager) authorizeDeletionRecovery(profile AgentProfile, generation uint64, record sessionDeletion) string {
+	identity := agentProfileIdentity(profile, generation)
+	authenticatedHello := profile.Pi
+	switch m.deletionAuthority {
+	case DeletionAuthorityLegacy:
+		return m.legacyDeletionBindingReason(identity, record.AgentBinding)
+	case DeletionAuthorityPaired:
+		return m.pairedRecoveryReason(identity, authenticatedHello)
+	default:
+		// Auto requires pairing whenever a durable pairing record exists; an
+		// unreadable pairing fails closed rather than falling back to legacy.
+		_, found, err := InspectPairingAuthority(m.deletions.store)
+		if err != nil {
+			return fmt.Sprintf("paired authority is unreadable and destructive recovery fails closed: %v", err)
+		}
+		if found {
+			return m.pairedRecoveryReason(identity, authenticatedHello)
+		}
+		return m.legacyDeletionBindingReason(identity, record.AgentBinding)
+	}
+}
+
+// pairedRecoveryReason validates the live authenticated host and resolved
+// native-storage key against the durable pairing. The returned error is already
+// actionable and keeps the recovery-blocked tombstone.
+func (m *SessionManager) pairedRecoveryReason(hostIdentity string, authenticatedHello bool) string {
+	if _, err := RequirePairedRecovery(m.deletions.store, hostIdentity, m.pairingStorageKey, authenticatedHello); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// legacyDeletionBindingReason preserves the pre-pairing match path, including
+// the legacy endpoint-bound binding accepted for the same durable identity.
+func (m *SessionManager) legacyDeletionBindingReason(hostIdentity, binding string) string {
+	matches, err := m.client.matchesDeletionAgentBinding(hostIdentity, binding)
+	if err != nil {
+		return err.Error()
+	}
+	if !matches {
+		return "connected Pi agent binding changed; retain for operator reconciliation and never replay against a new endpoint"
 	}
 	return ""
 }

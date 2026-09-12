@@ -43,6 +43,10 @@ type RuntimeConfig struct {
 	PiURL  string
 	Policy *workspace.PathPolicy
 	Getenv func(string) string
+	// AgentDir is the selected full-host native agent directory. When set, the
+	// deletion pairing storage key is derived from it. Controller-only runs
+	// leave it empty and read PIXIE_PI_STORAGE_KEY instead.
+	AgentDir string
 	// Optional worker/parser composition is explicit. Runtime never discovers
 	// Canvas/Design helpers from PATH or substitutes an unrestricted fallback.
 	CanvasConfig *canvas.Config
@@ -79,9 +83,39 @@ func defaultDataDir(getenv func(string) string) string {
 	return DefaultDataDir
 }
 
+// resolvePairingStorageKey selects the canonical key naming the native storage
+// the controller may pair with. Full-host derives it from the selected agent
+// directory so the pairing never depends on a raw path or an environment
+// value; controller-only uses the explicit PIXIE_PI_STORAGE_KEY. Paired mode
+// requires a key, while auto treats a missing key as pairing unavailable.
+func resolvePairingStorageKey(mode DeletionAuthorityMode, agentDir string, getenv func(string) string) (string, error) {
+	if strings.TrimSpace(agentDir) != "" {
+		key, err := persist.DerivePairingStorageKey(agentDir)
+		if err != nil {
+			return "", err
+		}
+		return key, nil
+	}
+	key := strings.TrimSpace(getenv("PIXIE_PI_STORAGE_KEY"))
+	if mode == DeletionAuthorityPaired && key == "" {
+		return "", fmt.Errorf("PIXIE_DELETION_AUTHORITY=paired requires a pairing storage key: select a full-host agent directory or set PIXIE_PI_STORAGE_KEY")
+	}
+	return key, nil
+}
+
 func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	if config.Getenv == nil {
 		config.Getenv = os.Getenv
+	}
+	// Destructive-recovery authority is resolved before any listener, store or
+	// client is created so an invalid selection fails startup.
+	deletionAuthority, err := ParseDeletionAuthorityMode(config.Getenv("PIXIE_DELETION_AUTHORITY"))
+	if err != nil {
+		return nil, err
+	}
+	pairingStorageKey, err := resolvePairingStorageKey(deletionAuthority, config.AgentDir, config.Getenv)
+	if err != nil {
+		return nil, err
 	}
 	authConfig, err := ReadAuthConfig(config.Getenv)
 	if err != nil {
@@ -158,6 +192,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	projects.SetPublisher(func(project workspace.Project) { publish("project.updated", project) })
 	settings := NewSettings(store, func(value AppConfig) { publish("settings.changed", value) })
 	sessions := NewSessionManager(projects, config.Policy, records, queues, objectives, publish)
+	sessions.SetDeletionAuthority(deletionAuthority, pairingStorageKey)
 	sessions.SetMCPRegistry(mcpRegistry)
 	if config.PiURL == "" {
 		resolved, err := resolvePiURL(config.Getenv)

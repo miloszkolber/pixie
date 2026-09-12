@@ -154,6 +154,11 @@ type SessionManager struct {
 	// deletionQuarantine retains requested records that could not be safely
 	// resumed this boot. They are never dispatched or forgotten implicitly.
 	deletionQuarantine map[string]DeletionRecovery
+	// deletionAuthority selects the destructive-recovery authority and
+	// pairingStorageKey names the native storage the controller may pair with.
+	// Both are resolved from configuration before the first recovery.
+	deletionAuthority DeletionAuthorityMode
+	pairingStorageKey string
 }
 
 type pendingCommandCatalog struct {
@@ -166,13 +171,21 @@ func NewSessionManager(projects *workspace.Projects, policy *workspace.PathPolic
 	if records != nil {
 		deletions = NewSessionDeletions(records.store)
 	}
-	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now, deletionQuarantine: make(map[string]DeletionRecovery)}
+	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now, deletionQuarantine: make(map[string]DeletionRecovery), deletionAuthority: DeletionAuthorityAuto}
 	manager.history = newHistoryIndex(manager)
 	return manager
 }
 
 func (m *SessionManager) SetClient(client *PiClient)     { m.client = client }
 func (m *SessionManager) SetSettings(settings *Settings) { m.settings = settings }
+
+// SetDeletionAuthority wires the configured destructive-recovery authority and
+// the resolved pairing storage key before the first recovery. Recovery defaults
+// to auto with legacy matching when it is never called.
+func (m *SessionManager) SetDeletionAuthority(mode DeletionAuthorityMode, storageKey string) {
+	m.deletionAuthority = mode
+	m.pairingStorageKey = storageKey
+}
 
 // SetMCPRegistry attaches the live publisher's instance-owned scope registry.
 // The narrow interface keeps session lifecycle code from issuing or
