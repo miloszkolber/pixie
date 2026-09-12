@@ -402,6 +402,7 @@ var AuthorityLedgerFiles = map[string]bool{
 	"pi-session-queues.json":    true,
 	"schedules.json":            true,
 	"pi-session-deletions.json": true,
+	"pi-pairing-authority.json": true,
 }
 
 // RollbackPlan is a read-only description of what a rollback would restore.
