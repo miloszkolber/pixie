@@ -16,7 +16,7 @@ import {
 	parseCatalogView,
 	type SessionCatalogView,
 } from "./session-catalog";
-import { openSettingsFrom } from "../../settings/open-settings";
+import { openSettingsArea } from "../navigation/open-settings-area";
 import { SettingsSection } from "../../settings/state";
 
 interface ProjectOpener {
@@ -149,7 +149,7 @@ function setCatalogView(view: unknown): void {
 				</div>
 				{#if expanded}
 					<ul class="tree-group pixie-guide flex w-full flex-col gap-2xs py-2xs pl-md">
-						<li class="tree-item"><button type="button" class="tree-leaf tr-text-metadata" onclick={(event) => openSettingsFrom(event.currentTarget, SettingsSection.Schedules)}>Schedules</button></li>
+						<li class="tree-item"><button type="button" class="tree-leaf tr-text-metadata" onclick={() => void openSettingsArea(SettingsSection.Schedules)}>Schedules</button></li>
 						<ProjectSessions {project} {activeSessionId} />
 					</ul>
 				{/if}

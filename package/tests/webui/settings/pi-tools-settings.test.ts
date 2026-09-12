@@ -20,7 +20,6 @@ beforeEach(() => {
 		projectAreas: {},
 		tabsByProjectArea: {},
 		activeTabByProjectArea: {},
-		settingsOpen: true,
 		settingsSection: SettingsSection.Tools,
 		agentProfile: null,
 	});
@@ -52,9 +51,8 @@ test("generic agent settings expose agent identity and System", () => {
 			administration: false,
 		},
 	};
-	appStoreApi.setState({ agentProfile: profile, settingsOpen: false });
-	appStoreApi.getState().openSettings();
-	expect(appStoreApi.getState().settingsSection).toBe(SettingsSection.Agent);
+	appStoreApi.setState({ agentProfile: profile });
+	expect(resolveSettingsSection(SettingsSection.Tools, profile)).toBe(SettingsSection.Agent);
 	expect(settingsTabs(true, false).map(({ label }) => label)).toEqual([
 		"Schedules",
 		"Agent",
@@ -85,14 +83,16 @@ test("profile loss falls back from an unavailable local selection to System", ()
 	);
 });
 
-test("settings tabs wrap without a native horizontal scroll container", async () => {
+test("primary settings sections render as a keyboard tablist without horizontal scroll", async () => {
 	const source = await Bun.file(
-		new URL("../../../webui/src/settings/settings-dialog.svelte", import.meta.url),
+		new URL("../../../webui/src/workspace/views/project-work-area.svelte", import.meta.url),
 	).text();
 	expect(source).toContain('role="tablist"');
-	expect(source).toContain("flex-wrap");
-	expect(source).not.toContain("overflow-x-auto");
+	expect(source).toContain('data-testid="settings-section-row"');
 	expect(source).toContain('role="tabpanel"');
+	expect(source).toContain("handleSettingsSectionKeydown");
+	expect(source).toContain("flex-col");
+	expect(source).not.toContain('data-testid="settings-dialog"');
 });
 
 test("in-process publisher rows project enablement before readiness", () => {

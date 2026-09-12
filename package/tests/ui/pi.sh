@@ -5,7 +5,7 @@ fixture_pid=
 browser() { agent-browser --session "$session" "$@"; }
 assert_eval() { browser eval "(() => { if (!($1)) throw new Error('Pi UI acceptance assertion failed: ' + JSON.stringify('$2')); return true; })()" >/dev/null; }
 settings_tab() {
- browser eval "(() => { const tab = Array.from(document.querySelectorAll('[role=tab]')).find(candidate => candidate.textContent?.trim() === '$1'); if (!(tab instanceof HTMLElement)) throw new Error('Settings tab is unavailable: $1'); tab.click(); return true; })()" >/dev/null
+ browser eval "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); if (!(row instanceof HTMLElement)) throw new Error('Settings section is unavailable: $1'); row.click(); return true; })()" >/dev/null
 }
 open_settings() {
  browser eval "(() => { const button = Array.from(document.querySelectorAll('[data-testid=open-settings]')).find(candidate => candidate instanceof HTMLElement && candidate.getClientRects().length > 0); if (!(button instanceof HTMLElement)) throw new Error('Settings control is unavailable'); button.click(); return true; })()" >/dev/null
@@ -41,7 +41,7 @@ browser set viewport 1440 900 >/dev/null
 browser open 'http://127.0.0.1:7312/#/v1/projects/fixture-project/projectAreas/fixture-project/chats/fixture-1' >/dev/null
 browser wait --text 'Loaded answer' >/dev/null
 browser find testid open-settings click >/dev/null
-browser wait --fn 'document.querySelector("[data-testid=settings-dialog]")?.open === true' >/dev/null
+browser wait --fn 'document.querySelector("[data-testid=settings-detail]") !== null' >/dev/null
 settings_tab Providers
 browser wait --fn 'document.querySelector("[data-provider=atomic_chat]") !== null' >/dev/null
 assert_eval "document.querySelector('[data-testid=provider-row][data-provider=atomic_chat]')?.dataset.configured === 'false' && document.querySelector('[data-testid=provider-row][data-provider=cursor-agent]')?.dataset.configured === 'false'" 'default connections are not configured'
@@ -58,26 +58,26 @@ for theme in light dark; do
   browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
   for tab in Providers Models Pi Tools System; do
    settings_tab "$tab"
-   browser wait --fn 'document.querySelector("[role=tabpanel]:not([hidden])") !== null && !document.querySelector("[role=tabpanel]:not([hidden])")?.textContent?.includes("Loading settings")' >/dev/null
+   browser wait --fn 'document.querySelector("[data-testid=settings-detail] [role=tabpanel]:not([hidden])") !== null && !document.querySelector("[data-testid=settings-detail] [role=tabpanel]:not([hidden])")?.textContent?.includes("Loading settings")' >/dev/null
    browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
-   assert_eval "[...document.querySelectorAll('[data-testid=settings-dialog], [role=tabpanel]')].every(e => e.scrollWidth <= e.clientWidth + 1) && document.querySelector('[data-testid=settings-dialog]').getBoundingClientRect().right <= innerWidth + 1" "$theme $width $tab overflow"
+   assert_eval "(() => { const detail = document.querySelector('[data-testid=settings-detail]'); return detail && [...detail.querySelectorAll('[role=tabpanel]')].every(e => e.scrollWidth <= e.clientWidth + 1) && detail.getBoundingClientRect().right <= innerWidth + 1; })()" "$theme $width $tab overflow"
    browser screenshot "/artifacts/pi-${theme}-${width}-${tab}.png" >/dev/null
   done
  echo "Pi settings checked: $theme ${width}px"
  done
 done
-browser set viewport 320 520 >/dev/null
+browser set viewport 1024 900 >/dev/null
 settings_tab Models
-browser wait --fn 'document.querySelector("[role=tab][aria-controls=settings-panel-models]")?.getAttribute("aria-selected") === "true"' >/dev/null
-browser focus '[role=tab][aria-controls=settings-panel-pi]' >/dev/null
+browser wait --fn 'document.querySelector("[data-testid=settings-section-row][aria-selected=true]")?.textContent?.trim() === "Models"' >/dev/null
+browser focus '[data-testid=settings-section-row][aria-controls=settings-panel-pi]' >/dev/null
 browser press ArrowRight >/dev/null
-assert_eval "document.activeElement?.getAttribute('aria-controls') === 'settings-panel-providers'" 'Settings tab arrow navigation'
+assert_eval "document.activeElement?.getAttribute('aria-controls') === 'settings-panel-providers'" 'Settings section arrow navigation'
 browser press Enter >/dev/null
-browser wait --fn 'document.querySelector("[role=tab][aria-controls=settings-panel-providers]")?.getAttribute("aria-selected") === "true"' >/dev/null
-assert_eval "document.querySelector('[data-testid=settings-dialog]').getBoundingClientRect().bottom <= innerHeight + 1 && document.querySelector('[data-testid=settings-dialog]').getBoundingClientRect().top >= 0" 'short settings dialog remains reachable'
+browser wait --fn 'document.querySelector("[data-testid=settings-section-row][aria-controls=settings-panel-providers]")?.getAttribute("aria-selected") === "true"' >/dev/null
+browser set viewport 320 520 >/dev/null
+browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
+assert_eval "document.querySelector('[data-testid=settings-detail]')?.getBoundingClientRect().bottom <= innerHeight + 1" 'short settings view remains reachable'
 browser screenshot /artifacts/pi-short-settings.png >/dev/null
-browser press Escape >/dev/null
-browser wait --fn 'document.querySelector("[data-testid=settings-dialog]")?.open === false' >/dev/null
 open_chats
 browser wait --fn 'Array.from(document.querySelectorAll("[data-testid=mobile-area-chats], [data-testid=rail-chats]")).some(button => button.getAttribute("aria-current") === "page")' >/dev/null
 browser eval 'document.querySelector("[data-testid=mobile-primary]")?.click(); true' >/dev/null
@@ -90,7 +90,7 @@ for dimensions in '320 400' '390 480' '1024 500'; do
 done
 browser set viewport 1440 900 >/dev/null
 open_settings
-browser wait --fn 'document.querySelector("[data-testid=settings-dialog]")?.open === true' >/dev/null
+browser wait --fn 'document.querySelector("[data-testid=settings-detail]") !== null' >/dev/null
 browser set viewport 390 844 >/dev/null
 browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
 settings_tab Pi
@@ -116,8 +116,6 @@ assert_eval "document.querySelector('[data-testid=login-input]')?.value === 'syn
 browser screenshot /artifacts/pi-login-recovery.png >/dev/null
 browser find testid login-cancel click >/dev/null
 browser wait --fn 'document.querySelector("[data-testid=login-dialog]")?.open !== true' >/dev/null
-browser press Escape >/dev/null
-browser wait --fn 'document.querySelector("[data-testid=settings-dialog]")?.open === false' >/dev/null
 open_chats
 browser wait --fn 'Array.from(document.querySelectorAll("[data-testid=mobile-area-chats], [data-testid=rail-chats]")).some(button => button.getAttribute("aria-current") === "page")' >/dev/null
 browser eval 'document.querySelector("[data-testid=mobile-primary]")?.click(); true' >/dev/null

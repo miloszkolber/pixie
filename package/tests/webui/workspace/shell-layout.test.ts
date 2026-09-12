@@ -438,10 +438,13 @@ test("focus recovery skips hidden and disabled controls", async () => {
 	expect(focus).not.toContain("const fallback = candidates[0]");
 });
 
-test("settings does not derive session-specific capability context outside Chats", async () => {
-	const settings = await source("settings/settings-dialog.svelte");
-	expect(settings).toContain('$appStore.workspaceSelection.primaryArea === "chats"');
-	expect(settings).toContain("sessionCapabilities");
+test("the primary settings view does not derive session-specific capability context", async () => {
+	const settings = await source("workspace/views/project-work-area.svelte");
+	expect(settings).toContain(
+		"settingsTabs(settingsGenericAgent, settingsProfilePending, settingsAgentProfile)",
+	);
+	expect(settings).not.toContain("sessionCapabilities");
+	expect(settings).not.toContain("settings-dialog.svelte");
 });
 
 test("shell chrome stays scoped to six slots and stacks split panes narrow", async () => {

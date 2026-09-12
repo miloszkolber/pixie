@@ -33,7 +33,6 @@ import ScheduleDetail from "../../schedules/schedule-detail.svelte";
 import ScheduleList from "../../schedules/schedule-list.svelte";
 import { resolveWorkspaceSettingsSection } from "../../schedules/schedules-workspace";
 import AgentSettings from "../../settings/sections/agent-settings.svelte";
-import { openSettingsFrom } from "../../settings/open-settings";
 import { resolveSettingsSection, settingsTabs } from "../../settings/settings-dialog";
 import { SettingsSection } from "../../settings/state";
 import {
@@ -542,6 +541,35 @@ function selectSettingsSection(section: SettingsSection): void {
 	appStoreApi.getState().setSettingsSection(section);
 }
 
+function handleSettingsSectionKeydown(event: KeyboardEvent): void {
+	if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key))
+		return;
+	const currentTarget = event.currentTarget as HTMLButtonElement;
+	const allTabs = Array.from(
+		currentTarget
+			.closest('[role="tablist"]')
+			?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+	);
+	const current = allTabs.indexOf(currentTarget);
+	if (current < 0 || allTabs.length === 0) return;
+	event.preventDefault();
+	const step =
+		event.key === "ArrowRight" || event.key === "ArrowDown"
+			? 1
+			: event.key === "ArrowLeft" || event.key === "ArrowUp"
+				? -1
+				: 0;
+	const index =
+		event.key === "Home"
+			? 0
+			: event.key === "End"
+				? allTabs.length - 1
+				: (current + step + allTabs.length) % allTabs.length;
+	const next = allTabs[index];
+	next?.focus();
+	next?.click();
+}
+
 $effect(() => initProjectAreaChatReconciliation(projectAreaId));
 
 $effect(() => {
@@ -931,22 +959,12 @@ function selectSecondaryRail(area: SecondaryArea): void {
 	showSecondarySidebar();
 }
 
-function selectPrimaryRail(area: PrimaryArea, target?: HTMLElement): void {
+function selectPrimaryRail(area: PrimaryArea): void {
 	const current = appStoreApi.getState().workspaceSelection;
 	const active = current.primaryArea === area;
 	appStoreApi.getState().dispatchWorkspaceSelection(selectPrimaryAreaAction(area));
 	if (active) dispatchLayout({ leftCollapsed: !current.layout.leftCollapsed });
 	else dispatchLayout({ leftCollapsed: false });
-	if (area === "settings") {
-		if (target) openSettingsFrom(target);
-		else appStoreApi.getState().openSettings();
-	}
-	if (area === "schedules" && target) openSettingsFrom(target, SettingsSection.Schedules);
-}
-
-function openSettings(event: MouseEvent, section?: SettingsSection): void {
-	selectPrimaryRail("settings", event.currentTarget as HTMLElement);
-	if (section) appStoreApi.getState().setSettingsSection(section);
 }
 
 function openChats(): void {
@@ -1193,7 +1211,7 @@ function signOut(): void {
 						aria-label="Schedules"
 						title="Schedules"
 						aria-current={primaryArea === "schedules" ? "page" : undefined}
-						onclick={(event) => selectPrimaryRail("schedules", event.currentTarget as HTMLElement)}
+						onclick={() => selectPrimaryRail("schedules")}
 					>
 						<Icon name="clock-arrow-left" size={16} />
 					</Button>
@@ -1220,7 +1238,7 @@ function signOut(): void {
 						aria-label="Settings"
 						title="Settings"
 						aria-current={primaryArea === "settings" ? "page" : undefined}
-						onclick={(event) => openSettings(event)}
+						onclick={() => selectPrimaryRail("settings")}
 					>
 						<Icon name="settings" size={16} />
 					</Button>
@@ -1305,14 +1323,19 @@ function signOut(): void {
 						</div>
 					{:else}
 						<div data-testid="settings-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-sm py-sm">
-							<ul aria-label="Settings sections" class="flex flex-col gap-2xs">
+							<ul role="tablist" aria-label="Settings sections" class="flex flex-col gap-2xs">
 								{#each settingsTabList as tab (tab.section)}
-									<li>
+									<li role="presentation">
 										<button
 											type="button"
+											role="tab"
+											id={`settings-tab-${tab.section}`}
 											data-testid="settings-section-row"
 											class={`tree-leaf w-full text-left tr-text-ui ${settingsActiveSection === tab.section ? "tree-leaf-active" : ""}`}
-											aria-current={settingsActiveSection === tab.section ? "page" : undefined}
+											aria-selected={settingsActiveSection === tab.section}
+											aria-controls={`settings-panel-${tab.section}`}
+											tabindex={settingsActiveSection === tab.section ? 0 : -1}
+											onkeydown={handleSettingsSectionKeydown}
 											onclick={() => selectSettingsSection(tab.section)}
 										>
 											{tab.label}
@@ -1374,29 +1397,33 @@ function signOut(): void {
 					{:else}
 						<div data-testid="settings-detail" class="mewa-layout-probe__scroll flex min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
 							{#each settingsVisited as section (section)}
-								{#if section === settingsActiveSection}
-									<div id={`settings-panel-${section}`} role="tabpanel" class="min-w-0 flex-1">
-										{#if section === SettingsSection.Agent && $appStore.agentProfile}
-											<AgentSettings profile={$appStore.agentProfile} />
-										{:else if section === SettingsSection.Schedules}
-											{#if schedulesProject}
-												{#key schedulesProject.id}
-													{#if settingsModules[section]}
-														{@const Section = settingsModules[section]!}<Section project={schedulesProject} />
-														{:else if settingsLoadErrors[section]}
-															{@render settingsRecoveryPane(section)}
-													{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
-												{/key}
-											{:else}
-												<p class="tr-text-ui text-text-muted">Select a project to manage its schedules.</p>
-											{/if}
-										{:else if settingsModules[section]}
-											{@const Section = settingsModules[section]!}<Section />
-											{:else if settingsLoadErrors[section]}
-												{@render settingsRecoveryPane(section)}
-										{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
-									</div>
-								{/if}
+								<div
+									id={`settings-panel-${section}`}
+									role="tabpanel"
+									aria-labelledby={`settings-tab-${section}`}
+									hidden={section !== settingsActiveSection}
+									class="min-w-0 flex-1"
+								>
+									{#if section === SettingsSection.Agent && $appStore.agentProfile}
+										<AgentSettings profile={$appStore.agentProfile} />
+									{:else if section === SettingsSection.Schedules}
+										{#if schedulesProject}
+											{#key schedulesProject.id}
+												{#if settingsModules[section]}
+													{@const Section = settingsModules[section]!}<Section project={schedulesProject} />
+													{:else if settingsLoadErrors[section]}
+														{@render settingsRecoveryPane(section)}
+												{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+											{/key}
+										{:else}
+											<p class="tr-text-ui text-text-muted">Select a project to manage its schedules.</p>
+										{/if}
+									{:else if settingsModules[section]}
+										{@const Section = settingsModules[section]!}<Section />
+										{:else if settingsLoadErrors[section]}
+											{@render settingsRecoveryPane(section)}
+									{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+								</div>
 							{/each}
 							{#if settingsVisited.length === 0}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
 						</div>

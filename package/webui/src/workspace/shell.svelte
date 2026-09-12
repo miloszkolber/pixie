@@ -5,15 +5,9 @@ import Button from "../components/button.svelte";
 import Icon from "../components/icon.svelte";
 import Toaster from "../components/toaster.svelte";
 import { getTransport, logoutController } from "../connection";
-import { openSettingsFrom } from "../settings/open-settings";
-import {
-	appStore,
-	appStoreApi,
-	selectActiveProjectArea,
-	selectContextProject,
-	toast,
-} from "../store";
+import { appStore, appStoreApi, selectActiveProjectArea, selectContextProject } from "../store";
 import { initGlobalHotkeys } from "./navigation/global-hotkeys";
+import { openSettingsArea } from "./navigation/open-settings-area";
 import { focusFirstVisible, panelHasFocusableContent } from "./focus-control";
 import ProjectTree from "./projects/project-tree.svelte";
 import { hasConfiguredProvider, resolveShellAvailability } from "./shell-state";
@@ -39,10 +33,6 @@ let ProjectWorkArea = $state<ProjectWorkAreaComponent | null>(null);
 let projectWorkAreaLoadPending = $state(false);
 let projectWorkAreaLoadError = $state(false);
 let projectWorkAreaReloadAttempts = $state(0);
-let SettingsDialog = $state<typeof import("../settings/settings-dialog.svelte").default | null>(
-	null,
-);
-let settingsDialogLoad: Promise<void> | null = null;
 let providerProbeStatus = $derived($appStore.status);
 let providerProbeAgentProfile = $derived($appStore.agentProfile);
 let providerProbeConnectionGeneration = $derived($appStore.connectionGeneration);
@@ -127,21 +117,6 @@ function setProviderConfigured(configured: boolean | null): void {
 	const state = appStoreApi.getState();
 	if (state.providerConfigured !== configured) state.setProviderConfigured(configured);
 }
-
-$effect(() => {
-	if (!$appStore.settingsOpen || SettingsDialog || settingsDialogLoad) return;
-	settingsDialogLoad = import("../settings/settings-dialog.svelte")
-		.then(({ default: component }) => {
-			SettingsDialog = component;
-		})
-		.catch(() => {
-			appStoreApi.getState().closeSettings();
-			toast.error("Try opening settings again or reload the page.", "Couldn't open settings");
-		})
-		.finally(() => {
-			settingsDialogLoad = null;
-		});
-});
 
 $effect(() => {
 	void providerRefreshTick;
@@ -246,7 +221,7 @@ function signOut(): void {
 					data-testid="open-settings"
 					aria-label="Settings"
 					title="Settings"
-					onclick={(event) => openSettingsFrom(event.currentTarget)}
+					onclick={() => void openSettingsArea()}
 				>
 					<Icon name="settings" size={16} />
 				</Button>
@@ -280,7 +255,7 @@ function signOut(): void {
 				{#if availability === "error"}
 					<div class="app-status-actions">
 						<Button variant="outline" onclick={() => (providerRefreshTick += 1)}>Retry</Button>
-						<Button variant="ghost" onclick={(event) => openSettingsFrom(event.currentTarget)}>Open settings</Button>
+						<Button variant="ghost" onclick={() => void openSettingsArea()}>Open settings</Button>
 					</div>
 				{/if}
 			</div>
@@ -293,6 +268,5 @@ function signOut(): void {
 			<main id="main-content" class="app-content min-h-0 min-w-0 flex-1"><WelcomePanel /></main>
 		</div>
 	{/if}
-	{#if SettingsDialog}<SettingsDialog />{/if}
 	<Toaster />
 </div>

@@ -5,13 +5,13 @@ const settingsRoot = new URL("../../../webui/src/settings/", import.meta.url);
 const requiredComponents = [
 	"login/login-dialog.svelte",
 	"sections/agent-settings.svelte",
+	"sections/deletion-recovery.svelte",
 	"sections/pi-settings.svelte",
 	"sections/pi-tools-settings.svelte",
 	"sections/models-settings.svelte",
 	"sections/provider-card.svelte",
 	"sections/providers-settings.svelte",
 	"sections/system-settings.svelte",
-	"settings-dialog.svelte",
 ] as const;
 
 test("every settings Svelte component parses without compiler warnings or React imports", async () => {
@@ -31,12 +31,14 @@ test("the Svelte settings surface retains the settings and login selectors", asy
 	);
 	const source = sources.join("\n");
 	for (const testId of [
-		"settings-dialog",
 		"settings-pi",
 		"settings-pi-tools",
 		"settings-models",
 		"settings-providers",
 		"system-settings",
+		"deletion-recovery",
+		"deletion-recovery-confirm",
+		"deletion-recovery-retain",
 		"tool-inventory",
 		"in-process-mcp-module-row",
 		"model-row",
@@ -67,11 +69,13 @@ test("the Svelte settings surface retains the settings and login selectors", asy
 	expect(source).toMatch(/data-testid=\{`system-card-\$\{name\.toLowerCase\(\)\}`\}/);
 });
 
-test("closed settings retain the native dialog lifecycle without retaining section effects", async () => {
-	const source = await Bun.file(new URL("settings-dialog.svelte", settingsRoot)).text();
-	const dialogStart = source.indexOf("<Dialog");
-	const openGuard = source.indexOf("{#if $appStore.settingsOpen}", dialogStart);
-	expect(dialogStart).toBeGreaterThanOrEqual(0);
-	expect(openGuard).toBeGreaterThan(dialogStart);
-	expect(source.indexOf("<Section />", openGuard)).toBeGreaterThan(openGuard);
+test("the settings modal is gone and the primary-area view owns settings navigation", async () => {
+	const workArea = await Bun.file(
+		new URL("../../../webui/src/workspace/views/project-work-area.svelte", import.meta.url),
+	).text();
+	expect(await Bun.file(new URL("settings-dialog.svelte", settingsRoot)).exists()).toBe(false);
+	expect(workArea).toContain('data-testid="settings-detail"');
+	expect(workArea).toContain('data-testid="settings-section-row"');
+	expect(workArea).toContain('role="tablist"');
+	expect(workArea).not.toContain("settings-dialog.svelte");
 });

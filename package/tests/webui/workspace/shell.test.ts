@@ -1,7 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import type { AgentProfile, Project } from "@pixie/contracts";
 import { compile } from "svelte/compiler";
-import { openSettingsFrom, restoreSettingsFocus } from "@/settings/open-settings";
 import {
 	appStoreApi,
 	EMPTY_RUNTIME,
@@ -9,6 +8,7 @@ import {
 	projectArea,
 	SettingsSection,
 } from "@/store";
+import { openSettingsArea } from "@/workspace/navigation/open-settings-area";
 import { hasConfiguredProvider, resolveShellAvailability } from "@/workspace/shell-state";
 import { selectTabSessionStreaming } from "@/workspace/views/project-work-area-state";
 
@@ -49,7 +49,6 @@ beforeEach(() => {
 		activeProjectAreaId: area.id,
 		providerConfigured: null,
 		agentProfile: null,
-		settingsOpen: false,
 		settingsSection: SettingsSection.Models,
 	});
 });
@@ -91,13 +90,15 @@ test("shell availability respects connectivity, compatibility, and Pi provider s
 	).toBeTrue();
 });
 
-test("settings restore focus to the control that opened them", () => {
-	let focused = false;
-	openSettingsFrom({ isConnected: true, focus: () => (focused = true) }, SettingsSection.Providers);
-	expect(appStoreApi.getState().settingsOpen).toBeTrue();
+test("opening settings activates the primary settings area without a modal", async () => {
+	await openSettingsArea(SettingsSection.Providers);
+	const selection = appStoreApi.getState().workspaceSelection;
+	expect(selection.primaryArea).toBe("settings");
+	expect(selection.primarySelection).toEqual({
+		kind: "settings",
+		sectionId: SettingsSection.Providers,
+	});
 	expect(appStoreApi.getState().settingsSection).toBe(SettingsSection.Providers);
-	expect(restoreSettingsFocus()).toBeTrue();
-	expect(focused).toBeTrue();
 });
 
 test("workspace streaming selection ignores transcript content", () => {
@@ -158,8 +159,9 @@ test("the Svelte shell keeps one responsive activity surface and every blocked s
 		expect(source).toContain(contract);
 	}
 	expect(source).toContain(".catch(() => {");
-	expect(source).toContain("Couldn't open settings");
-	expect(source).toContain("closeSettings()");
+	expect(source).toContain("openSettingsArea");
+	expect(source).toContain('data-testid="settings-detail"');
+	expect(source).not.toContain("settings-dialog.svelte");
 	expect(source).toContain("onOpenChanges={showActivity}");
 	expect(source.match(/id="activity-panel"/g)).toHaveLength(1);
 });

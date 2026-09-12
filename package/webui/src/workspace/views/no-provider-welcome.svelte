@@ -1,6 +1,6 @@
 <script lang="ts">
 import Button from "../../components/button.svelte";
-import { openSettingsFrom } from "../../settings/open-settings";
+import { openSettingsArea } from "../navigation/open-settings-area";
 import { SettingsSection } from "../../store";
 </script>
 
@@ -15,7 +15,7 @@ import { SettingsSection } from "../../store";
 	</p>
 	<Button
 		data-testid="connect-provider"
-		onclick={(event) => openSettingsFrom(event.currentTarget, SettingsSection.Providers)}
+		onclick={() => void openSettingsArea(SettingsSection.Providers)}
 	>
 		View Pi providers
 	</Button>

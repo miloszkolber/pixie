@@ -181,11 +181,11 @@ assert_eval "document.documentElement.scrollWidth === document.documentElement.c
 browser find role button click --name "Primary" >/dev/null
 browser set viewport 1440 900 >/dev/null
 browser find testid open-settings click >/dev/null
-browser wait --fn "document.querySelector('[data-testid=settings-dialog]')?.open === true" >/dev/null
+browser wait --fn "document.querySelector('[data-testid=settings-detail]') !== null" >/dev/null
 browser set viewport 390 844 >/dev/null
 browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
 echo "UI acceptance: settings geometry"
-assert_eval "document.querySelector('[data-testid=settings-dialog]')?.getBoundingClientRect().right <= window.innerWidth"
+assert_eval "document.querySelector('[data-testid=settings-detail]')?.getBoundingClientRect().right <= window.innerWidth"
 browser eval "(() => { const tab = document.querySelector('[role=tab][aria-controls=settings-panel-providers]'); if (!(tab instanceof HTMLElement)) throw new Error('Providers settings tab is unavailable'); tab.click(); return true; })()" >/dev/null
 browser wait --fn "document.querySelector('[role=tab][aria-controls=settings-panel-providers]')?.getAttribute('aria-selected') === 'true'" >/dev/null
 browser screenshot /artifacts/narrow-settings.png >/dev/null
@@ -196,8 +196,10 @@ browser wait --text "0.85.1" >/dev/null
 echo "UI acceptance: system geometry"
 assert_eval "document.querySelector('[data-testid=system-card-browser]')?.textContent?.includes('Unavailable') === true && document.documentElement.scrollWidth === document.documentElement.clientWidth"
 browser screenshot /artifacts/narrow-system.png >/dev/null
-browser press Escape >/dev/null
-browser wait --fn "document.querySelector('[data-testid=settings-dialog]')?.open === false" >/dev/null
+browser set viewport 1440 900 >/dev/null
+browser find testid rail-chats click >/dev/null
+browser wait --fn "document.querySelector('[data-testid=settings-detail]') === null" >/dev/null
+browser set viewport 390 844 >/dev/null
 assert_eval "document.documentElement.scrollWidth === document.documentElement.clientWidth"
 browser screenshot /artifacts/narrow-workspace.png >/dev/null
 
