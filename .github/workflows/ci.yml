@@ -50,9 +50,11 @@ jobs:
         working-directory: package
       - run: bun run typecheck
         working-directory: package
-      - run: bun run test
-        working-directory: package
+      # Build first: several tests inspect the embedded web bundle and the
+      # full-host binary, and `go test` requires webui/dist for //go:embed.
       - run: bun run build
+        working-directory: package
+      - run: bun run test
         working-directory: package
       - name: Validate Compose service isolation
         run: sh package/tests/deployment/compose.test.sh
