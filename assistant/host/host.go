@@ -34,6 +34,9 @@ const (
 	minSecretLength      = 32
 	hostWriteTimeout     = 10 * time.Second
 	hostEventEnqueueTime = time.Second
+	// hostRestartDrainGrace lets the controller read the reload acknowledgement
+	// before the accepted restart closes the connection.
+	hostRestartDrainGrace = 250 * time.Millisecond
 )
 
 // Config contains the assistant-owned startup inputs. The full-host
@@ -394,9 +397,14 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 			Method string          `json:"method"`
 			Params map[string]any  `json:"params"`
 		}
-		if json.Unmarshal(payload, &envelope) != nil || len(envelope.ID) == 0 || envelope.Method == "" || envelope.Params == nil {
+		if json.Unmarshal(payload, &envelope) != nil || len(envelope.ID) == 0 || envelope.Method == "" {
 			_ = connection.Close(websocket.StatusPolicyViolation, "invalid request envelope")
 			return
+		}
+		// A no-argument method sends `params: null` (or omits it); both mean an
+		// empty parameter object, not an invalid envelope.
+		if envelope.Params == nil {
+			envelope.Params = map[string]any{}
 		}
 		var id uint64
 		if err := json.Unmarshal(envelope.ID, &id); err != nil || id == 0 || id > 9_007_199_254_740_991 {
@@ -454,6 +462,10 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 			}
 			_ = write(mustJSON(map[string]any{"id": id, "result": json.RawMessage(result)}))
 			if restart {
+				// Let the controller read the acknowledgement before the
+				// process drains for the service manager; otherwise it observes
+				// the expected close as a failed reload.
+				time.Sleep(hostRestartDrainGrace)
 				handle.requestRestart()
 			}
 		}(id, envelope.Method, envelope.Params)

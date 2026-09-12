@@ -65,6 +65,49 @@ func TestStartProvidesPrivateEndpointAndHello(t *testing.T) {
 	}
 }
 
+func TestV1EnvelopeAcceptsNullParamsForNoArgumentRequests(t *testing.T) {
+	handle, err := Start(context.Background(), Config{Host: "127.0.0.1", Port: 0, Secret: testSecret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close(context.Background())
+	select {
+	case <-handle.Ready():
+	case <-time.After(time.Second):
+		t.Fatal("embedded assistant did not become ready")
+	}
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+testSecret)
+	connection, _, err := websocket.Dial(context.Background(), handle.Endpoint(), &websocket.DialOptions{HTTPHeader: header})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close(websocket.StatusNormalClosure, "test complete")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := connection.Write(ctx, websocket.MessageText, []byte(`{"id":1,"method":"runtime.hello","params":{"protocolVersion":1}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := connection.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// A no-argument admin call serializes params as null. It must be parsed as
+	// an empty object rather than closing the connection as an invalid envelope.
+	if err := connection.Write(ctx, websocket.MessageText, []byte(`{"id":2,"method":"session.list","params":null}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, response, err := connection.Read(ctx)
+	if err != nil {
+		t.Fatalf("null params closed the connection: %v", err)
+	}
+	var envelope struct {
+		ID uint64 `json:"id"`
+	}
+	if json.Unmarshal(response, &envelope) != nil || envelope.ID != 2 {
+		t.Fatalf("null params response = %s", response)
+	}
+}
+
 func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
 	operations := nativeOperationSet()
 	// The exact enabled subset is declared here so adding or removing native

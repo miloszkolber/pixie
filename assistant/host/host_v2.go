@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
@@ -127,6 +128,9 @@ func serveHostV2Frame(handle *Handle, connection *websocket.Conn, ctx context.Co
 		closeHostV2Connection(connection, &piwire.HostV2CloseError{Code: piwire.HostV2CloseInvalidEnvelope, Reason: "request params must be an object"})
 		return false
 	}
+	if params == nil {
+		params = map[string]any{}
+	}
 	go func(id piwire.HostRequestID, method string, params map[string]any) {
 		defer removeHostV2Inflight(inflight, inflightMu, id)
 		result, detail, restart := runHostOperation(handle, ctx, method, params)
@@ -136,6 +140,7 @@ func serveHostV2Frame(handle *Handle, connection *websocket.Conn, ctx context.Co
 		}
 		_ = writeHostV2Result(write, id, result)
 		if restart {
+			time.Sleep(hostRestartDrainGrace)
 			handle.requestRestart()
 		}
 	}(request.ID, request.Method, params)
