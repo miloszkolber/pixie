@@ -16,7 +16,7 @@ Current fail-closed gates agree with that verdict:
 - `release-gate` lacks release identity, archives, binaries, OCI platform digests, checksums, SBOM/provenance, source reachability, and publication authorization. CI now produces archives and the OCI tar before the evidence gates, but the gate collectors still cannot ingest them and no evidence bundle producer exists.
 - Repository lint is not green: the latest run reported 119 errors, 182 warnings, and 16 informational diagnostics, mainly in retained legacy TypeScript. The new Go and contract edits are formatted and type-clean.
 - `bun test tests` is fully green at 807 pass / 0 fail under the pinned Bun 1.4.0 in the container and the host's Bun 1.4.2. The earlier two retained-parity failures were a Bun <1.4 `webidl.util.markAsUncloneable` incompatibility, not code.
-- Both Go modules pass `go test -race` on the host with Go 1.27.0, including a fixed test-side supervisor map race. The opt-in `assistant/host/native_real_test.go` ownership harness passes against the host's official Pi 0.85.1, and a live provider prompt succeeds through the installed Pi.
+- Both Go modules pass `go test -race` on the host with Go 1.27.0, including a fixed test-side supervisor map race. The opt-in `assistant/host/native_real_test.go` harness passes against the host's official Pi 0.85.1 for session ownership and, with a live provider, a real prompt that settles with a terminal stop reason and records the assistant message. Real-Pi testing found and fixed a host bug that fatally misclassified official `extension_ui_request` events as the removed compatibility protocol.
 
 ## Authorized execution plan
 

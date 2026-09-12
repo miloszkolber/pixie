@@ -102,3 +102,72 @@ func TestInstalledOfficialPiSessionOwnership(t *testing.T) {
 		t.Fatalf("load of pruned official Pi session did not fail explicitly: %v", err)
 	}
 }
+
+// TestInstalledOfficialPiPromptSettles is an opt-in live-provider check. It
+// requires PIXIE_TEST_PI_PROMPT=1 and an absolute PIXIE_TEST_PI_AGENT_DIR that
+// holds provider credentials. It never touches the default agent directory.
+func TestInstalledOfficialPiPromptSettles(t *testing.T) {
+	if os.Getenv("PIXIE_TEST_PI_PROMPT") != "1" {
+		t.Skip("set PIXIE_TEST_PI_PROMPT=1 to run the live provider prompt")
+	}
+	agentDir := os.Getenv("PIXIE_TEST_PI_AGENT_DIR")
+	if agentDir == "" || !filepath.IsAbs(agentDir) {
+		t.Skip("set PIXIE_TEST_PI_AGENT_DIR to an absolute agent directory with credentials")
+	}
+	executable := os.Getenv("PIXIE_TEST_PI_EXECUTABLE")
+	if executable == "" {
+		resolved, err := exec.LookPath("pi")
+		if err != nil {
+			t.Skipf("official Pi executable is unavailable: %v", err)
+		}
+		executable = resolved
+	}
+	versionCtx, stopVersion := context.WithTimeout(t.Context(), 5*time.Second)
+	versionOutput, versionErr := exec.CommandContext(versionCtx, executable, "--version").CombinedOutput()
+	stopVersion()
+	if versionErr != nil || !strings.Contains(string(versionOutput), "0.85.1") {
+		t.Skipf("installed Pi is not the pinned 0.85.1 executable: %s (%v)", versionOutput, versionErr)
+	}
+	cwd := t.TempDir()
+	supervisor := newNativeSupervisor(Config{PiExecutable: executable, AgentDir: agentDir})
+	if err := supervisor.start(t.Context()); err != nil {
+		t.Fatalf("start official Pi supervisor: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = supervisor.close(ctx)
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancel()
+	raw, err := supervisor.callHost(ctx, "session.create", map[string]any{"cwd": cwd, "mcpServers": []any{}})
+	if err != nil {
+		t.Fatalf("bind fresh official Pi launch: %v", err)
+	}
+	var created struct {
+		SessionID string `json:"sessionId"`
+	}
+	if json.Unmarshal(raw, &created) != nil || created.SessionID == "" {
+		t.Fatalf("invalid official Pi create snapshot: %s", raw)
+	}
+	promptRaw, err := supervisor.callHost(ctx, "session.prompt", map[string]any{"sessionId": created.SessionID, "content": []any{map[string]any{"type": "text", "text": "Reply with exactly the word pong and nothing else."}}})
+	if err != nil {
+		t.Fatalf("official Pi prompt did not settle: %v", err)
+	}
+	var result struct {
+		StopReason string `json:"stopReason"`
+	}
+	if json.Unmarshal(promptRaw, &result) != nil {
+		t.Fatalf("invalid official Pi prompt result: %s", promptRaw)
+	}
+	if result.StopReason == "" || result.StopReason == "error" || result.StopReason == "aborted" {
+		t.Fatalf("official Pi prompt settled as %q: %s", result.StopReason, promptRaw)
+	}
+	loadRaw, err := supervisor.callHost(ctx, "session.load", map[string]any{"sessionId": created.SessionID, "cwd": cwd})
+	if err != nil {
+		t.Fatalf("reload prompt session: %v", err)
+	}
+	if !strings.Contains(string(loadRaw), "\"assistant\"") {
+		t.Fatalf("prompt transcript did not contain an assistant message: %s", loadRaw)
+	}
+}

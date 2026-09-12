@@ -91,6 +91,31 @@ func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
 	}
 }
 
+func TestOfficialExtensionUIEventsAreNotMistakenForCompatibilityFrames(t *testing.T) {
+	official := map[string]json.RawMessage{
+		"type":   json.RawMessage(`"extension_ui_request"`),
+		"id":     json.RawMessage(`"ce8fed21-e310-4451-8cbd-37502cd6fdd5"`),
+		"method": json.RawMessage(`"notify"`),
+	}
+	if isRemovedCompatibilityFrame(official, "extension_ui_request") {
+		t.Fatal("official extension_ui_request was classified as the removed compatibility protocol")
+	}
+	response := map[string]json.RawMessage{
+		"type": json.RawMessage(`"response"`),
+		"id":   json.RawMessage(`1`),
+	}
+	if isRemovedCompatibilityFrame(response, "response") {
+		t.Fatal("official response was classified as the removed compatibility protocol")
+	}
+	removed := map[string]json.RawMessage{
+		"id":     json.RawMessage(`1`),
+		"method": json.RawMessage(`"session.prompt"`),
+	}
+	if !isRemovedCompatibilityFrame(removed, "") {
+		t.Fatal("typeless method frame was accepted")
+	}
+}
+
 func TestPromptPayloadAcceptsPublicImagesAndRejectsResources(t *testing.T) {
 	message, images, err := promptPayload(map[string]any{"content": []any{
 		map[string]any{"type": "text", "text": "hello"},

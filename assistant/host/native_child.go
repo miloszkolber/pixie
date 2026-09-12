@@ -491,6 +491,17 @@ func nativeExitDescription(err error) string {
 	return err.Error()
 }
 
+// isRemovedCompatibilityFrame reports whether a parsed frame is the removed
+// typeless child-side method protocol. Official Pi events always carry a type;
+// extension_ui_request events also carry method and id, so a type-bearing frame
+// is never the removed protocol.
+func isRemovedCompatibilityFrame(frame map[string]json.RawMessage, frameType string) bool {
+	if frameType != "" {
+		return false
+	}
+	return frame["method"] != nil || frame["result"] != nil || frame["id"] != nil
+}
+
 func (c *nativeChild) readLoop() {
 	reader := bufio.NewReaderSize(c.stdout, 64*1024)
 	for {
@@ -531,9 +542,10 @@ func (c *nativeChild) readLoop() {
 			}
 			continue
 		}
-		// A result/method-shaped frame is the removed child-side compatibility
-		// protocol, not an official Pi event. Never silently accept it.
-		if frame["method"] != nil || frame["result"] != nil || frame["id"] != nil {
+		// Only a typeless method/result/id frame is the removed child-side
+		// compatibility protocol. Official events such as extension_ui_request
+		// legitimately carry method and id fields and must not be rejected.
+		if isRemovedCompatibilityFrame(frame, frameType) {
 			c.failNative(errors.New("child-side method RPC compatibility is unsupported; official Pi RPC is required"))
 			return
 		}
