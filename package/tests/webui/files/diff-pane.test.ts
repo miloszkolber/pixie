@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { GitDiffFile } from "@pixie/contracts";
 import { initTransport, resetTransport } from "@/connection";
 import { WsTransport } from "@/connection/transport";
@@ -16,6 +16,12 @@ const webuiRoot = new URL("../../../webui/src/", import.meta.url);
 async function source(path: string): Promise<string> {
 	return Bun.file(new URL(path, webuiRoot)).text();
 }
+
+beforeEach(() => {
+	// Reset before each test as well as after, so a preceding test in another
+	// file cannot leave a stale project area or navigation generation behind.
+	appStoreApi.setState(appStoreApi.getInitialState(), true);
+});
 
 afterEach(() => {
 	resetTransport();
