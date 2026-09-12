@@ -48,6 +48,12 @@ func main() {
 		}
 		return
 	}
+	if handled, err := handlePairingCommand(os.Args[1:], os.Stdout); handled {
+		if err != nil {
+			fatal(err)
+		}
+		return
+	}
 	mode, err := parseMode(os.Args[1:])
 	if err != nil {
 		fatal(err)

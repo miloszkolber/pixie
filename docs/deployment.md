@@ -66,6 +66,16 @@ For development inspection only, `bun run build:host` builds the embedded UI and
 
 Advanced override only: `PIXIE_STATIC_DIR` serves the web UI from a disk directory instead of the embedded bundle (development use). A Go binary built before `bun run build:web` embeds only a placeholder and falls back to `PIXIE_STATIC_DIR`, then to the container asset path.
 
+## Pairing the deletion authority
+
+`PIXIE_DELETION_AUTHORITY=paired` needs one explicit pairing between the controller data directory and the selected Pi host/native storage before destructive recovery can replay. From the full-host binary, select the same agent directory the service uses:
+
+```sh
+pixie pair --data-dir "$HOME/.local/share/pixie" --agent-dir "$HOME/.pi/agent"
+```
+
+`pair` prints the generated ceremony secret once; store it out of band with the deployment's private environment and treat it as unrecoverable, because only its verifier hash is persisted. A controller-only deployment passes the explicit `--host-identity` and `--storage-key` instead of `--agent-dir`. Pairing while already paired fails until `pixie revoke-pairing` records an explicit revocation, and `pixie rotate-pairing --secret <current>` issues a fresh secret while keeping the durable host identity and storage. Both commands write the pairing record to the data directory; `--json` emits the same status without the secret hash.
+
 ## Operations
 
 Application `/health` and `/livez` check liveness; `/readyz` checks state, UI and Pi connectivity. The in-process MCP publisher shares the application listener. See [MCP publisher](mcp.md) for diagnostics.

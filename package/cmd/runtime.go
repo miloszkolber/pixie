@@ -140,6 +140,24 @@ func configPath(args []string) string {
 }
 
 func readRuntimeConfig(path string, mode runMode) (runtimeConfigFile, error) {
+	config, err := decodeRuntimeConfig(path)
+	if err != nil {
+		return runtimeConfigFile{}, err
+	}
+	if config.Mode != "" && config.Mode != string(modeFullHost) && config.Mode != string(modeController) {
+		return runtimeConfigFile{}, fmt.Errorf("unsupported config mode %q", config.Mode)
+	}
+	if config.Mode != "" && runMode(config.Mode) != mode {
+		return runtimeConfigFile{}, fmt.Errorf("config mode %q does not match requested %q mode", config.Mode, mode)
+	}
+	return config, nil
+}
+
+// decodeRuntimeConfig reads and decodes a Pixie JSON configuration without
+// binding it to a serve mode. The mode-agnostic utility commands (pairing
+// ceremonies) need the shared dataDir/agentDir resolution without selecting a
+// full-host or controller-only topology.
+func decodeRuntimeConfig(path string) (runtimeConfigFile, error) {
 	if strings.TrimSpace(path) == "" {
 		return runtimeConfigFile{}, nil
 	}
@@ -153,12 +171,6 @@ func readRuntimeConfig(path string, mode runMode) (runtimeConfigFile, error) {
 	var config runtimeConfigFile
 	if err := json.Unmarshal(content, &config); err != nil {
 		return runtimeConfigFile{}, fmt.Errorf("decode config: %w", err)
-	}
-	if config.Mode != "" && config.Mode != string(modeFullHost) && config.Mode != string(modeController) {
-		return runtimeConfigFile{}, fmt.Errorf("unsupported config mode %q", config.Mode)
-	}
-	if config.Mode != "" && runMode(config.Mode) != mode {
-		return runtimeConfigFile{}, fmt.Errorf("config mode %q does not match requested %q mode", config.Mode, mode)
 	}
 	config.DataDir = expandHomePath(config.DataDir)
 	config.StaticDir = expandHomePath(config.StaticDir)
