@@ -1,41 +1,31 @@
 import { randomUUID } from "node:crypto";
 import {
+	applyDraftMutation,
 	createDraft,
 	createDraftState,
-	applyDraftMutation,
-	replaceDraftState,
 	type DraftMutation,
 	type DraftMutationOutcome,
 	type DraftState,
+	replaceDraftState,
 } from "./drafts/continuity.ts";
 import {
 	applyOutbox,
 	getOutboxEntry,
-	prepareOutboxDelivery,
-	reconcileUncertainDelivery,
-	stablePayloadFingerprint,
-	transitionOutbox,
 	type OutboxEntry,
 	type OutboxEvent,
 	type OutboxPrepareInput,
 	type OutboxState,
+	prepareOutboxDelivery,
+	reconcileUncertainDelivery,
+	stablePayloadFingerprint,
+	transitionOutbox,
 } from "./outbox/index.ts";
 import {
-	createPassiveReplay,
-	createPassiveState,
-	applyPassiveEvent,
-	applyPassiveReplay,
-	type PassiveReplay,
-	type PassiveState,
-	type PassiveUiEvent,
-} from "./ui-state/index.ts";
-import {
 	createSessionFlow,
-	transitionSessionFlow,
 	type NativeAbortResult,
 	type SessionFlowEvent,
+	transitionSessionFlow,
 } from "./session/flow.ts";
-import { redactSecrets, validatePromptRequest } from "./session/validation.ts";
 import type {
 	FlowError,
 	NativeModel,
@@ -47,6 +37,16 @@ import type {
 	SessionFlowState,
 	SessionReplay,
 } from "./session/types.ts";
+import { redactSecrets, validatePromptRequest } from "./session/validation.ts";
+import {
+	applyPassiveEvent,
+	applyPassiveReplay,
+	createPassiveReplay,
+	createPassiveState,
+	type PassiveReplay,
+	type PassiveState,
+	type PassiveUiEvent,
+} from "./ui-state/index.ts";
 
 /** A small result type used by the mutable integration shell. */
 export type RuntimeResult<T> =
@@ -130,13 +130,21 @@ function flowFailure<T>(error: FlowError): RuntimeResult<T> {
 }
 
 function validId(value: unknown): value is string {
-	return typeof value === "string" && value.length > 0 && value.length <= 512 && !value.includes("\0");
+	return (
+		typeof value === "string" && value.length > 0 && value.length <= 512 && !value.includes("\0")
+	);
 }
 
 function nativeAbortKind(value: unknown): NativeAbortResult["kind"] {
 	if (!value || typeof value !== "object") return "rejected";
 	const kind = (value as { kind?: unknown }).kind;
-	if (kind === "aborted" || kind === "already-idle" || kind === "timed-out" || kind === "rejected" || kind === "interrupted")
+	if (
+		kind === "aborted" ||
+		kind === "already-idle" ||
+		kind === "timed-out" ||
+		kind === "rejected" ||
+		kind === "interrupted"
+	)
 		return kind;
 	if ((value as { aborted?: unknown }).aborted === true) return "aborted";
 	return "timed-out";
@@ -185,7 +193,10 @@ export class SessionRuntime {
 			if (draft.draft.sessionKey === options.identity.sessionKey && draft.draft.clientId) {
 				this.drafts.set(
 					draft.draft.clientId,
-					replaceDraftState(draft, { sessionKey: options.identity.sessionKey, identity: { ...options.identity } }),
+					replaceDraftState(draft, {
+						sessionKey: options.identity.sessionKey,
+						identity: { ...options.identity },
+					}),
 				);
 			}
 		}
@@ -225,11 +236,12 @@ export class SessionRuntime {
 	/** Work which must pin a resident, including unsent work retained by Stop. */
 	get activeWorkIds(): readonly string[] {
 		return this.outboxState.entries
-			.filter((entry) =>
-				entry.status === "prepared" ||
-				entry.status === "dispatching" ||
-				entry.status === "accepted" ||
-				entry.status === "uncertain",
+			.filter(
+				(entry) =>
+					entry.status === "prepared" ||
+					entry.status === "dispatching" ||
+					entry.status === "accepted" ||
+					entry.status === "uncertain",
 			)
 			.map((entry) => entry.deliveryId);
 	}
@@ -237,7 +249,8 @@ export class SessionRuntime {
 	private applyFlow(event: SessionFlowEvent): RuntimeResult<SessionFlowState> {
 		const result = transitionSessionFlow(this.current, event);
 		if (!result.ok) return flowFailure(result.error);
-		if (!("phase" in result.value)) return failure("invalid-state", "Session flow produced a non-state result");
+		if (!("phase" in result.value))
+			return failure("invalid-state", "Session flow produced a non-state result");
 		this.current = result.value;
 		return success(this.current);
 	}
@@ -251,10 +264,15 @@ export class SessionRuntime {
 
 	/** Prepare a prompt in both state machines before invoking native Pi. */
 	preparePrompt(input: PromptRuntimeRequest): RuntimeResult<PreparedPrompt> {
-		const mutationId = input.mutationId && validId(input.mutationId) ? input.mutationId : randomUUID();
+		const mutationId =
+			input.mutationId && validId(input.mutationId) ? input.mutationId : randomUUID();
 		const prior = getOutboxEntry(this.outboxState, mutationId);
-		const deliveryId = input.deliveryId && validId(input.deliveryId) ? input.deliveryId : prior?.deliveryId ?? randomUUID();
-		const runId = input.runId && validId(input.runId) ? input.runId : prior?.runId ?? randomUUID();
+		const deliveryId =
+			input.deliveryId && validId(input.deliveryId)
+				? input.deliveryId
+				: (prior?.deliveryId ?? randomUUID());
+		const runId =
+			input.runId && validId(input.runId) ? input.runId : (prior?.runId ?? randomUUID());
 		const request: PromptRequest = {
 			sessionKey: this.identity.sessionKey,
 			generation: this.identity.childGeneration,
@@ -270,11 +288,25 @@ export class SessionRuntime {
 			try {
 				fingerprint = stablePayloadFingerprint(payload);
 			} catch (error) {
-				return failure("invalid-request", error instanceof Error ? error.message : "Outbox payload cannot be fingerprinted");
+				return failure(
+					"invalid-request",
+					error instanceof Error ? error.message : "Outbox payload cannot be fingerprinted",
+				);
 			}
 			if (prior.deliveryId !== deliveryId || prior.fingerprint !== fingerprint)
-				return failure("mutation-conflict", "Mutation identity is already bound to a different payload or delivery");
-			return success({ mutationId, deliveryId: prior.deliveryId, runId: prior.runId ?? runId, request, payload, replayed: true, entry: prior });
+				return failure(
+					"mutation-conflict",
+					"Mutation identity is already bound to a different payload or delivery",
+				);
+			return success({
+				mutationId,
+				deliveryId: prior.deliveryId,
+				runId: prior.runId ?? runId,
+				request,
+				payload,
+				replayed: true,
+				entry: prior,
+			});
 		}
 		const outboxInput: OutboxPrepareInput = {
 			mutationId,
@@ -289,19 +321,39 @@ export class SessionRuntime {
 		const prepared = prepareOutboxDelivery(this.outboxState, outboxInput);
 		if (!prepared.ok) return failure(prepared.error.code, prepared.error.message);
 		const existing = getOutboxEntry(prepared.value, mutationId);
-		if (!existing) return failure("invalid-state", "Outbox preparation did not retain the delivery");
+		if (!existing)
+			return failure("invalid-state", "Outbox preparation did not retain the delivery");
 		this.outboxState = prepared.value;
 		if (existing.mutationId === mutationId && existing.deliveryId !== deliveryId)
 			return failure("mutation-conflict", "Mutation identity is already bound to another delivery");
 		if (existing.status !== "prepared")
-			return success({ mutationId, deliveryId: existing.deliveryId, runId: existing.runId ?? runId, request, payload, replayed: true, entry: existing });
+			return success({
+				mutationId,
+				deliveryId: existing.deliveryId,
+				runId: existing.runId ?? runId,
+				request,
+				payload,
+				replayed: true,
+				entry: existing,
+			});
 		const flow = this.applyFlow({ type: "prompt.prepare", request });
 		if (!flow.ok) {
 			// A failed flow admission must never leave a runnable outbox entry.
-			this.outboxState = applyOutbox(this.outboxState, { type: "discard", mutationIds: [mutationId] });
+			this.outboxState = applyOutbox(this.outboxState, {
+				type: "discard",
+				mutationIds: [mutationId],
+			});
 			return flow;
 		}
-		return success({ mutationId, deliveryId, runId, request, payload, replayed: false, entry: existing });
+		return success({
+			mutationId,
+			deliveryId,
+			runId,
+			request,
+			payload,
+			replayed: false,
+			entry: existing,
+		});
 	}
 
 	private deliveryIdentity(prepared: PreparedPrompt) {
@@ -334,7 +386,8 @@ export class SessionRuntime {
 		invoke: (request: PromptRequest) => Promise<unknown>,
 	): Promise<PromptRuntimeResult> {
 		const preparedResult = this.preparePrompt(input);
-		if (!preparedResult.ok) throw new Error(`${preparedResult.error.code}: ${preparedResult.error.message}`);
+		if (!preparedResult.ok)
+			throw new Error(`${preparedResult.error.code}: ${preparedResult.error.message}`);
 		const prepared = preparedResult.value;
 		if (prepared.replayed)
 			return {
@@ -346,7 +399,11 @@ export class SessionRuntime {
 			};
 
 		const identity = this.deliveryIdentity(prepared);
-		const dispatched = this.applyFlow({ type: "prompt.dispatch", ...identity, runId: prepared.runId });
+		const dispatched = this.applyFlow({
+			type: "prompt.dispatch",
+			...identity,
+			runId: prepared.runId,
+		});
 		if (!dispatched.ok) {
 			this.rejectPrompt(prepared, dispatched.error.message);
 			throw new Error(`${dispatched.error.code}: ${dispatched.error.message}`);
@@ -371,13 +428,21 @@ export class SessionRuntime {
 		try {
 			const native = await invoke(prepared.request);
 			const stopReason =
-				native && typeof native === "object" && typeof (native as { stopReason?: unknown }).stopReason === "string"
+				native &&
+				typeof native === "object" &&
+				typeof (native as { stopReason?: unknown }).stopReason === "string"
 					? (native as { stopReason: string }).stopReason
 					: "end_turn";
-			const settled = this.applyFlow({ type: "prompt.settle", ...identity, runId: prepared.runId, stopReason });
+			const settled = this.applyFlow({
+				type: "prompt.settle",
+				...identity,
+				runId: prepared.runId,
+				stopReason,
+			});
 			if (!settled.ok) throw new Error(`${settled.error.code}: ${settled.error.message}`);
 			const outboxSettled = this.applyOutbox({ type: "settle", ...identity, stopReason });
-			if (!outboxSettled.ok) throw new Error(`${outboxSettled.error.code}: ${outboxSettled.error.message}`);
+			if (!outboxSettled.ok)
+				throw new Error(`${outboxSettled.error.code}: ${outboxSettled.error.message}`);
 			return {
 				stopReason,
 				mutationId: prepared.mutationId,
@@ -385,7 +450,8 @@ export class SessionRuntime {
 				runId: prepared.runId,
 			};
 		} catch (error) {
-			if (!(error instanceof UncertainPromptError)) this.uncertainPrompt(prepared, "Native prompt did not settle");
+			if (!(error instanceof UncertainPromptError))
+				this.uncertainPrompt(prepared, "Native prompt did not settle");
 			throw error instanceof UncertainPromptError ? error : new UncertainPromptError();
 		}
 	}
@@ -413,7 +479,9 @@ export class SessionRuntime {
 			const kind = nativeAbortKind(native);
 			result = {
 				kind,
-				...(native && typeof native === "object" && typeof (native as { reason?: unknown }).reason === "string"
+				...(native &&
+				typeof native === "object" &&
+				typeof (native as { reason?: unknown }).reason === "string"
 					? { reason: (native as { reason: string }).reason }
 					: {}),
 			};
@@ -422,13 +490,16 @@ export class SessionRuntime {
 		}
 		const applied = this.applyFlow({ type: "abort.result", ...identity, result });
 		if (!applied.ok) throw new Error(`${applied.error.code}: ${applied.error.message}`);
-		const successful = result.kind === "aborted" || result.kind === "already-idle" || result.kind === "interrupted";
-		const reason = "reason" in result && result.reason ? result.reason : `Native abort ${result.kind}`;
+		const successful =
+			result.kind === "aborted" || result.kind === "already-idle" || result.kind === "interrupted";
+		const reason =
+			"reason" in result && result.reason ? result.reason : `Native abort ${result.kind}`;
 		if (delivery) {
 			const outboxIdentity = {
 				sessionKey: this.identity.sessionKey,
 				generation: this.identity.childGeneration,
-				mutationId: this.outboxState.entries.find((entry) => entry.runId === runId)?.mutationId ?? "",
+				mutationId:
+					this.outboxState.entries.find((entry) => entry.runId === runId)?.mutationId ?? "",
 				deliveryId: delivery.deliveryId,
 			};
 			if (outboxIdentity.mutationId) {
@@ -439,19 +510,33 @@ export class SessionRuntime {
 				);
 			}
 		}
-		return { outcome: result.kind, generation: this.identity.childGeneration, runId, ...(reason ? { reason } : {}), native };
+		return {
+			outcome: result.kind,
+			generation: this.identity.childGeneration,
+			runId,
+			...(reason ? { reason } : {}),
+			native,
+		};
 	}
 
 	/** Keep the current client draft and mutation receipts across native replacement. */
 	getDraft(clientId: string, initialText = ""): DraftState<string> {
 		const existing = this.drafts.get(clientId);
 		if (existing) return existing;
-		const created = createDraftState(createDraft({
-			sessionKey: this.identity.sessionKey,
-			clientId,
-			content: initialText,
-			identity: { sessionKey: this.identity.sessionKey, sessionId: this.identity.sessionId, nativeSessionId: this.identity.nativeSessionId, bootId: this.identity.bootId, childGeneration: this.identity.childGeneration },
-		}));
+		const created = createDraftState(
+			createDraft({
+				sessionKey: this.identity.sessionKey,
+				clientId,
+				content: initialText,
+				identity: {
+					sessionKey: this.identity.sessionKey,
+					sessionId: this.identity.sessionId,
+					nativeSessionId: this.identity.nativeSessionId,
+					bootId: this.identity.bootId,
+					childGeneration: this.identity.childGeneration,
+				},
+			}),
+		);
 		this.drafts.set(clientId, created);
 		return created;
 	}
@@ -489,7 +574,9 @@ export class SessionRuntime {
 	}
 
 	/** Rebind native passive/draft identities without deleting user text. */
-	reopen(next: Omit<SessionCreateRequest, "identity"> & { readonly bootId: string }): RuntimeResult<SessionRuntime> {
+	reopen(
+		next: Omit<SessionCreateRequest, "identity"> & { readonly bootId: string },
+	): RuntimeResult<SessionRuntime> {
 		const nextGeneration = this.identity.childGeneration + 1;
 		const begin = this.applyFlow({
 			type: "reopen.begin",
@@ -521,15 +608,27 @@ export class SessionRuntime {
 			},
 		});
 		if (!commit.ok) return failure(commit.error.code, commit.error.message);
-		const reconnected = transitionOutbox(this.outboxState, { type: "reconnect", generation: nextGeneration });
+		const reconnected = transitionOutbox(this.outboxState, {
+			type: "reconnect",
+			generation: nextGeneration,
+		});
 		if (!reconnected.ok) return failure(reconnected.error.code, reconnected.error.message);
 		this.outboxState = reconnected.value;
-		this.passiveState = createPassiveState({ sessionId: this.identity.sessionId, generation: nextGeneration });
+		this.passiveState = createPassiveState({
+			sessionId: this.identity.sessionId,
+			generation: nextGeneration,
+		});
 		this.uiSequence = 0;
 		for (const [clientId, state] of this.drafts.entries()) {
 			const rebound = replaceDraftState(state, {
 				sessionKey: this.identity.sessionKey,
-				identity: { sessionKey: this.identity.sessionKey, sessionId: this.identity.sessionId, nativeSessionId: this.identity.nativeSessionId, bootId: next.bootId, childGeneration: nextGeneration },
+				identity: {
+					sessionKey: this.identity.sessionKey,
+					sessionId: this.identity.sessionId,
+					nativeSessionId: this.identity.nativeSessionId,
+					bootId: next.bootId,
+					childGeneration: nextGeneration,
+				},
 			});
 			this.drafts.set(clientId, rebound);
 		}
@@ -552,15 +651,29 @@ export class SessionRuntime {
 		return true;
 	}
 
-	reconcile(mutationId: string, deliveryId: string, outcome: "settled" | "rejected" | "interrupted" | "uncertain", reason?: string, stopReason?: string): RuntimeResult<OutboxState> {
-		const result = reconcileUncertainDelivery(this.outboxState, { mutationId, deliveryId, outcome, reason, stopReason });
+	reconcile(
+		mutationId: string,
+		deliveryId: string,
+		outcome: "settled" | "rejected" | "interrupted" | "uncertain",
+		reason?: string,
+		stopReason?: string,
+	): RuntimeResult<OutboxState> {
+		const result = reconcileUncertainDelivery(this.outboxState, {
+			mutationId,
+			deliveryId,
+			outcome,
+			reason,
+			stopReason,
+		});
 		if (!result.ok) return failure(result.error.code, result.error.message);
 		this.outboxState = result.value;
 		return success(this.outboxState);
 	}
 
 	snapshot(clientId?: string, residency?: SessionRuntimeReplay["residency"]): SessionRuntimeReplay {
-		const entries = this.outboxState.entries.map(({ payload: _payload, fingerprint: _fingerprint, ...entry }) => entry);
+		const entries = this.outboxState.entries.map(
+			({ payload: _payload, fingerprint: _fingerprint, ...entry }) => entry,
+		);
 		return redactSecrets({
 			sessionKey: this.identity.sessionKey,
 			sessionId: this.identity.sessionId,
@@ -574,15 +687,45 @@ export class SessionRuntime {
 				bootId: this.identity.bootId,
 				childGeneration: this.identity.childGeneration,
 				phase: this.current.phase,
-				trust: { state: this.current.trust.state, allowed: this.current.trust.allowed, reason: this.current.trust.reason },
+				trust: {
+					state: this.current.trust.state,
+					allowed: this.current.trust.allowed,
+					reason: this.current.trust.reason,
+				},
 				resources: this.current.resources,
 				loadedResources: this.current.loadedResources,
 				...(this.current.model ? { model: this.current.model } : {}),
-				...(this.current.thinkingLevel !== undefined ? { thinkingLevel: this.current.thinkingLevel } : {}),
-				...(this.current.delivery ? { delivery: { deliveryId: this.current.delivery.deliveryId, runId: this.current.delivery.runId, generation: this.current.delivery.generation, status: this.current.delivery.status } } : {}),
-				...(this.current.lastAbort ? { lastAbort: { kind: this.current.lastAbort.kind, generation: this.current.lastAbort.generation, ...(this.current.lastAbort.runId ? { runId: this.current.lastAbort.runId } : {}) } } : {}),
+				...(this.current.thinkingLevel !== undefined
+					? { thinkingLevel: this.current.thinkingLevel }
+					: {}),
+				...(this.current.delivery
+					? {
+							delivery: {
+								deliveryId: this.current.delivery.deliveryId,
+								runId: this.current.delivery.runId,
+								generation: this.current.delivery.generation,
+								status: this.current.delivery.status,
+							},
+						}
+					: {}),
+				...(this.current.lastAbort
+					? {
+							lastAbort: {
+								kind: this.current.lastAbort.kind,
+								generation: this.current.lastAbort.generation,
+								...(this.current.lastAbort.runId ? { runId: this.current.lastAbort.runId } : {}),
+							},
+						}
+					: {}),
 			} as SessionReplay,
-			outbox: { version: this.outboxState.version, sessionKey: this.outboxState.sessionKey, generation: this.outboxState.generation, phase: this.outboxState.phase, entries, ...(this.outboxState.stop ? { stop: this.outboxState.stop } : {}) },
+			outbox: {
+				version: this.outboxState.version,
+				sessionKey: this.outboxState.sessionKey,
+				generation: this.outboxState.generation,
+				phase: this.outboxState.phase,
+				entries,
+				...(this.outboxState.stop ? { stop: this.outboxState.stop } : {}),
+			},
 			passive: createPassiveReplay(this.passiveState),
 			...(clientId && this.drafts.has(clientId) ? { draft: this.drafts.get(clientId) } : {}),
 			...(residency ? { residency } : {}),
@@ -590,4 +733,5 @@ export class SessionRuntime {
 	}
 }
 
-export const createSessionRuntime = (options: SessionRuntimeOptions): SessionRuntime => new SessionRuntime(options);
+export const createSessionRuntime = (options: SessionRuntimeOptions): SessionRuntime =>
+	new SessionRuntime(options);

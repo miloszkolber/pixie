@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import type { Project, SessionSummary } from "@pixie/contracts";
 import {
-	SESSION_CATALOG_RECENT_LIMIT,
 	buildSessionCatalog,
 	displaySessionTitle,
 	parseCatalogView,
+	SESSION_CATALOG_RECENT_LIMIT,
 	selectRecentSubset,
 	sessionRowAccessibleLabel,
 	sortSessionsRecentFirst,
@@ -63,9 +63,7 @@ test("catalog sorts newest first with a stable tie-break", () => {
 
 test("recent subset keeps the concise limit by default", () => {
 	expect(SESSION_CATALOG_RECENT_LIMIT).toBe(6);
-	const items = Array.from({ length: 8 }, (_, index) =>
-		session(`s${index}`, "p", 100 - index),
-	);
+	const items = Array.from({ length: 8 }, (_, index) => session(`s${index}`, "p", 100 - index));
 	const subset = selectRecentSubset(sortSessionsRecentFirst(items));
 	expect(subset.visible.map((item) => item.sessionId)).toEqual([
 		"s0",
@@ -138,7 +136,10 @@ test("archived sessions stay out of the chats catalog", () => {
 
 test("row labels expose running state and age beyond color alone", () => {
 	const now = 100_000_000;
-	const label = sessionRowAccessibleLabel(session("s", "p", now - 3_600_000, { title: "Hello" }), now);
+	const label = sessionRowAccessibleLabel(
+		session("s", "p", now - 3_600_000, { title: "Hello" }),
+		now,
+	);
 	expect(label).toContain("Hello");
 	expect(label).toContain("1h");
 	const running = sessionRowAccessibleLabel(

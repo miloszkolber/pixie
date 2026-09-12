@@ -37,11 +37,15 @@ test("clone/fork keeps explicit source and child identity and transfers ownershi
 
 test("cancellation after dispatch is uncertain and never changes the owner to a guessed child", () => {
 	const operation = beginCloneFork({ operationId: "clone-1", kind: "clone", source, target });
-	const cancelled = transitionCloneFork(
-		transitionCloneFork(operation, { type: "dispatch" }),
-		{ type: "cancel.result", result: "timed-out" },
-	);
-	expect(cancelled).toMatchObject({ status: "uncertain", cancellation: "timed-out", owner: "source" });
+	const cancelled = transitionCloneFork(transitionCloneFork(operation, { type: "dispatch" }), {
+		type: "cancel.result",
+		result: "timed-out",
+	});
+	expect(cancelled).toMatchObject({
+		status: "uncertain",
+		cancellation: "timed-out",
+		owner: "source",
+	});
 });
 
 test("accepted clone/fork cancellation keeps a native-accepted result uncertain", () => {
@@ -50,7 +54,11 @@ test("accepted clone/fork cancellation keeps a native-accepted result uncertain"
 		transitionCloneFork(transitionCloneFork(operation, { type: "dispatch" }), { type: "accept" }),
 		{ type: "cancel.result", result: "accepted" },
 	);
-	expect(accepted).toMatchObject({ status: "uncertain", cancellation: "accepted", owner: "source" });
+	expect(accepted).toMatchObject({
+		status: "uncertain",
+		cancellation: "accepted",
+		owner: "source",
+	});
 });
 
 test("known clone/fork mutation IDs are status lookups rather than replay permission", () => {

@@ -1,9 +1,4 @@
-import type {
-	ContextUsage,
-	SessionSummary,
-	ThinkingLevel,
-	WireModel,
-} from "@pixie/contracts";
+import type { ContextUsage, SessionSummary, ThinkingLevel, WireModel } from "@pixie/contracts";
 import { formatTokens } from "../../chat/session/session-stats";
 
 /**

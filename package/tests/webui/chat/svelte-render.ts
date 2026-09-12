@@ -12,8 +12,8 @@ const modules = new Map<string, Promise<unknown>>();
 let ssrDirectory: Promise<string> | undefined;
 
 function ssrTempDirectory(): Promise<string> {
-	const pending = ssrDirectory ?? (ssrDirectory = mkdtemp(join(tmpdir(), "pixie-webui-ssr-")));
-	return pending.then(async (directory) => {
+	ssrDirectory ??= mkdtemp(join(tmpdir(), "pixie-webui-ssr-"));
+	return ssrDirectory.then(async (directory) => {
 		await mkdir(directory, { recursive: true });
 		return directory;
 	});

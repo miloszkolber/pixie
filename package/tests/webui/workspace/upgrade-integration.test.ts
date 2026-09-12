@@ -3,9 +3,9 @@ import {
 	buildUpgradeRecoveryState,
 	classifyLazyAssetFailure,
 	compareUpgradeCompatibility,
+	type PendingMutation,
 	reconcilePendingMutations,
 	UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS,
-	type PendingMutation,
 } from "@/workspace/views/upgrade-recovery";
 
 const webuiSrc = new URL("../../../webui/src/", import.meta.url);
@@ -15,7 +15,12 @@ async function source(path: string): Promise<string> {
 }
 
 function pending(mutationId: string): PendingMutation {
-	return { mutationId, method: "schedule.update", label: "Update schedule", disposition: "uncertain" };
+	return {
+		mutationId,
+		method: "schedule.update",
+		label: "Update schedule",
+		disposition: "uncertain",
+	};
 }
 
 test("settings lazy failures enter the bounded recovery surface", async () => {

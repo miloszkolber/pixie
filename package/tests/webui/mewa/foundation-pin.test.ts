@@ -42,7 +42,11 @@ test("mewa vendor lock pins 0.1.2 with matching manifest foundations", async () 
 
 test("foundation pin records the lock without defining a second visual system", async () => {
 	const pin = await source("foundation/tokens.css");
-	for (const marker of ["0.1.2", "c1bfb64a5874f2ca15d81c5ad78a2060360a37c0", "vendor/mewa.lock.json"]) {
+	for (const marker of [
+		"0.1.2",
+		"c1bfb64a5874f2ca15d81c5ad78a2060360a37c0",
+		"vendor/mewa.lock.json",
+	]) {
 		expect(pin).toContain(marker);
 	}
 	expect(pin).toContain("--mewa-foundation-version");

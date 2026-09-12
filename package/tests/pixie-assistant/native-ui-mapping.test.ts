@@ -5,9 +5,9 @@ import {
 	isOfferedOption,
 	isValidFinalValue,
 	mapFinalResponse,
-	nativeUiRow,
 	NATIVE_UI_BOUNDS,
 	NATIVE_UI_ROWS,
+	nativeUiRow,
 	SingleFinalResponse,
 	UNSUPPORTED_UI_MEMBERS,
 } from "../../../assistant/src/extensions/native-ui-mapping.ts";
@@ -61,10 +61,14 @@ test("select matches offered values exactly while confirm uses the native boolea
 	expect(isOfferedOption([" exact offered value "], " exact offered value ")).toBe(true);
 	expect(isOfferedOption([" exact offered value "], "exact offered value")).toBe(false);
 	expect(
-		isValidFinalValue("select", " exact offered value ", { selectOptions: [" exact offered value "] }),
+		isValidFinalValue("select", " exact offered value ", {
+			selectOptions: [" exact offered value "],
+		}),
 	).toBe(true);
 	expect(
-		isValidFinalValue("select", "exact offered value", { selectOptions: [" exact offered value "] }),
+		isValidFinalValue("select", "exact offered value", {
+			selectOptions: [" exact offered value "],
+		}),
 	).toBe(false);
 	expect(isValidFinalValue("confirm", true)).toBe(true);
 	expect(isValidFinalValue("confirm", "true")).toBe(false);
@@ -81,7 +85,12 @@ test("single final-response mapping settles once and rejects stale replies", () 
 		selectOptions: ["alpha", "beta"],
 	});
 	const first = tracker.settle({ value: "beta" });
-	expect(first).toMatchObject({ accepted: true, settled: true, nativeValue: "beta", reason: "answer" });
+	expect(first).toMatchObject({
+		accepted: true,
+		settled: true,
+		nativeValue: "beta",
+		reason: "answer",
+	});
 	const stale = tracker.settle({ value: "alpha" });
 	expect(stale.accepted).toBe(false);
 	expect(stale.error).toContain("Already settled");

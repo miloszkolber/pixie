@@ -54,9 +54,7 @@ let draftTarget = $derived(
 				documentId: state.document.id,
 				documentName: state.document.name,
 				...(inspector.selectedPageId ? { pageId: inspector.selectedPageId } : {}),
-				...(state.focus.privateFocus?.nodeId
-					? { nodeId: state.focus.privateFocus.nodeId }
-					: {}),
+				...(state.focus.privateFocus?.nodeId ? { nodeId: state.focus.privateFocus.nodeId } : {}),
 			}
 		: null,
 );

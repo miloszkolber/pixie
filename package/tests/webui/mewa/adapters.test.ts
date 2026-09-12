@@ -40,13 +40,13 @@ test("dialog wrapper keeps the documented mewa contract and lifecycle", async ()
 		"dialog-description",
 		"dialog-body",
 		"dialog-footer",
-		'showModal()',
+		"showModal()",
 		"onDestroy",
-		'aria-labelledby',
+		"aria-labelledby",
 	]) {
 		expect(dialog).toContain(contract);
 	}
-	expect(dialog).toContain('role');
+	expect(dialog).toContain("role");
 	expect(dialog).not.toContain("!important");
 });
 
@@ -64,9 +64,7 @@ test("icon wrapper resolves exactly the locked vendor icon set", async () => {
 });
 
 test("interactive wrappers use scoped attachments with one lifecycle owner", async () => {
-	const mewaSvelte = await Bun.file(
-		new URL("vendor/mewa-svelte/index.js", webuiRoot),
-	).text();
+	const mewaSvelte = await Bun.file(new URL("vendor/mewa-svelte/index.js", webuiRoot)).text();
 	expect(mewaSvelte).toContain("behavior.destroy");
 
 	for (const path of [

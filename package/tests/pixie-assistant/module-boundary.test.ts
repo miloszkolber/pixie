@@ -121,7 +121,8 @@ test("exact local replacement rejects published-only requires", () => {
 	const publishedOnly = checkExactLocalReplacement({
 		rootPackageJsonText: rootText,
 		assistantPackageJsonText: assistantText,
-		packageGoModText: "module github.com/miloszkolber/pixie\n\nrequire example.test/assistant v1.2.3\n",
+		packageGoModText:
+			"module github.com/miloszkolber/pixie\n\nrequire example.test/assistant v1.2.3\n",
 	});
 	expect(publishedOnly.ok).toBe(false);
 	expect(publishedOnly.details.join("\n")).toMatch(/exact local replace/);

@@ -13,7 +13,9 @@ type Props = {
 let { state, selectedPageId = null, class: className = "" }: Props = $props();
 let inspector = $derived(designInspectorModel(state, selectedPageId));
 let metadata = $derived(designDocumentMetadata(state.document));
-let selectedPage = $derived(inspector.pages.find((page) => page.id === inspector.selectedPageId) ?? null);
+let selectedPage = $derived(
+	inspector.pages.find((page) => page.id === inspector.selectedPageId) ?? null,
+);
 </script>
 
 <section

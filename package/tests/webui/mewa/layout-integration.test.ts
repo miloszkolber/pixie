@@ -42,7 +42,7 @@ test("all five content-filled probe modes map to the existing six-slot shell", a
 	}
 	expect(workArea.match(/mewa-layout-probe__slot/g)?.length ?? 0).toBeGreaterThanOrEqual(6);
 	expect(workArea).toContain("mewa-layout-probe__scroll");
-	expect(workArea).toContain('aria-hidden={!primaryViewVisible}');
+	expect(workArea).toContain("aria-hidden={!primaryViewVisible}");
 	expect(workArea).toContain("inert={!primaryViewVisible}");
 });
 
@@ -55,5 +55,7 @@ test("layout mode changes stay presentation-only and expose restore", async () =
 	expect(layouts).toContain("never stops accepted work");
 	expect(workArea).toContain("function restoreLayout()");
 	expect(workArea).toContain("selections, drafts, and accepted work stay intact");
-	expect(workArea).toContain("dispatchLayout({ leftCollapsed: false, rightCollapsed: false, focus: \"none\" })");
+	expect(workArea).toContain(
+		'dispatchLayout({ leftCollapsed: false, rightCollapsed: false, focus: "none" })',
+	);
 });

@@ -176,7 +176,11 @@ test("native MCP attaches and preserves peer authorization after idle reload", a
 	const nativeMcp = entry.session.agent.state.tools.find((tool) => tool.name === "mcp");
 	if (!nativeMcp) throw new Error("native MCP proxy unavailable");
 	expect(
-		await nativeMcp.execute("fixture", { server: "objective", tool: "echo", args: {} }, new AbortController().signal),
+		await nativeMcp.execute(
+			"fixture",
+			{ server: "objective", tool: "echo", args: {} },
+			new AbortController().signal,
+		),
 	).toMatchObject({ content: [{ text: `session-scoped:${dir}` }] });
 	await expect(owner.call("pi.tools.call", params)).rejects.toThrow("BRIDGE-02 blocker");
 	await expect(other.call("pi.tools.call", params)).rejects.toThrow("Attach the session");
@@ -188,7 +192,11 @@ test("native MCP attaches and preserves peer authorization after idle reload", a
 	const reopenedMcp = reopened.session.agent.state.tools.find((tool) => tool.name === "mcp");
 	if (!reopenedMcp) throw new Error("reloaded native MCP proxy unavailable");
 	expect(
-		await reopenedMcp.execute("fixture-reload", { server: "objective", tool: "echo", args: {} }, new AbortController().signal),
+		await reopenedMcp.execute(
+			"fixture-reload",
+			{ server: "objective", tool: "echo", args: {} },
+			new AbortController().signal,
+		),
 	).toMatchObject({ content: [{ text: `session-scoped:${dir}` }] });
 	await owner.call("pi.session.extensions.remove", {
 		sessionId: session.sessionId,

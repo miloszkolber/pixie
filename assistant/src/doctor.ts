@@ -1,14 +1,14 @@
 import { constants } from "node:fs";
 import { access, readFile, realpath, stat } from "node:fs/promises";
 import {
-	assistantFacade,
-	describePiInstallation,
-	resolveAssistantConfig,
-	redactAssistantConfig,
-	validateNativeArgv,
 	type AssistantConfigRequest,
 	type AssistantResolvedConfig,
+	assistantFacade,
+	describePiInstallation,
 	type PiInstallationInfo,
+	redactAssistantConfig,
+	resolveAssistantConfig,
+	validateNativeArgv,
 } from "./facade.ts";
 import { parseAssistantPort, validateAssistantHost, validateAssistantSecret } from "./startup.ts";
 
@@ -73,15 +73,24 @@ async function checkConfigFile(configPath: string): Promise<DoctorCheckResult> {
 			label: "Explicit JSON config is readable",
 			ok: false,
 			detail: "Config file must contain a JSON object.",
-			remediation: "Replace the file content with an object such as {\"port\": 3284}.",
+			remediation: 'Replace the file content with an object such as {"port": 3284}.',
 		};
 	const record = data as Record<string, unknown>;
-	for (const key of ["host", "port", "agentDir", "piExecutable", "piArgv", "llama", "secret"] as const) {
+	for (const key of [
+		"host",
+		"port",
+		"agentDir",
+		"piExecutable",
+		"piArgv",
+		"llama",
+		"secret",
+	] as const) {
 		if (!(key in record)) continue;
 		try {
 			if (key === "host" && record.host !== undefined) validateAssistantHost(record.host as string);
 			if (key === "port" && record.port !== undefined) {
-				if (typeof record.port === "number") assistantFacade.validateAssistantRuntimePort(record.port);
+				if (typeof record.port === "number")
+					assistantFacade.validateAssistantRuntimePort(record.port);
 				else parseAssistantPort(record.port as string);
 			}
 			if (key === "secret" && record.secret !== undefined)
@@ -123,7 +132,7 @@ async function checkAgentDir(agentDir: string): Promise<DoctorCheckResult> {
 		id: "agent-dir",
 		label: "Native agent directory is usable",
 	} as const;
-	let status;
+	let status: Awaited<ReturnType<typeof stat>>;
 	try {
 		status = await stat(agentDir);
 	} catch (error) {
@@ -196,7 +205,8 @@ export async function runAssistantDoctor(options: DoctorOptions = {}): Promise<D
 			label: "CLI/config/discovery values validate",
 			ok: false,
 			detail: `Invalid CLI/config/discovery: ${resolveError ?? "unknown error"}`,
-			remediation: "Fix host (literal loopback), port (1-65535, 0 only for ephemeral runtime), secret (>=16 chars), and agentDir.",
+			remediation:
+				"Fix host (literal loopback), port (1-65535, 0 only for ephemeral runtime), secret (>=16 chars), and agentDir.",
 		});
 	}
 
@@ -265,7 +275,10 @@ export async function runAssistantDoctor(options: DoctorOptions = {}): Promise<D
 			ok: piInstallation.sdkVersion !== null || piInstallation.executable !== null,
 			detail: sdkDetail,
 			...(piInstallation.sdkVersion === null && piInstallation.executable === null
-				? { remediation: "Install a supported Pi distribution; version strings alone do not prove API support." }
+				? {
+						remediation:
+							"Install a supported Pi distribution; version strings alone do not prove API support.",
+					}
 				: {}),
 		});
 	}
@@ -307,7 +320,8 @@ export async function runAssistantDoctor(options: DoctorOptions = {}): Promise<D
 			id: "active-probes",
 			label: "Active probes are explicitly opt-in",
 			ok: true,
-			detail: "Skipped live network/model probes (read-only default; pass allowActiveProbes to enable).",
+			detail:
+				"Skipped live network/model probes (read-only default; pass allowActiveProbes to enable).",
 		});
 	}
 

@@ -152,7 +152,11 @@ export interface DraftState<T> {
 export type DraftMutationOutcome<T> =
 	| { readonly kind: "applied"; readonly state: DraftState<T> }
 	| { readonly kind: "replayed"; readonly state: DraftState<T> }
-	| { readonly kind: "conflict"; readonly state: DraftState<T>; readonly reason: "mutation-reuse" | "revision-conflict" };
+	| {
+			readonly kind: "conflict";
+			readonly state: DraftState<T>;
+			readonly reason: "mutation-reuse" | "revision-conflict";
+	  };
 
 export function createDraftState<T>(draft: Draft<T>, maxReceipts = 128): DraftState<T> {
 	return {
@@ -176,7 +180,10 @@ function sameMutation<T>(receipt: DraftMutationReceipt<T>, mutation: DraftMutati
  * Apply an edit once. A known mutation ID returns its original state and is
  * never submitted again, including after an external native replacement.
  */
-export function applyDraftMutation<T>(state: DraftState<T>, mutation: DraftMutation<T>): DraftMutationOutcome<T> {
+export function applyDraftMutation<T>(
+	state: DraftState<T>,
+	mutation: DraftMutation<T>,
+): DraftMutationOutcome<T> {
 	const prior = state.receipts.find((receipt) => receipt.mutationId === mutation.mutationId);
 	if (prior) {
 		return sameMutation(prior, mutation)

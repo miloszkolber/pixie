@@ -228,4 +228,6 @@ export interface FlowError {
 	readonly message: string;
 }
 
-export type FlowResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: FlowError };
+export type FlowResult<T> =
+	| { readonly ok: true; readonly value: T }
+	| { readonly ok: false; readonly error: FlowError };

@@ -87,7 +87,10 @@ test("replay accepts a newer exact-generation snapshot and rejects stale replay"
 	if (!restored.accepted) throw new Error("replay was rejected");
 	const duplicate = applyPassiveReplay(restored.state, replay);
 	expect(duplicate).toMatchObject({ accepted: false, reason: "stale-sequence" });
-	const staleGeneration = applyPassiveReplay(createPassiveState({ sessionId: "session-1", generation: 3 }), replay);
+	const staleGeneration = applyPassiveReplay(
+		createPassiveState({ sessionId: "session-1", generation: 3 }),
+		replay,
+	);
 	expect(staleGeneration).toMatchObject({ accepted: false, reason: "stale-generation" });
 });
 
@@ -103,21 +106,49 @@ test("native draft proposals auto-apply only to unchanged empty drafts", () => {
 		text: "native queue",
 	});
 	const applied = evaluateDraftProposal(empty, proposal);
-	expect(applied).toMatchObject({ accepted: true, outcome: "auto-applied", autoSubmitted: false, state: { text: "native queue", revision: 1 } });
+	expect(applied).toMatchObject({
+		accepted: true,
+		outcome: "auto-applied",
+		autoSubmitted: false,
+		state: { text: "native queue", revision: 1 },
+	});
 
-	const occupied = createDraftState({ sessionId: "session-1", clientId: "browser-a", generation: 7, text: "user text" });
+	const occupied = createDraftState({
+		sessionId: "session-1",
+		clientId: "browser-a",
+		generation: 7,
+		text: "user text",
+	});
 	const conflict = evaluateDraftProposal(occupied, { ...proposal, baseRevision: 0 });
-	expect(conflict).toMatchObject({ accepted: false, outcome: "conflict", conflict: { reason: "non-empty-draft", autoSubmitted: false } });
+	expect(conflict).toMatchObject({
+		accepted: false,
+		outcome: "conflict",
+		conflict: { reason: "non-empty-draft", autoSubmitted: false },
+	});
 	if (conflict.outcome !== "conflict") throw new Error("proposal was not made explicit");
 	expect(conflict.conflict.choices).toEqual(["insert", "replace", "dismiss"]);
 	const inserted = resolveDraftConflict(occupied, conflict.conflict, "insert");
-	expect(inserted).toMatchObject({ accepted: true, outcome: "inserted", autoSubmitted: false, state: { text: "user textnative queue", revision: 1 } });
+	expect(inserted).toMatchObject({
+		accepted: true,
+		outcome: "inserted",
+		autoSubmitted: false,
+		state: { text: "user textnative queue", revision: 1 },
+	});
 	const replaced = resolveDraftConflict(occupied, conflict.conflict, "replace");
-	expect(replaced).toMatchObject({ accepted: true, outcome: "replaced", state: { text: "native queue", revision: 1 } });
+	expect(replaced).toMatchObject({
+		accepted: true,
+		outcome: "replaced",
+		state: { text: "native queue", revision: 1 },
+	});
 });
 
 test("draft conflicts and replays cannot cross client or generation boundaries", () => {
-	const state = createDraftState({ sessionId: "session-1", clientId: "browser-a", generation: 2, text: "local" });
+	const state = createDraftState({
+		sessionId: "session-1",
+		clientId: "browser-a",
+		generation: 2,
+		text: "local",
+	});
 	const proposal = createDraftProposal({
 		sessionId: "session-1",
 		clientId: "browser-a",
@@ -129,10 +160,24 @@ test("draft conflicts and replays cannot cross client or generation boundaries",
 	});
 	const conflict = evaluateDraftProposal(state, proposal);
 	if (conflict.outcome !== "conflict") throw new Error("expected explicit conflict");
-	const newer = createDraftState({ sessionId: "session-1", clientId: "browser-a", generation: 2, revision: 1, text: "changed" });
-	expect(resolveDraftConflict(newer, conflict.conflict, "replace")).toMatchObject({ accepted: false, reason: "stale-conflict" });
-	expect(evaluateDraftProposal({ ...state, generation: 3, childGeneration: 3 }, proposal)).toMatchObject({ accepted: false, reason: "stale-generation" });
-	expect(evaluateDraftProposal({ ...state, clientId: "browser-b" }, proposal)).toMatchObject({ accepted: false, reason: "foreign-client" });
+	const newer = createDraftState({
+		sessionId: "session-1",
+		clientId: "browser-a",
+		generation: 2,
+		revision: 1,
+		text: "changed",
+	});
+	expect(resolveDraftConflict(newer, conflict.conflict, "replace")).toMatchObject({
+		accepted: false,
+		reason: "stale-conflict",
+	});
+	expect(
+		evaluateDraftProposal({ ...state, generation: 3, childGeneration: 3 }, proposal),
+	).toMatchObject({ accepted: false, reason: "stale-generation" });
+	expect(evaluateDraftProposal({ ...state, clientId: "browser-b" }, proposal)).toMatchObject({
+		accepted: false,
+		reason: "foreign-client",
+	});
 });
 
 test("unsupported controls are diagnostics and cancellation never fabricates native success", () => {
@@ -150,6 +195,10 @@ test("unsupported controls are diagnostics and cancellation never fabricates nat
 		requestId: "request-1",
 		reason: "aborted",
 	});
-	expect(cancellation).toMatchObject({ forwarded: true, nativeCancelled: "unknown", requestId: "request-1" });
+	expect(cancellation).toMatchObject({
+		forwarded: true,
+		nativeCancelled: "unknown",
+		requestId: "request-1",
+	});
 	expect(cancellation).not.toHaveProperty("cancelled", true);
 });

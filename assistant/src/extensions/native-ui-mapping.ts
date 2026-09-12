@@ -101,7 +101,8 @@ export const NATIVE_UI_ROWS: readonly NativeUiRow[] = [
 		support: "supported-with-limits",
 		limitation:
 			"Fire-and-forget toast, truncated to 2000 chars. Bounded to 64 updates/s; never pending and never a dialog answer.",
-		finalMapping: "No final response. Emission is the complete mapping; there is nothing to settle.",
+		finalMapping:
+			"No final response. Emission is the complete mapping; there is nothing to settle.",
 	},
 	{
 		id: "setStatus",
@@ -111,7 +112,8 @@ export const NATIVE_UI_ROWS: readonly NativeUiRow[] = [
 		support: "supported-with-limits",
 		limitation:
 			"At most 16 keys, key 1-128 chars, text truncated to 2000 chars, 64 updates/s. Clearing with undefined always passes through and is never throttled away.",
-		finalMapping: "No final response. Latest value per key is the projection; clears remove the key.",
+		finalMapping:
+			"No final response. Latest value per key is the projection; clears remove the key.",
 	},
 	{
 		id: "setWidget",
@@ -121,7 +123,8 @@ export const NATIVE_UI_ROWS: readonly NativeUiRow[] = [
 		support: "supported-with-limits",
 		limitation:
 			"Only string-array widgets project (at most 32 lines, each truncated to 2000 chars, 16 keys, 64 updates/s). Component factories are unsupported and report a warning without executing.",
-		finalMapping: "No final response. Latest string lines per key are the projection; undefined clears the key.",
+		finalMapping:
+			"No final response. Latest string lines per key are the projection; undefined clears the key.",
 	},
 	{
 		id: "setTitle",
@@ -235,12 +238,22 @@ export interface SettledNativeResult {
  * answer. Confirmation maps the native confirmed boolean, never a generic
  * value string.
  */
-export function mapFinalResponse(request: FinalRequest, response: FinalResponse): SettledNativeResult {
+export function mapFinalResponse(
+	request: FinalRequest,
+	response: FinalResponse,
+): SettledNativeResult {
 	if (response.error || response.cancelled) {
 		return { settled: true, nativeValue: dismissedValue(request.primitive), reason: "dismissed" };
 	}
-	if (!isValidFinalValue(request.primitive, response.value, { selectOptions: request.selectOptions })) {
-		return { settled: false, nativeValue: undefined, reason: "invalid", error: "Invalid dialog value" };
+	if (
+		!isValidFinalValue(request.primitive, response.value, { selectOptions: request.selectOptions })
+	) {
+		return {
+			settled: false,
+			nativeValue: undefined,
+			reason: "invalid",
+			error: "Invalid dialog value",
+		};
 	}
 	if (request.primitive === "confirm") {
 		return { settled: true, nativeValue: response.value === true, reason: "answer" };
@@ -254,7 +267,13 @@ export class SingleFinalResponse {
 	constructor(readonly request: FinalRequest) {}
 	settle(response: FinalResponse): SettledNativeResult & { accepted: boolean } {
 		if (this.done) {
-			return { settled: false, nativeValue: undefined, reason: "invalid", error: "Already settled", accepted: false };
+			return {
+				settled: false,
+				nativeValue: undefined,
+				reason: "invalid",
+				error: "Already settled",
+				accepted: false,
+			};
 		}
 		const mapped = mapFinalResponse(this.request, response);
 		if (!mapped.settled) return { ...mapped, accepted: false };
@@ -279,7 +298,8 @@ export interface NativeUiOwnership {
 }
 
 export function carryOwnership(ownership: NativeUiOwnership): NativeUiOwnership {
-	if (!ownership.requestId || !ownership.sessionId) throw new Error("Ownership requires request and session identity");
+	if (!ownership.requestId || !ownership.sessionId)
+		throw new Error("Ownership requires request and session identity");
 	if (!Number.isSafeInteger(ownership.childGeneration) || ownership.childGeneration < 0) {
 		throw new Error("Ownership requires a child generation");
 	}

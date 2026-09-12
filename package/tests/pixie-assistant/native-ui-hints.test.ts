@@ -23,7 +23,9 @@ test("FC15 blockers name the exact absent public API with reproduction and conse
 	}
 	expect(FC15_WORKING_BLOCKER.missingPublicSymbol).toContain("setWorkingMessage");
 	expect(FC15_CANCELLATION_BLOCKER.missingPublicSymbol).toContain("cancellation");
-	expect(FC15_WORKING_BLOCKER.attemptedAlternatives.join(" ")).not.toContain("timing guesses are sound");
+	expect(FC15_WORKING_BLOCKER.attemptedAlternatives.join(" ")).not.toContain(
+		"timing guesses are sound",
+	);
 	expect(NATIVE_BASELINE.distribution).toBe("Pi 0.85.1");
 	expect(isNativeWorkingMessageObservable()).toBe(false);
 	expect(isNativeRequestCancellationObservable()).toBe(false);

@@ -10,9 +10,9 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import {
 	BRIDGE_SDK_BASELINE,
-	createBridgeBlocker,
 	type BridgeBlocker,
 	type BridgeDistribution,
+	createBridgeBlocker,
 } from "./feasibility.ts";
 
 export const BRIDGE_EXTENSION_FLAG = "--extension";
@@ -53,13 +53,16 @@ export interface BridgeAssetPlan {
 }
 
 function privatePath(root: string, path: string): boolean {
-	if (!isAbsolute(root) || !isAbsolute(path) || root.includes("\0") || path.includes("\0")) return false;
+	if (!isAbsolute(root) || !isAbsolute(path) || root.includes("\0") || path.includes("\0"))
+		return false;
 	const relativePath = relative(resolve(root), resolve(path));
 	return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
 }
 
 function validArgv(argv: readonly string[]): boolean {
-	return argv.every((value) => typeof value === "string" && value.length > 0 && !value.includes("\0"));
+	return argv.every(
+		(value) => typeof value === "string" && value.length > 0 && !value.includes("\0"),
+	);
 }
 
 /**
@@ -80,7 +83,11 @@ export function planBridgeAssetOptIn(input: BridgeAssetOptInInput): BridgeAssetP
 
 	const version = input.sdkVersion ?? null;
 	const blockers: BridgeBlocker[] = [];
-	const add = (missingPublicSymbol: string, reproduction: string, userVisibleLimitation?: string) => {
+	const add = (
+		missingPublicSymbol: string,
+		reproduction: string,
+		userVisibleLimitation?: string,
+	) => {
 		blockers.push(
 			createBridgeBlocker({
 				distribution: input.distribution,
@@ -89,7 +96,8 @@ export function planBridgeAssetOptIn(input: BridgeAssetOptInInput): BridgeAssetP
 				missingPublicSymbol,
 				reproduction,
 				userVisibleLimitation,
-				releaseConsequence: "Bridge asset loading stays unavailable until explicit opt-in checks pass.",
+				releaseConsequence:
+					"Bridge asset loading stays unavailable until explicit opt-in checks pass.",
 			}),
 		);
 	};
@@ -106,14 +114,20 @@ export function planBridgeAssetOptIn(input: BridgeAssetOptInInput): BridgeAssetP
 			`The selected ${input.distribution} Pi reports SDK version ${version ?? "unknown"}; the bridge asset baseline is ${BRIDGE_SDK_BASELINE}.`,
 		);
 	if (!privatePath(input.privateRoot, input.privateRoot))
-		add("assistant-owned private bridge storage", "The supplied bridge storage root is not an absolute private path.");
+		add(
+			"assistant-owned private bridge storage",
+			"The supplied bridge storage root is not an absolute private path.",
+		);
 	else if (input.privateRootVerified !== true)
 		add(
 			"verified assistant-owned private bridge storage",
 			"Private-root ownership and restrictive permissions were not verified before opt-in.",
 		);
 	if (!input.asset) {
-		add("content-addressed read-only bridge asset", "Explicit opt-in was requested without an asset descriptor.");
+		add(
+			"content-addressed read-only bridge asset",
+			"Explicit opt-in was requested without an asset descriptor.",
+		);
 	} else {
 		const asset = input.asset;
 		if (!privatePath(input.privateRoot, asset.path))
@@ -136,7 +150,11 @@ export function planBridgeAssetOptIn(input: BridgeAssetOptInInput): BridgeAssetP
 				"read-only bridge asset",
 				"The staged bridge asset is writable and cannot be passed to native Pi.",
 			);
-		if (!Number.isSafeInteger(asset.bytes) || asset.bytes <= 0 || asset.bytes > BRIDGE_ASSET_MAX_BYTES)
+		if (
+			!Number.isSafeInteger(asset.bytes) ||
+			asset.bytes <= 0 ||
+			asset.bytes > BRIDGE_ASSET_MAX_BYTES
+		)
 			add(
 				`bridge asset size <= ${BRIDGE_ASSET_MAX_BYTES} bytes`,
 				`The staged bridge asset size ${asset.bytes} exceeds the bounded asset limit or is invalid.`,

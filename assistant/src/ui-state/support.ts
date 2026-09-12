@@ -71,7 +71,10 @@ export interface CancellationForward {
 }
 
 export function isUnsupportedNativeControl(control: string): boolean {
-	return (UNSUPPORTED_NATIVE_CONTROLS as readonly string[]).includes(control) || !LIMITED_NATIVE_CONTROLS.has(control);
+	return (
+		(UNSUPPORTED_NATIVE_CONTROLS as readonly string[]).includes(control) ||
+		!LIMITED_NATIVE_CONTROLS.has(control)
+	);
 }
 
 export function describeNativeUiControl(control: string): NativeUiCapability {
@@ -92,7 +95,8 @@ export function describeNativeUiControl(control: string): NativeUiCapability {
 			executes: false,
 			changesDraft: false,
 			nativeOutcome: "unknown",
-			limitation: "Pixie-local working projection only; plain RPC does not expose native acceptance.",
+			limitation:
+				"Pixie-local working projection only; plain RPC does not expose native acceptance.",
 		};
 	}
 	return {
@@ -110,7 +114,8 @@ export function describeNativeUiControl(control: string): NativeUiCapability {
 
 export function reportUnsupportedControl(control: string): UnsupportedControlResult {
 	const capability = describeNativeUiControl(control);
-	if (capability.support !== "unsupported") throw new Error(`Control is not unsupported: ${control}`);
+	if (capability.support !== "unsupported")
+		throw new Error(`Control is not unsupported: ${control}`);
 	return {
 		kind: "unsupported-control",
 		control,
@@ -131,7 +136,11 @@ export function forwardCancellation(input: {
 	const generation = input.generation ?? input.childGeneration;
 	if (!input.sessionId) throw new Error("Cancellation requires a session identity");
 	if (!input.requestId) throw new Error("Cancellation requires the exact request ID");
-	if (input.generation !== undefined && input.childGeneration !== undefined && input.generation !== input.childGeneration)
+	if (
+		input.generation !== undefined &&
+		input.childGeneration !== undefined &&
+		input.generation !== input.childGeneration
+	)
 		throw new Error("Cancellation generation identity must match");
 	if (generation === undefined || !Number.isSafeInteger(generation) || generation < 0)
 		throw new Error("Cancellation requires a valid generation");

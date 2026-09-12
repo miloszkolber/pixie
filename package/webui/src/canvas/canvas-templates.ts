@@ -58,9 +58,9 @@ export function canvasTemplateOptions(): Array<{ value: OwnedCanvasTemplateId; l
 }
 
 /** Build validated canvas_create args without embedding draft HTML. */
-export function canvasCreateArgs(
-	templateId: string | null | undefined,
-): { templateId?: OwnedCanvasTemplateId } {
+export function canvasCreateArgs(templateId: string | null | undefined): {
+	templateId?: OwnedCanvasTemplateId;
+} {
 	const template = canvasTemplateById(templateId);
 	if (!template) return {};
 	return { templateId: template.templateId };

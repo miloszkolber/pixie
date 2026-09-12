@@ -37,7 +37,11 @@ export function compareNativeFile(
 ): SourceChange {
 	if (!current) return "missing";
 	if (!previous) return "unknown";
-	if (previous.revision !== undefined && current.revision !== undefined && previous.revision !== current.revision)
+	if (
+		previous.revision !== undefined &&
+		current.revision !== undefined &&
+		previous.revision !== current.revision
+	)
 		return "replaced";
 	if (
 		previous.device !== undefined &&
@@ -47,7 +51,8 @@ export function compareNativeFile(
 		(previous.device !== current.device || previous.inode !== current.inode)
 	)
 		return "replaced";
-	if (previous.path !== undefined && current.path !== undefined && previous.path !== current.path) return "replaced";
+	if (previous.path !== undefined && current.path !== undefined && previous.path !== current.path)
+		return "replaced";
 	if (previous.size !== current.size || previous.mtimeMs !== current.mtimeMs) return "modified";
 	return "same";
 }
@@ -128,7 +133,10 @@ function unknownRecord(
 	reason: UnknownHistoryRecord["reason"],
 	value: unknown = raw,
 ): UnknownHistoryRecord {
-	const details = value && typeof value === "object" && !Array.isArray(value) ? recordIdentity(value as Record<string, unknown>) : {};
+	const details =
+		value && typeof value === "object" && !Array.isArray(value)
+			? recordIdentity(value as Record<string, unknown>)
+			: {};
 	return {
 		kind: "unknown",
 		line,
@@ -145,7 +153,10 @@ function unknownRecord(
  * Index complete JSONL records without writing, reopening, or repairing the
  * source. Unknown and malformed records remain visible in the result.
  */
-export function scanNativeHistory(source: string, options: HistoryScanOptions = {}): HistoryScanResult {
+export function scanNativeHistory(
+	source: string,
+	options: HistoryScanOptions = {},
+): HistoryScanResult {
 	const maxRecords = bounded(options.maxRecords, DEFAULT_HISTORY_MAX_RECORDS);
 	const maxBytes = bounded(options.maxBytes, DEFAULT_HISTORY_MAX_BYTES);
 	const maxRecordBytes = bounded(options.maxRecordBytes, DEFAULT_HISTORY_MAX_RECORD_BYTES);
@@ -185,7 +196,16 @@ export function scanNativeHistory(source: string, options: HistoryScanOptions = 
 					const type = typeof object.type === "string" ? object.type : undefined;
 					const known = type !== undefined && knownTypes.has(type);
 					record = known
-						? { kind: "known", line, offset, bytes: recordBytes, raw, value: object, ...recordIdentity(object), type }
+						? {
+								kind: "known",
+								line,
+								offset,
+								bytes: recordBytes,
+								raw,
+								value: object,
+								...recordIdentity(object),
+								type,
+							}
 						: unknownRecord(line, offset, raw, "unknown-type", object);
 				}
 			} catch {
@@ -200,7 +220,9 @@ export function scanNativeHistory(source: string, options: HistoryScanOptions = 
 
 	return {
 		records,
-		unknownRecords: records.filter((record): record is UnknownHistoryRecord => record.kind === "unknown"),
+		unknownRecords: records.filter(
+			(record): record is UnknownHistoryRecord => record.kind === "unknown",
+		),
 		...(options.sourceRevision !== undefined ? { sourceRevision: options.sourceRevision } : {}),
 		bytes,
 		truncated,
@@ -229,7 +251,10 @@ export function decodeHistoryCursor(value: string): HistoryCursor | undefined {
 		if (!parsed || typeof parsed !== "object") return undefined;
 		const cursor = parsed as { sourceRevision?: unknown; index?: unknown };
 		const index = cursor.index;
-		return typeof cursor.sourceRevision === "string" && typeof index === "number" && Number.isSafeInteger(index) && index >= 0
+		return typeof cursor.sourceRevision === "string" &&
+			typeof index === "number" &&
+			Number.isSafeInteger(index) &&
+			index >= 0
 			? { sourceRevision: cursor.sourceRevision, index }
 			: undefined;
 	} catch {
@@ -239,11 +264,20 @@ export function decodeHistoryCursor(value: string): HistoryCursor | undefined {
 
 export function pageNativeHistory(
 	records: readonly IndexedHistoryRecord[],
-	options: { readonly sourceRevision: string; readonly cursor?: HistoryCursor; readonly limit?: number },
+	options: {
+		readonly sourceRevision: string;
+		readonly cursor?: HistoryCursor;
+		readonly limit?: number;
+	},
 ): HistoryPage {
 	const limit = bounded(options.limit, 100);
 	const cursor = options.cursor;
-	if (cursor && (cursor.sourceRevision !== options.sourceRevision || !Number.isSafeInteger(cursor.index) || cursor.index < 0))
+	if (
+		cursor &&
+		(cursor.sourceRevision !== options.sourceRevision ||
+			!Number.isSafeInteger(cursor.index) ||
+			cursor.index < 0)
+	)
 		return { records: [], invalidCursor: true };
 	const start = cursor?.index ?? 0;
 	const page = records.slice(start, start + limit);

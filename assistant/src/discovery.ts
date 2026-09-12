@@ -15,7 +15,11 @@ import type { PiDistributionKind } from "./facade.ts";
 
 export type { PiDistributionKind };
 
-export const PI_DISTRIBUTION_KINDS: readonly PiDistributionKind[] = ["npm", "standalone", "unknown"];
+export const PI_DISTRIBUTION_KINDS: readonly PiDistributionKind[] = [
+	"npm",
+	"standalone",
+	"unknown",
+];
 
 export const SUPPORTED_PI_SDK_VERSIONS: readonly string[] = ["0.85.1"];
 
@@ -151,8 +155,7 @@ export function reportIndependentVersions(input: {
 	piDistribution: PiDistributionKind;
 	protocolVersion: number;
 }): IndependentVersionReport {
-	const assistantVersion =
-		input.assistantVersion.length > 0 ? input.assistantVersion : "0.0.0-dev";
+	const assistantVersion = input.assistantVersion.length > 0 ? input.assistantVersion : "0.0.0-dev";
 	const piSdkVersion =
 		typeof input.piSdkVersion === "string" && input.piSdkVersion.length > 0
 			? input.piSdkVersion
@@ -182,8 +185,7 @@ export function formatIndependentVersionReport(report: IndependentVersionReport)
 /** Human summary that keeps npm and standalone distributions explicit. */
 export function summarizePiDiscovery(result: PiDiscoveryResult): string {
 	if (result.executable) {
-		const sdk =
-			result.sdkVersion !== null ? `Pi SDK ${result.sdkVersion}` : "Pi SDK not visible";
+		const sdk = result.sdkVersion !== null ? `Pi SDK ${result.sdkVersion}` : "Pi SDK not visible";
 		return (
 			`${result.kind} Pi (${sdk}) at ${result.executable.realPath} ` +
 			`via ${result.executable.source}.`

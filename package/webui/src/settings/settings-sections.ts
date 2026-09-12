@@ -1,5 +1,5 @@
 import type { Component } from "svelte";
-import { SettingsSection } from "./state";
+import type { SettingsSection } from "./state";
 
 /**
  * Lazy loaders for the primary-area Settings sections. Both the project work

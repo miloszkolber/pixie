@@ -5,16 +5,22 @@ import ToggleSegment from "../../components/toggle-segment.svelte";
 import { errorText, getTransport } from "../../connection";
 import { tupleKey } from "../../lib";
 import {
-		appStore,
-		appStoreApi,
-		matchesChangePath,
-		selectDiffScope,
+	appStore,
+	appStoreApi,
+	matchesChangePath,
+	selectDiffScope,
 	selectProjectAreaTick,
 	type TabIntent,
 } from "../../store";
 import { openDiffInTab } from "../tabs/open-tabs";
 import ChangeRowActions from "./change-row-actions.svelte";
-import { branchName, repositoryDisplayName, scopeKey, splitPath, statusNameClass } from "./changes-model";
+import {
+	branchName,
+	repositoryDisplayName,
+	scopeKey,
+	splitPath,
+	statusNameClass,
+} from "./changes-model";
 import ChangesTree from "./changes-tree.svelte";
 import DiffStatBadge from "./diff-stat-badge.svelte";
 import GitScopeMenu from "./git-scope-menu.svelte";

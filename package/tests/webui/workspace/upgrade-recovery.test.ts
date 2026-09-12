@@ -3,15 +3,15 @@ import {
 	buildUpgradeRecoveryState,
 	classifyLazyAssetFailure,
 	compareUpgradeCompatibility,
+	type LazyAssetFailure,
+	type MutationLedgerEntry,
+	type PendingMutation,
 	preserveDraftsForRecovery,
 	pruneRetainedAssets,
 	reconcilePendingMutations,
 	restoreDraftsAfterUpgrade,
 	UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS,
 	UPGRADE_RECOVERY_MAX_RETAINED_ASSETS,
-	type LazyAssetFailure,
-	type MutationLedgerEntry,
-	type PendingMutation,
 } from "@/workspace/views/upgrade-recovery";
 
 const webuiSrc = new URL("../../../webui/src/", import.meta.url);
@@ -46,10 +46,7 @@ test("upgrade recovery never re-executes mutations and reuses original identitie
 	const unknown = pending("schedule-ccc", "unknown");
 	const held = reconcilePendingMutations([acknowledged, unknown], []);
 	expect(held.retryWithSameId).toHaveLength(0);
-	expect(held.held.map((item) => item.mutationId).sort()).toEqual([
-		"schedule-bbb",
-		"schedule-ccc",
-	]);
+	expect(held.held.map((item) => item.mutationId).sort()).toEqual(["schedule-bbb", "schedule-ccc"]);
 
 	const settled = reconcilePendingMutations([original, acknowledged], [committed("schedule-aaa")]);
 	expect(settled.settled).toEqual(["schedule-aaa"]);
@@ -103,9 +100,11 @@ test("upgrade recovery restores drafts without empty overwriting non-empty", () 
 		"s-1": "newer",
 	});
 	expect(restoreDraftsAfterUpgrade({ "s-1": "  " }, {})).toEqual({});
-	expect(
-		restoreDraftsAfterUpgrade({ "s-1": "a", "s-2": "b" }, { "s-2": "", "s-3": "c" }),
-	).toEqual({ "s-1": "a", "s-2": "b", "s-3": "c" });
+	expect(restoreDraftsAfterUpgrade({ "s-1": "a", "s-2": "b" }, { "s-2": "", "s-3": "c" })).toEqual({
+		"s-1": "a",
+		"s-2": "b",
+		"s-3": "c",
+	});
 });
 
 test("upgrade recovery compares protocol independently of build hash", () => {
@@ -191,12 +190,15 @@ test("upgrade recovery keeps retained assets bounded and builds an explicit stat
 		ledger: [],
 		peer: { browserProtocol: 88, hostVersion: 2 },
 		current: { browserProtocol: 88, hostVersion: 2 },
-		failure: { asset: "assets/lazy-view.js", httpStatus: 404, reloadAttempts: 0, topology: "direct" },
+		failure: {
+			asset: "assets/lazy-view.js",
+			httpStatus: 404,
+			reloadAttempts: 0,
+			topology: "direct",
+		},
 	});
 	expect(state.drafts.preserved).toEqual({ "session-1": "do not lose me" });
-	expect(state.mutations.retryWithSameId.map((item) => item.mutationId)).toEqual([
-		"schedule-aaa",
-	]);
+	expect(state.mutations.retryWithSameId.map((item) => item.mutationId)).toEqual(["schedule-aaa"]);
 	expect(state.mutations.held.map((item) => item.mutationId)).toEqual(["schedule-bbb"]);
 	expect(state.recovery?.kind).toBe("refresh-once");
 	expect(state.canOfferRefresh).toBeTrue();

@@ -128,15 +128,72 @@ export interface OutboxState {
 
 export type OutboxEvent =
 	| { readonly type: "prepare"; readonly request: OutboxPrepareInput }
-	| { readonly type: "dispatch"; readonly sessionKey: string; readonly generation: number; readonly mutationId: string; readonly deliveryId: string }
-	| { readonly type: "accept"; readonly sessionKey: string; readonly generation: number; readonly mutationId: string; readonly deliveryId: string }
-	| { readonly type: "settle"; readonly sessionKey: string; readonly generation: number; readonly mutationId: string; readonly deliveryId: string; readonly stopReason: string }
-	| { readonly type: "reject"; readonly sessionKey: string; readonly generation: number; readonly mutationId: string; readonly deliveryId: string; readonly reason: string }
-	| { readonly type: "uncertain"; readonly sessionKey: string; readonly generation: number; readonly mutationId: string; readonly deliveryId: string; readonly reason: string }
-	| { readonly type: "interrupt"; readonly sessionKey: string; readonly generation: number; readonly mutationId: string; readonly deliveryId: string; readonly reason: string }
-	| { readonly type: "retry"; readonly mutationId: string; readonly deliveryId?: string; readonly fingerprint?: string }
-	| { readonly type: "reconcile"; readonly mutationId: string; readonly deliveryId: string; readonly outcome: "settled" | "rejected" | "interrupted" | "uncertain"; readonly reason?: string; readonly stopReason?: string }
-	| { readonly type: "stop.begin"; readonly requestId: string; readonly sessionKey: string; readonly generation: number }
+	| {
+			readonly type: "dispatch";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly mutationId: string;
+			readonly deliveryId: string;
+	  }
+	| {
+			readonly type: "accept";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly mutationId: string;
+			readonly deliveryId: string;
+	  }
+	| {
+			readonly type: "settle";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly mutationId: string;
+			readonly deliveryId: string;
+			readonly stopReason: string;
+	  }
+	| {
+			readonly type: "reject";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly mutationId: string;
+			readonly deliveryId: string;
+			readonly reason: string;
+	  }
+	| {
+			readonly type: "uncertain";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly mutationId: string;
+			readonly deliveryId: string;
+			readonly reason: string;
+	  }
+	| {
+			readonly type: "interrupt";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly mutationId: string;
+			readonly deliveryId: string;
+			readonly reason: string;
+	  }
+	| {
+			readonly type: "retry";
+			readonly mutationId: string;
+			readonly deliveryId?: string;
+			readonly fingerprint?: string;
+	  }
+	| {
+			readonly type: "reconcile";
+			readonly mutationId: string;
+			readonly deliveryId: string;
+			readonly outcome: "settled" | "rejected" | "interrupted" | "uncertain";
+			readonly reason?: string;
+			readonly stopReason?: string;
+	  }
+	| {
+			readonly type: "stop.begin";
+			readonly requestId: string;
+			readonly sessionKey: string;
+			readonly generation: number;
+	  }
 	| { readonly type: "stop.verify"; readonly verification: OutboxStopVerification }
 	| { readonly type: "resume" }
 	| { readonly type: "discard"; readonly mutationIds: readonly string[] }
@@ -145,7 +202,16 @@ export type OutboxEvent =
 export type DispatchDecision =
 	| { readonly kind: "ready"; readonly entry: OutboxEntry }
 	| { readonly kind: "idle" }
-	| { readonly kind: "blocked"; readonly reason: "stopping" | "stopped" | "uncertain-delivery" | "active-delivery" | "parent-unsettled" | "compaction-blocked" };
+	| {
+			readonly kind: "blocked";
+			readonly reason:
+				| "stopping"
+				| "stopped"
+				| "uncertain-delivery"
+				| "active-delivery"
+				| "parent-unsettled"
+				| "compaction-blocked";
+	  };
 
 export interface NativeQueueDraftInput {
 	readonly draftId: string;

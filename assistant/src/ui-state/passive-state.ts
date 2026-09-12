@@ -48,25 +48,25 @@ export type PassiveUiEvent =
 			readonly type: "pixie:ui:status";
 			readonly key: string;
 			readonly text?: string;
-		})
+	  })
 	| (PassiveEventBase & {
 			readonly type: "pixie:ui:widget";
 			readonly key: string;
 			readonly lines?: readonly string[];
-		})
+	  })
 	| (PassiveEventBase & {
 			readonly type: "pixie:ui:title";
 			readonly title: string;
-		})
+	  })
 	| (PassiveEventBase & {
 			readonly type: "pixie:ui:working";
 			readonly message?: string;
-		})
+	  })
 	| (PassiveEventBase & {
 			readonly type: "pixie:ui:notify";
 			readonly message: string;
 			readonly level?: string;
-		});
+	  });
 
 export interface PassiveReplay {
 	readonly version: 1;
@@ -96,7 +96,7 @@ export type PassiveApplyResult =
 			readonly state: PassiveState;
 			readonly reason: PassiveRejectReason;
 			readonly message: string;
-		};
+	  };
 
 function readGeneration(input: SessionGenerationInput): number | undefined {
 	if (input.generation !== undefined && input.childGeneration !== undefined) {
@@ -115,7 +115,9 @@ function validateIdentity(input: SessionGenerationInput): number | undefined {
 	return validGeneration(generation) ? generation : undefined;
 }
 
-function cloneWidgets(widgets: Readonly<Record<string, readonly string[]>>): Record<string, readonly string[]> {
+function cloneWidgets(
+	widgets: Readonly<Record<string, readonly string[]>>,
+): Record<string, readonly string[]> {
 	return Object.fromEntries(Object.entries(widgets).map(([key, lines]) => [key, [...lines]]));
 }
 
@@ -132,7 +134,11 @@ function validText(value: unknown): value is string {
 }
 
 function validKey(value: unknown): value is string {
-	return typeof value === "string" && value.length > 0 && value.length <= PASSIVE_STATE_LIMITS.maxKeyChars;
+	return (
+		typeof value === "string" &&
+		value.length > 0 &&
+		value.length <= PASSIVE_STATE_LIMITS.maxKeyChars
+	);
 }
 
 function validSequence(value: unknown): value is number {
@@ -154,38 +160,61 @@ export function createPassiveState(input: SessionGenerationInput): PassiveState 
 	};
 }
 
-function identityResult(state: PassiveState, event: SessionGenerationInput): PassiveApplyResult | undefined {
+function identityResult(
+	state: PassiveState,
+	event: SessionGenerationInput,
+): PassiveApplyResult | undefined {
 	if (!event.sessionId || event.sessionId !== state.sessionId)
 		return reject(state, "foreign-session", "Passive UI state belongs to another session");
 	const generation = readGeneration(event);
-	if (!validGeneration(generation)) return reject(state, "invalid-identity", "Passive UI event has no valid generation");
+	if (!validGeneration(generation))
+		return reject(state, "invalid-identity", "Passive UI event has no valid generation");
 	if (generation !== state.generation)
-		return reject(state, "stale-generation", "Passive UI event belongs to an old or different generation");
+		return reject(
+			state,
+			"stale-generation",
+			"Passive UI event belongs to an old or different generation",
+		);
 	return undefined;
 }
 
 /** Apply one passive projection without mutating the previous state. */
 export function applyPassiveEvent(state: PassiveState, event: PassiveUiEvent): PassiveApplyResult {
-	if (!event || typeof event !== "object") return reject(state, "invalid-event", "Passive UI event is not an object");
+	if (!event || typeof event !== "object")
+		return reject(state, "invalid-event", "Passive UI event is not an object");
 	const identityError = identityResult(state, event);
 	if (identityError) return identityError;
-	if (!validSequence(event.sequence)) return reject(state, "invalid-event", "Passive UI event has an invalid sequence");
+	if (!validSequence(event.sequence))
+		return reject(state, "invalid-event", "Passive UI event has an invalid sequence");
 	if (event.sequence <= state.sequence)
-		return reject(state, "stale-sequence", "Passive UI event is older than the latest accepted projection");
+		return reject(
+			state,
+			"stale-sequence",
+			"Passive UI event is older than the latest accepted projection",
+		);
 
 	if (event.type === "pixie:ui:status") {
 		if (!validKey(event.key) || (event.text !== undefined && !validText(event.text)))
 			return reject(state, "invalid-event", "Status key or text exceeds supported bounds");
-		if (event.text !== undefined && !(event.key in state.statuses) && Object.keys(state.statuses).length >= PASSIVE_STATE_LIMITS.maxStatusKeys)
+		if (
+			event.text !== undefined &&
+			!(event.key in state.statuses) &&
+			Object.keys(state.statuses).length >= PASSIVE_STATE_LIMITS.maxStatusKeys
+		)
 			return reject(state, "state-limit", "Passive status key limit reached");
 		const statuses = { ...state.statuses };
 		if (event.text === undefined) delete statuses[event.key];
 		else statuses[event.key] = event.text;
-		return { accepted: true, reason: "applied", state: { ...state, sequence: event.sequence, statuses } };
+		return {
+			accepted: true,
+			reason: "applied",
+			state: { ...state, sequence: event.sequence, statuses },
+		};
 	}
 
 	if (event.type === "pixie:ui:widget") {
-		if (!validKey(event.key)) return reject(state, "invalid-event", "Widget key exceeds supported bounds");
+		if (!validKey(event.key))
+			return reject(state, "invalid-event", "Widget key exceeds supported bounds");
 		if (
 			event.lines !== undefined &&
 			(!Array.isArray(event.lines) ||
@@ -193,17 +222,30 @@ export function applyPassiveEvent(state: PassiveState, event: PassiveUiEvent): P
 				event.lines.some((line) => !validText(line)))
 		)
 			return reject(state, "invalid-event", "Widget lines exceed supported bounds");
-		if (event.lines !== undefined && !(event.key in state.widgets) && Object.keys(state.widgets).length >= PASSIVE_STATE_LIMITS.maxWidgetKeys)
+		if (
+			event.lines !== undefined &&
+			!(event.key in state.widgets) &&
+			Object.keys(state.widgets).length >= PASSIVE_STATE_LIMITS.maxWidgetKeys
+		)
 			return reject(state, "state-limit", "Passive widget key limit reached");
 		const widgets = cloneWidgets(state.widgets);
 		if (event.lines === undefined) delete widgets[event.key];
 		else widgets[event.key] = [...event.lines];
-		return { accepted: true, reason: "applied", state: { ...state, sequence: event.sequence, widgets } };
+		return {
+			accepted: true,
+			reason: "applied",
+			state: { ...state, sequence: event.sequence, widgets },
+		};
 	}
 
 	if (event.type === "pixie:ui:title") {
-		if (!validText(event.title)) return reject(state, "invalid-event", "Title exceeds supported bounds");
-		return { accepted: true, reason: "applied", state: { ...state, sequence: event.sequence, title: event.title } };
+		if (!validText(event.title))
+			return reject(state, "invalid-event", "Title exceeds supported bounds");
+		return {
+			accepted: true,
+			reason: "applied",
+			state: { ...state, sequence: event.sequence, title: event.title },
+		};
 	}
 
 	if (event.type === "pixie:ui:working") {
@@ -222,7 +264,11 @@ export function applyPassiveEvent(state: PassiveState, event: PassiveUiEvent): P
 		...state.notifications,
 		{ message: event.message, ...(event.level !== undefined ? { level: event.level } : {}) },
 	].slice(-PASSIVE_STATE_LIMITS.maxNotifications);
-	return { accepted: true, reason: "applied", state: { ...state, sequence: event.sequence, notifications } };
+	return {
+		accepted: true,
+		reason: "applied",
+		state: { ...state, sequence: event.sequence, notifications },
+	};
 }
 
 /** Produce a detached, JSON-safe replay snapshot of the latest passive state. */
@@ -246,13 +292,19 @@ export function createPassiveReplay(state: PassiveState): PassiveReplay {
  * replay at or behind the current sequence is stale, including duplicates.
  */
 export function applyPassiveReplay(state: PassiveState, replay: PassiveReplay): PassiveApplyResult {
-	if (!replay || typeof replay !== "object") return reject(state, "invalid-event", "Passive replay is not an object");
+	if (!replay || typeof replay !== "object")
+		return reject(state, "invalid-event", "Passive replay is not an object");
 	if (replay.version !== 1 || replay.sessionId !== state.sessionId)
 		return reject(state, "foreign-session", "Passive replay belongs to another session");
 	const generation = readGeneration(replay);
-	if (!validGeneration(generation)) return reject(state, "invalid-identity", "Passive replay has no valid generation");
+	if (!validGeneration(generation))
+		return reject(state, "invalid-identity", "Passive replay has no valid generation");
 	if (generation !== state.generation)
-		return reject(state, "stale-generation", "Passive replay belongs to an old or different generation");
+		return reject(
+			state,
+			"stale-generation",
+			"Passive replay belongs to an old or different generation",
+		);
 	if (!validSequence(replay.sequence) || replay.sequence <= state.sequence)
 		return reject(state, "stale-sequence", "Passive replay is not newer than current state");
 	if (
@@ -266,13 +318,22 @@ export function applyPassiveReplay(state: PassiveState, replay: PassiveReplay): 
 		!Array.isArray(replay.notifications)
 	)
 		return reject(state, "invalid-event", "Passive replay has an invalid payload");
-	if (Object.keys(replay.statuses).length > PASSIVE_STATE_LIMITS.maxStatusKeys || Object.keys(replay.widgets).length > PASSIVE_STATE_LIMITS.maxWidgetKeys)
+	if (
+		Object.keys(replay.statuses).length > PASSIVE_STATE_LIMITS.maxStatusKeys ||
+		Object.keys(replay.widgets).length > PASSIVE_STATE_LIMITS.maxWidgetKeys
+	)
 		return reject(state, "state-limit", "Passive replay exceeds key limits");
 	for (const [key, text] of Object.entries(replay.statuses)) {
-		if (!validKey(key) || !validText(text)) return reject(state, "invalid-event", "Passive replay has an invalid status");
+		if (!validKey(key) || !validText(text))
+			return reject(state, "invalid-event", "Passive replay has an invalid status");
 	}
 	for (const [key, lines] of Object.entries(replay.widgets)) {
-		if (!validKey(key) || !Array.isArray(lines) || lines.length > PASSIVE_STATE_LIMITS.maxWidgetLines || lines.some((line) => !validText(line)))
+		if (
+			!validKey(key) ||
+			!Array.isArray(lines) ||
+			lines.length > PASSIVE_STATE_LIMITS.maxWidgetLines ||
+			lines.some((line) => !validText(line))
+		)
 			return reject(state, "invalid-event", "Passive replay has an invalid widget");
 	}
 	if (replay.workingMessage !== undefined && !validText(replay.workingMessage))

@@ -62,8 +62,7 @@ export function scheduleStatusLabel(job: Schedule, running: boolean): string {
 
 function isWorkspaceSettingsSectionId(value: unknown): value is WorkspaceSettingsSectionId {
 	return (
-		typeof value === "string" &&
-		(WORKSPACE_SETTINGS_SECTIONS as readonly string[]).includes(value)
+		typeof value === "string" && (WORKSPACE_SETTINGS_SECTIONS as readonly string[]).includes(value)
 	);
 }
 

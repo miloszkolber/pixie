@@ -18,10 +18,10 @@ import {
 	normalizeThinkingLevels,
 	redactSecrets,
 	resolveNativeTrust,
+	validateCreateRequest,
 	validateModelSelection,
 	validatePromptRequest,
 	validateThinkingSelection,
-	validateCreateRequest,
 } from "./validation.ts";
 
 function failure<T>(code: FlowError["code"], message: string): FlowResult<T> {
@@ -32,14 +32,23 @@ function success<T>(value: T): FlowResult<T> {
 	return { ok: true, value };
 }
 
-function sameSession(state: SessionFlowState, sessionKey: string, generation: number): FlowError | undefined {
-	if (state.identity.sessionKey !== sessionKey) return { code: "wrong-session", message: "Session association does not match" };
+function sameSession(
+	state: SessionFlowState,
+	sessionKey: string,
+	generation: number,
+): FlowError | undefined {
+	if (state.identity.sessionKey !== sessionKey)
+		return { code: "wrong-session", message: "Session association does not match" };
 	if (state.identity.childGeneration !== generation)
 		return { code: "stale-generation", message: "Native session generation is no longer current" };
 	return undefined;
 }
 
-function sameDelivery(state: SessionFlowState, deliveryId: string, runId: string): FlowError | undefined {
+function sameDelivery(
+	state: SessionFlowState,
+	deliveryId: string,
+	runId: string,
+): FlowError | undefined {
 	if (!state.delivery || state.delivery.deliveryId !== deliveryId || state.delivery.runId !== runId)
 		return { code: "unknown-delivery", message: "Prompt delivery is no longer active" };
 	return undefined;
@@ -47,7 +56,12 @@ function sameDelivery(state: SessionFlowState, deliveryId: string, runId: string
 
 function deliveryIsActive(state: SessionFlowState): boolean {
 	const status = state.delivery?.status;
-	return status === "prepared" || status === "dispatching" || status === "accepted" || status === "uncertain";
+	return (
+		status === "prepared" ||
+		status === "dispatching" ||
+		status === "accepted" ||
+		status === "uncertain"
+	);
 }
 
 function terminalDelivery(
@@ -101,18 +115,79 @@ export type NativeAbortResult =
 
 export type SessionFlowEvent =
 	| { readonly type: "prompt.prepare"; readonly request: PromptRequest }
-	| { readonly type: "prompt.dispatch"; readonly sessionKey: string; readonly generation: number; readonly deliveryId: string; readonly runId: string }
-	| { readonly type: "prompt.accept"; readonly sessionKey: string; readonly generation: number; readonly deliveryId: string; readonly runId: string }
-	| { readonly type: "prompt.settle"; readonly sessionKey: string; readonly generation: number; readonly deliveryId: string; readonly runId: string; readonly stopReason: string }
-	| { readonly type: "prompt.reject"; readonly sessionKey: string; readonly generation: number; readonly deliveryId: string; readonly runId: string; readonly reason: string }
-	| { readonly type: "prompt.uncertain"; readonly sessionKey: string; readonly generation: number; readonly deliveryId: string; readonly runId: string; readonly reason: string }
-	| { readonly type: "abort.request"; readonly sessionKey: string; readonly generation: number; readonly requestId: string; readonly runId: string }
-	| { readonly type: "abort.result"; readonly sessionKey: string; readonly generation: number; readonly requestId: string; readonly runId: string; readonly result: NativeAbortResult }
+	| {
+			readonly type: "prompt.dispatch";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly deliveryId: string;
+			readonly runId: string;
+	  }
+	| {
+			readonly type: "prompt.accept";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly deliveryId: string;
+			readonly runId: string;
+	  }
+	| {
+			readonly type: "prompt.settle";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly deliveryId: string;
+			readonly runId: string;
+			readonly stopReason: string;
+	  }
+	| {
+			readonly type: "prompt.reject";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly deliveryId: string;
+			readonly runId: string;
+			readonly reason: string;
+	  }
+	| {
+			readonly type: "prompt.uncertain";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly deliveryId: string;
+			readonly runId: string;
+			readonly reason: string;
+	  }
+	| {
+			readonly type: "abort.request";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly requestId: string;
+			readonly runId: string;
+	  }
+	| {
+			readonly type: "abort.result";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly requestId: string;
+			readonly runId: string;
+			readonly result: NativeAbortResult;
+	  }
 	| { readonly type: "reopen.begin"; readonly request: ReopenBegin }
 	| { readonly type: "reopen.commit"; readonly commit: ReopenCommit }
-	| { readonly type: "reopen.fail"; readonly sessionKey: string; readonly requestId: string; readonly reason: string }
-	| { readonly type: "model.set"; readonly sessionKey: string; readonly generation: number; readonly model: NativeModel }
-	| { readonly type: "thinking.set"; readonly sessionKey: string; readonly generation: number; readonly level: NativeThinkingLevel }
+	| {
+			readonly type: "reopen.fail";
+			readonly sessionKey: string;
+			readonly requestId: string;
+			readonly reason: string;
+	  }
+	| {
+			readonly type: "model.set";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly model: NativeModel;
+	  }
+	| {
+			readonly type: "thinking.set";
+			readonly sessionKey: string;
+			readonly generation: number;
+			readonly level: NativeThinkingLevel;
+	  }
 	| { readonly type: "close" };
 
 function updateModel(
@@ -123,7 +198,8 @@ function updateModel(
 ): FlowResult<SessionFlowState> {
 	const identityError = sameSession(state, sessionKey, generation);
 	if (identityError) return { ok: false, error: identityError };
-	if (state.phase !== "ready") return failure("invalid-phase", "Model changes require an idle native session");
+	if (state.phase !== "ready")
+		return failure("invalid-phase", "Model changes require an idle native session");
 	const selected = validateModelSelection(model, state.availableModels);
 	if (!selected.ok) return selected;
 	return success({ ...state, model: selected.value });
@@ -137,17 +213,23 @@ function updateThinking(
 ): FlowResult<SessionFlowState> {
 	const identityError = sameSession(state, sessionKey, generation);
 	if (identityError) return { ok: false, error: identityError };
-	if (state.phase !== "ready") return failure("invalid-phase", "Thinking changes require an idle native session");
+	if (state.phase !== "ready")
+		return failure("invalid-phase", "Thinking changes require an idle native session");
 	const selected = validateThinkingSelection(level, state.availableThinkingLevels);
 	if (!selected.ok) return selected;
 	return success({ ...state, thinkingLevel: selected.value });
 }
 
-function beginPrompt(state: SessionFlowState, request: PromptRequest): FlowResult<SessionFlowState> {
+function beginPrompt(
+	state: SessionFlowState,
+	request: PromptRequest,
+): FlowResult<SessionFlowState> {
 	const identityError = sameSession(state, request.sessionKey, request.generation);
 	if (identityError) return { ok: false, error: identityError };
-	if (state.phase !== "ready") return failure("invalid-phase", "Native session is not ready for a prompt");
-	if (deliveryIsActive(state)) return failure("duplicate-delivery", "Prompt delivery is already active");
+	if (state.phase !== "ready")
+		return failure("invalid-phase", "Native session is not ready for a prompt");
+	if (deliveryIsActive(state))
+		return failure("duplicate-delivery", "Prompt delivery is already active");
 	const prompt = validatePromptRequest(request);
 	if (!prompt.ok) return prompt;
 	return success({
@@ -177,30 +259,43 @@ function promptTransition(
 	const delivery = state.delivery;
 	if (!delivery) return failure("unknown-delivery", "Prompt delivery is no longer active");
 	if (event.type === "prompt.dispatch") {
-		if (delivery.status !== "prepared") return failure("invalid-delivery-state", "Prompt is not prepared for dispatch");
+		if (delivery.status !== "prepared")
+			return failure("invalid-delivery-state", "Prompt is not prepared for dispatch");
 		return success({ ...state, delivery: { ...delivery, status: "dispatching" } });
 	}
 	if (event.type === "prompt.accept") {
-		if (delivery.status !== "dispatching") return failure("invalid-delivery-state", "Native prompt was not dispatching");
+		if (delivery.status !== "dispatching")
+			return failure("invalid-delivery-state", "Native prompt was not dispatching");
 		return success({ ...state, phase: "prompting", delivery: { ...delivery, status: "accepted" } });
 	}
 	if (event.type === "prompt.settle") {
 		if (delivery.status !== "accepted" && delivery.status !== "uncertain")
 			return failure("invalid-delivery-state", "Native settlement arrived before acceptance");
-		if (!event.stopReason) return failure("invalid-request", "Native settlement requires a stop reason");
+		if (!event.stopReason)
+			return failure("invalid-request", "Native settlement requires a stop reason");
 		return success(terminalDelivery(state, delivery, "settled", { stopReason: event.stopReason }));
 	}
 	if (event.type === "prompt.reject") {
 		if (delivery.status !== "prepared" && delivery.status !== "dispatching")
 			return failure("invalid-delivery-state", "Prompt cannot be rejected after native acceptance");
-		return success(terminalDelivery(state, delivery, "rejected", { reason: event.reason || "native rejection" }));
+		return success(
+			terminalDelivery(state, delivery, "rejected", { reason: event.reason || "native rejection" }),
+		);
 	}
-	if (delivery.status !== "dispatching" && delivery.status !== "accepted" && delivery.status !== "uncertain")
+	if (
+		delivery.status !== "dispatching" &&
+		delivery.status !== "accepted" &&
+		delivery.status !== "uncertain"
+	)
 		return failure("invalid-delivery-state", "Prompt is not eligible for an uncertain outcome");
 	return success({
 		...state,
 		phase: "prompting",
-		delivery: { ...delivery, status: "uncertain", reason: event.reason || "delivery outcome is uncertain" },
+		delivery: {
+			...delivery,
+			status: "uncertain",
+			reason: event.reason || "delivery outcome is uncertain",
+		},
 	});
 }
 
@@ -209,7 +304,13 @@ function abortRequest(
 	event: Extract<SessionFlowEvent, { type: "abort.request" }>,
 ): FlowResult<SessionFlowState | AbortOutcome> {
 	const identityError = sameSession(state, event.sessionKey, event.generation);
-	if (identityError) return success({ kind: "stale-generation", generation: state.identity.childGeneration, runId: event.runId, reason: identityError.message });
+	if (identityError)
+		return success({
+			kind: "stale-generation",
+			generation: state.identity.childGeneration,
+			runId: event.runId,
+			reason: identityError.message,
+		});
 	if (!deliveryIsActive(state) || !state.delivery || state.delivery.runId !== event.runId) {
 		return success({ kind: "already-idle", generation: event.generation, runId: event.runId });
 	}
@@ -236,7 +337,11 @@ function abortResult(
 ): FlowResult<SessionFlowState> {
 	const identityError = sameSession(state, event.sessionKey, event.generation);
 	if (identityError) return { ok: false, error: identityError };
-	if (!state.abort || state.abort.requestId !== event.requestId || state.abort.runId !== event.runId)
+	if (
+		!state.abort ||
+		state.abort.requestId !== event.requestId ||
+		state.abort.runId !== event.runId
+	)
 		return failure("unknown-delivery", "Abort request is no longer active");
 	const result: AbortOutcome = {
 		kind: event.result.kind,
@@ -247,26 +352,24 @@ function abortResult(
 			: {}),
 	};
 	if (event.result.kind === "aborted" || event.result.kind === "interrupted") {
-		return success(
-			{
-				...terminalDelivery(state, state.delivery!, "interrupted", {
+		return success({
+			...terminalDelivery(state, state.delivery!, "interrupted", {
 				reason:
-					(typeof event.result === "object" && "reason" in event.result ? event.result.reason : undefined) ??
+					(typeof event.result === "object" && "reason" in event.result
+						? event.result.reason
+						: undefined) ??
 					(event.result.kind === "aborted" ? "native abort accepted" : "native run interrupted"),
-				}),
-				lastAbort: result,
-			},
-		);
+			}),
+			lastAbort: result,
+		});
 	}
 	if (event.result.kind === "already-idle") {
-		return success(
-			{
-				...terminalDelivery(state, state.delivery!, "interrupted", {
-					reason: "native session was already idle",
-				}),
-				lastAbort: result,
-			},
-		);
+		return success({
+			...terminalDelivery(state, state.delivery!, "interrupted", {
+				reason: "native session was already idle",
+			}),
+			lastAbort: result,
+		});
 	}
 	// A timeout or rejection is not evidence that native execution stopped.
 	// Keep the delivery and mark the outcome, so callers cannot immediately
@@ -277,7 +380,8 @@ function abortResult(
 function beginReopen(state: SessionFlowState, request: ReopenBegin): FlowResult<SessionFlowState> {
 	const identityError = sameSession(state, request.sessionKey, request.expectedGeneration);
 	if (identityError) return { ok: false, error: identityError };
-	if (!request.requestId || request.requestId.includes("\0")) return failure("invalid-reopen", "Reopen request identity is invalid");
+	if (!request.requestId || request.requestId.includes("\0"))
+		return failure("invalid-reopen", "Reopen request identity is invalid");
 	if (request.nextGeneration !== state.identity.childGeneration + 1)
 		return failure("invalid-reopen", "Reopen generation must advance exactly once");
 	if (state.phase !== "ready" || deliveryIsActive(state))
@@ -298,13 +402,26 @@ function beginReopen(state: SessionFlowState, request: ReopenBegin): FlowResult<
 }
 
 function commitReopen(state: SessionFlowState, commit: ReopenCommit): FlowResult<SessionFlowState> {
-	if (state.phase !== "reopening" || !state.reopen) return failure("invalid-reopen", "No reopen is awaiting completion");
-	if (state.reopen.requestId !== commit.requestId || state.identity.sessionKey !== commit.sessionKey)
+	if (state.phase !== "reopening" || !state.reopen)
+		return failure("invalid-reopen", "No reopen is awaiting completion");
+	if (
+		state.reopen.requestId !== commit.requestId ||
+		state.identity.sessionKey !== commit.sessionKey
+	)
 		return failure("invalid-reopen", "Reopen completion does not match the active request");
-	if (state.reopen.generation !== commit.generation) return failure("stale-generation", "Reopen completion is from an old generation");
-	if (!commit.bootId || commit.bootId.includes("\0") || commit.nativeSessionId !== state.identity.nativeSessionId)
+	if (state.reopen.generation !== commit.generation)
+		return failure("stale-generation", "Reopen completion is from an old generation");
+	if (
+		!commit.bootId ||
+		commit.bootId.includes("\0") ||
+		commit.nativeSessionId !== state.identity.nativeSessionId
+	)
 		return failure("invalid-reopen", "Reopen changed the native session identity");
-	const identityResult = validateIdentity({ ...state.identity, bootId: commit.bootId, childGeneration: commit.generation });
+	const identityResult = validateIdentity({
+		...state.identity,
+		bootId: commit.bootId,
+		childGeneration: commit.generation,
+	});
 	if (!identityResult.ok) return identityResult;
 	const resources = resolveNativeTrust({
 		resources: commit.resources,
@@ -314,7 +431,10 @@ function commitReopen(state: SessionFlowState, commit: ReopenCommit): FlowResult
 	if (!resources.ok) return resources;
 	const models = validateModelsForReopen(commit.availableModels, state.availableModels);
 	if (!models.ok) return models;
-	const levels = validateLevelsForReopen(commit.availableThinkingLevels, state.availableThinkingLevels);
+	const levels = validateLevelsForReopen(
+		commit.availableThinkingLevels,
+		state.availableThinkingLevels,
+	);
 	if (!levels.ok) return levels;
 	const model = commit.model ?? state.model;
 	if (model) {
@@ -361,7 +481,13 @@ function validateLevelsForReopen(
 
 function closeFlow(state: SessionFlowState): FlowResult<SessionFlowState> {
 	if (state.phase === "closed") return success(state);
-	return success({ ...state, phase: "closed", delivery: undefined, abort: undefined, reopen: undefined });
+	return success({
+		...state,
+		phase: "closed",
+		delivery: undefined,
+		abort: undefined,
+		reopen: undefined,
+	});
 }
 
 export function createSessionFlow(request: SessionCreateRequest): FlowResult<SessionFlowState> {
@@ -383,21 +509,40 @@ export function createSessionFlow(request: SessionCreateRequest): FlowResult<Ses
 	});
 }
 
-export function transitionSessionFlow(state: SessionFlowState, event: SessionFlowEvent): FlowResult<SessionFlowState | AbortOutcome> {
+export function transitionSessionFlow(
+	state: SessionFlowState,
+	event: SessionFlowEvent,
+): FlowResult<SessionFlowState | AbortOutcome> {
 	if (event.type === "close") return closeFlow(state);
 	if (state.phase === "closed") return failure("session-closed", "Native session is closed");
-	if (event.type.startsWith("prompt.")) return promptTransition(state, event as Extract<SessionFlowEvent, { type: `prompt.${string}` }>);
+	if (event.type.startsWith("prompt."))
+		return promptTransition(
+			state,
+			event as Extract<SessionFlowEvent, { type: `prompt.${string}` }>,
+		);
 	if (event.type === "abort.request") return abortRequest(state, event);
 	if (event.type === "abort.result") return abortResult(state, event);
 	if (event.type === "reopen.begin") return beginReopen(state, event.request);
 	if (event.type === "reopen.commit") return commitReopen(state, event.commit);
 	if (event.type === "reopen.fail") {
-		if (state.phase !== "reopening" || state.identity.sessionKey !== event.sessionKey || state.reopen?.requestId !== event.requestId)
+		if (
+			state.phase !== "reopening" ||
+			state.identity.sessionKey !== event.sessionKey ||
+			state.reopen?.requestId !== event.requestId
+		)
 			return failure("invalid-reopen", "Reopen failure does not match the active request");
-		return success({ ...state, phase: "closed", delivery: undefined, abort: undefined, reopen: undefined });
+		return success({
+			...state,
+			phase: "closed",
+			delivery: undefined,
+			abort: undefined,
+			reopen: undefined,
+		});
 	}
-	if (event.type === "model.set") return updateModel(state, event.sessionKey, event.generation, event.model);
-	if (event.type === "thinking.set") return updateThinking(state, event.sessionKey, event.generation, event.level);
+	if (event.type === "model.set")
+		return updateModel(state, event.sessionKey, event.generation, event.model);
+	if (event.type === "thinking.set")
+		return updateThinking(state, event.sessionKey, event.generation, event.level);
 	return failure("invalid-request", "Unsupported session flow event");
 }
 
@@ -426,7 +571,11 @@ export class SessionFlowCoordinator {
 }
 
 export function isCurrentGeneration(state: SessionFlowState, generation: number): boolean {
-	return state.phase !== "reopening" && state.phase !== "closed" && state.identity.childGeneration === generation;
+	return (
+		state.phase !== "reopening" &&
+		state.phase !== "closed" &&
+		state.identity.childGeneration === generation
+	);
 }
 
 export function replaySessionState(state: SessionFlowState): SessionReplay {
@@ -445,13 +594,13 @@ export function replaySessionState(state: SessionFlowState): SessionReplay {
 		...(state.thinkingLevel !== undefined ? { thinkingLevel: state.thinkingLevel } : {}),
 		...(state.delivery
 			? {
-				 delivery: {
-					deliveryId: state.delivery.deliveryId,
-					runId: state.delivery.runId,
-					generation: state.delivery.generation,
-					status: state.delivery.status,
-				 },
-			 }
+					delivery: {
+						deliveryId: state.delivery.deliveryId,
+						runId: state.delivery.runId,
+						generation: state.delivery.generation,
+						status: state.delivery.status,
+					},
+				}
 			: {}),
 		...(state.lastAbort
 			? {

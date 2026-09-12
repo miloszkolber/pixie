@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runAssistantDoctor } from "../../../../assistant/src/doctor.ts";
@@ -53,10 +53,7 @@ test("doctor redacts secrets and never writes config", async () => {
 		const agentDir = join(root, "agent");
 		await mkdir(agentDir, { recursive: true });
 		const configPath = join(root, "assistant.json");
-		await writeFile(
-			configPath,
-			JSON.stringify({ host: "127.0.0.1", port: 3284, secret: SECRET }),
-		);
+		await writeFile(configPath, JSON.stringify({ host: "127.0.0.1", port: 3284, secret: SECRET }));
 		const rawBefore = await readFile(configPath, "utf8");
 		const report = await runAssistantDoctor({
 			request: { cli: { agentDir }, env: { pixiePiSecretKey: SECRET } },
@@ -96,7 +93,9 @@ test("doctor never installs extensions or loads project code", async () => {
 			`import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(marker)}, "ran\\n");\nexport default () => {};`,
 		);
 		const settingsPath = join(agentDir, "settings.json");
-		const settings = JSON.stringify({ packages: ["npm:@pixie-fixture/never-install-this-package@0.0.0"] });
+		const settings = JSON.stringify({
+			packages: ["npm:@pixie-fixture/never-install-this-package@0.0.0"],
+		});
 		await writeFile(settingsPath, settings);
 		const before = await snapshot(root);
 		const report = await runAssistantDoctor({
@@ -179,14 +178,19 @@ test("doctor skips active probes unless explicitly enabled", async () => {
 			allowActiveProbes: true,
 		});
 		expect(probed.checks.find((check) => check.id === "active-probes")?.ok).toBe(true);
-		expect(probed.checks.find((check) => check.id === "active-probes")?.detail).not.toMatch(/^Skipped/);
+		expect(probed.checks.find((check) => check.id === "active-probes")?.detail).not.toMatch(
+			/^Skipped/,
+		);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
 });
 
 test("doctor delegates to the facade and stays read-only", async () => {
-	const source = await readFile(resolve(import.meta.dir, "../../../../assistant/src/doctor.ts"), "utf8");
+	const source = await readFile(
+		resolve(import.meta.dir, "../../../../assistant/src/doctor.ts"),
+		"utf8",
+	);
 	expect(source).toContain('from "./facade.ts"');
 	expect(source).not.toContain('from "./server.ts"');
 	expect(source).not.toContain('from "./sessions.ts"');

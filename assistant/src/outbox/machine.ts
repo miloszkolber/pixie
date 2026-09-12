@@ -24,7 +24,9 @@ function failure<T>(code: OutboxError["code"], message: string): OutboxResult<T>
 }
 
 function validId(value: unknown): value is string {
-	return typeof value === "string" && value.length > 0 && value.length <= 512 && !value.includes("\0");
+	return (
+		typeof value === "string" && value.length > 0 && value.length <= 512 && !value.includes("\0")
+	);
 }
 
 function validGeneration(value: unknown): value is number {
@@ -88,7 +90,9 @@ export function getOutboxEntry(
 	deliveryId?: string,
 ): OutboxEntry | undefined {
 	return state.entries.find(
-		(entry) => entry.mutationId === mutationId && (deliveryId === undefined || entry.deliveryId === deliveryId),
+		(entry) =>
+			entry.mutationId === mutationId &&
+			(deliveryId === undefined || entry.deliveryId === deliveryId),
 	);
 }
 
@@ -103,7 +107,9 @@ function replaceEntry(state: OutboxState, replacement: OutboxEntry): OutboxState
 		entries,
 		stop: {
 			...state.stop,
-			retainedDeliveryIds: entries.filter((entry) => entry.status === "prepared").map((entry) => entry.deliveryId),
+			retainedDeliveryIds: entries
+				.filter((entry) => entry.status === "prepared")
+				.map((entry) => entry.deliveryId),
 			...effects,
 		},
 	};
@@ -111,16 +117,27 @@ function replaceEntry(state: OutboxState, replacement: OutboxEntry): OutboxState
 
 function validPrepare(request: OutboxPrepareInput): OutboxError | undefined {
 	if (!validId(request.mutationId) || !validId(request.deliveryId) || !validId(request.sessionKey))
-		return { code: "invalid-request", message: "Mutation, delivery and session identities are required" };
-	if (!validGeneration(request.generation)) return { code: "invalid-request", message: "Generation is invalid" };
-	if (request.kind !== undefined && !["prompt", "continuation", "compaction"].includes(request.kind))
+		return {
+			code: "invalid-request",
+			message: "Mutation, delivery and session identities are required",
+		};
+	if (!validGeneration(request.generation))
+		return { code: "invalid-request", message: "Generation is invalid" };
+	if (
+		request.kind !== undefined &&
+		!["prompt", "continuation", "compaction"].includes(request.kind)
+	)
 		return { code: "invalid-request", message: "Outbox operation kind is invalid" };
-	if (request.runId !== undefined && !validId(request.runId)) return { code: "invalid-request", message: "Run identity is invalid" };
+	if (request.runId !== undefined && !validId(request.runId))
+		return { code: "invalid-request", message: "Run identity is invalid" };
 	if (request.parentDeliveryId !== undefined && !validId(request.parentDeliveryId))
 		return { code: "invalid-request", message: "Parent delivery identity is invalid" };
 	if (request.automatic !== undefined && typeof request.automatic !== "boolean")
 		return { code: "invalid-request", message: "Automatic continuation flag is invalid" };
-	if (request.queuedAt !== undefined && (!Number.isFinite(request.queuedAt) || request.queuedAt < 0))
+	if (
+		request.queuedAt !== undefined &&
+		(!Number.isFinite(request.queuedAt) || request.queuedAt < 0)
+	)
 		return { code: "invalid-request", message: "Queue timestamp is invalid" };
 	return undefined;
 }
@@ -144,7 +161,11 @@ function preparedEntry(request: OutboxPrepareInput, fingerprint: string): Outbox
 	};
 }
 
-function samePreparation(entry: OutboxEntry, request: OutboxPrepareInput, fingerprint: string): boolean {
+function samePreparation(
+	entry: OutboxEntry,
+	request: OutboxPrepareInput,
+	fingerprint: string,
+): boolean {
 	return (
 		entry.deliveryId === request.deliveryId &&
 		entry.sessionKey === request.sessionKey &&
@@ -157,7 +178,10 @@ function samePreparation(entry: OutboxEntry, request: OutboxPrepareInput, finger
 	);
 }
 
-function identityError(state: OutboxState, event: { readonly mutationId: string; readonly deliveryId: string }): OutboxResult<OutboxEntry> {
+function identityError(
+	state: OutboxState,
+	event: { readonly mutationId: string; readonly deliveryId: string },
+): OutboxResult<OutboxEntry> {
 	const byMutation = state.entries.find((entry) => entry.mutationId === event.mutationId);
 	if (!byMutation) return failure("unknown-delivery", "Outbox delivery is not known");
 	if (byMutation.deliveryId !== event.deliveryId)
@@ -169,13 +193,18 @@ function eventScopeError(
 	state: OutboxState,
 	event: { readonly sessionKey: string; readonly generation: number },
 ): OutboxError | undefined {
-	if (event.sessionKey !== state.sessionKey) return { code: "invalid-request", message: "Session association does not match" };
-	if (event.generation !== state.generation) return { code: "stale-generation", message: "Outbox generation is no longer current" };
+	if (event.sessionKey !== state.sessionKey)
+		return { code: "invalid-request", message: "Session association does not match" };
+	if (event.generation !== state.generation)
+		return { code: "stale-generation", message: "Outbox generation is no longer current" };
 }
 
 function entryGenerationError(entry: OutboxEntry, generation: number): OutboxError | undefined {
 	if (entry.generation !== generation)
-		return { code: "stale-generation", message: "Delivery belongs to a previous native generation" };
+		return {
+			code: "stale-generation",
+			message: "Delivery belongs to a previous native generation",
+		};
 }
 
 function active(entry: OutboxEntry): boolean {
@@ -183,7 +212,12 @@ function active(entry: OutboxEntry): boolean {
 }
 
 function unsettled(entry: OutboxEntry): boolean {
-	return entry.status === "prepared" || entry.status === "dispatching" || entry.status === "accepted" || entry.status === "uncertain";
+	return (
+		entry.status === "prepared" ||
+		entry.status === "dispatching" ||
+		entry.status === "accepted" ||
+		entry.status === "uncertain"
+	);
 }
 
 function dispatchBlock(
@@ -202,18 +236,27 @@ export function nextOutboxDispatch(state: OutboxState): DispatchDecision {
 	if (block !== "ready") return { kind: "blocked", reason: block };
 	for (const entry of state.entries) {
 		if (entry.status !== "prepared" || entry.paused) continue;
-		if (entry.kind === "compaction" && state.entries.some((candidate) => candidate !== entry && unsettled(candidate)))
+		if (
+			entry.kind === "compaction" &&
+			state.entries.some((candidate) => candidate !== entry && unsettled(candidate))
+		)
 			return { kind: "blocked", reason: "compaction-blocked" };
 		if (entry.automatic && entry.parentDeliveryId) {
-			const parent = state.entries.find((candidate) => candidate.deliveryId === entry.parentDeliveryId);
-			if (!parent || parent.status !== "settled") return { kind: "blocked", reason: "parent-unsettled" };
+			const parent = state.entries.find(
+				(candidate) => candidate.deliveryId === entry.parentDeliveryId,
+			);
+			if (!parent || parent.status !== "settled")
+				return { kind: "blocked", reason: "parent-unsettled" };
 		}
 		return { kind: "ready", entry };
 	}
 	return { kind: "idle" };
 }
 
-function transitionPrepare(state: OutboxState, request: OutboxPrepareInput): OutboxResult<OutboxState> {
+function transitionPrepare(
+	state: OutboxState,
+	request: OutboxPrepareInput,
+): OutboxResult<OutboxState> {
 	const error = validPrepare(request);
 	if (error) return { ok: false, error };
 	if (request.sessionKey !== state.sessionKey)
@@ -222,22 +265,30 @@ function transitionPrepare(state: OutboxState, request: OutboxPrepareInput): Out
 	try {
 		fingerprint = stablePayloadFingerprint(request.payload);
 	} catch (error) {
-		return failure("invalid-request", error instanceof Error ? error.message : "Outbox payload cannot be fingerprinted");
+		return failure(
+			"invalid-request",
+			error instanceof Error ? error.message : "Outbox payload cannot be fingerprinted",
+		);
 	}
 	const byMutation = state.entries.find((entry) => entry.mutationId === request.mutationId);
 	if (byMutation) {
 		if (!samePreparation(byMutation, request, fingerprint))
-			return failure("mutation-conflict", "Mutation identity is already bound to a different payload or delivery");
+			return failure(
+				"mutation-conflict",
+				"Mutation identity is already bound to a different payload or delivery",
+			);
 		// A duplicate prepare is an idempotent read of the known delivery.  It
 		// never unpauses or resets a delivery that Stop retained.
 		return success(state);
 	}
 	const byDelivery = state.entries.find((entry) => entry.deliveryId === request.deliveryId);
-	if (byDelivery) return failure("duplicate-delivery", "Delivery identity is already in the outbox");
+	if (byDelivery)
+		return failure("duplicate-delivery", "Delivery identity is already in the outbox");
 	if (request.generation !== state.generation)
 		return failure("stale-generation", "New work must target the current outbox generation");
 	if (state.phase === "stopping") return failure("stopping", "Outbox admission is frozen by Stop");
-	if (state.phase === "stopped") return failure("stopped", "Resume the outbox before preparing new work");
+	if (state.phase === "stopped")
+		return failure("stopped", "Resume the outbox before preparing new work");
 	return success({ ...state, entries: [...state.entries, preparedEntry(request, fingerprint)] });
 }
 
@@ -256,7 +307,13 @@ function transitionDispatch(
 	if (state.phase === "stopped") return failure("stopped", "Outbox is stopped");
 	if (entry.status !== "prepared") {
 		// Repeating a dispatch request is a status read, never another native send.
-		if (entry.status === "dispatching" || entry.status === "accepted" || entry.status === "settled" || entry.status === "uncertain") return success(state);
+		if (
+			entry.status === "dispatching" ||
+			entry.status === "accepted" ||
+			entry.status === "settled" ||
+			entry.status === "uncertain"
+		)
+			return success(state);
 		return failure("invalid-state", "Only prepared work can be dispatched");
 	}
 	if (entry.paused) return failure("invalid-state", "Prepared delivery is paused");
@@ -264,10 +321,15 @@ function transitionDispatch(
 	if (next.kind !== "ready")
 		return failure(
 			"dispatch-blocked",
-			next.kind === "blocked" ? `Outbox dispatch is blocked: ${next.reason}` : "Outbox has no prepared work",
+			next.kind === "blocked"
+				? `Outbox dispatch is blocked: ${next.reason}`
+				: "Outbox has no prepared work",
 		);
-	if (next.entry.deliveryId !== entry.deliveryId) return failure("dispatch-blocked", "Earlier outbox work must be dispatched first");
-	return success(replaceEntry(state, { ...entry, status: "dispatching", attempt: entry.attempt + 1 }));
+	if (next.entry.deliveryId !== entry.deliveryId)
+		return failure("dispatch-blocked", "Earlier outbox work must be dispatched first");
+	return success(
+		replaceEntry(state, { ...entry, status: "dispatching", attempt: entry.attempt + 1 }),
+	);
 }
 
 function transitionAccept(
@@ -281,10 +343,18 @@ function transitionAccept(
 	const entry = known.value;
 	const generationError = entryGenerationError(entry, event.generation);
 	if (generationError) return { ok: false, error: generationError };
-	if (state.phase === "stopped") return failure("stopped", "Late native acceptance cannot revive a stopped outbox");
-	if (entry.status === "accepted" || entry.status === "settled" || entry.status === "rejected" || entry.status === "interrupted") return success(state);
+	if (state.phase === "stopped")
+		return failure("stopped", "Late native acceptance cannot revive a stopped outbox");
+	if (
+		entry.status === "accepted" ||
+		entry.status === "settled" ||
+		entry.status === "rejected" ||
+		entry.status === "interrupted"
+	)
+		return success(state);
 	if (entry.status === "uncertain") return success(state);
-	if (entry.status !== "dispatching") return failure("invalid-state", "Native acceptance requires a dispatching delivery");
+	if (entry.status !== "dispatching")
+		return failure("invalid-state", "Native acceptance requires a dispatching delivery");
 	return success(replaceEntry(state, { ...entry, status: "accepted" }));
 }
 
@@ -296,15 +366,25 @@ function transitionSettle(
 	if (scopeError) return { ok: false, error: scopeError };
 	const known = identityError(state, event);
 	if (!known.ok) return known;
-	if (!nonEmptyText(event.stopReason)) return failure("invalid-request", "Settlement requires a stop reason");
+	if (!nonEmptyText(event.stopReason))
+		return failure("invalid-request", "Settlement requires a stop reason");
 	const entry = known.value;
 	const generationError = entryGenerationError(entry, event.generation);
 	if (generationError) return { ok: false, error: generationError };
-	if (state.phase === "stopped") return failure("stopped", "Late native settlement cannot revive a stopped outbox");
+	if (state.phase === "stopped")
+		return failure("stopped", "Late native settlement cannot revive a stopped outbox");
 	if (entry.status === "settled") return success(state);
 	if (entry.status !== "accepted" && entry.status !== "uncertain")
 		return failure("invalid-state", "Native settlement requires accepted or uncertain delivery");
-	return success(replaceEntry(state, { ...entry, status: "settled", stopReason: event.stopReason, reason: undefined, paused: false }));
+	return success(
+		replaceEntry(state, {
+			...entry,
+			status: "settled",
+			stopReason: event.stopReason,
+			reason: undefined,
+			paused: false,
+		}),
+	);
 }
 
 function transitionReject(
@@ -319,10 +399,13 @@ function transitionReject(
 	const generationError = entryGenerationError(entry, event.generation);
 	if (generationError) return { ok: false, error: generationError };
 	if (!nonEmptyText(event.reason)) return failure("invalid-request", "Rejection requires a reason");
-	if (entry.status === "rejected" || entry.status === "settled" || entry.status === "interrupted") return success(state);
+	if (entry.status === "rejected" || entry.status === "settled" || entry.status === "interrupted")
+		return success(state);
 	if (entry.status !== "prepared" && entry.status !== "dispatching")
 		return failure("invalid-state", "An accepted delivery cannot be rewritten as a rejection");
-	return success(replaceEntry(state, { ...entry, status: "rejected", reason: event.reason, paused: false }));
+	return success(
+		replaceEntry(state, { ...entry, status: "rejected", reason: event.reason, paused: false }),
+	);
 }
 
 function transitionUncertain(
@@ -335,10 +418,13 @@ function transitionUncertain(
 	if (!known.ok) return known;
 	const generationError = entryGenerationError(known.value, event.generation);
 	if (generationError) return { ok: false, error: generationError };
-	if (!nonEmptyText(event.reason)) return failure("invalid-request", "Uncertain delivery requires a reason");
+	if (!nonEmptyText(event.reason))
+		return failure("invalid-request", "Uncertain delivery requires a reason");
 	const entry = known.value;
-	if (entry.status === "uncertain") return success(replaceEntry(state, { ...entry, reason: event.reason }));
-	if (entry.status === "settled" || entry.status === "rejected" || entry.status === "interrupted") return success(state);
+	if (entry.status === "uncertain")
+		return success(replaceEntry(state, { ...entry, reason: event.reason }));
+	if (entry.status === "settled" || entry.status === "rejected" || entry.status === "interrupted")
+		return success(state);
 	if (entry.status !== "dispatching" && entry.status !== "accepted")
 		return failure("invalid-state", "Only dispatched or accepted work can become uncertain");
 	return success(replaceEntry(state, { ...entry, status: "uncertain", reason: event.reason }));
@@ -354,15 +440,22 @@ function transitionInterrupt(
 	if (!known.ok) return known;
 	const generationError = entryGenerationError(known.value, event.generation);
 	if (generationError) return { ok: false, error: generationError };
-	if (!nonEmptyText(event.reason)) return failure("invalid-request", "Interrupted delivery requires a reason");
+	if (!nonEmptyText(event.reason))
+		return failure("invalid-request", "Interrupted delivery requires a reason");
 	const entry = known.value;
-	if (entry.status === "interrupted" || entry.status === "settled" || entry.status === "rejected") return success(state);
+	if (entry.status === "interrupted" || entry.status === "settled" || entry.status === "rejected")
+		return success(state);
 	if (entry.status !== "dispatching" && entry.status !== "accepted" && entry.status !== "uncertain")
 		return failure("invalid-state", "Only handed-off work can be interrupted");
-	return success(replaceEntry(state, { ...entry, status: "interrupted", reason: event.reason, paused: false }));
+	return success(
+		replaceEntry(state, { ...entry, status: "interrupted", reason: event.reason, paused: false }),
+	);
 }
 
-function transitionRetry(state: OutboxState, event: Extract<OutboxEvent, { type: "retry" }>): OutboxResult<OutboxState> {
+function transitionRetry(
+	state: OutboxState,
+	event: Extract<OutboxEvent, { type: "retry" }>,
+): OutboxResult<OutboxState> {
 	const entry = getOutboxEntry(state, event.mutationId, event.deliveryId);
 	if (!entry) {
 		const byMutation = state.entries.find((candidate) => candidate.mutationId === event.mutationId);
@@ -371,30 +464,51 @@ function transitionRetry(state: OutboxState, event: Extract<OutboxEvent, { type:
 			: failure("unknown-delivery", "Outbox delivery is not known");
 	}
 	if (event.fingerprint !== undefined && event.fingerprint !== entry.fingerprint)
-		return failure("mutation-conflict", "Retry payload fingerprint does not match the original mutation");
+		return failure(
+			"mutation-conflict",
+			"Retry payload fingerprint does not match the original mutation",
+		);
 	// An explicit retry may reopen only a delivery that native explicitly
 	// rejected before acceptance.  The identity and payload remain unchanged;
 	// dispatch will persist the next claim before another send.  Accepted,
 	// settled, interrupted and uncertain work is a status read, not a replay.
 	if (entry.status === "rejected" && state.phase === "open")
-		return success(replaceEntry(state, { ...entry, status: "prepared", reason: undefined, paused: false }));
+		return success(
+			replaceEntry(state, { ...entry, status: "prepared", reason: undefined, paused: false }),
+		);
 	// Retry is deliberately a status lookup.  In particular, uncertain work
 	// cannot be resent because its first native effect may already exist.
 	return success(state);
 }
 
-function transitionReconcile(state: OutboxState, event: Extract<OutboxEvent, { type: "reconcile" }>): OutboxResult<OutboxState> {
+function transitionReconcile(
+	state: OutboxState,
+	event: Extract<OutboxEvent, { type: "reconcile" }>,
+): OutboxResult<OutboxState> {
 	const entry = getOutboxEntry(state, event.mutationId, event.deliveryId);
 	if (!entry) return failure("unknown-delivery", "Outbox delivery is not known");
-	if (entry.status !== "uncertain") return failure("uncertain-delivery", "Only uncertain deliveries require reconciliation");
+	if (entry.status !== "uncertain")
+		return failure("uncertain-delivery", "Only uncertain deliveries require reconciliation");
 	if (event.outcome === "uncertain") {
-		return success(nonEmptyText(event.reason) ? replaceEntry(state, { ...entry, reason: event.reason }) : state);
+		return success(
+			nonEmptyText(event.reason) ? replaceEntry(state, { ...entry, reason: event.reason }) : state,
+		);
 	}
 	if (event.outcome === "settled") {
-		if (!nonEmptyText(event.stopReason)) return failure("invalid-request", "Reconciled settlement requires a stop reason");
-		return success(replaceEntry(state, { ...entry, status: "settled", stopReason: event.stopReason, reason: undefined, paused: false }));
+		if (!nonEmptyText(event.stopReason))
+			return failure("invalid-request", "Reconciled settlement requires a stop reason");
+		return success(
+			replaceEntry(state, {
+				...entry,
+				status: "settled",
+				stopReason: event.stopReason,
+				reason: undefined,
+				paused: false,
+			}),
+		);
 	}
-	if (!nonEmptyText(event.reason)) return failure("invalid-request", "Reconciled outcome requires a reason");
+	if (!nonEmptyText(event.reason))
+		return failure("invalid-request", "Reconciled outcome requires a reason");
 	return success(
 		replaceEntry(state, {
 			...entry,
@@ -405,7 +519,10 @@ function transitionReconcile(state: OutboxState, event: Extract<OutboxEvent, { t
 	);
 }
 
-function beginStop(state: OutboxState, event: Extract<OutboxEvent, { type: "stop.begin" }>): OutboxResult<OutboxState> {
+function beginStop(
+	state: OutboxState,
+	event: Extract<OutboxEvent, { type: "stop.begin" }>,
+): OutboxResult<OutboxState> {
 	if (!validId(event.requestId)) return failure("invalid-stop", "Stop request identity is invalid");
 	if (event.sessionKey !== state.sessionKey || event.generation !== state.generation)
 		return failure("stale-generation", "Stop request is not for the current session generation");
@@ -420,13 +537,17 @@ function beginStop(state: OutboxState, event: Extract<OutboxEvent, { type: "stop
 	const entries = state.entries.map((entry) =>
 		entry.status === "prepared" ? { ...entry, paused: true } : entry,
 	);
-	const retainedDeliveryIds = entries.filter((entry) => entry.status === "prepared").map((entry) => entry.deliveryId);
+	const retainedDeliveryIds = entries
+		.filter((entry) => entry.status === "prepared")
+		.map((entry) => entry.deliveryId);
 	const stop: OutboxStopRecord = {
 		requestId: event.requestId,
 		generation: state.generation,
 		phase: "stopping",
 		retainedDeliveryIds,
-		uncertainDeliveryIds: entries.filter((entry) => entry.status === "uncertain").map((entry) => entry.deliveryId),
+		uncertainDeliveryIds: entries
+			.filter((entry) => entry.status === "uncertain")
+			.map((entry) => entry.deliveryId),
 		interruptedDeliveryIds: [],
 	};
 	return success({ ...state, phase: "stopping", entries, stop });
@@ -444,24 +565,50 @@ function stopEffect(
 	return {
 		uncertainDeliveryIds,
 		interruptedDeliveryIds,
-		effectDisposition: uncertainDeliveryIds.length ? "uncertain" : interruptedDeliveryIds.length ? "interrupted" : "none",
+		effectDisposition: uncertainDeliveryIds.length
+			? "uncertain"
+			: interruptedDeliveryIds.length
+				? "interrupted"
+				: "none",
 	};
 }
 
-function verifyStop(state: OutboxState, verification: OutboxStopVerification): OutboxResult<OutboxState> {
-	if (state.phase !== "stopping" || !state.stop) return failure("invalid-stop", "No Stop is awaiting verification");
-	if (verification.requestId !== state.stop.requestId || verification.generation !== state.generation)
+function verifyStop(
+	state: OutboxState,
+	verification: OutboxStopVerification,
+): OutboxResult<OutboxState> {
+	if (state.phase !== "stopping" || !state.stop)
+		return failure("invalid-stop", "No Stop is awaiting verification");
+	if (
+		verification.requestId !== state.stop.requestId ||
+		verification.generation !== state.generation
+	)
 		return failure("stale-generation", "Stop verification does not match the active generation");
 	if (!verification.generationQuiescent)
 		return failure("invalid-stop", "Stop requires verified native generation quiescence");
-	const abortAcknowledged = verification.abortOutcome === "aborted" || verification.abortOutcome === "already-idle";
-	if (!verification.forcedTermination && (!verification.continuationCleared || !verification.pendingUiCancelled || !abortAcknowledged))
-		return failure("invalid-stop", "Stop has not verified continuation, UI and native abort disposition");
+	const abortAcknowledged =
+		verification.abortOutcome === "aborted" || verification.abortOutcome === "already-idle";
+	if (
+		!verification.forcedTermination &&
+		(!verification.continuationCleared || !verification.pendingUiCancelled || !abortAcknowledged)
+	)
+		return failure(
+			"invalid-stop",
+			"Stop has not verified continuation, UI and native abort disposition",
+		);
 	const entries = state.entries.map((entry) => {
 		if (entry.status === "dispatching")
-			return { ...entry, status: "uncertain" as const, reason: verification.reason ?? "Stop interrupted an unacknowledged delivery" };
+			return {
+				...entry,
+				status: "uncertain" as const,
+				reason: verification.reason ?? "Stop interrupted an unacknowledged delivery",
+			};
 		if (entry.status === "accepted")
-			return { ...entry, status: "interrupted" as const, reason: verification.reason ?? "Stop interrupted accepted native work" };
+			return {
+				...entry,
+				status: "interrupted" as const,
+				reason: verification.reason ?? "Stop interrupted accepted native work",
+			};
 		return entry;
 	});
 	const effects = stopEffect(entries);
@@ -474,7 +621,9 @@ function verifyStop(state: OutboxState, verification: OutboxStopVerification): O
 		forcedUncertainty && effects.effectDisposition === "none"
 			? { ...effects, effectDisposition: "uncertain" as const }
 			: effects;
-	const retainedDeliveryIds = entries.filter((entry) => entry.status === "prepared").map((entry) => entry.deliveryId);
+	const retainedDeliveryIds = entries
+		.filter((entry) => entry.status === "prepared")
+		.map((entry) => entry.deliveryId);
 	const stop: OutboxStopRecord = {
 		...state.stop,
 		phase: "stopped",
@@ -488,35 +637,49 @@ function verifyStop(state: OutboxState, verification: OutboxStopVerification): O
 }
 
 function resume(state: OutboxState): OutboxResult<OutboxState> {
-	if (state.phase !== "stopped") return failure("invalid-stop", "Only a completed Stop can be resumed");
+	if (state.phase !== "stopped")
+		return failure("invalid-stop", "Only a completed Stop can be resumed");
 	return success({
 		...state,
 		phase: "open",
-		entries: state.entries.map((entry) => (entry.status === "prepared" ? { ...entry, paused: false } : entry)),
+		entries: state.entries.map((entry) =>
+			entry.status === "prepared" ? { ...entry, paused: false } : entry,
+		),
 	});
 }
 
 function discard(state: OutboxState, mutationIds: readonly string[]): OutboxResult<OutboxState> {
-	if (state.phase === "stopping") return failure("stopping", "Wait for Stop verification before discarding queued work");
-	if (!mutationIds.length || mutationIds.some((id) => !validId(id))) return failure("invalid-request", "Discard requires mutation identities");
+	if (state.phase === "stopping")
+		return failure("stopping", "Wait for Stop verification before discarding queued work");
+	if (!mutationIds.length || mutationIds.some((id) => !validId(id)))
+		return failure("invalid-request", "Discard requires mutation identities");
 	const ids = new Set(mutationIds);
 	for (const id of ids) {
 		const entry = state.entries.find((candidate) => candidate.mutationId === id);
 		if (!entry) return failure("unknown-delivery", `Outbox mutation ${id} is not known`);
-		if (entry.status !== "prepared") return failure("invalid-state", "Only unsent prepared work can be discarded");
+		if (entry.status !== "prepared")
+			return failure("invalid-state", "Only unsent prepared work can be discarded");
 	}
 	const entries = state.entries.filter((entry) => !ids.has(entry.mutationId));
 	return success({
 		...state,
 		entries,
 		...(state.stop?.phase === "stopped"
-			? { stop: { ...state.stop, retainedDeliveryIds: entries.filter((entry) => entry.status === "prepared").map((entry) => entry.deliveryId) } }
+			? {
+					stop: {
+						...state.stop,
+						retainedDeliveryIds: entries
+							.filter((entry) => entry.status === "prepared")
+							.map((entry) => entry.deliveryId),
+					},
+				}
 			: {}),
 	});
 }
 
 function reconnect(state: OutboxState, generation: number): OutboxResult<OutboxState> {
-	if (state.phase !== "open") return failure("invalid-state", "Reconnect cannot reopen a stopping or stopped outbox");
+	if (state.phase !== "open")
+		return failure("invalid-state", "Reconnect cannot reopen a stopping or stopped outbox");
 	if (!validGeneration(generation) || generation <= state.generation)
 		return failure("stale-generation", "Reconnect generation must advance");
 	const entries = state.entries.map((entry) => {
@@ -532,7 +695,10 @@ function reconnect(state: OutboxState, generation: number): OutboxResult<OutboxS
 	return success({ ...state, generation, entries });
 }
 
-export function transitionOutbox(state: OutboxState, event: OutboxEvent): OutboxResult<OutboxState> {
+export function transitionOutbox(
+	state: OutboxState,
+	event: OutboxEvent,
+): OutboxResult<OutboxState> {
 	switch (event.type) {
 		case "prepare":
 			return transitionPrepare(state, event.request);
@@ -570,7 +736,10 @@ function requireTransition<T>(result: OutboxResult<T>): T {
 	return result.value;
 }
 
-export function prepareOutboxDelivery(state: OutboxState, request: OutboxPrepareInput): OutboxResult<OutboxState> {
+export function prepareOutboxDelivery(
+	state: OutboxState,
+	request: OutboxPrepareInput,
+): OutboxResult<OutboxState> {
 	return transitionOutbox(state, { type: "prepare", request });
 }
 
@@ -578,7 +747,11 @@ export function enqueueContinuation(
 	state: OutboxState,
 	request: Omit<OutboxPrepareInput, "kind">,
 ): OutboxResult<OutboxState> {
-	return prepareOutboxDelivery(state, { ...request, kind: "continuation", automatic: request.automatic ?? true });
+	return prepareOutboxDelivery(state, {
+		...request,
+		kind: "continuation",
+		automatic: request.automatic ?? true,
+	});
 }
 
 export function prepareCompaction(
@@ -611,7 +784,10 @@ export function settleOutboxDelivery(
 
 export function retryOutboxDelivery(
 	state: OutboxState,
-	identity: Pick<OutboxEntry, "mutationId"> & { readonly deliveryId?: string; readonly fingerprint?: string },
+	identity: Pick<OutboxEntry, "mutationId"> & {
+		readonly deliveryId?: string;
+		readonly fingerprint?: string;
+	},
 ): OutboxResult<OutboxState> {
 	return transitionOutbox(state, { type: "retry", ...identity });
 }
@@ -665,8 +841,10 @@ export function restoreNativeQueueAsDraft(
 ): OutboxResult<NativeQueueDraftProposal> {
 	if (!validId(input.draftId) || !validId(input.sessionKey) || !validGeneration(input.generation))
 		return failure("invalid-request", "Native queue draft identity is invalid");
-	if (input.lane !== "steering" && input.lane !== "followUp") return failure("invalid-request", "Native queue draft lane is invalid");
-	if (typeof input.text !== "string" || !input.text.trim()) return failure("invalid-request", "Native queue draft cannot be empty");
+	if (input.lane !== "steering" && input.lane !== "followUp")
+		return failure("invalid-request", "Native queue draft lane is invalid");
+	if (typeof input.text !== "string" || !input.text.trim())
+		return failure("invalid-request", "Native queue draft cannot be empty");
 	if (input.sourceDeliveryId !== undefined && !validId(input.sourceDeliveryId))
 		return failure("invalid-request", "Native queue source delivery identity is invalid");
 	return success({
@@ -691,7 +869,10 @@ export class OutboxCoordinator {
 	private current: OutboxState;
 
 	constructor(sessionKeyOrState: string | OutboxState, generation = 0) {
-		this.current = typeof sessionKeyOrState === "string" ? createOutboxState(sessionKeyOrState, generation) : sessionKeyOrState;
+		this.current =
+			typeof sessionKeyOrState === "string"
+				? createOutboxState(sessionKeyOrState, generation)
+				: sessionKeyOrState;
 	}
 
 	get state(): OutboxState {

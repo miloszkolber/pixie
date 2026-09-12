@@ -35,7 +35,8 @@ const agentDir = resolve(values["agent-dir"] ?? getAgentDir());
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.MCP_UI_VIEWER ??= "none";
 
-const nativeTransportCommand = values["native-transport"] ?? process.env.PIXIE_NATIVE_TRANSPORT_COMMAND;
+const nativeTransportCommand =
+	values["native-transport"] ?? process.env.PIXIE_NATIVE_TRANSPORT_COMMAND;
 const nativeTransportArgs = values["native-arg"] ?? [];
 const nativeTransport = nativeTransportCommand
 	? new NativeJsonlTransport({

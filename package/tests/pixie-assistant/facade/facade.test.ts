@@ -56,9 +56,9 @@ test("facade validation delegates to the single startup surface", () => {
 	expect(assistantFacade.parseAssistantPort).toBe(parseAssistantPort);
 	expect(assistantFacade.validateAssistantSecret).toBe(validateAssistantSecret);
 	for (const value of ["0.0.0.0", "example.test", "127.0.0.1:3284"])
-		expect(() => resolveAssistantConfig({ cli: { host: value }, env: { pixiePiSecretKey: SECRET } })).toThrow(
-			"literal loopback host",
-		);
+		expect(() =>
+			resolveAssistantConfig({ cli: { host: value }, env: { pixiePiSecretKey: SECRET } }),
+		).toThrow("literal loopback host");
 	for (const value of ["0", "65536", "NaN"])
 		expect(() =>
 			resolveAssistantConfig({ cli: { port: value }, env: { pixiePiSecretKey: SECRET } }),
@@ -151,7 +151,8 @@ test("facade reports build metadata independently of native Pi", async () => {
 	expect(build).not.toHaveProperty("secret");
 	const installation = await describePiInstallation({ pathEnv: "/nonexistent" });
 	expect(["npm", "standalone", "unknown"]).toContain(installation.kind);
-	if (installation.executable === null) expect(installation.executableError).toMatch(/Pi executable/);
+	if (installation.executable === null)
+		expect(installation.executableError).toMatch(/Pi executable/);
 });
 
 test("facade redacts secrets and exposes one host surface", async () => {

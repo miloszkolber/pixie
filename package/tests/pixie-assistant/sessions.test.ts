@@ -293,7 +293,7 @@ test("agent edits preserve metadata and reject oversized replacement beside malf
 	const call = (method: string, params: Record<string, unknown>) =>
 		entry.capabilities.call(method, params, sessions.context(entry)) as Promise<{
 			source: { path: string; revision: string; properties: Record<string, unknown> };
-		sources: { path: string; revision: string }[];
+			sources: { path: string; revision: string }[];
 			warnings: string[];
 		}>;
 	const { source } = await call("pi.sources.create", {

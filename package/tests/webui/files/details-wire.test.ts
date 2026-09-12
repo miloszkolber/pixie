@@ -3,10 +3,7 @@ import { compile } from "svelte/compiler";
 import { errorText } from "@/connection";
 import { releaseSession } from "@/connection/session-release";
 import type { WsTransport } from "@/connection/transport";
-import {
-	describeContextUsage,
-	describeTokenCount,
-} from "@/files/changes/details-model";
+import { describeContextUsage, describeTokenCount } from "@/files/changes/details-model";
 
 const webuiRoot = new URL("../../../webui/src/", import.meta.url);
 
@@ -22,10 +19,7 @@ test("release stays on the authoritative session.release transport", async () =>
 			return { ok: true as const };
 		}) as unknown as WsTransport["request"],
 	};
-	const result = await releaseSession(
-		{ projectId: "project", sessionId: "session" },
-		transport,
-	);
+	const result = await releaseSession({ projectId: "project", sessionId: "session" }, transport);
 	expect(calls).toEqual([
 		{ method: "session.release", params: { projectId: "project", sessionId: "session" } },
 	]);
@@ -72,7 +66,7 @@ test("details panel compiles and wires live stats with gated release control", a
 		"removedProjectAreaIds",
 		"connectionGeneration",
 		"Read-only",
-		"role=\"alert\"",
+		'role="alert"',
 		"disabled={releaseBusy}",
 	]) {
 		expect(panel).toContain(contract);
@@ -99,9 +93,7 @@ test("details panel compiles and wires live stats with gated release control", a
 test("secondary sidebar details region delegates to the wired panel", async () => {
 	const workArea = await source("workspace/views/project-work-area.svelte");
 	compile(workArea, { filename: "project-work-area.svelte", generate: false });
-	expect(workArea).toContain(
-		'import DetailsPanel from "../../files/changes/details-panel.svelte"',
-	);
+	expect(workArea).toContain('import DetailsPanel from "../../files/changes/details-panel.svelte"');
 	expect(workArea).toContain('data-testid="details-sidebar"');
 	expect(workArea).toContain("<DetailsPanel");
 	expect(workArea).toContain("sessionId={sessionDetailsVisible");

@@ -60,9 +60,9 @@ test("closing the preview keeps chat, draft, and stream intact", () => {
 	});
 	expect(next.workspaceSelection.secondarySelection).toBeNull();
 	expect(next.sessions["session-1"]?.draft).toBe("keep me");
-	expect(next.tabsByProjectArea["area-1"]?.some((tab) => tab.id === "chat-1" || tab.kind === "chat")).toBe(
-		true,
-	);
+	expect(
+		next.tabsByProjectArea["area-1"]?.some((tab) => tab.id === "chat-1" || tab.kind === "chat"),
+	).toBe(true);
 });
 
 test("focus and collapse round-trip without losing canonical selections", () => {
@@ -73,8 +73,12 @@ test("focus and collapse round-trip without losing canonical selections", () => 
 	state.setChatDraft("session-1", "focus draft");
 
 	const before = appStoreApi.getState().workspaceSelection;
-	appStoreApi.getState().dispatchWorkspaceSelection({ type: "set-layout", layout: { focus: "secondary" } });
-	expect(appStoreApi.getState().workspaceSelection.primarySelection).toEqual(before.primarySelection);
+	appStoreApi
+		.getState()
+		.dispatchWorkspaceSelection({ type: "set-layout", layout: { focus: "secondary" } });
+	expect(appStoreApi.getState().workspaceSelection.primarySelection).toEqual(
+		before.primarySelection,
+	);
 	expect(appStoreApi.getState().workspaceSelection.secondarySelection).toEqual(
 		before.secondarySelection,
 	);
@@ -88,7 +92,9 @@ test("focus and collapse round-trip without losing canonical selections", () => 
 		type: "set-layout",
 		layout: { focus: "none", leftCollapsed: false, rightCollapsed: false },
 	});
-	expect(appStoreApi.getState().workspaceSelection.primarySelection).toEqual(before.primarySelection);
+	expect(appStoreApi.getState().workspaceSelection.primarySelection).toEqual(
+		before.primarySelection,
+	);
 	expect(appStoreApi.getState().workspaceSelection.secondarySelection).toEqual(
 		before.secondarySelection,
 	);
@@ -196,9 +202,9 @@ test("split handle keeps separator semantics and never resets while dragging", a
 	).text();
 	for (const contract of [
 		'role="separator"',
-		'aria-valuemin',
-		'aria-valuemax',
-		'aria-valuenow',
+		"aria-valuemin",
+		"aria-valuemax",
+		"aria-valuenow",
 		"onpointerdown",
 		"onpointermove",
 		"onpointerup",

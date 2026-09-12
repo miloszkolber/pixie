@@ -8,9 +8,9 @@
 
 import {
 	BRIDGE_PROBE_VERSION,
-	createBridgeBlocker,
 	type BridgeBlocker,
 	type BridgeDistribution,
+	createBridgeBlocker,
 } from "./feasibility.ts";
 
 export const BRIDGE_CHANNEL_VERSION = BRIDGE_PROBE_VERSION;
@@ -94,13 +94,19 @@ function validToken(value: unknown, name: string): asserts value is string {
 }
 
 function validId(value: unknown): asserts value is string {
-	if (typeof value !== "string" || value.length === 0 || value.length > BRIDGE_CHANNEL_MAX_ID_LENGTH || value.includes("\0"))
+	if (
+		typeof value !== "string" ||
+		value.length === 0 ||
+		value.length > BRIDGE_CHANNEL_MAX_ID_LENGTH ||
+		value.includes("\0")
+	)
 		throw new Error("Invalid bridge request ID");
 }
 
 function strictKeys(value: Record<string, unknown>, keys: readonly string[]): void {
 	const allowed = new Set(keys);
-	if (Object.keys(value).some((key) => !allowed.has(key))) throw new Error("Unexpected bridge frame field");
+	if (Object.keys(value).some((key) => !allowed.has(key)))
+		throw new Error("Unexpected bridge frame field");
 }
 
 function frameBytes(value: unknown): number {
@@ -138,8 +144,13 @@ function checkedFrame(value: unknown): BridgeFrame {
 		validId(value.id);
 		if (typeof value.ok !== "boolean") throw new Error("Invalid bridge response status");
 		if (value.ok) {
-			if (value.error !== undefined) throw new Error("Successful bridge response cannot contain an error");
-		} else if (typeof value.error !== "string" || value.error.length === 0 || value.error.length > 2000) {
+			if (value.error !== undefined)
+				throw new Error("Successful bridge response cannot contain an error");
+		} else if (
+			typeof value.error !== "string" ||
+			value.error.length === 0 ||
+			value.error.length > 2000
+		) {
 			throw new Error("Invalid bridge response error");
 		}
 		return value as unknown as BridgeResponseFrame;
@@ -148,7 +159,9 @@ function checkedFrame(value: unknown): BridgeFrame {
 }
 
 /** Check descriptor and reservation attestations before bridge enablement. */
-export function checkPrivateBridgeChannel(input: PrivateBridgeChannelInput): PrivateBridgeChannelResult {
+export function checkPrivateBridgeChannel(
+	input: PrivateBridgeChannelInput,
+): PrivateBridgeChannelResult {
 	const version = input.sdkVersion ?? null;
 	const blockers: BridgeBlocker[] = [];
 	const add = (missingPublicSymbol: string, reproduction: string) => {
@@ -159,30 +172,93 @@ export function checkPrivateBridgeChannel(input: PrivateBridgeChannelInput): Pri
 				surface: "channel",
 				missingPublicSymbol,
 				reproduction,
-				userVisibleLimitation: "Optional native administration is unavailable; no broad listener or model-facing channel is opened.",
+				userVisibleLimitation:
+					"Optional native administration is unavailable; no broad listener or model-facing channel is opened.",
 				releaseConsequence: "BRIDGE-01 stays open until the private bounded channel is verified.",
 			}),
 		);
 	};
 
-	if (input.transport !== "inherited-duplex") add("private inherited duplex descriptor", "The bridge channel is not an inherited duplex descriptor.");
+	if (input.transport !== "inherited-duplex")
+		add(
+			"private inherited duplex descriptor",
+			"The bridge channel is not an inherited duplex descriptor.",
+		);
 	if (!Number.isSafeInteger(input.descriptor) || input.descriptor < 3)
-		add("valid inherited descriptor", "The bridge descriptor is not a dedicated non-negative safe integer.");
-	if (!input.private) add("private bridge descriptor", "The channel was not attested as private to the managed child.");
-	if (!input.authenticated) add("nonce-authenticated bridge handshake", "The channel peer was not authenticated before administration messages.");
-	if (!input.closeOnExec) add("close-on-exec descriptor state", "The bridge descriptor may leak into an unintended descendant.");
-	if (input.descendantsInherit) add("descendant descriptor non-inheritance", "The descriptor inheritance probe reports authority leakage to descendants.");
-	if (input.listener) add("no broad bridge listener", "The proposed channel exposes a listener instead of a private inherited descriptor.");
-	if (input.credentialExport) add("no credential export on bridge channel", "The channel would export credentials instead of using native storage.");
-	if (input.shellEval) add("no shell evaluation on bridge channel", "The channel would evaluate shell text instead of dispatching an allowlisted frame.");
-	if (!Number.isSafeInteger(input.maxFrameBytes) || input.maxFrameBytes <= 0 || input.maxFrameBytes > BRIDGE_CHANNEL_MAX_FRAME_BYTES)
-		add("bounded bridge frame", `Configured frame budget ${input.maxFrameBytes} exceeds the bridge frame limit.`);
-	if (!Number.isSafeInteger(input.maxBufferedBytes) || input.maxBufferedBytes <= 0 || input.maxBufferedBytes > BRIDGE_CHANNEL_MAX_BUFFER_BYTES)
-		add("bounded bridge aggregate buffer", `Configured aggregate buffer ${input.maxBufferedBytes} exceeds the bridge buffer limit.`);
-	else if (Number.isSafeInteger(input.maxFrameBytes) && input.maxFrameBytes > input.maxBufferedBytes)
-		add("frame within aggregate bridge buffer", "The configured frame budget cannot fit within the aggregate channel reservation.");
-	if (!Number.isSafeInteger(input.maxPending) || input.maxPending <= 0 || input.maxPending > BRIDGE_CHANNEL_MAX_PENDING)
-		add("bounded bridge pending operations", `Configured pending operation count ${input.maxPending} exceeds the bridge pending limit.`);
+		add(
+			"valid inherited descriptor",
+			"The bridge descriptor is not a dedicated non-negative safe integer.",
+		);
+	if (!input.private)
+		add(
+			"private bridge descriptor",
+			"The channel was not attested as private to the managed child.",
+		);
+	if (!input.authenticated)
+		add(
+			"nonce-authenticated bridge handshake",
+			"The channel peer was not authenticated before administration messages.",
+		);
+	if (!input.closeOnExec)
+		add(
+			"close-on-exec descriptor state",
+			"The bridge descriptor may leak into an unintended descendant.",
+		);
+	if (input.descendantsInherit)
+		add(
+			"descendant descriptor non-inheritance",
+			"The descriptor inheritance probe reports authority leakage to descendants.",
+		);
+	if (input.listener)
+		add(
+			"no broad bridge listener",
+			"The proposed channel exposes a listener instead of a private inherited descriptor.",
+		);
+	if (input.credentialExport)
+		add(
+			"no credential export on bridge channel",
+			"The channel would export credentials instead of using native storage.",
+		);
+	if (input.shellEval)
+		add(
+			"no shell evaluation on bridge channel",
+			"The channel would evaluate shell text instead of dispatching an allowlisted frame.",
+		);
+	if (
+		!Number.isSafeInteger(input.maxFrameBytes) ||
+		input.maxFrameBytes <= 0 ||
+		input.maxFrameBytes > BRIDGE_CHANNEL_MAX_FRAME_BYTES
+	)
+		add(
+			"bounded bridge frame",
+			`Configured frame budget ${input.maxFrameBytes} exceeds the bridge frame limit.`,
+		);
+	if (
+		!Number.isSafeInteger(input.maxBufferedBytes) ||
+		input.maxBufferedBytes <= 0 ||
+		input.maxBufferedBytes > BRIDGE_CHANNEL_MAX_BUFFER_BYTES
+	)
+		add(
+			"bounded bridge aggregate buffer",
+			`Configured aggregate buffer ${input.maxBufferedBytes} exceeds the bridge buffer limit.`,
+		);
+	else if (
+		Number.isSafeInteger(input.maxFrameBytes) &&
+		input.maxFrameBytes > input.maxBufferedBytes
+	)
+		add(
+			"frame within aggregate bridge buffer",
+			"The configured frame budget cannot fit within the aggregate channel reservation.",
+		);
+	if (
+		!Number.isSafeInteger(input.maxPending) ||
+		input.maxPending <= 0 ||
+		input.maxPending > BRIDGE_CHANNEL_MAX_PENDING
+	)
+		add(
+			"bounded bridge pending operations",
+			`Configured pending operation count ${input.maxPending} exceeds the bridge pending limit.`,
+		);
 	try {
 		validToken(input.nonce, "nonce");
 	} catch {

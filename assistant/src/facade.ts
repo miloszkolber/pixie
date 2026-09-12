@@ -178,7 +178,11 @@ export function validateNativeArgv(argv: unknown): readonly string[] {
 	return checked;
 }
 
-function resolvePort(cliPort: string | undefined, envPort: string | undefined, filePort: unknown): number {
+function resolvePort(
+	cliPort: string | undefined,
+	envPort: string | undefined,
+	filePort: unknown,
+): number {
 	if (cliPort !== undefined) return parseAssistantPort(cliPort);
 	if (envPort !== undefined && envPort !== "") {
 		if (envPort === "0") return validateAssistantRuntimePort(0);
@@ -200,7 +204,9 @@ function resolveLlama(cli: boolean | undefined, file: unknown): boolean {
 	return false;
 }
 
-export function resolveAssistantConfig(request: AssistantConfigRequest = {}): AssistantResolvedConfig {
+export function resolveAssistantConfig(
+	request: AssistantConfigRequest = {},
+): AssistantResolvedConfig {
 	const cli = request.cli ?? {};
 	const env = request.env ?? {};
 	const file = request.file ?? {};
@@ -215,8 +221,7 @@ export function resolveAssistantConfig(request: AssistantConfigRequest = {}): As
 		cli.agentDir ?? env.piCodingAgentDir ?? asOptionalString(file.agentDir),
 		getAgentDir(),
 	);
-	const piExecutable =
-		cli.piExecutable ?? asOptionalString(file.piExecutable) ?? undefined;
+	const piExecutable = cli.piExecutable ?? asOptionalString(file.piExecutable) ?? undefined;
 	if (piExecutable !== undefined && piExecutable.includes("\0"))
 		throw new Error("Invalid Pi executable path");
 	const piArgv = validateNativeArgv(cli.piArgv ?? (file.piArgv as unknown) ?? undefined);
@@ -319,9 +324,7 @@ export async function resolvePiExecutable(
 
 function sdkPackagePath(): string | null {
 	try {
-		return createRequire(import.meta.url).resolve(
-			"@earendil-works/pi-coding-agent/package.json",
-		);
+		return createRequire(import.meta.url).resolve("@earendil-works/pi-coding-agent/package.json");
 	} catch {
 		return null;
 	}
@@ -346,7 +349,9 @@ export async function describeAssistantBuild(): Promise<AssistantBuildInfo> {
 	return { assistantVersion, piSdkVersion, protocolVersion: ASSISTANT_PROTOCOL_VERSION };
 }
 
-export async function describePiInstallation(options: { piExecutable?: string; pathEnv?: string } = {}): Promise<PiInstallationInfo> {
+export async function describePiInstallation(
+	options: { piExecutable?: string; pathEnv?: string } = {},
+): Promise<PiInstallationInfo> {
 	const sdkPath = sdkPackagePath();
 	let sdkVersion: string | null = null;
 	if (sdkPath) {
@@ -367,20 +372,22 @@ export async function describePiInstallation(options: { piExecutable?: string; p
 	}
 	let kind: PiDistributionKind = "unknown";
 	if (sdkVersion && executable) {
-		kind = executable.realPath.includes("node_modules") || executable.resolved.endsWith(".js")
-			? "npm"
-			: executable.realPath.includes("node_modules")
+		kind =
+			executable.realPath.includes("node_modules") || executable.resolved.endsWith(".js")
 				? "npm"
-				: "standalone";
+				: executable.realPath.includes("node_modules")
+					? "npm"
+					: "standalone";
 		if (executable.realPath.includes("node_modules")) kind = "npm";
 		else if (sdkPath && executable.realPath.startsWith(resolve(sdkPath, "..", ".."))) kind = "npm";
 		else kind = executable.resolved.endsWith(".js") ? "npm" : "standalone";
 	} else if (sdkVersion) {
 		kind = "npm";
 	} else if (executable) {
-		kind = executable.resolved.endsWith(".js") || executable.realPath.includes("node_modules")
-			? "npm"
-			: "standalone";
+		kind =
+			executable.resolved.endsWith(".js") || executable.realPath.includes("node_modules")
+				? "npm"
+				: "standalone";
 	}
 	return { kind, sdkVersion, sdkPath, executable, executableError };
 }

@@ -10,7 +10,11 @@ async function source(path: string): Promise<string> {
 
 test("multi-repository identity prefers the project-relative path", () => {
 	expect(
-		repositoryDisplayName({ relativePath: "services/api", name: "api", root: "/work/services/api" }),
+		repositoryDisplayName({
+			relativePath: "services/api",
+			name: "api",
+			root: "/work/services/api",
+		}),
 	).toBe("services/api");
 	expect(repositoryDisplayName({ relativePath: "", name: "api", root: "/work/api" })).toBe("api");
 	expect(repositoryDisplayName({ relativePath: "", name: "", root: "/work/only" })).toBe(

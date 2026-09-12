@@ -1,48 +1,50 @@
 <script lang="ts">
-	import type { Project } from "@pixie/contracts";
-	import { untrack } from "svelte";
-	import { getTransport } from "../connection";
-	import { appStore, appStoreApi, selectPrimary } from "../store";
-	import { activeExecution, SchedulesModel, scheduleTime } from "./schedules-model";
-	import { filterSchedules } from "./schedules-workspace";
+import type { Project } from "@pixie/contracts";
+import { untrack } from "svelte";
+import { getTransport } from "../connection";
+import { appStore, appStoreApi, selectPrimary } from "../store";
+import { activeExecution, SchedulesModel, scheduleTime } from "./schedules-model";
+import { filterSchedules } from "./schedules-workspace";
 
-	let { project }: { project: Project } = $props();
-	const model = new SchedulesModel(
-		untrack(() => project.id),
-		getTransport(),
-	);
-	const view = model.readable;
-	let query = $state("");
-	let connected = $derived($appStore.status === "connected");
-	let requestedId = $derived(
-		$appStore.workspaceSelection.primarySelection?.kind === "schedule" &&
-			$appStore.workspaceSelection.primarySelection.projectId === project.id
-			? $appStore.workspaceSelection.primarySelection.scheduleId
-			: null,
-	);
-	let filtered = $derived(filterSchedules($view.jobs, query));
+let { project }: { project: Project } = $props();
+const model = new SchedulesModel(
+	untrack(() => project.id),
+	getTransport(),
+);
+const view = model.readable;
+let query = $state("");
+let connected = $derived($appStore.status === "connected");
+let requestedId = $derived(
+	$appStore.workspaceSelection.primarySelection?.kind === "schedule" &&
+		$appStore.workspaceSelection.primarySelection.projectId === project.id
+		? $appStore.workspaceSelection.primarySelection.scheduleId
+		: null,
+);
+let filtered = $derived(filterSchedules($view.jobs, query));
 
-	$effect(() => {
-		void $appStore.connectionGeneration;
-		if (!connected) return;
-		let cancelled = false;
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		async function poll(): Promise<void> {
-			await model.load();
-			if (!cancelled) timer = setTimeout(() => void poll(), 5000);
-		}
-		void poll();
-		return () => {
-			cancelled = true;
-			clearTimeout(timer);
-		};
-	});
-
-	function select(id: string): void {
-		appStoreApi
-			.getState()
-			.dispatchWorkspaceSelection(selectPrimary({ kind: "schedule", scheduleId: id, projectId: project.id }, "schedules"));
+$effect(() => {
+	void $appStore.connectionGeneration;
+	if (!connected) return;
+	let cancelled = false;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	async function poll(): Promise<void> {
+		await model.load();
+		if (!cancelled) timer = setTimeout(() => void poll(), 5000);
 	}
+	void poll();
+	return () => {
+		cancelled = true;
+		clearTimeout(timer);
+	};
+});
+
+function select(id: string): void {
+	appStoreApi
+		.getState()
+		.dispatchWorkspaceSelection(
+			selectPrimary({ kind: "schedule", scheduleId: id, projectId: project.id }, "schedules"),
+		);
+}
 </script>
 
 <section aria-label="Schedules" data-testid="schedules-list" class="flex min-w-0 flex-col gap-sm">

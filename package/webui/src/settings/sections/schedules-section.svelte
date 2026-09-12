@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Project } from "@pixie/contracts";
-	import SchedulesView from "../../schedules/schedules-view.svelte";
+import type { Project } from "@pixie/contracts";
+import SchedulesView from "../../schedules/schedules-view.svelte";
 
-	let { project }: { project: Project | null } = $props();
+let { project }: { project: Project | null } = $props();
 </script>
 
 <div data-testid="settings-schedules-section" class="min-w-0">

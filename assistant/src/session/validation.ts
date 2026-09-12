@@ -32,18 +32,30 @@ function utf8Bytes(value: string): number {
 }
 
 function validOpaque(value: unknown, max = 512): value is string {
-	return typeof value === "string" && value.length > 0 && value.length <= max && !value.includes("\0");
+	return (
+		typeof value === "string" && value.length > 0 && value.length <= max && !value.includes("\0")
+	);
 }
 
 function validAbsolutePath(value: unknown): value is string {
-	return typeof value === "string" && value.length > 0 && value.length <= 4096 && !value.includes("\0") && isAbsolute(value);
+	return (
+		typeof value === "string" &&
+		value.length > 0 &&
+		value.length <= 4096 &&
+		!value.includes("\0") &&
+		isAbsolute(value)
+	);
 }
 
 function normalizeResource(resource: NativeResource): NativeResource | undefined {
 	if (!validAbsolutePath(resource.path)) return undefined;
-	if (resource.resolvedPath !== undefined && !validAbsolutePath(resource.resolvedPath)) return undefined;
+	if (resource.resolvedPath !== undefined && !validAbsolutePath(resource.resolvedPath))
+		return undefined;
 	if (resource.scope !== "user" && resource.scope !== "project") return undefined;
-	if (resource.kind !== undefined && !["extension", "skill", "prompt", "theme", "unknown"].includes(resource.kind))
+	if (
+		resource.kind !== undefined &&
+		!["extension", "skill", "prompt", "theme", "unknown"].includes(resource.kind)
+	)
 		return undefined;
 	const requiresTrust = resource.requiresTrust ?? resource.scope === "project";
 	return {
@@ -65,7 +77,9 @@ function normalizeModel(model: NativeModel): NativeModel | undefined {
 	};
 }
 
-export function normalizeNativeModels(models: readonly NativeModel[] | undefined): FlowResult<readonly NativeModel[]> {
+export function normalizeNativeModels(
+	models: readonly NativeModel[] | undefined,
+): FlowResult<readonly NativeModel[]> {
 	if (!models) return success([]);
 	const normalized: NativeModel[] = [];
 	const seen = new Set<string>();
@@ -88,8 +102,12 @@ export function validateModelSelection(
 	if (!safe) return error("invalid-request", "Native model identity is invalid");
 	const catalog = normalizeNativeModels(availableModels);
 	if (!catalog.ok) return catalog;
-	const match = catalog.value.find((candidate) => candidate.provider === safe.provider && candidate.id === safe.id);
-	return match ? success(match) : error("unknown-model", "Model is not available in the native catalog");
+	const match = catalog.value.find(
+		(candidate) => candidate.provider === safe.provider && candidate.id === safe.id,
+	);
+	return match
+		? success(match)
+		: error("unknown-model", "Model is not available in the native catalog");
 }
 
 export function normalizeThinkingLevels(
@@ -99,7 +117,8 @@ export function normalizeThinkingLevels(
 	const normalized: string[] = [];
 	const seen = new Set<string>();
 	for (const level of levels) {
-		if (!validOpaque(level, 64)) return error("invalid-request", "Native thinking level is invalid");
+		if (!validOpaque(level, 64))
+			return error("invalid-request", "Native thinking level is invalid");
 		if (!seen.has(level)) {
 			seen.add(level);
 			normalized.push(level);
@@ -125,7 +144,8 @@ export function validateThinkingSelection(
 	availableLevels: readonly NativeThinkingLevel[],
 ): FlowResult<NativeThinkingLevel> {
 	if (!validOpaque(level, 64)) return error("invalid-request", "Thinking level is invalid");
-	if (!availableLevels.includes(level)) return error("unsupported-thinking", "Thinking level is not supported by the native model");
+	if (!availableLevels.includes(level))
+		return error("unsupported-thinking", "Thinking level is not supported by the native model");
 	return success(level);
 }
 
@@ -135,12 +155,20 @@ function validBase64(value: string): boolean {
 	return padding < 0 || padding >= value.length - 2;
 }
 
-function imageReplay(mimeType: string, data: string): { type: "image"; mimeType: string; bytes: number } {
+function imageReplay(
+	mimeType: string,
+	data: string,
+): { type: "image"; mimeType: string; bytes: number } {
 	return { type: "image", mimeType, bytes: utf8Bytes(data) };
 }
 
-function validatePromptBlock(block: PromptBlock): FlowResult<{ text: string; image?: { type: "image"; mimeType: string; data: string }; replay: ValidatedPrompt["replay"][number] }> {
-	if (!block || typeof block !== "object") return error("invalid-request", "Prompt content block is invalid");
+function validatePromptBlock(block: PromptBlock): FlowResult<{
+	text: string;
+	image?: { type: "image"; mimeType: string; data: string };
+	replay: ValidatedPrompt["replay"][number];
+}> {
+	if (!block || typeof block !== "object")
+		return error("invalid-request", "Prompt content block is invalid");
 	if (block.type === "text") {
 		if (typeof block.text !== "string") return error("invalid-request", "Prompt text is invalid");
 		return success({ text: block.text, replay: { type: "text", text: block.text } });
@@ -151,7 +179,8 @@ function validatePromptBlock(block: PromptBlock): FlowResult<{ text: string; ima
 		if (typeof block.data !== "string" || !validBase64(block.data))
 			return error("invalid-request", "Image data is not valid base64");
 		const bytes = utf8Bytes(block.data);
-		if (bytes > MAX_IMAGE_BYTES) return error("invalid-request", "Image exceeds the per-image limit");
+		if (bytes > MAX_IMAGE_BYTES)
+			return error("invalid-request", "Image exceeds the per-image limit");
 		return success({
 			text: "",
 			image: { type: "image", mimeType: block.mimeType, data: block.data },
@@ -160,11 +189,13 @@ function validatePromptBlock(block: PromptBlock): FlowResult<{ text: string; ima
 	}
 	if (block.type === "resource") {
 		const resource = block.resource;
-		if (!resource || typeof resource !== "object") return error("invalid-request", "Attached resource is invalid");
+		if (!resource || typeof resource !== "object")
+			return error("invalid-request", "Attached resource is invalid");
 		const uri = typeof resource.uri === "string" ? resource.uri : "";
 		const text = typeof resource.text === "string" ? resource.text : "";
 		const mimeType = typeof resource.mimeType === "string" ? resource.mimeType : undefined;
-		const name = typeof resource._meta?.name === "string" && resource._meta.name ? resource._meta.name : uri;
+		const name =
+			typeof resource._meta?.name === "string" && resource._meta.name ? resource._meta.name : uri;
 		if (!validOpaque(uri, 4096) || !validOpaque(name, 4096))
 			return error("invalid-request", "Attached resource identity is invalid");
 		const encodedName = JSON.stringify(name);
@@ -177,7 +208,11 @@ function validatePromptBlock(block: PromptBlock): FlowResult<{ text: string; ima
 }
 
 export function validatePromptRequest(request: PromptRequest): FlowResult<ValidatedPrompt> {
-	if (!validOpaque(request.sessionKey) || !validOpaque(request.deliveryId) || !validOpaque(request.runId))
+	if (
+		!validOpaque(request.sessionKey) ||
+		!validOpaque(request.deliveryId) ||
+		!validOpaque(request.runId)
+	)
 		return error("invalid-request", "Prompt identity is invalid");
 	if (!Number.isSafeInteger(request.generation) || request.generation < 0)
 		return error("invalid-request", "Prompt generation is invalid");
@@ -200,8 +235,10 @@ export function validatePromptRequest(request: PromptRequest): FlowResult<Valida
 		replay.push(result.value.replay);
 	}
 	if (imageCount > MAX_IMAGES) return error("invalid-request", "Prompt contains too many images");
-	if (imageBytes > MAX_IMAGE_AGGREGATE_BYTES) return error("invalid-request", "Prompt images exceed the aggregate limit");
-	if (utf8Bytes(text) > MAX_PROMPT_TEXT_BYTES) return error("invalid-request", "Prompt text exceeds the limit");
+	if (imageBytes > MAX_IMAGE_AGGREGATE_BYTES)
+		return error("invalid-request", "Prompt images exceed the aggregate limit");
+	if (utf8Bytes(text) > MAX_PROMPT_TEXT_BYTES)
+		return error("invalid-request", "Prompt text exceeds the limit");
 	return success({ text, images, replay });
 }
 
@@ -252,7 +289,9 @@ export function resolveNativeTrust(input: SessionResourceInput): FlowResult<{
 	return success({ resources, loadedResources, trust });
 }
 
-export function validateCreateRequest(request: SessionCreateRequest): FlowResult<SessionCreateRequest> {
+export function validateCreateRequest(
+	request: SessionCreateRequest,
+): FlowResult<SessionCreateRequest> {
 	const identity = request.identity;
 	if (
 		!validOpaque(identity.sessionKey) ||
@@ -297,7 +336,8 @@ export function validateCreateRequest(request: SessionCreateRequest): FlowResult
  * rewritten: it is user content, not a credential channel.
  */
 export function redactSecrets(value: unknown): unknown {
-	const secretKey = /(?:secret|token|password|passwd|api[-_]?key|authorization|credential|private[-_]?key|access[-_]?token|refresh[-_]?token)/i;
+	const secretKey =
+		/(?:secret|token|password|passwd|api[-_]?key|authorization|credential|private[-_]?key|access[-_]?token|refresh[-_]?token)/i;
 	const visit = (current: unknown, seen: WeakSet<object>): unknown => {
 		if (current === null || typeof current !== "object") return current;
 		if (seen.has(current)) return "[Circular]";

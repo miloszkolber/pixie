@@ -451,9 +451,7 @@ export function sanitizeSecondarySelection(value: unknown): SecondarySelection {
 				context: {
 					scope: "session",
 					sessionId: context.sessionId as string,
-					...(context.projectId === undefined
-						? {}
-						: { projectId: context.projectId as string }),
+					...(context.projectId === undefined ? {} : { projectId: context.projectId as string }),
 				},
 			};
 		}
@@ -524,7 +522,9 @@ function layoutFromV1Record(value: Record<string, unknown>): Partial<WorkspaceLa
 	return layout;
 }
 
-export function encodeWorkspacePersist(snapshot: WorkspaceSelectionSnapshot): PersistedWorkspaceStateV2 {
+export function encodeWorkspacePersist(
+	snapshot: WorkspaceSelectionSnapshot,
+): PersistedWorkspaceStateV2 {
 	return { version: WORKSPACE_PERSIST_VERSION, snapshot: sanitizeWorkspaceSelection(snapshot) };
 }
 
@@ -560,9 +560,7 @@ export function decodeWorkspacePersist(raw: unknown): WorkspaceSelectionSnapshot
 	return null;
 }
 
-function projectIdOfSelection(
-	selection: PrimarySelection | SecondarySelection,
-): string | null {
+function projectIdOfSelection(selection: PrimarySelection | SecondarySelection): string | null {
 	if (!selection) return null;
 	if (selection.kind === "session") return selection.projectId ?? null;
 	if (selection.kind === "schedule") return selection.projectId;

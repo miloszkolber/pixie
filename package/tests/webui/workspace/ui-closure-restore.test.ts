@@ -78,7 +78,9 @@ test("persisted restore drops invalid selections but keeps valid layout", () => 
 test("persisted restore fails closed on unusable shapes and future versions", () => {
 	expect(decodeWorkspacePersist(null)).toBeNull();
 	expect(decodeWorkspacePersist("nope")).toBeNull();
-	expect(decodeWorkspacePersist({ version: 99, snapshot: createInitialWorkspaceState() })).toBeNull();
+	expect(
+		decodeWorkspacePersist({ version: 99, snapshot: createInitialWorkspaceState() }),
+	).toBeNull();
 	expect(decodeWorkspacePersist({ version: 2 })).toBeNull();
 	expect(decodeWorkspacePersist({ version: 2, snapshot: null })).toBeNull();
 });
@@ -176,7 +178,13 @@ test("old-tab upgrade maps diff review and browser panel without draft loss", ()
 			original: "a",
 			modified: "b",
 		},
-		{ kind: "browser", id: "browser-1", projectAreaId: "area-1", name: "Browser", panelId: "panel-1" },
+		{
+			kind: "browser",
+			id: "browser-1",
+			projectAreaId: "area-1",
+			name: "Browser",
+			panelId: "panel-1",
+		},
 	];
 	const migrated = migrateLegacyTabsToSelections(tabs, "area-1", "diff-1", "diff-1");
 	expect(migrated.secondarySelection).toEqual({

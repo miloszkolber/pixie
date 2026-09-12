@@ -7,7 +7,7 @@
 // timeout or lost response is never retried: callers receive an explicit
 // uncertain outcome and must reconcile the durable mutation themselves.
 
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import {
 	NATIVE_JSONL_ABORT_GRACE_MS,
 	NATIVE_JSONL_AGGREGATE_MAX_BYTES,
@@ -21,7 +21,7 @@ import {
 	NATIVE_JSONL_READ_STALL_TIMEOUT_MS,
 	NATIVE_JSONL_WRITE_TIMEOUT_MS,
 	NativeTransportError,
-	NativeTransportErrorKind,
+	type NativeTransportErrorKind,
 } from "./jsonl-framing.ts";
 
 export type NativeCorrelationId = bigint;
@@ -159,7 +159,11 @@ export function nativeChildExit(message = "Native child exited"): NativeTranspor
 }
 
 export function nativeStalled(operation: string, timeoutMs: number): NativeTransportError {
-	return new NativeTransportError("stalled", `${operation} stalled after ${timeoutMs}ms`, timeoutMs);
+	return new NativeTransportError(
+		"stalled",
+		`${operation} stalled after ${timeoutMs}ms`,
+		timeoutMs,
+	);
 }
 
 /** Transport failure carrying the durable delivery outcome for one request. */
@@ -167,7 +171,11 @@ export class NativeDeliveryError extends NativeTransportError {
 	readonly outcome: NativeDeliveryOutcome;
 	readonly correlationId: NativeCorrelationId;
 
-	constructor(base: NativeTransportError, outcome: NativeDeliveryOutcome, correlationId: NativeCorrelationId) {
+	constructor(
+		base: NativeTransportError,
+		outcome: NativeDeliveryOutcome,
+		correlationId: NativeCorrelationId,
+	) {
 		super(base.kind, `${base.message}; delivery outcome is ${outcome}`, base.timeoutMs);
 		this.name = "NativeDeliveryError";
 		this.outcome = outcome;
@@ -203,13 +211,16 @@ export class NativeWriter {
 
 	writeRecord(record: string, write: (chunk: string) => Promise<void>): Promise<void> {
 		if (Buffer.byteLength(record, "utf8") > this.config.maxRecordBytes + 1)
-			return Promise.reject(new NativeTransportError("too_big", "Native write exceeds the record limit"));
+			return Promise.reject(
+				new NativeTransportError("too_big", "Native write exceeds the record limit"),
+			);
 		const next = this.tail.then(async () => {
 			if (this.poisoned) throw this.poisoned;
 			try {
 				await withNativeTimeout(write(record), this.config.writeTimeoutMs, "Native write");
 			} catch (error) {
-				if (error instanceof NativeTransportError && error.kind === "stalled") this.poisoned = error;
+				if (error instanceof NativeTransportError && error.kind === "stalled")
+					this.poisoned = error;
 				throw error;
 			}
 		});
@@ -322,7 +333,13 @@ type NativePendingRequest = {
 	reject: (error: unknown) => void;
 };
 
-export type NativeTransportState = "created" | "starting" | "ready" | "failed" | "closing" | "closed";
+export type NativeTransportState =
+	| "created"
+	| "starting"
+	| "ready"
+	| "failed"
+	| "closing"
+	| "closed";
 
 function asFrame(value: unknown): NativeFrame {
 	if (!value || typeof value !== "object" || Array.isArray(value))
@@ -382,7 +399,9 @@ export class NativeJsonlTransport {
 	private _state: NativeTransportState = "created";
 
 	constructor(options: {
-		readonly child: NativeTransportChild | (() => NativeTransportChild | Promise<NativeTransportChild>);
+		readonly child:
+			| NativeTransportChild
+			| (() => NativeTransportChild | Promise<NativeTransportChild>);
 		readonly config?: NativeTransportConfig;
 	}) {
 		this.config = options.config ?? defaultNativeTransportConfig();
@@ -434,9 +453,14 @@ export class NativeJsonlTransport {
 		void child.exited.then(
 			(status) => {
 				if (this._state !== "closed" && !this.stopping)
-					this.terminate(nativeChildExit(`Native child exited (${status.code ?? status.signal ?? "unknown"})`));
+					this.terminate(
+						nativeChildExit(`Native child exited (${status.code ?? status.signal ?? "unknown"})`),
+					);
 			},
-			(error) => this.terminate(nativeChildExit(error instanceof Error ? error.message : "Native child exited")),
+			(error) =>
+				this.terminate(
+					nativeChildExit(error instanceof Error ? error.message : "Native child exited"),
+				),
 		);
 		this.readTask = this.readLoop(child.stdout);
 		void this.readTask.catch(() => {});
@@ -461,8 +485,12 @@ export class NativeJsonlTransport {
 		)
 			throw new NativeTransportError("invalid_json", "Native hello response is invalid");
 		if (result.protocolVersion !== undefined && result.protocolVersion !== 1)
-			throw new NativeTransportError("invalid_json", "Native hello protocol version is unsupported");
-		if (this._state !== "starting") throw this.readFailure ?? nativeChildExit("Native child exited during hello");
+			throw new NativeTransportError(
+				"invalid_json",
+				"Native hello protocol version is unsupported",
+			);
+		if (this._state !== "starting")
+			throw this.readFailure ?? nativeChildExit("Native child exited during hello");
 		this._state = "ready";
 	}
 
@@ -630,13 +658,18 @@ export class NativeJsonlTransport {
 		try {
 			await this.writer.writeRecord(record, (chunk) => this.child!.stdin.write(chunk));
 		} catch (error) {
-			const failure = error instanceof NativeTransportError ? error : nativeChildExit("Native write failed");
+			const failure =
+				error instanceof NativeTransportError ? error : nativeChildExit("Native write failed");
 			this.terminate(failure);
 		}
 		return result;
 	}
 
-	async request(method: string, params: unknown = {}, options: NativeRequestOptions = {}): Promise<NativeRequestResult> {
+	async request(
+		method: string,
+		params: unknown = {},
+		options: NativeRequestOptions = {},
+	): Promise<NativeRequestResult> {
 		if (typeof method !== "string" || method.length === 0)
 			throw new NativeTransportError("invalid_json", "Native method is required");
 		try {
@@ -653,18 +686,24 @@ export class NativeJsonlTransport {
 
 	private handleFrame(frame: NativeFrame): void {
 		const id = correlation(frame.id);
-		if (Object.prototype.hasOwnProperty.call(frame, "id") && id === undefined)
-			throw new NativeTransportError("invalid_json", "Native correlation must be a positive number");
+		if (Object.hasOwn(frame, "id") && id === undefined)
+			throw new NativeTransportError(
+				"invalid_json",
+				"Native correlation must be a positive number",
+			);
 		if (id !== undefined) {
 			const pending = this.requests.get(id);
-			if (!pending) throw new NativeTransportError("duplicate", "Native response has no pending correlation");
+			if (!pending)
+				throw new NativeTransportError("duplicate", "Native response has no pending correlation");
 			this.requests.delete(id);
 			this.pending.remove(id);
 			if (pending.lane === "control") this.budget.releaseControl(pending.bytes);
 			else this.budget.releaseOrdinary(pending.bytes);
 			if (frame.error !== undefined) {
 				const message =
-					frame.error && typeof frame.error === "object" && typeof (frame.error as NativeFrame).message === "string"
+					frame.error &&
+					typeof frame.error === "object" &&
+					typeof (frame.error as NativeFrame).message === "string"
 						? String((frame.error as NativeFrame).message)
 						: "Native request failed";
 				pending.reject(new Error(message));
@@ -700,7 +739,9 @@ export class NativeJsonlTransport {
 				outcome: nativeUnsettledOutcome(request.accepted),
 				delivery: request.delivery,
 			});
-			request.reject(new NativeDeliveryError(error, nativeUnsettledOutcome(request.accepted), request.id));
+			request.reject(
+				new NativeDeliveryError(error, nativeUnsettledOutcome(request.accepted), request.id),
+			);
 		}
 		if (!this.terminalNotified) {
 			this.terminalNotified = true;
@@ -755,7 +796,8 @@ export class NativeJsonlTransport {
 			}
 		}
 		if (!exited) this.terminate(nativeChildExit("Native child did not exit during drain"));
-		else if (this.requests.size) this.terminate(nativeChildExit("Native child exited during drain"));
+		else if (this.requests.size)
+			this.terminate(nativeChildExit("Native child exited during drain"));
 		this._state = "closed";
 	}
 }

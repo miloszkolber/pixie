@@ -8,9 +8,15 @@ import {
 test("draft revisions advance on edits and stale edits are rejected", () => {
 	const draft = createDraft({ sessionKey: "session-key", clientId: "client-a", content: "first" });
 	const updated = updateDraft(draft, 0, "second");
-	expect(updated).toMatchObject({ ok: true, draft: { revision: 1, version: 1, content: "second" } });
+	expect(updated).toMatchObject({
+		ok: true,
+		draft: { revision: 1, version: 1, content: "second" },
+	});
 	if (!updated.ok) return;
-	expect(updateDraft(updated.draft, 0, "stale")).toMatchObject({ ok: false, reason: "revision-conflict" });
+	expect(updateDraft(updated.draft, 0, "stale")).toMatchObject({
+		ok: false,
+		reason: "revision-conflict",
+	});
 });
 
 test("external native replacement preserves the draft content and edit revision", () => {
@@ -24,6 +30,10 @@ test("external native replacement preserves the draft content and edit revision"
 		sessionKey: "new-key",
 		identity: { sessionKey: "new-key", nativeSessionId: "native-new", childGeneration: 0 },
 	});
-	expect(replaced).toMatchObject({ preserved: true, previousRevision: 4, draft: { content: "keep this text", revision: 4, sessionKey: "new-key" } });
+	expect(replaced).toMatchObject({
+		preserved: true,
+		previousRevision: 4,
+		draft: { content: "keep this text", revision: 4, sessionKey: "new-key" },
+	});
 	expect(replaced.draft.continuityRevision).toBe(1);
 });

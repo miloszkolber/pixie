@@ -23,9 +23,11 @@ let activeTab = $derived.by(() => {
 		selection.projectId !== projectAreaId
 	)
 		return null;
-	return ($appStore.tabsByProjectArea[projectAreaId] ?? []).find(
-		(tab) => tab.id === selection.resourceId && (tab.kind === "file" || tab.kind === "diff"),
-	) ?? null;
+	return (
+		($appStore.tabsByProjectArea[projectAreaId] ?? []).find(
+			(tab) => tab.id === selection.resourceId && (tab.kind === "file" || tab.kind === "diff"),
+		) ?? null
+	);
 });
 let activePath = $derived(
 	activeTab?.kind === "file" || activeTab?.kind === "diff" ? activeTab.path : null,

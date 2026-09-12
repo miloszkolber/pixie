@@ -42,14 +42,20 @@ test("schedule selection resolves the requested run without redirecting when it 
 		requestedId: null,
 		missing: false,
 	});
+	expect(resolveScheduleSelection(jobs, { kind: "session", sessionId: "s" }, "p")).toEqual({
+		job: null,
+		requestedId: null,
+		missing: false,
+	});
+	expect(resolveScheduleSelection(jobs, { kind: "settings", sectionId: "providers" }, "p")).toEqual(
+		{ job: null, requestedId: null, missing: false },
+	);
 	expect(
-		resolveScheduleSelection(jobs, { kind: "session", sessionId: "s" }, "p"),
-	).toEqual({ job: null, requestedId: null, missing: false });
-	expect(
-		resolveScheduleSelection(jobs, { kind: "settings", sectionId: "providers" }, "p"),
-	).toEqual({ job: null, requestedId: null, missing: false });
-	expect(
-		resolveScheduleSelection(jobs, { kind: "schedule", scheduleId: "first", projectId: "other" }, "p"),
+		resolveScheduleSelection(
+			jobs,
+			{ kind: "schedule", scheduleId: "first", projectId: "other" },
+			"p",
+		),
 	).toEqual({ job: null, requestedId: null, missing: false });
 	const found = resolveScheduleSelection(
 		jobs,
@@ -93,9 +99,9 @@ test("workspace settings resolution prefers the primary selection and validates 
 	expect(
 		resolveWorkspaceSettingsSection({ kind: "schedule", scheduleId: "s", projectId: "p" }, "pi"),
 	).toBe("pi");
-	expect(resolveWorkspaceSettingsSection({ kind: "settings", sectionId: "invented" }, "models")).toBe(
-		"models",
-	);
+	expect(
+		resolveWorkspaceSettingsSection({ kind: "settings", sectionId: "invented" }, "models"),
+	).toBe("models");
 	expect(resolveWorkspaceSettingsSection(null, "invented")).toBe("system");
 });
 

@@ -1,8 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { spawnNativeChild, NativeJsonlTransport, nativeTransportErrorKindOf } from "../../../assistant/src/transport/jsonl-transport.ts";
 import { startHost } from "../../../assistant/src/server.ts";
+import {
+	NativeJsonlTransport,
+	nativeTransportErrorKindOf,
+	spawnNativeChild,
+} from "../../../assistant/src/transport/jsonl-transport.ts";
 
 const children: NativeJsonlTransport[] = [];
 const hosts: Array<{ close: () => Promise<void> }> = [];
@@ -73,8 +77,14 @@ test("a real child handshake correlates requests and keeps control admitted", as
 	const ordinaryFill = transport.budget.admittedBytes();
 	const fill = shortConfig.aggregateMaxBytes - shortConfig.controlReserveBytes - ordinaryFill;
 	transport.budget.reserveOrdinary(fill);
-	await expect(transport.request("ordinary-blocked", {})).rejects.toMatchObject({ kind: "backpressure" });
-	const control = await transport.request("delivery.abort", { requestId: "abort-1" }, { lane: "control" });
+	await expect(transport.request("ordinary-blocked", {})).rejects.toMatchObject({
+		kind: "backpressure",
+	});
+	const control = await transport.request(
+		"delivery.abort",
+		{ requestId: "abort-1" },
+		{ lane: "control" },
+	);
 	expect(control).toMatchObject({ method: "delivery.abort" });
 	transport.budget.releaseOrdinary(fill);
 	expect(transport.pendingCount).toBe(0);
@@ -103,13 +113,18 @@ process.stdin.on("data", (chunk) => {
 		outcome: "uncertain",
 	});
 	expect(transport.pendingCount).toBe(0);
-	});
+});
 
 test("the assistant host performs the native handshake during runtime startup", async () => {
 	const dir = await mkdtemp(`${tmpdir()}/pixie-transport-host-`);
 	dirs.push(dir);
 	const transport = realTransport();
-	const host = await startHost({ agentDir: dir, secret: "transport-host-secret", port: 0, nativeTransport: transport });
+	const host = await startHost({
+		agentDir: dir,
+		secret: "transport-host-secret",
+		port: 0,
+		nativeTransport: transport,
+	});
 	hosts.push(host);
 	expect(host.nativeTransport?.state).toBe("ready");
 	expect(transport.state).toBe("ready");

@@ -48,19 +48,23 @@ export type DraftProposalResult =
 			readonly outcome: "auto-applied";
 			readonly state: DraftState;
 			readonly autoSubmitted: false;
-		}
+	  }
 	| {
 			readonly accepted: false;
 			readonly outcome: "conflict";
 			readonly conflict: DraftConflict;
 			readonly autoSubmitted: false;
-		}
+	  }
 	| {
 			readonly accepted: false;
 			readonly outcome: "rejected";
-			readonly reason: "foreign-session" | "foreign-client" | "stale-generation" | "invalid-proposal";
+			readonly reason:
+				| "foreign-session"
+				| "foreign-client"
+				| "stale-generation"
+				| "invalid-proposal";
 			readonly autoSubmitted: false;
-		};
+	  };
 
 export type DraftResolutionResult =
 	| {
@@ -68,13 +72,13 @@ export type DraftResolutionResult =
 			readonly outcome: "inserted" | "replaced" | "dismissed";
 			readonly state: DraftState;
 			readonly autoSubmitted: false;
-		}
+	  }
 	| {
 			readonly accepted: false;
 			readonly outcome: "rejected";
 			readonly reason: "stale-conflict" | "foreign-session" | "foreign-client" | "stale-generation";
 			readonly autoSubmitted: false;
-		};
+	  };
 
 interface DraftIdentityInput {
 	readonly sessionId: string;
@@ -83,8 +87,16 @@ interface DraftIdentityInput {
 	readonly childGeneration?: number;
 }
 
-function readGeneration(input: { readonly generation?: number; readonly childGeneration?: number }): number | undefined {
-	if (input.generation !== undefined && input.childGeneration !== undefined && input.generation !== input.childGeneration) return undefined;
+function readGeneration(input: {
+	readonly generation?: number;
+	readonly childGeneration?: number;
+}): number | undefined {
+	if (
+		input.generation !== undefined &&
+		input.childGeneration !== undefined &&
+		input.generation !== input.childGeneration
+	)
+		return undefined;
 	return input.generation ?? input.childGeneration;
 }
 
@@ -108,10 +120,13 @@ export function createDraftState(
 	input: DraftIdentityInput & { readonly revision?: number; readonly text?: string },
 ): DraftState {
 	const generation = validIdentity(input);
-	if (generation === undefined) throw new Error("Draft state requires session, client, and generation");
+	if (generation === undefined)
+		throw new Error("Draft state requires session, client, and generation");
 	const revision = input.revision ?? 0;
-	if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Draft state requires a valid revision");
-	if (input.text !== undefined && typeof input.text !== "string") throw new Error("Draft text must be a string");
+	if (!Number.isSafeInteger(revision) || revision < 0)
+		throw new Error("Draft state requires a valid revision");
+	if (input.text !== undefined && typeof input.text !== "string")
+		throw new Error("Draft text must be a string");
 	return {
 		sessionId: input.sessionId,
 		clientId: input.clientId,
@@ -132,9 +147,12 @@ export function createDraftProposal(
 	},
 ): DraftProposal {
 	const generation = validIdentity(input);
-	if (generation === undefined) throw new Error("Draft proposal requires session, client, and generation");
-	if (!Number.isSafeInteger(input.baseRevision) || input.baseRevision < 0) throw new Error("Draft proposal requires a valid base revision");
-	if (typeof input.originatingText !== "string" || typeof input.text !== "string") throw new Error("Draft proposal text must be a string");
+	if (generation === undefined)
+		throw new Error("Draft proposal requires session, client, and generation");
+	if (!Number.isSafeInteger(input.baseRevision) || input.baseRevision < 0)
+		throw new Error("Draft proposal requires a valid base revision");
+	if (typeof input.originatingText !== "string" || typeof input.text !== "string")
+		throw new Error("Draft proposal text must be a string");
 	if (input.insertAt !== undefined && (!Number.isSafeInteger(input.insertAt) || input.insertAt < 0))
 		throw new Error("Draft insertion point must be non-negative");
 	return {
@@ -157,11 +175,15 @@ function rejected(
 }
 
 /** Evaluate a native editor proposal against the exact client revision. */
-export function evaluateDraftProposal(state: DraftState, proposal: DraftProposal): DraftProposalResult {
+export function evaluateDraftProposal(
+	state: DraftState,
+	proposal: DraftProposal,
+): DraftProposalResult {
 	const generation = readGeneration(proposal);
 	if (proposal.sessionId !== state.sessionId) return rejected("foreign-session");
 	if (proposal.clientId !== state.clientId) return rejected("foreign-client");
-	if (!validGeneration(generation) || generation !== state.generation) return rejected("stale-generation");
+	if (!validGeneration(generation) || generation !== state.generation)
+		return rejected("stale-generation");
 	if (
 		!Number.isSafeInteger(proposal.baseRevision) ||
 		proposal.baseRevision < 0 ||
@@ -208,13 +230,26 @@ export function resolveDraftConflict(
 ): DraftResolutionResult {
 	const proposal = conflict.proposal;
 	const generation = readGeneration(proposal);
-	if (proposal.sessionId !== state.sessionId) return { accepted: false, outcome: "rejected", reason: "foreign-session", autoSubmitted: false };
-	if (proposal.clientId !== state.clientId) return { accepted: false, outcome: "rejected", reason: "foreign-client", autoSubmitted: false };
+	if (proposal.sessionId !== state.sessionId)
+		return {
+			accepted: false,
+			outcome: "rejected",
+			reason: "foreign-session",
+			autoSubmitted: false,
+		};
+	if (proposal.clientId !== state.clientId)
+		return { accepted: false, outcome: "rejected", reason: "foreign-client", autoSubmitted: false };
 	if (!validGeneration(generation) || generation !== state.generation)
-		return { accepted: false, outcome: "rejected", reason: "stale-generation", autoSubmitted: false };
+		return {
+			accepted: false,
+			outcome: "rejected",
+			reason: "stale-generation",
+			autoSubmitted: false,
+		};
 	if (state.revision !== conflict.currentRevision)
 		return { accepted: false, outcome: "rejected", reason: "stale-conflict", autoSubmitted: false };
-	if (action === "dismiss") return { accepted: true, outcome: "dismissed", state, autoSubmitted: false };
+	if (action === "dismiss")
+		return { accepted: true, outcome: "dismissed", state, autoSubmitted: false };
 	if (!DRAFT_CONFLICT_ACTIONS.includes(action))
 		return { accepted: false, outcome: "rejected", reason: "stale-conflict", autoSubmitted: false };
 

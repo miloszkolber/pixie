@@ -33,9 +33,7 @@ let releaseError = $state<string | null>(null);
 
 let connected = $derived($appStore.status === "connected");
 let connectionGeneration = $derived($appStore.connectionGeneration);
-let catalogVersion = $derived(
-	$appStore.sessionCatalogVersionByProjectArea[projectAreaId] ?? 0,
-);
+let catalogVersion = $derived($appStore.sessionCatalogVersionByProjectArea[projectAreaId] ?? 0);
 
 // Backend-authoritative session identity for the selected chat. A catalog
 // push bumps the version so a release or lifecycle change refetches it.
@@ -137,7 +135,8 @@ let isStreaming = $derived(summary?.isStreaming === true);
 // stays authoritative and its refusal surfaces verbatim.
 let eligibility = $derived.by((): { eligible: boolean | undefined; reason: string | null } => {
 	if (!summary) return { eligible: undefined, reason: null };
-	if (summary.archived) return { eligible: false, reason: "Archived sessions cannot release runtime" };
+	if (summary.archived)
+		return { eligible: false, reason: "Archived sessions cannot release runtime" };
 	if (!summary.live) return { eligible: false, reason: "Session is not loaded" };
 	const steering = summary.queue?.steering ?? [];
 	const followUp = summary.queue?.followUp ?? [];
@@ -156,15 +155,21 @@ let releaseReason = $derived(
 	}),
 );
 
-let inputTokens = $derived(stats ? describeTokenCount(stats.tokens.input, stats.reported?.input) : "Unknown");
-let outputTokens = $derived(stats ? describeTokenCount(stats.tokens.output, stats.reported?.output) : "Unknown");
+let inputTokens = $derived(
+	stats ? describeTokenCount(stats.tokens.input, stats.reported?.input) : "Unknown",
+);
+let outputTokens = $derived(
+	stats ? describeTokenCount(stats.tokens.output, stats.reported?.output) : "Unknown",
+);
 let cacheReadTokens = $derived(
 	stats ? describeTokenCount(stats.tokens.cacheRead, stats.reported?.cacheRead) : "Unknown",
 );
 let cacheWriteTokens = $derived(
 	stats ? describeTokenCount(stats.tokens.cacheWrite, stats.reported?.cacheWrite) : "Unknown",
 );
-let totalTokens = $derived(stats ? describeTokenCount(stats.tokens.total, stats.reported?.total) : "Unknown");
+let totalTokens = $derived(
+	stats ? describeTokenCount(stats.tokens.total, stats.reported?.total) : "Unknown",
+);
 let costText = $derived(
 	stats && isUsageReported(stats, "cost", stats.cost) ? formatCost(stats) : "Unknown",
 );

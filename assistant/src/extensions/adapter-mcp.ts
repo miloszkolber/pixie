@@ -217,7 +217,10 @@ export function emitRuntimeSnapshot(
 	name: string,
 ): { name: string; definition: Record<string, unknown>; runtime: true; persisted: false } {
 	const validName = validateMcpName(name);
-	const request: RuntimeSnapshotRequest = { version: ADAPTER_RUNTIME_SNAPSHOT_VERSION, name: validName };
+	const request: RuntimeSnapshotRequest = {
+		version: ADAPTER_RUNTIME_SNAPSHOT_VERSION,
+		name: validName,
+	};
 	emit(ADAPTER_RUNTIME_SNAPSHOT_EVENT, request);
 	if (!request.result) throw new Error("pi-mcp-adapter is not installed for this Pi instance");
 	if (!request.result.ok || !request.result.snapshot) {
@@ -252,7 +255,8 @@ export const PI_TOOLS_CALL_BLOCKER: PiToolsCallBlocker = {
 	operation: "pi.tools.call",
 	route: "blocked-no-supported-api",
 	distribution: "npm and standalone Pi 0.85.1 with pi-mcp-adapter 2.32.1",
-	missingPublicSymbol: "Supported adapter tool-execution API callable from an ordinary extension context",
+	missingPublicSymbol:
+		"Supported adapter tool-execution API callable from an ordinary extension context",
 	userVisibleLimitation:
 		"Direct MCP tool execution from Pixie administration is unavailable. Use the model turn through the adapter-owned proxy/direct tools; Pixie never executes through a private live-tool route.",
 	owner: "E/B",

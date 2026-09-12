@@ -44,7 +44,11 @@ test("npm and standalone profiles require a live import from the selected instal
 		distribution: "standalone",
 		installationId: "standalone-fixture",
 		sdkVersion: BRIDGE_SDK_BASELINE,
-		import: { ...imports, installationId: "standalone-fixture", moduleOrigin: "/opt/pi/dist/index.js" },
+		import: {
+			...imports,
+			installationId: "standalone-fixture",
+			moduleOrigin: "/opt/pi/dist/index.js",
+		},
 		context,
 		storage,
 	});
@@ -76,10 +80,14 @@ test("missing public exports and private lock identity are blockers, never mocke
 	expect(result.blockers.map((blocker) => blocker.missingPublicSymbol)).toEqual(
 		expect.arrayContaining(["DefaultPackageManager"]),
 	);
-	expect(result.blockers.some((blocker) => blocker.missingPublicSymbol === "context.ui")).toBe(true);
-	expect(result.blockers.some((blocker) => blocker.missingPublicSymbol === "native SettingsStorage lock identity")).toBe(
+	expect(result.blockers.some((blocker) => blocker.missingPublicSymbol === "context.ui")).toBe(
 		true,
 	);
+	expect(
+		result.blockers.some(
+			(blocker) => blocker.missingPublicSymbol === "native SettingsStorage lock identity",
+		),
+	).toBe(true);
 	for (const blocker of result.blockers) {
 		expect(blocker.code).toBe("bridge_unavailable");
 		expect(blocker.fcId).toBe("BRIDGE-01");

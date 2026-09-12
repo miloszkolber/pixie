@@ -144,8 +144,7 @@ test("the image build never depends on checkout-volatile web output", async () =
 		// assistant migration dropped assistant/scripts/ while the Dockerfile
 		// still copied it, breaking all image builds with a checksum error.
 		const tokens = line.trim().split(/\s+/);
-		if (tokens[0] !== "COPY" || tokens.some((token) => token.startsWith("--from")))
-			continue;
+		if (tokens[0] !== "COPY" || tokens.some((token) => token.startsWith("--from"))) continue;
 		const operands = tokens.slice(1).filter((token) => !token.startsWith("--"));
 		for (const source of operands.slice(0, -1)) {
 			if (source.includes("*")) continue;

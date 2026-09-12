@@ -9,7 +9,13 @@
  */
 
 export type BridgeDistribution = "npm" | "standalone";
-export type BridgeSurface = "import" | "context" | "storage" | "runtime-hooks" | "asset" | "channel";
+export type BridgeSurface =
+	| "import"
+	| "context"
+	| "storage"
+	| "runtime-hooks"
+	| "asset"
+	| "channel";
 
 export const BRIDGE_PROBE_VERSION = 1;
 export const BRIDGE_SDK_BASELINE = "0.85.1";
@@ -62,7 +68,10 @@ export const BRIDGE_CONTEXT_REQUIREMENTS: readonly string[] = [
 ] as const;
 
 /** Public lifecycle events needed to bind and dispose a bridge-owned context. */
-export const BRIDGE_RUNTIME_HOOKS: readonly string[] = ["session_start", "session_shutdown"] as const;
+export const BRIDGE_RUNTIME_HOOKS: readonly string[] = [
+	"session_start",
+	"session_shutdown",
+] as const;
 
 /** Public settings methods and lock surface used by the bridge feasibility probe. */
 export const BRIDGE_STORAGE_REQUIREMENTS: readonly string[] = [
@@ -223,8 +232,15 @@ export function discoverBridgeCapabilities(input: BridgeFeasibilityInput): Bridg
 	};
 
 	if (!nonempty(input.installationId))
-		add("import", "selected Pi installation identity", "The feasibility probe supplied no installation identity.");
-	if (!nonempty(input.import.installationId) || input.import.installationId !== input.installationId)
+		add(
+			"import",
+			"selected Pi installation identity",
+			"The feasibility probe supplied no installation identity.",
+		);
+	if (
+		!nonempty(input.import.installationId) ||
+		input.import.installationId !== input.installationId
+	)
 		add(
 			"import",
 			"selected-installation import origin",
@@ -244,7 +260,11 @@ export function discoverBridgeCapabilities(input: BridgeFeasibilityInput): Bridg
 			PI_CODING_AGENT_PACKAGE,
 			`The selected import reported package ${input.import.packageName || "<missing>"}.`,
 		);
-	if (input.import.packageVersion !== null && input.sdkVersion !== null && input.import.packageVersion !== input.sdkVersion)
+	if (
+		input.import.packageVersion !== null &&
+		input.sdkVersion !== null &&
+		input.import.packageVersion !== input.sdkVersion
+	)
 		add(
 			"import",
 			"independent Pi SDK version identity",
@@ -278,7 +298,11 @@ export function discoverBridgeCapabilities(input: BridgeFeasibilityInput): Bridg
 
 	const missingContext = missingBridgeMembers(input.context.members, BRIDGE_CONTEXT_REQUIREMENTS);
 	if (!input.context.live)
-		add("context", "live public ExtensionContext", "No live extension callback supplied the inspected context.");
+		add(
+			"context",
+			"live public ExtensionContext",
+			"No live extension callback supplied the inspected context.",
+		);
 	for (const member of missingContext)
 		add(
 			"context",
@@ -288,7 +312,11 @@ export function discoverBridgeCapabilities(input: BridgeFeasibilityInput): Bridg
 
 	const missingStorage = missingBridgeMembers(input.storage.members, BRIDGE_STORAGE_REQUIREMENTS);
 	if (!input.storage.live)
-		add("storage", "live native SettingsManager storage", "Native public storage was not exercised by the selected installation.");
+		add(
+			"storage",
+			"live native SettingsManager storage",
+			"Native public storage was not exercised by the selected installation.",
+		);
 	for (const member of missingStorage)
 		add(
 			"storage",
@@ -296,7 +324,11 @@ export function discoverBridgeCapabilities(input: BridgeFeasibilityInput): Bridg
 			`The selected ${input.distribution} Pi storage surface does not expose ${member}.`,
 			"Native settings administration is unavailable; direct JSON writes are not a fallback.",
 		);
-	if (!input.storage.lock.available || input.storage.lock.identity !== "native" || !input.storage.lock.matchesNative)
+	if (
+		!input.storage.lock.available ||
+		input.storage.lock.identity !== "native" ||
+		!input.storage.lock.matchesNative
+	)
 		add(
 			"storage",
 			"native SettingsStorage lock identity",

@@ -62,9 +62,7 @@ let hasActiveProjectArea = $derived(
 	availability === "ready" && $appStore.activeProjectAreaId !== null,
 );
 let settingsRequested = $derived($appStore.workspaceSelection.primaryArea === "settings");
-let primarySurface = $derived(
-	resolveShellPrimarySurface(hasActiveProjectArea, settingsRequested),
-);
+let primarySurface = $derived(resolveShellPrimarySurface(hasActiveProjectArea, settingsRequested));
 
 function loadProjectWorkArea(): void {
 	if (ProjectWorkArea || projectWorkAreaLoadPending) return;

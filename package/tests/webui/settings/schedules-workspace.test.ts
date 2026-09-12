@@ -8,9 +8,9 @@ test("workspace settings selection reuses the dialog section inventory", () => {
 		expect(tabs.some((tab) => tab.label === "Schedules")).toBe(true);
 	}
 	expect(resolveSettingsSection(SettingsSection.Schedules, null)).toBe(SettingsSection.Schedules);
-	expect(resolveWorkspaceSettingsSection({ kind: "settings", sectionId: "schedules" }, "system")).toBe(
-		"schedules",
-	);
+	expect(
+		resolveWorkspaceSettingsSection({ kind: "settings", sectionId: "schedules" }, "system"),
+	).toBe("schedules");
 	expect(
 		resolveWorkspaceSettingsSection({ kind: "settings", sectionId: "providers" }, "system"),
 	).toBe("providers");

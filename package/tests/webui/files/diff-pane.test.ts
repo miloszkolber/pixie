@@ -2,7 +2,11 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import type { GitDiffFile } from "@pixie/contracts";
 import { initTransport, resetTransport } from "@/connection";
 import { WsTransport } from "@/connection/transport";
-import { diffIsUnavailable, diffUnavailableNotice, rawPreviewNotice } from "@/files/changes/diff-pane-model";
+import {
+	diffIsUnavailable,
+	diffUnavailableNotice,
+	rawPreviewNotice,
+} from "@/files/changes/diff-pane-model";
 import { simpleUnifiedDiff } from "@/files/changes/line-diff";
 import { openDiffInTab } from "@/files/tabs/open-tabs";
 import { appStoreApi, type DiffTab } from "@/store";
@@ -146,13 +150,15 @@ test("successful raw previews retain a visible conversion notice", async () => {
 		modified: "after\n",
 	};
 	appStoreApi.getState().openTab(initial, "keep");
-	appStoreApi.getState().updateDiffTabContent(
-		"project",
-		initial.id,
-		{ original: "before\n", modified: "after\n", message: "Showing raw worktree bytes" },
-		1,
-		"",
-	);
+	appStoreApi
+		.getState()
+		.updateDiffTabContent(
+			"project",
+			initial.id,
+			{ original: "before\n", modified: "after\n", message: "Showing raw worktree bytes" },
+			1,
+			"",
+		);
 	const tab = appStoreApi.getState().tabsByProjectArea.project?.[0];
 	if (tab?.kind !== "diff") throw new Error("diff tab missing");
 	expect(diffIsUnavailable(tab)).toBe(false);

@@ -160,7 +160,13 @@ export function designSharedFocusPublish(
 		hint: "Publishes the selected page and optional node as shared focus with an optimistic revision. Private browsing never changes shared focus on its own.",
 	} as const;
 	if (!state.document) {
-		return { ...base, enabled: false, reason: "No Design document is loaded.", request: null, optimisticRevision: null };
+		return {
+			...base,
+			enabled: false,
+			reason: "No Design document is loaded.",
+			request: null,
+			optimisticRevision: null,
+		};
 	}
 	if (state.availability !== "ready" && state.availability !== "stale") {
 		return {

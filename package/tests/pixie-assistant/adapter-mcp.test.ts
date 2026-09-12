@@ -1,17 +1,17 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import {
-	adapterOperationRoute,
 	ADAPTER_RUNTIME_REGISTER_EVENT,
 	ADAPTER_RUNTIME_SNAPSHOT_EVENT,
 	ADAPTER_STATUS_EVENT,
+	adapterOperationRoute,
 	blockedPiToolsCall,
 	emitRuntimeRegister,
 	emitRuntimeSnapshot,
 	PI_MCP_ADAPTER_TESTED_VERSION,
 	PI_TOOLS_CALL_BLOCKER,
-	readAdapterStatusSnapshot,
 	RETAINED_MCP_OPERATIONS,
+	readAdapterStatusSnapshot,
 	SUPPORTED_ADAPTER_APIS,
 	validateMcpName,
 } from "../../../assistant/src/extensions/adapter-mcp.ts";
@@ -89,18 +89,20 @@ test("runtime register and snapshot use only the public event bus", async () => 
 	expect(() => emitRuntimeRegister(() => {}, "bad__name", {})).toThrow("Invalid MCP name");
 	expect(() => validateMcpName("has spaces")).toThrow("Invalid MCP name");
 
-	const snapshot = emitRuntimeSnapshot(
-		(channel, request) => {
-			expect(channel).toBe(ADAPTER_RUNTIME_SNAPSHOT_EVENT);
-			const seen = request as { version: number; name: string; result?: unknown };
-			expect(seen.version).toBe(1);
-			seen.result = {
-				ok: true,
-				snapshot: { name: "fixture", definition: { url: "http://x/mcp" }, runtime: true, persisted: false },
-			};
-		},
-		"fixture",
-	);
+	const snapshot = emitRuntimeSnapshot((channel, request) => {
+		expect(channel).toBe(ADAPTER_RUNTIME_SNAPSHOT_EVENT);
+		const seen = request as { version: number; name: string; result?: unknown };
+		expect(seen.version).toBe(1);
+		seen.result = {
+			ok: true,
+			snapshot: {
+				name: "fixture",
+				definition: { url: "http://x/mcp" },
+				runtime: true,
+				persisted: false,
+			},
+		};
+	}, "fixture");
 	expect(snapshot).toMatchObject({ name: "fixture", runtime: true, persisted: false });
 	expect(() => emitRuntimeSnapshot(() => {}, "fixture")).toThrow("not installed");
 });

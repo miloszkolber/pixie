@@ -220,9 +220,7 @@ describe("Design UI foundation", () => {
 		expect(applyDesignDraftReference("draft", "  ")).toBeNull();
 
 		// Wrong document or unavailable Design disables the explicit action.
-		expect(
-			designDraftReferenceAction(state, { documentId: "other-document" }).enabled,
-		).toBe(false);
+		expect(designDraftReferenceAction(state, { documentId: "other-document" }).enabled).toBe(false);
 		const disabled = designStateFromStatus(emptyDesignState(), {
 			enabled: false,
 			availability: "disabled",
@@ -239,10 +237,7 @@ describe("Design UI foundation", () => {
 			{ id: "page-a", name: "Cover", position: 1, nodeCount: 2 },
 			{ id: "page-b", name: "Flow", position: 0, nodeCount: 1 },
 		];
-		const nodes: DesignNode[] = [
-			node("plain"),
-			{ ...node("candidate", true), pageId: "page-a" },
-		];
+		const nodes: DesignNode[] = [node("plain"), { ...node("candidate", true), pageId: "page-a" }];
 		let state = designStateFromStatus(emptyDesignState(), {
 			enabled: true,
 			availability: "ready",

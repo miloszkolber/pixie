@@ -203,7 +203,12 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			}
 		},
 	);
-	runtimeWiring = new RuntimeWiring({ agentDir, bootId, sessions, nativeTransport: options.nativeTransport });
+	runtimeWiring = new RuntimeWiring({
+		agentDir,
+		bootId,
+		sessions,
+		nativeTransport: options.nativeTransport,
+	});
 	let control: ManagedSession;
 	try {
 		if (startup) await startup.race(runtimeWiring.ready(), "Assistant runtime wiring startup");
@@ -268,7 +273,8 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			"session.uiCancel": true,
 			// Restart is executable-owned and is available only when both admission
 			// and the termination hook were wired by the composition root.
-			"runtime.restart": options.allowSelfRestart === true && typeof options.onRestart === "function",
+			"runtime.restart":
+				options.allowSelfRestart === true && typeof options.onRestart === "function",
 			"pi.session.info": true,
 			"pi.session.rename": true,
 			"pi.session.archive": true,
@@ -453,13 +459,18 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			peer.data.sessions.add(entry.session.sessionId);
 			return { ...sessions.snapshot(entry), runtime: runtimeSnapshot(entry, p) };
 		}
-		if (method === "runtime.release" || method === "session.release" || method === "runtime.releaseToTui") {
+		if (
+			method === "runtime.release" ||
+			method === "session.release" ||
+			method === "runtime.releaseToTui"
+		) {
 			const id = required(p.sessionId, "session");
 			const entry = await sessions.get(id, text(p.cwd) || undefined);
 			const released = await runtimeWiring.release(
 				entry,
 				method === "runtime.releaseToTui",
-				text(p.instruction) || (method === "runtime.releaseToTui" ? `Resume ${id} in the native TUI` : ""),
+				text(p.instruction) ||
+					(method === "runtime.releaseToTui" ? `Resume ${id} in the native TUI` : ""),
 			);
 			if (!released.ok) throw new HostError(released.error.message, -32000);
 			return { ok: true };
@@ -490,7 +501,8 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 					attachment.entry = new WeakRef(entry);
 				}
 				if (method === "session.prompt") {
-					if (!Array.isArray(p.content)) throw new HostError("Prompt content must be an array", -32000);
+					if (!Array.isArray(p.content))
+						throw new HostError("Prompt content must be an array", -32000);
 					return runtimeWiring.prompt(
 						entry,
 						{
@@ -499,14 +511,13 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 							...(typeof p.deliveryId === "string" ? { deliveryId: p.deliveryId } : {}),
 							...(typeof p.runId === "string" ? { runId: p.runId } : {}),
 						},
-						(request) => sessions.call("session.prompt", { ...p, content: request.content }, signal),
+						(request) =>
+							sessions.call("session.prompt", { ...p, content: request.content }, signal),
 					);
 				}
 				if (method === "session.cancel") {
-					return runtimeWiring.cancel(
-						entry,
-						text(p.requestId) || randomUUID(),
-						() => sessions.call(method, p, signal),
+					return runtimeWiring.cancel(entry, text(p.requestId) || randomUUID(), () =>
+						sessions.call(method, p, signal),
 					);
 				}
 				if (method === "session.configure") {
@@ -724,7 +735,9 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 										code: uncertain ? -32003 : error instanceof HostError ? error.code : -32000,
 										message: uncertain
 											? error.message
-											: error instanceof Error ? error.message : "Pi request failed",
+											: error instanceof Error
+												? error.message
+												: "Pi request failed",
 									},
 								});
 								flush();
@@ -751,7 +764,11 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 				options.drainDeadlineMs ?? DEFAULT_SERVICE_DRAIN_DEADLINE_MS,
 				"Assistant startup cleanup",
 			);
-		await Promise.allSettled([sessions.close(cleanupDeadline), control.close(cleanupDeadline), runtimeWiring.close()]);
+		await Promise.allSettled([
+			sessions.close(cleanupDeadline),
+			control.close(cleanupDeadline),
+			runtimeWiring.close(),
+		]);
 		if (!startup) cleanupDeadline.dispose();
 		throw error;
 	}

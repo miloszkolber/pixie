@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { SessionSummary } from "@pixie/contracts";
 import {
 	applyArchiveRestored,
 	buildArchiveRestoreRequest,
@@ -7,7 +8,6 @@ import {
 	filterArchivedSessions,
 	isMetadataOnlyArchiveRestore,
 } from "@/workspace/projects/session-catalog";
-import type { SessionSummary } from "@pixie/contracts";
 
 const webuiRoot = new URL("../../../webui/src/", import.meta.url);
 
@@ -93,7 +93,7 @@ test("archive sidebar restores metadata-only with no clone path", async () => {
 	expect(catalog).toContain('"session.unarchive"');
 	const history = await source("workspace/projects/project-chat-history.svelte");
 	expect(history).toContain("session.unarchive");
-	expect(history).toContain("operation: \"unarchived\"");
+	expect(history).toContain('operation: "unarchived"');
 });
 
 test("work-area archive regions distinguish close, archive, and delete", async () => {
@@ -105,8 +105,8 @@ test("work-area archive regions distinguish close, archive, and delete", async (
 		"never clones it",
 		"Closing a view is not archiving",
 		"Recently closed chats",
-		'deleting moves a chat to trash',
-		'deleting is separate from both',
+		"deleting moves a chat to trash",
+		"deleting is separate from both",
 	]) {
 		expect(workArea).toContain(contract);
 	}

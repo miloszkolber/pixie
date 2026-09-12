@@ -54,9 +54,9 @@ test("private channel checks require an inherited descriptor, bounded reservatio
 test("nonce and epoch handshake is exact and frame methods are explicitly allowlisted", () => {
 	const hello = createBridgeHello(channel.nonce, channel.epoch);
 	expect(validateBridgeHandshake(hello, channel)).toEqual({ ok: true });
-	expect(() => validateBridgeHandshake(hello, { nonce: channel.nonce, epoch: "epoch-other-012345" })).toThrow(
-		"nonce or epoch mismatch",
-	);
+	expect(() =>
+		validateBridgeHandshake(hello, { nonce: channel.nonce, epoch: "epoch-other-012345" }),
+	).toThrow("nonce or epoch mismatch");
 
 	const request = {
 		version: 1 as const,
@@ -84,10 +84,20 @@ test("JSONL framing rejects oversized, malformed and non-strict frames", () => {
 	};
 	expect(decodeBridgeFrame(encodeBridgeFrame(response).slice(0, -1))).toEqual(response);
 	expect(() => decodeBridgeFrame("{not-json}")).toThrow("Invalid bridge JSONL frame");
-	expect(() => decodeBridgeFrame(JSON.stringify({ version: 1, type: "hello", nonce: "nonce-0123456789ab", epoch: "epoch-0123456789", extra: true }))).toThrow(
-		"Unexpected bridge frame field",
-	);
-	expect(() => decodeBridgeFrame(`${JSON.stringify({ version: 1, type: "request", id: "x", method: "bridge.probe", payload: { value: "x".repeat(BRIDGE_CHANNEL_MAX_FRAME_BYTES) } })}`)).toThrow(
-		"exceeds",
-	);
+	expect(() =>
+		decodeBridgeFrame(
+			JSON.stringify({
+				version: 1,
+				type: "hello",
+				nonce: "nonce-0123456789ab",
+				epoch: "epoch-0123456789",
+				extra: true,
+			}),
+		),
+	).toThrow("Unexpected bridge frame field");
+	expect(() =>
+		decodeBridgeFrame(
+			`${JSON.stringify({ version: 1, type: "request", id: "x", method: "bridge.probe", payload: { value: "x".repeat(BRIDGE_CHANNEL_MAX_FRAME_BYTES) } })}`,
+		),
+	).toThrow("exceeds");
 });

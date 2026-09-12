@@ -49,8 +49,7 @@
 		minmax(0, 0px)
 		minmax(0, 16rem)
 		3rem;
-	grid-template-areas:
-		"primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
 }
 
 /* Content-filled regions: each pane scrolls independently. */
@@ -139,8 +138,7 @@
 		minmax(22.5rem, 1fr)
 		minmax(0, 16rem)
 		3rem;
-	grid-template-areas:
-		"primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
 }
 
 /* Mode 2: secondary focus. Primary view track collapses; primary selection,
@@ -153,11 +151,11 @@
 		minmax(22.5rem, 1fr)
 		minmax(0, 16rem)
 		3rem;
-	grid-template-areas:
-		"primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
 }
 
-.mewa-layout-probe[data-layout="secondary-focus"] .mewa-layout-probe__slot[data-slot="primary-view"] {
+.mewa-layout-probe[data-layout="secondary-focus"]
+	.mewa-layout-probe__slot[data-slot="primary-view"] {
 	visibility: hidden;
 }
 
@@ -170,11 +168,11 @@
 		minmax(0, 0px)
 		minmax(0, 16rem)
 		3rem;
-	grid-template-areas:
-		"primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
 }
 
-.mewa-layout-probe[data-layout="primary-context"] .mewa-layout-probe__slot[data-slot="secondary-view"] {
+.mewa-layout-probe[data-layout="primary-context"]
+	.mewa-layout-probe__slot[data-slot="secondary-view"] {
 	visibility: hidden;
 }
 
@@ -187,12 +185,13 @@
 		minmax(0, 0px)
 		minmax(0, 0px)
 		3rem;
-	grid-template-areas:
-		"primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
 }
 
-.mewa-layout-probe[data-layout="primary-sidebar"] .mewa-layout-probe__slot[data-slot="secondary-view"],
-.mewa-layout-probe[data-layout="primary-sidebar"] .mewa-layout-probe__slot[data-slot="secondary-sidebar"] {
+.mewa-layout-probe[data-layout="primary-sidebar"]
+	.mewa-layout-probe__slot[data-slot="secondary-view"],
+.mewa-layout-probe[data-layout="primary-sidebar"]
+	.mewa-layout-probe__slot[data-slot="secondary-sidebar"] {
 	visibility: hidden;
 }
 
@@ -205,13 +204,15 @@
 		minmax(0, 0px)
 		minmax(0, 0px)
 		3rem;
-	grid-template-areas:
-		"primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
+	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
 }
 
-.mewa-layout-probe[data-layout="primary-focus"] .mewa-layout-probe__slot[data-slot="primary-sidebar"],
-.mewa-layout-probe[data-layout="primary-focus"] .mewa-layout-probe__slot[data-slot="secondary-view"],
-.mewa-layout-probe[data-layout="primary-focus"] .mewa-layout-probe__slot[data-slot="secondary-sidebar"] {
+.mewa-layout-probe[data-layout="primary-focus"]
+	.mewa-layout-probe__slot[data-slot="primary-sidebar"],
+.mewa-layout-probe[data-layout="primary-focus"]
+	.mewa-layout-probe__slot[data-slot="secondary-view"],
+.mewa-layout-probe[data-layout="primary-focus"]
+	.mewa-layout-probe__slot[data-slot="secondary-sidebar"] {
 	visibility: hidden;
 }
 
@@ -342,11 +343,20 @@
 	/* The opt-in fixture mirrors the production mobile drawer choice: one
 	   content surface is painted, while the remaining slots stay out of the
 	   tab order instead of stacking into a second page. */
-	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="split"] [data-slot]:not([data-slot="primary-view"]),
-	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="primary-context"] [data-slot]:not([data-slot="primary-view"]),
-	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="primary-sidebar"] [data-slot]:not([data-slot="primary-view"]),
-	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="primary-focus"] [data-slot]:not([data-slot="primary-view"]),
-	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="secondary-focus"] [data-slot]:not([data-slot="secondary-view"]) {
+	.mewa-layout-probe-fixture .mewa-layout-probe[data-layout="split"]
+		[data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture
+		.mewa-layout-probe[data-layout="primary-context"]
+		[data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture
+		.mewa-layout-probe[data-layout="primary-sidebar"]
+		[data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture
+		.mewa-layout-probe[data-layout="primary-focus"]
+		[data-slot]:not([data-slot="primary-view"]),
+	.mewa-layout-probe-fixture
+		.mewa-layout-probe[data-layout="secondary-focus"]
+		[data-slot]:not([data-slot="secondary-view"]) {
 		display: none;
 	}
 }

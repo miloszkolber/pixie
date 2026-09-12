@@ -197,7 +197,9 @@ export function sessionRowAccessibleLabel(
 ): string {
 	const title = displaySessionTitle(session.title);
 	const age = shortSessionAge(session.updatedAt, now);
-	return session.isStreaming === true ? `${title}, running, updated ${age}` : `${title}, updated ${age}`;
+	return session.isStreaming === true
+		? `${title}, running, updated ${age}`
+		: `${title}, updated ${age}`;
 }
 
 /** Metadata-only Archive restore request. Never a clone/fork. */
@@ -224,8 +226,9 @@ export function applyArchiveRestored(
  * Removing a project from Pixie only closes the project. It must never call
  * `session.delete`/`session.archive`; native chats stay intact.
  */
-export function buildRemoveProjectRequest(
-	projectId: string,
-): { method: "project.close"; params: { id: string } } {
+export function buildRemoveProjectRequest(projectId: string): {
+	method: "project.close";
+	params: { id: string };
+} {
 	return { method: "project.close", params: { id: projectId } };
 }

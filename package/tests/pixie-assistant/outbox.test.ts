@@ -66,14 +66,20 @@ test("outbox persists identity and advances prepared/dispatching/accepted/settle
 	});
 
 	state = applyOutbox(state, { type: "dispatch", ...identity });
-	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({ status: "dispatching", attempt: 1 });
+	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({
+		status: "dispatching",
+		attempt: 1,
+	});
 	// A repeated dispatch is only a status read; it cannot increment the claim.
 	const repeatedDispatch = dispatchOutboxDelivery(state, identity);
 	expect(repeatedDispatch).toEqual({ ok: true, value: state });
 	state = repeatedDispatch.ok ? repeatedDispatch.value : state;
 	state = applyOutbox(state, { type: "accept", ...identity });
 	state = applyOutbox(state, { type: "settle", ...identity, stopReason: "stop" });
-	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({ status: "settled", attempt: 1 });
+	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({
+		status: "settled",
+		attempt: 1,
+	});
 	// Re-preparing or retrying a known mutation never creates a second delivery.
 	const retry = retryOutboxDelivery(state, identity);
 	expect(retry).toEqual({ ok: true, value: state });
@@ -107,7 +113,10 @@ test("uncertain delivery blocks retry and automatic continuation until authorita
 	expect(nextOutboxDispatch(state)).toEqual({ kind: "blocked", reason: "uncertain-delivery" });
 	const retry = retryOutboxDelivery(state, identity);
 	expect(retry).toEqual({ ok: true, value: state });
-	expect(getOutboxEntry(retry.ok ? retry.value : state, identity.mutationId)).toMatchObject({ status: "uncertain", attempt: 1 });
+	expect(getOutboxEntry(retry.ok ? retry.value : state, identity.mutationId)).toMatchObject({
+		status: "uncertain",
+		attempt: 1,
+	});
 
 	const resolved = reconcileUncertainDelivery(state, {
 		...identity,
@@ -117,20 +126,33 @@ test("uncertain delivery blocks retry and automatic continuation until authorita
 	expect(resolved.ok).toBe(true);
 	if (!resolved.ok) return;
 	state = resolved.value;
-	expect(nextOutboxDispatch(state)).toMatchObject({ kind: "ready", entry: { deliveryId: "delivery-2" } });
+	expect(nextOutboxDispatch(state)).toMatchObject({
+		kind: "ready",
+		entry: { deliveryId: "delivery-2" },
+	});
 });
 
 test("explicit retry reuses a rejected delivery identity but never reopens uncertain work", () => {
 	let state = prepared(createOutboxState("session-1"));
 	state = applyOutbox(state, { type: "dispatch", ...identity });
-	state = applyOutbox(state, { type: "reject", ...identity, reason: "native rejected before acceptance" });
+	state = applyOutbox(state, {
+		type: "reject",
+		...identity,
+		reason: "native rejected before acceptance",
+	});
 	const retried = retryOutboxDelivery(state, identity);
 	expect(retried.ok).toBe(true);
 	if (!retried.ok) return;
 	state = retried.value;
-	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({ status: "prepared", attempt: 1 });
+	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({
+		status: "prepared",
+		attempt: 1,
+	});
 	state = applyOutbox(state, { type: "dispatch", ...identity });
-	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({ status: "dispatching", attempt: 2 });
+	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({
+		status: "dispatching",
+		attempt: 2,
+	});
 });
 
 test("compaction is queued through the same identity-safe handoff and waits for unsettled work", () => {
@@ -161,7 +183,11 @@ test("reconnect marks handed-off work uncertain without replaying it", () => {
 	expect(reconnected.ok).toBe(true);
 	if (!reconnected.ok) return;
 	state = reconnected.value;
-	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({ status: "uncertain", attempt: 1, generation: 0 });
+	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({
+		status: "uncertain",
+		attempt: 1,
+		generation: 0,
+	});
 	expect(getOutboxEntry(state, "mutation-2")).toMatchObject({ status: "prepared", generation: 1 });
 	expect(nextOutboxDispatch(state)).toEqual({ kind: "blocked", reason: "uncertain-delivery" });
 });
@@ -203,7 +229,15 @@ test("Stop freezes and retains unsent work, then exposes verified graceful or fo
 	expect(stopped.ok).toBe(true);
 	if (!stopped.ok) return;
 	state = stopped.value;
-	expect(state).toMatchObject({ phase: "stopped", stop: { verified: true, disposition: "graceful", effectDisposition: "interrupted", retainedDeliveryIds: ["delivery-2"] } });
+	expect(state).toMatchObject({
+		phase: "stopped",
+		stop: {
+			verified: true,
+			disposition: "graceful",
+			effectDisposition: "interrupted",
+			retainedDeliveryIds: ["delivery-2"],
+		},
+	});
 	expect(getOutboxEntry(state, identity.mutationId)).toMatchObject({ status: "interrupted" });
 
 	const resumed = resumeOutbox(state);
@@ -234,7 +268,10 @@ test("forced Stop requires quiescence and reports the accepted effect as interru
 		abortOutcome: "timed-out",
 		reason: "managed generation terminated after abort deadline",
 	});
-	expect(stopped).toMatchObject({ ok: true, value: { phase: "stopped", stop: { disposition: "forced", effectDisposition: "interrupted" } } });
+	expect(stopped).toMatchObject({
+		ok: true,
+		value: { phase: "stopped", stop: { disposition: "forced", effectDisposition: "interrupted" } },
+	});
 });
 
 test("native queue recovery is a draft proposal and never auto-submits", () => {
@@ -247,6 +284,13 @@ test("native queue recovery is a draft proposal and never auto-submits", () => {
 		text: "recover this queued text",
 		sourceDeliveryId: "native-delivery",
 	});
-	expect(draft).toMatchObject({ ok: true, value: { source: "native-queue-recovery", requiresExplicitSubmission: true, text: "recover this queued text" } });
+	expect(draft).toMatchObject({
+		ok: true,
+		value: {
+			source: "native-queue-recovery",
+			requiresExplicitSubmission: true,
+			text: "recover this queued text",
+		},
+	});
 	expect(state.entries).toHaveLength(0);
 });

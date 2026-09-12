@@ -124,9 +124,17 @@ test("settings stay reachable through the standalone surface in every non-ready 
 		activeProjectAreaId: string | null,
 		settingsRequested: boolean,
 	) {
-		const availability = resolveShellAvailability(status, profile, providerConfigured, providerError);
+		const availability = resolveShellAvailability(
+			status,
+			profile,
+			providerConfigured,
+			providerError,
+		);
 		const hasActiveProjectArea = availability === "ready" && activeProjectAreaId !== null;
-		return { availability, surface: resolveShellPrimarySurface(hasActiveProjectArea, settingsRequested) };
+		return {
+			availability,
+			surface: resolveShellPrimarySurface(hasActiveProjectArea, settingsRequested),
+		};
 	}
 
 	// Fresh install: Pi is compatible but no provider is configured and no

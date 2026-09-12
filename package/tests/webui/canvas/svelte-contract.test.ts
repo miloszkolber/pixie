@@ -52,7 +52,7 @@ test("Canvas sidebar exposes session-scoped version, rendering, update, and acti
 	expect(source).toContain("canvasSidebarViewModel");
 	// Two owned Mewa templates are demonstrated with Mewa card/button primitives.
 	expect(source).toContain("CANVAS_TEMPLATES");
-	expect(source).toContain('data-testid={`canvas-template-');
+	expect(source).toContain("data-testid={`canvas-template-");
 	expect(source).toContain("Use {template.id}");
 	expect(source).toContain('class="card"');
 	expect(source).toContain('class="btn"');

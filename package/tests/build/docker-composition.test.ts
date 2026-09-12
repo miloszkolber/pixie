@@ -28,7 +28,7 @@ function composition(dockerfile: string): CompositionInput {
 		"package/cmd/main.go":
 			'package main\nimport assistantHost "example.test/assistant/host"\nfunc run(ctx context.Context) { assistant, _ := assistantHost.Start(ctx, assistantHost.Config{Host: "127.0.0.1", Port: 0}); defer assistant.Close(context.Background()); controller.NewRuntime(controller.RuntimeConfig{PiURL: assistant.Endpoint()}) }\n',
 		"package/cmd/runtime.go":
-			"package main\nconst ( modeFullHost = \"full-host\"; modeController = \"controller\" )\nfunc parseMode() {}\nfunc serveController() { context.WithTimeout(context.Background(), time.Second); runtime.Shutdown(ctx) }\n",
+			'package main\nconst ( modeFullHost = "full-host"; modeController = "controller" )\nfunc parseMode() {}\nfunc serveController() { context.WithTimeout(context.Background(), time.Second); runtime.Shutdown(ctx) }\n',
 	};
 	const packageWebuiSources = {
 		"package/webui/webui.go": "package webui\n//go:embed all:dist\n",
@@ -47,7 +47,8 @@ function composition(dockerfile: string): CompositionInput {
 		packageWebuiSources,
 		embeddedUiFiles: ["package/webui/dist/index.html"],
 		assistantGoModText: "module example.test/assistant\n",
-		packageGoModText: "module example.test/pixie\nrequire example.test/assistant v0.0.0\nreplace example.test/assistant => ../assistant\n",
+		packageGoModText:
+			"module example.test/pixie\nrequire example.test/assistant v0.0.0\nreplace example.test/assistant => ../assistant\n",
 		dockerfileText: dockerfile,
 	};
 }
@@ -68,12 +69,14 @@ test("Docker composition is controller-only and keeps effective PID 1 init", () 
 });
 
 test("Docker composition rejects assistant/Pi startup and a non-reaping final command", () => {
-	const report = inspectComposition(composition(`
+	const report = inspectComposition(
+		composition(`
 FROM runtime AS pixie
 COPY assistant/src/ /app/assistant
 RUN go build ./cmd
 ENTRYPOINT ["/app/pixie", "serve", "--mode", "full-host", "pi serve"]
-`));
+`),
+	);
 
 	expect(report.ok).toBe(false);
 	const output = report.violations.join("\n");

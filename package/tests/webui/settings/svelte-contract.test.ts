@@ -84,9 +84,7 @@ test("the settings modal is gone and the primary-area view owns settings navigat
 	const shell = await Bun.file(
 		new URL("../../../webui/src/workspace/shell.svelte", import.meta.url),
 	).text();
-	const standalone = await Bun.file(
-		new URL("settings-area.svelte", settingsRoot),
-	).text();
+	const standalone = await Bun.file(new URL("settings-area.svelte", settingsRoot)).text();
 	expect(shell).toContain("<SettingsArea");
 	expect(standalone).toContain('data-testid="settings-area"');
 	expect(standalone).not.toContain('role="dialog"');

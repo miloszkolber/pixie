@@ -22,13 +22,19 @@ test("draft mutation IDs make retries replay-free", () => {
 
 test("external replacement does not clear the mutation ledger", () => {
 	const original = createDraftState(createDraft({ sessionKey: "s", content: "one" }));
-	const applied = applyDraftMutation(original, { mutationId: "edit-1", expectedRevision: 0, content: "two" });
+	const applied = applyDraftMutation(original, {
+		mutationId: "edit-1",
+		expectedRevision: 0,
+		content: "two",
+	});
 	if (applied.kind !== "applied") throw new Error("fixture mutation did not apply");
 	const replaced = replaceDraftState(applied.state, {
 		sessionKey: "s",
 		identity: { sessionKey: "s", nativeSessionId: "native-replacement" },
 	});
-	expect(applyDraftMutation(replaced, { mutationId: "edit-1", expectedRevision: 0, content: "two" })).toMatchObject({
+	expect(
+		applyDraftMutation(replaced, { mutationId: "edit-1", expectedRevision: 0, content: "two" }),
+	).toMatchObject({
 		kind: "replayed",
 	});
 });

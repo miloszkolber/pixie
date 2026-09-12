@@ -104,26 +104,48 @@ export function transitionCloneFork(
 	event: CloneForkEvent,
 ): CloneForkOperation {
 	if (event.type === "cancel.request") {
-		if (state.status === "completed" || state.status === "rejected" || state.status === "cancelled") return state;
+		if (state.status === "completed" || state.status === "rejected" || state.status === "cancelled")
+			return state;
 		return { ...state, cancellation: "requested" };
 	}
 
 	if (event.type === "cancel.result") {
-		if (state.status === "completed" || state.status === "rejected" || state.status === "cancelled") return state;
-		if (event.result === "accepted" || event.result === "interrupted" || event.result === "already-idle")
+		if (state.status === "completed" || state.status === "rejected" || state.status === "cancelled")
+			return state;
+		if (
+			event.result === "accepted" ||
+			event.result === "interrupted" ||
+			event.result === "already-idle"
+		)
 			return {
 				...state,
 				status: state.status === "accepted" ? "uncertain" : "cancelled",
-				cancellation: event.result === "accepted" ? "accepted" : event.result === "interrupted" ? "interrupted" : "accepted",
+				cancellation:
+					event.result === "accepted"
+						? "accepted"
+						: event.result === "interrupted"
+							? "interrupted"
+							: "accepted",
 			};
 		if (event.result === "timed-out")
-			return { ...state, status: state.status === "prepared" ? "cancelled" : "uncertain", cancellation: "timed-out" };
-		return { ...state, status: state.status === "prepared" ? "rejected" : "uncertain", cancellation: "rejected" };
+			return {
+				...state,
+				status: state.status === "prepared" ? "cancelled" : "uncertain",
+				cancellation: "timed-out",
+			};
+		return {
+			...state,
+			status: state.status === "prepared" ? "rejected" : "uncertain",
+			cancellation: "rejected",
+		};
 	}
 
-	if (state.status === "completed" || state.status === "rejected" || state.status === "cancelled") return state;
-	if (event.type === "dispatch" && state.status === "prepared") return { ...state, status: "dispatching" };
-	if (event.type === "accept" && state.status === "dispatching") return { ...state, status: "accepted" };
+	if (state.status === "completed" || state.status === "rejected" || state.status === "cancelled")
+		return state;
+	if (event.type === "dispatch" && state.status === "prepared")
+		return { ...state, status: "dispatching" };
+	if (event.type === "accept" && state.status === "dispatching")
+		return { ...state, status: "accepted" };
 	if (event.type === "complete" && (state.status === "accepted" || state.status === "dispatching"))
 		return { ...state, status: "completed", cancellation: "not-requested", owner: "target" };
 	if (event.type === "reject" && (state.status === "prepared" || state.status === "dispatching"))

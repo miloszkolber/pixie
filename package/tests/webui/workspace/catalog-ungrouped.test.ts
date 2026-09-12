@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { Project } from "@pixie/contracts";
 import {
 	buildSessionCatalog,
+	type CatalogSession,
 	displaySessionTitle,
 	isUngroupedProjectKey,
 	normalizeHostProjectKey,
@@ -9,7 +10,6 @@ import {
 	sessionHostKey,
 	sessionRowAccessibleLabel,
 	sortSessionsRecentFirst,
-	type CatalogSession,
 } from "@/workspace/projects/session-catalog";
 
 const webuiRoot = new URL("../../../webui/src/", import.meta.url);
@@ -67,11 +67,10 @@ test("host/session keys keep duplicate native IDs across hosts", () => {
 
 test("null and empty project keys land in the ungrouped partition", () => {
 	const projects = [project("a", "Alpha")];
-	const catalog = buildSessionCatalog(
-		projects,
-		{ a: [session("grouped", "a", 30)] },
-		[session("null-key", null, 40), session("empty-key", "", 20)],
-	);
+	const catalog = buildSessionCatalog(projects, { a: [session("grouped", "a", 30)] }, [
+		session("null-key", null, 40),
+		session("empty-key", "", 20),
+	]);
 	expect(catalog.groups[0]?.sessions.map((item) => item.sessionId)).toEqual(["grouped"]);
 	expect(catalog.ungrouped.map((item) => item.sessionId)).toEqual(["null-key", "empty-key"]);
 	expect(catalog.flat.map((item) => item.sessionId)).toEqual(["null-key", "grouped", "empty-key"]);
@@ -94,16 +93,12 @@ test("duplicate native session IDs across hosts do not collapse", () => {
 
 test("ungrouped partition stays recent-first and excludes archived chats", () => {
 	const projects = [project("a", "Alpha")];
-	const catalog = buildSessionCatalog(
-		projects,
-		{},
-		[
-			session("old", null, 10),
-			session("new", null, 30),
-			session("mid", "gone", 20),
-			session("archived", null, 40, { archived: true }),
-		],
-	);
+	const catalog = buildSessionCatalog(projects, {}, [
+		session("old", null, 10),
+		session("new", null, 30),
+		session("mid", "gone", 20),
+		session("archived", null, 40, { archived: true }),
+	]);
 	expect(catalog.ungrouped.map((item) => item.sessionId)).toEqual(["new", "mid", "old"]);
 	expect(catalog.flat.map((item) => item.sessionId)).toEqual(["new", "mid", "old"]);
 });

@@ -179,10 +179,10 @@ test("rollback hooks stay ordered, explicit and safe when interrupted", async ()
 
 test("old-reader compatibility requires exact schema readers", () => {
 	expect(isOldReaderCompatible({ oldProtocol: 1, oldStateSchema: 1 })).toBe(true);
-	expect(
-		isOldReaderCompatible({ oldProtocol: 1, oldStateSchema: 0, currentStateSchema: 1 }),
-	).toBe(false);
-	expect(
-		isOldReaderCompatible({ oldProtocol: 0, oldStateSchema: 1, currentProtocol: 1 }),
-	).toBe(false);
+	expect(isOldReaderCompatible({ oldProtocol: 1, oldStateSchema: 0, currentStateSchema: 1 })).toBe(
+		false,
+	);
+	expect(isOldReaderCompatible({ oldProtocol: 0, oldStateSchema: 1, currentProtocol: 1 })).toBe(
+		false,
+	);
 });

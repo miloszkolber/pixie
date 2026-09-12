@@ -157,7 +157,9 @@ export function formatDesignUploadDate(iso: string | null): string {
 	return iso;
 }
 
-export function designDocumentMetadata(document: DesignDocument | null): DesignDocumentMetadata | null {
+export function designDocumentMetadata(
+	document: DesignDocument | null,
+): DesignDocumentMetadata | null {
 	if (!document) return null;
 	return {
 		name: document.name,

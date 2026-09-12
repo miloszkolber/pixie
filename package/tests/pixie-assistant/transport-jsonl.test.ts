@@ -10,8 +10,8 @@ import {
 	defaultNativeTransportConfig,
 	NativeAggregateBudget,
 	NativePendingTable,
-	nativeUnsettledOutcome,
 	NativeWriter,
+	nativeUnsettledOutcome,
 	withNativeTimeout,
 } from "../../../assistant/src/transport/jsonl-transport.ts";
 
@@ -126,9 +126,7 @@ describe("native JSONL admission and correlation", () => {
 	});
 
 	test("stalled pipes fail with explicit timeouts", async () => {
-		await expect(
-			withNativeTimeout(new Promise(() => {}), 10, "Native read"),
-		).rejects.toThrow();
+		await expect(withNativeTimeout(new Promise(() => {}), 10, "Native read")).rejects.toThrow();
 		try {
 			await withNativeTimeout(new Promise(() => {}), 10, "Native read");
 		} catch (error) {

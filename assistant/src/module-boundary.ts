@@ -70,8 +70,11 @@ export function extractStaticImportSpecifiers(source: string): string[] {
 	];
 	for (const pattern of patterns) {
 		pattern.lastIndex = 0;
-		let match: RegExpExecArray | null;
-		while ((match = pattern.exec(withoutLineComments)) !== null) {
+		for (
+			let match = pattern.exec(withoutLineComments);
+			match !== null;
+			match = pattern.exec(withoutLineComments)
+		) {
 			const specifier = match[1];
 			if (specifier && COMMENT_OR_STRING_SAFE) specifiers.push(specifier);
 		}
@@ -98,7 +101,9 @@ function matchesForbidden(specifier: string): string | null {
 }
 
 /** Return every forbidden import specifier found in the list. */
-export function findForbiddenAssistantImports(specifiers: readonly string[]): ForbiddenAssistantImport[] {
+export function findForbiddenAssistantImports(
+	specifiers: readonly string[],
+): ForbiddenAssistantImport[] {
 	const found: ForbiddenAssistantImport[] = [];
 	for (const specifier of specifiers) {
 		const matched = matchesForbidden(specifier);
@@ -116,7 +121,9 @@ export function assertAssistantImportSurface(files: Readonly<Record<string, stri
 	for (const [path, source] of Object.entries(files)) {
 		const specifiers = extractStaticImportSpecifiers(source);
 		for (const violation of findForbiddenAssistantImports(specifiers)) {
-			violations.push(`${path} imports ${JSON.stringify(violation.specifier)} (matched ${JSON.stringify(violation.matched)})`);
+			violations.push(
+				`${path} imports ${JSON.stringify(violation.specifier)} (matched ${JSON.stringify(violation.matched)})`,
+			);
 		}
 	}
 	if (violations.length > 0) {
@@ -127,7 +134,8 @@ export function assertAssistantImportSurface(files: Readonly<Record<string, stri
 function parseJsonSafe(text: string): Record<string, unknown> | null {
 	try {
 		const data: unknown = JSON.parse(text);
-		if (data && typeof data === "object" && !Array.isArray(data)) return data as Record<string, unknown>;
+		if (data && typeof data === "object" && !Array.isArray(data))
+			return data as Record<string, unknown>;
 		return null;
 	} catch {
 		return null;
@@ -143,12 +151,14 @@ function parseJsonSafe(text: string): Record<string, unknown> | null {
  * present in this checkout" and does not fail; a versioned require without a
  * local replace does fail.
  */
-export function checkExactLocalReplacement(input: {
-	rootPackageJsonText?: string;
-	assistantPackageJsonText?: string;
-	packageGoModText?: string;
-	assistantGoModText?: string;
-} = {}): ReplacementCheck {
+export function checkExactLocalReplacement(
+	input: {
+		rootPackageJsonText?: string;
+		assistantPackageJsonText?: string;
+		packageGoModText?: string;
+		assistantGoModText?: string;
+	} = {},
+): ReplacementCheck {
 	const details: string[] = [];
 	let ok = true;
 	const fail = (detail: string): void => {
@@ -166,7 +176,9 @@ export function checkExactLocalReplacement(input: {
 		const hasAssistant = packages.includes("assistant");
 		const hasPackage = packages.includes("package");
 		if (!hasAssistant || !hasPackage) {
-			fail(`root workspaces must list exact local "assistant" and "package" (found ${JSON.stringify(packages)})`);
+			fail(
+				`root workspaces must list exact local "assistant" and "package" (found ${JSON.stringify(packages)})`,
+			);
 		} else {
 			pass(`root workspaces resolve exact local assistant and package`);
 		}
@@ -178,7 +190,9 @@ export function checkExactLocalReplacement(input: {
 		const manifest = parseJsonSafe(input.assistantPackageJsonText);
 		const name = manifest?.["name"];
 		if (name !== ASSISTANT_MODULE_NAME) {
-			fail(`assistant manifest name must be ${JSON.stringify(ASSISTANT_MODULE_NAME)} (found ${JSON.stringify(name)})`);
+			fail(
+				`assistant manifest name must be ${JSON.stringify(ASSISTANT_MODULE_NAME)} (found ${JSON.stringify(name)})`,
+			);
 		} else {
 			pass(`assistant manifest name is ${ASSISTANT_MODULE_NAME}`);
 		}
@@ -207,7 +221,9 @@ export function checkExactLocalReplacement(input: {
 		const hasReplace = /^\s*replace\s+.*assistant.*=>\s*(\.\.?\/[^\s]+)/m.test(text);
 		const mentionsLocalAssistant = /\.\.\/assistant|\.\/assistant/.test(text);
 		if (requiresAssistant.length > 0 && !hasReplace) {
-			fail(`${label} requires an assistant module without an exact local replace (=> ../assistant)`);
+			fail(
+				`${label} requires an assistant module without an exact local replace (=> ../assistant)`,
+			);
 		} else if (hasReplace && !mentionsLocalAssistant) {
 			fail(`${label} replace must point at the exact local checkout (=> ../assistant)`);
 		} else {

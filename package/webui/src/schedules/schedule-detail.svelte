@@ -1,85 +1,81 @@
 <script lang="ts">
-	import type { Project, Schedule } from "@pixie/contracts";
-	import { untrack } from "svelte";
-	import Button from "../components/button.svelte";
-	import Dialog from "../components/dialog.svelte";
-	import { getTransport } from "../connection";
-	import { appStore, appStoreApi, selectPrimary } from "../store";
-	import ScheduleForm from "./schedule-form.svelte";
-	import {
-		activeExecution,
-		SchedulesModel,
-		scheduleSessionHref,
-		scheduleTime,
-	} from "./schedules-model";
-	import { resolveScheduleSelection } from "./schedules-workspace";
+import type { Project, Schedule } from "@pixie/contracts";
+import { untrack } from "svelte";
+import Button from "../components/button.svelte";
+import Dialog from "../components/dialog.svelte";
+import { getTransport } from "../connection";
+import { appStore, appStoreApi, selectPrimary } from "../store";
+import ScheduleForm from "./schedule-form.svelte";
+import {
+	activeExecution,
+	SchedulesModel,
+	scheduleSessionHref,
+	scheduleTime,
+} from "./schedules-model";
+import { resolveScheduleSelection } from "./schedules-workspace";
 
-	let { project }: { project: Project } = $props();
-	const model = new SchedulesModel(
-		untrack(() => project.id),
-		getTransport(),
-	);
-	const view = model.readable;
-	let resolved = $derived(
-		resolveScheduleSelection(
-			$view.jobs,
-			$appStore.workspaceSelection.primarySelection,
-			project.id,
-		),
-	);
-	let selected = $derived(resolved.job);
-	let missing = $derived(resolved.missing);
-	let requestedId = $derived(resolved.requestedId);
-	let active = $derived(selected ? activeExecution(selected) : undefined);
-	let connected = $derived($appStore.status === "connected");
-	let locked = $derived(!connected || $view.busy || Boolean($view.pending));
-	let editor = $state<{ job: Schedule | null } | null>(null);
-	let deleting = $state<Schedule | null>(null);
-	let deleteTrigger: HTMLButtonElement | null = null;
+let { project }: { project: Project } = $props();
+const model = new SchedulesModel(
+	untrack(() => project.id),
+	getTransport(),
+);
+const view = model.readable;
+let resolved = $derived(
+	resolveScheduleSelection($view.jobs, $appStore.workspaceSelection.primarySelection, project.id),
+);
+let selected = $derived(resolved.job);
+let missing = $derived(resolved.missing);
+let requestedId = $derived(resolved.requestedId);
+let active = $derived(selected ? activeExecution(selected) : undefined);
+let connected = $derived($appStore.status === "connected");
+let locked = $derived(!connected || $view.busy || Boolean($view.pending));
+let editor = $state<{ job: Schedule | null } | null>(null);
+let deleting = $state<Schedule | null>(null);
+let deleteTrigger: HTMLButtonElement | null = null;
 
-	$effect(() => {
-		void $appStore.connectionGeneration;
-		if (!connected) return;
-		let cancelled = false;
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		async function poll(): Promise<void> {
-			await model.load();
-			if (!cancelled) timer = setTimeout(() => void poll(), 5000);
-		}
-		void poll();
-		return () => {
-			cancelled = true;
-			clearTimeout(timer);
-		};
-	});
+$effect(() => {
+	void $appStore.connectionGeneration;
+	if (!connected) return;
+	let cancelled = false;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	async function poll(): Promise<void> {
+		await model.load();
+		if (!cancelled) timer = setTimeout(() => void poll(), 5000);
+	}
+	void poll();
+	return () => {
+		cancelled = true;
+		clearTimeout(timer);
+	};
+});
 
-	function dispatchSelection(id: string): void {
-		appStoreApi
-			.getState()
-			.dispatchWorkspaceSelection(
-				selectPrimary({ kind: "schedule", scheduleId: id, projectId: project.id }, "schedules"),
+function dispatchSelection(id: string): void {
+	appStoreApi
+		.getState()
+		.dispatchWorkspaceSelection(
+			selectPrimary({ kind: "schedule", scheduleId: id, projectId: project.id }, "schedules"),
+		);
+}
+
+async function save(values: { prompt: string; cron: string; timezone: string }): Promise<void> {
+	if (locked || !editor) return;
+	const ok = editor.job
+		? await model.mutate(
+				"schedule.update",
+				{ scheduleId: editor.job.id, ...values },
+				"Schedule saved.",
+			)
+		: await model.mutate(
+				"schedule.create",
+				{ root: project.roots[0] ?? "", ...values },
+				"Schedule created.",
 			);
+	if (ok) {
+		const current = model.state.getState().selectedId;
+		if (current) dispatchSelection(current);
+		editor = null;
 	}
-
-	async function save(values: { prompt: string; cron: string; timezone: string }): Promise<void> {
-		if (locked || !editor) return;
-		const ok = editor.job
-			? await model.mutate(
-					"schedule.update",
-					{ scheduleId: editor.job.id, ...values },
-					"Schedule saved.",
-				)
-			: await model.mutate(
-					"schedule.create",
-					{ root: project.roots[0] ?? "", ...values },
-					"Schedule created.",
-				);
-		if (ok) {
-			const current = model.state.getState().selectedId;
-			if (current) dispatchSelection(current);
-			editor = null;
-		}
-	}
+}
 </script>
 
 <section aria-label="Schedule details" data-testid="schedule-detail" class="flex min-w-0 flex-col gap-md">

@@ -73,9 +73,7 @@ let hidden = $derived(
 // retract through onDestroy instead of effect cleanup for the same reason.
 let matchStatus = $derived(
 	isDirectory
-		? nodeNameMatchesFilter(node, filter) ||
-			children === null ||
-			subtreeHasMatch(children, filter)
+		? nodeNameMatchesFilter(node, filter) || children === null || subtreeHasMatch(children, filter)
 		: nodeNameMatchesFilter(node, filter),
 );
 let lastReported = false;

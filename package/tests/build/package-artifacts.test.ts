@@ -51,7 +51,10 @@ StandardError=journal
 WantedBy=default.target
 `;
 
-function archive(variant: "assistant" | "host", architecture: "amd64" | "arm64"): PackageArchiveEvidence {
+function archive(
+	variant: "assistant" | "host",
+	architecture: "amd64" | "arm64",
+): PackageArchiveEvidence {
 	const binary = variant === "assistant" ? "pixie-assistant" : "pixie";
 	const unit = `${binary}.service`;
 	const config = variant === "assistant" ? "assistant.json" : "pixie.json";
@@ -140,14 +143,14 @@ uninstall
 }
 
 test("package fixtures cover both archives, unit choices, config and lifecycle checks", () => {
-		const report = inspectPackageArtifacts(passingPackage());
+	const report = inspectPackageArtifacts(passingPackage());
 
-		expect(report.ok).toBe(true);
-		expect(report.staticOk).toBe(true);
-		expect(report.complete).toBe(true);
-		expect(report.violations).toEqual([]);
-		expect(report.facts.expectedArchives).toHaveLength(4);
-		expect(report.facts.unitFiles).toEqual(["pixie-assistant.service", "pixie.service"]);
+	expect(report.ok).toBe(true);
+	expect(report.staticOk).toBe(true);
+	expect(report.complete).toBe(true);
+	expect(report.violations).toEqual([]);
+	expect(report.facts.expectedArchives).toHaveLength(4);
+	expect(report.facts.unitFiles).toEqual(["pixie-assistant.service", "pixie.service"]);
 });
 
 test("package checks reject split services, secret config and incomplete archive contents", () => {

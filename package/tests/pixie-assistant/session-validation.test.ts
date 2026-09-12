@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import {
+	highestSupportedThinkingLevel,
 	MAX_IMAGE_AGGREGATE_BYTES,
 	MAX_IMAGE_BYTES,
 	MAX_IMAGES,
 	MAX_PROMPT_TEXT_BYTES,
-	highestSupportedThinkingLevel,
 	normalizeNativeModels,
 	redactSecrets,
 	resolveNativeTrust,
@@ -31,14 +31,26 @@ test("native trust loads user resources but never auto-trusts project resources"
 		{ path: "/tmp/agent/extensions/user.js", scope: "user" as const },
 		{ path: "/tmp/project/.pi/extensions/project.js", scope: "project" as const },
 	];
-	const undecided = resolveNativeTrust({ resources, projectTrust: null, defaultProjectTrust: "ask" });
+	const undecided = resolveNativeTrust({
+		resources,
+		projectTrust: null,
+		defaultProjectTrust: "ask",
+	});
 	if (!undecided.ok) throw new Error(undecided.error.message);
-	expect(undecided.value.trust).toMatchObject({ state: "untrusted", allowed: false, reason: "trust-required" });
+	expect(undecided.value.trust).toMatchObject({
+		state: "untrusted",
+		allowed: false,
+		reason: "trust-required",
+	});
 	expect(undecided.value.loadedResources).toEqual([resources[0]]);
 
 	const trusted = resolveNativeTrust({ resources, projectTrust: true, defaultProjectTrust: "ask" });
 	if (!trusted.ok) throw new Error(trusted.error.message);
-	expect(trusted.value.trust).toMatchObject({ state: "trusted", allowed: true, reason: "stored-decision" });
+	expect(trusted.value.trust).toMatchObject({
+		state: "trusted",
+		allowed: true,
+		reason: "stored-decision",
+	});
 	expect(trusted.value.loadedResources).toHaveLength(2);
 
 	const defaultTrusted = resolveNativeTrust({ resources, defaultProjectTrust: "always" });
@@ -51,7 +63,9 @@ test("create validation keeps model and native resource identities bounded", () 
 		identity,
 		resources: [{ path: "/tmp/project/.pi/extensions/project.js", scope: "project" }],
 		projectTrust: true,
-		availableModels: [{ provider: "fixture", id: "echo", name: "Echo", apiKey: "do-not-replay" } as never],
+		availableModels: [
+			{ provider: "fixture", id: "echo", name: "Echo", apiKey: "do-not-replay" } as never,
+		],
 		availableThinkingLevels: ["minimal", "max"],
 		model: { provider: "fixture", id: "echo" },
 		thinkingLevel: "max",
@@ -82,7 +96,10 @@ test("image validation enforces per-image, count and aggregate byte bounds", () 
 		runId: "run-2",
 		content: Array.from({ length: MAX_IMAGES + 1 }, () => image()),
 	});
-	expect(tooMany).toMatchObject({ ok: false, error: { message: "Prompt contains too many images" } });
+	expect(tooMany).toMatchObject({
+		ok: false,
+		error: { message: "Prompt contains too many images" },
+	});
 
 	const perImage = validatePromptRequest({
 		sessionKey: "session-key",
@@ -91,7 +108,10 @@ test("image validation enforces per-image, count and aggregate byte bounds", () 
 		runId: "run-3",
 		content: [image("A".repeat(MAX_IMAGE_BYTES + 4))],
 	});
-	expect(perImage).toMatchObject({ ok: false, error: { message: "Image exceeds the per-image limit" } });
+	expect(perImage).toMatchObject({
+		ok: false,
+		error: { message: "Image exceeds the per-image limit" },
+	});
 
 	const aggregateData = "A".repeat(Math.floor(MAX_IMAGE_AGGREGATE_BYTES / 8) + 4);
 	const aggregate = validatePromptRequest({
@@ -101,7 +121,10 @@ test("image validation enforces per-image, count and aggregate byte bounds", () 
 		runId: "run-4",
 		content: Array.from({ length: 8 }, () => image(aggregateData)),
 	});
-	expect(aggregate).toMatchObject({ ok: false, error: { message: "Prompt images exceed the aggregate limit" } });
+	expect(aggregate).toMatchObject({
+		ok: false,
+		error: { message: "Prompt images exceed the aggregate limit" },
+	});
 });
 
 test("prompt text uses UTF-8 bytes and resource replay omits raw contents", () => {
@@ -148,7 +171,9 @@ test("model and thinking validation reject stale values without coercion", () =>
 	]);
 	if (!models.ok) throw new Error(models.error.message);
 	expect(models.value).toHaveLength(1);
-	expect(validateModelSelection({ provider: "fixture", id: "missing" }, models.value)).toMatchObject({
+	expect(
+		validateModelSelection({ provider: "fixture", id: "missing" }, models.value),
+	).toMatchObject({
 		ok: false,
 		error: { code: "unknown-model" },
 	});
@@ -168,5 +193,9 @@ test("secret-shaped fields are omitted from replay values", () => {
 		nested: { apiKey: "secret", visible: "kept" },
 		items: [{ token: "secret", value: 1 }],
 	});
-	expect(value).toEqual({ provider: "fixture", nested: { visible: "kept" }, items: [{ value: 1 }] });
+	expect(value).toEqual({
+		provider: "fixture",
+		nested: { visible: "kept" },
+		items: [{ value: 1 }],
+	});
 });
