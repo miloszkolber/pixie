@@ -52,6 +52,7 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     && go mod download
 COPY package/cmd/ cmd/
 COPY package/internal/ internal/
+COPY package/contracts/piprotocol/ contracts/piprotocol/
 COPY package/webui/*.go webui/
 # Never COPY anything from package/webui/dist/ here: `bun run build` wipes that
 # directory (including the tracked .gitkeep), which used to break every container

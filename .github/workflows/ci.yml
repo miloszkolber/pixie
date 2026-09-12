@@ -133,6 +133,9 @@ jobs:
         with:
           go-version-file: package/go.mod
           cache-dependency-path: package/go.sum
+      - name: Synthesize web embed placeholder
+        run: mkdir -p webui/dist && touch webui/dist/.gitkeep
+        working-directory: package
       - name: Verify native workspace filesystem behavior
         run: CGO_ENABLED=0 go test -count=1 ./tests/go/workspace
         working-directory: package
