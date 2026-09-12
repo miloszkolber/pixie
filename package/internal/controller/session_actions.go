@@ -413,7 +413,7 @@ func (m *SessionManager) Steer(ctx context.Context, sessionID, text string, imag
 	if err != nil {
 		return err
 	}
-	response, err := m.client.CallPi(ctx, "pi.session.steer", map[string]any{"sessionId": sessionID, "expectedRunId": runID, "prompt": prompt})
+	response, err := m.client.CallPi(ctx, "session.steer", map[string]any{"sessionId": sessionID, "expectedRunId": runID, "prompt": prompt})
 	if err != nil {
 		return err
 	}

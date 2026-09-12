@@ -129,7 +129,7 @@ func (m *SessionManager) Rename(ctx context.Context, projectID, sessionID, cwd, 
 		return err
 	}
 	defer entry.op.Unlock()
-	if _, err := m.client.CallPi(entry.context(ctx), "pi.session.rename", map[string]any{"sessionId": sessionID, "title": title}); err != nil {
+	if _, err := m.client.CallPi(entry.context(ctx), "session.rename", map[string]any{"sessionId": sessionID, "title": title}); err != nil {
 		return err
 	}
 	if err := m.records.SetTitle(projectID, sessionID, title); err != nil {
