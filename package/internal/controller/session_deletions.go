@@ -200,12 +200,39 @@ func stableDeletionAgentIdentity(identity string) bool {
 	return strings.HasPrefix(identity, "pi:") && len(identity) > 3
 }
 
+// deletionBindingV2Prefix labels the versioned deletion binding that binds one
+// requested deletion record to the durable pairing plus the exact session. A
+// legacy agent binding is a bare "sha256:<hex>" digest, so carrying the
+// DeletionBindingV2 digest under this prefix keeps the paired form
+// distinguishable in the journal without changing the journal schema/version.
+const deletionBindingV2Prefix = "deletion-binding-v2:"
+
+// PairedDeletionBinding returns the versioned binding persisted with a
+// requested deletion record while a durable pairing is active. It is the
+// existing DeletionBindingV2 digest shape carried under deletionBindingV2Prefix
+// so paired recovery can tell a record-level v2 binding from a legacy agent
+// digest and verify the exact paired session.
+func PairedDeletionBinding(pairing persist.PairingAuthority, sessionID string) (string, error) {
+	digest, err := DeletionBindingV2(pairing, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return deletionBindingV2Prefix + digest, nil
+}
+
+// deletionBindingDigest returns the sha256 digest a stored binding carries,
+// accepting both the versioned v2 form and the bare legacy shape.
+func deletionBindingDigest(binding string) string {
+	return strings.TrimPrefix(binding, deletionBindingV2Prefix)
+}
+
 func validDeletionAgentBinding(binding string) bool {
 	const prefix = "sha256:"
-	if len(binding) != len(prefix)+64 || !strings.HasPrefix(binding, prefix) {
+	digest := deletionBindingDigest(binding)
+	if len(digest) != len(prefix)+64 || !strings.HasPrefix(digest, prefix) {
 		return false
 	}
-	for _, character := range binding[len(prefix):] {
+	for _, character := range digest[len(prefix):] {
 		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
 			return false
 		}

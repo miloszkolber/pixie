@@ -12,6 +12,7 @@ import (
 
 	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 	"github.com/miloszkolber/pixie/internal/identifier"
+	"github.com/miloszkolber/pixie/internal/persist"
 )
 
 func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd string) (SessionSummary, error) {
@@ -265,12 +266,12 @@ func (m *SessionManager) Delete(ctx context.Context, projectID, sessionID, cwd s
 	if err := m.attachLockedWithoutCanvas(ctx, sessionID, entry); err != nil {
 		return err
 	}
-	agentBinding, err := m.client.deletionAgentBinding(agentProfileIdentity(profile, generation))
-	if err != nil {
-		return err
-	}
 	if m.deletions == nil {
 		return fmt.Errorf("session deletion journal is not configured")
+	}
+	agentBinding, err := m.deletionBindingForRequest(sessionID, agentProfileIdentity(profile, generation))
+	if err != nil {
+		return err
 	}
 	if err := m.deletions.Request(projectID, sessionID, agentBinding); err != nil {
 		// A failed write may still have replaced the journal before directory
@@ -336,6 +337,25 @@ func (m *SessionManager) cleanupSessionDeletion(projectID, sessionID string) err
 		}
 	}
 	return errors.Join(cleanup...)
+}
+
+// deletionBindingForRequest returns the binding persisted with a newly requested
+// deletion record. An active durable pairing binds the record to that pairing
+// and this exact session; otherwise today's legacy connected-agent binding is
+// retained. A v2 binding is never produced without an active paired authority.
+func (m *SessionManager) deletionBindingForRequest(sessionID, agentIdentity string) (string, error) {
+	pairing, found, err := InspectPairingAuthority(m.deletions.store)
+	if err != nil {
+		// Recovery already fails closed on an unreadable pairing. Keep the
+		// request on the legacy path instead of synthesizing a v2 binding from
+		// a record that could not be validated; the active recovery mode still
+		// quarantines the resulting record rather than replaying it.
+		return m.client.deletionAgentBinding(agentIdentity)
+	}
+	if found && pairing.Status == persist.PairingStatusPaired {
+		return PairedDeletionBinding(pairing, sessionID)
+	}
+	return m.client.deletionAgentBinding(agentIdentity)
 }
 
 // RecoverDeletions resumes or quarantines retained deletion records. Only an
@@ -411,7 +431,7 @@ func (m *SessionManager) authorizeDeletionRecovery(profile AgentProfile, generat
 	case DeletionAuthorityLegacy:
 		return m.legacyDeletionBindingReason(identity, record.AgentBinding)
 	case DeletionAuthorityPaired:
-		return m.pairedRecoveryReason(identity, authenticatedHello)
+		return m.pairedRecoveryReason(identity, record.SessionID, record.AgentBinding, authenticatedHello)
 	default:
 		// Auto requires pairing whenever a durable pairing record exists; an
 		// unreadable pairing fails closed rather than falling back to legacy.
@@ -420,17 +440,24 @@ func (m *SessionManager) authorizeDeletionRecovery(profile AgentProfile, generat
 			return fmt.Sprintf("paired authority is unreadable and destructive recovery fails closed: %v", err)
 		}
 		if found {
-			return m.pairedRecoveryReason(identity, authenticatedHello)
+			return m.pairedRecoveryReason(identity, record.SessionID, record.AgentBinding, authenticatedHello)
 		}
 		return m.legacyDeletionBindingReason(identity, record.AgentBinding)
 	}
 }
 
 // pairedRecoveryReason validates the live authenticated host and resolved
-// native-storage key against the durable pairing. The returned error is already
-// actionable and keeps the recovery-blocked tombstone.
-func (m *SessionManager) pairedRecoveryReason(hostIdentity string, authenticatedHello bool) string {
-	if _, err := RequirePairedRecovery(m.deletions.store, hostIdentity, m.pairingStorageKey, authenticatedHello); err != nil {
+// native-storage key against the durable pairing, then binds the record itself
+// to the pairing and its exact session. A legacy-only binding (or a binding for
+// another authority, storage or session) is quarantined with an actionable
+// reason and never dispatched. The returned reason keeps the recovery-blocked
+// tombstone.
+func (m *SessionManager) pairedRecoveryReason(hostIdentity, sessionID, binding string, authenticatedHello bool) string {
+	pairing, err := RequirePairedRecovery(m.deletions.store, hostIdentity, m.pairingStorageKey, authenticatedHello)
+	if err != nil {
+		return err.Error()
+	}
+	if err := CheckDeletionBindingV2(pairing, sessionID, deletionBindingDigest(binding)); err != nil {
 		return err.Error()
 	}
 	return ""
