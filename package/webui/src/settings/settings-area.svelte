@@ -3,7 +3,13 @@ import type { Component } from "svelte";
 import Button from "../components/button.svelte";
 import Icon from "../components/icon.svelte";
 import { resolveWorkspaceSettingsSection } from "../schedules/schedules-workspace";
-import { appStore, appStoreApi, selectContextProject, selectPrimary, SettingsSection } from "../store";
+import {
+	appStore,
+	appStoreApi,
+	selectContextProject,
+	selectPrimary,
+	SettingsSection,
+} from "../store";
 import AgentSettings from "./sections/agent-settings.svelte";
 import { resolveSettingsSection, settingsTabs } from "./settings-dialog";
 import { SETTINGS_SECTION_LOADERS } from "./settings-sections";
@@ -76,7 +82,9 @@ $effect(() => {
 function selectSettingsSection(section: SettingsSection): void {
 	appStoreApi
 		.getState()
-		.dispatchWorkspaceSelection(selectPrimary({ kind: "settings", sectionId: section }, "settings"));
+		.dispatchWorkspaceSelection(
+			selectPrimary({ kind: "settings", sectionId: section }, "settings"),
+		);
 	appStoreApi.getState().setSettingsSection(section);
 }
 
