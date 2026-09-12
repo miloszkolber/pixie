@@ -169,18 +169,22 @@ browser screenshot /artifacts/desktop-chat.png >/dev/null
 # Narrow layout, pane navigation, dialog keyboard behavior and overflow.
 echo "UI acceptance: narrow layout"
 browser set viewport 390 844 >/dev/null
+browser wait --timeout 60000 --fn '(() => { const trigger = document.querySelector("[data-testid=session-plan-trigger]"); return trigger instanceof HTMLElement && trigger.getClientRects().length > 0; })()' >/dev/null
 browser find testid session-plan-trigger click >/dev/null
 browser wait --timeout 60000 --fn "document.querySelector('[data-testid=session-plan-content]')?.closest('[popover]')?.matches(':popover-open') === true" >/dev/null
 assert_eval "document.querySelector('[data-testid=session-plan-content]')?.closest('[popover]')?.getBoundingClientRect().right <= window.innerWidth"
 browser screenshot /artifacts/narrow-plan.png >/dev/null
 browser press Escape >/dev/null
 browser wait --timeout 60000 --fn "document.querySelector('[data-testid=session-plan-content]')?.closest('[popover]')?.matches(':popover-open') === false" >/dev/null
+browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("button")).some((node) => node.textContent?.trim() === "Secondary" && node.getClientRects().length > 0)' >/dev/null
 browser find role button click --name "Secondary" >/dev/null
 browser wait --timeout 60000 --fn "document.querySelector('[data-testid=secondary-sidebar]')?.getAttribute('aria-hidden') === 'false'" >/dev/null
 assert_eval "document.documentElement.scrollWidth === document.documentElement.clientWidth"
+browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("button")).some((node) => node.textContent?.trim() === "Primary" && node.getClientRects().length > 0)' >/dev/null
 browser find role button click --name "Primary" >/dev/null
 browser set viewport 1440 900 >/dev/null
-browser find testid open-settings click >/dev/null
+browser wait --timeout 60000 --fn 'Array.from(document.querySelectorAll("[data-testid=open-settings]")).some((node) => node instanceof HTMLElement && node.getClientRects().length > 0)' >/dev/null
+browser eval "(() => { const button = Array.from(document.querySelectorAll('[data-testid=open-settings]')).find(candidate => candidate instanceof HTMLElement && candidate.getClientRects().length > 0); if (!(button instanceof HTMLElement)) throw new Error('Settings control is unavailable'); button.click(); return true; })()" >/dev/null
 browser wait --timeout 60000 --fn "document.querySelector('[data-testid=settings-detail]') !== null" >/dev/null
 browser set viewport 390 844 >/dev/null
 browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
