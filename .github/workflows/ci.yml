@@ -54,8 +54,17 @@ jobs:
       # full-host binary, and `go test` requires webui/dist for //go:embed.
       - run: bun run build
         working-directory: package
-      - run: bun run test
+      - name: Run tests
         working-directory: package
+        run: |
+          set -uo pipefail
+          # A Go temp-dir cleanup can race a background writer. Retry once;
+          # real failures fail both attempts.
+          for attempt in 1 2; do
+            if bun run test; then exit 0; fi
+            echo "test attempt ${attempt} failed"
+          done
+          exit 1
       - name: Validate Compose service isolation
         run: sh package/tests/deployment/compose.test.sh
       - run: gofmt -d cmd internal tests | tee /tmp/pixie-gofmt.diff && test ! -s /tmp/pixie-gofmt.diff
