@@ -196,6 +196,23 @@ jobs:
         with:
           name: pixie-image-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-image
+      - name: Collect local evidence bundle from staged artifacts
+        working-directory: package
+        env:
+          SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
+          RELEASE_ID: ${{ needs.identity.outputs.release_id }}
+          ARTIFACT_DIR: ${{ runner.temp }}/pixie-release
+          IMAGE_DIR: ${{ runner.temp }}/pixie-image
+          EVIDENCE_DIR: ${{ runner.temp }}/pixie-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          bun run scripts/collect-evidence.ts \
+            --artifacts "$ARTIFACT_DIR" \
+            --image "$IMAGE_DIR" \
+            --source-commit "$SOURCE_COMMIT" \
+            --release-id "$RELEASE_ID" \
+            --output "$EVIDENCE_DIR/evidence.json"
       - name: Run live evidence gates against staged artifacts
         env:
           SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
@@ -203,6 +220,7 @@ jobs:
           ARTIFACT_DIR: ${{ runner.temp }}/pixie-release
           IMAGE_DIR: ${{ runner.temp }}/pixie-image
           EVIDENCE_DIR: ${{ runner.temp }}/pixie-evidence
+          EVIDENCE_PATH: ${{ runner.temp }}/pixie-evidence/evidence.json
         working-directory: package
         run: |
           set -uo pipefail
@@ -251,9 +269,9 @@ jobs:
           }
 
           run_gate "check:coverage" bun run check:coverage
-          run_gate "check-package-artifacts" bun scripts/check-package-artifacts.ts
+          run_gate "check-package-artifacts" bun scripts/check-package-artifacts.ts --evidence "$EVIDENCE_PATH"
           run_gate "check-performance" bun scripts/check-performance.ts
-          run_gate "release-gate" bun scripts/release-gate.ts
+          run_gate "release-gate" bun scripts/release-gate.ts --evidence "$EVIDENCE_PATH"
 
           {
             echo

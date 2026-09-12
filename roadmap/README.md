@@ -15,7 +15,23 @@ Current fail-closed gates agree with that verdict:
 - `check-performance` has 0 of 4 required process targets.
 - `release-gate` lacks release identity, archives, binaries, OCI platform digests, checksums, SBOM/provenance, source reachability, and publication authorization. CI now produces archives and the OCI tar before the evidence gates, but the gate collectors still cannot ingest them and no evidence bundle producer exists.
 - Repository lint is not green: the latest run reported 119 errors, 182 warnings, and 16 informational diagnostics, mainly in retained legacy TypeScript. The new Go and contract edits are formatted and type-clean.
-- A `bun test tests` run under Bun 1.3.14 reported 805 passes and 2 failures, both in retained legacy Pi parity (`tests/pi-native-parity/native-child-resources.test.ts`, `tests/pi-native-parity/subagent-child.test.ts`) and caused by a `webidl.util.markAsUncloneable` incompatibility in the pinned `@earendil-works/pi-coding-agent` bundle. The repository pins Bun 1.4.0; re-run under the pinned runtime before assigning them to code, and meanwhile do not count the suite as green.
+- `bun test tests` is fully green at 807 pass / 0 fail under the pinned Bun 1.4.0 in the container and the host's Bun 1.4.2. The earlier two retained-parity failures were a Bun <1.4 `webidl.util.markAsUncloneable` incompatibility, not code.
+- Both Go modules pass `go test -race` on the host with Go 1.27.0, including a fixed test-side supervisor map race. The opt-in `assistant/host/native_real_test.go` ownership harness passes against the host's official Pi 0.85.1, and a live provider prompt succeeds through the installed Pi.
+
+## Authorized execution plan
+
+The operator authorized live host testing and settled the open decisions. Execution is in dependency order; each item records its state.
+
+- **D1 shared contracts:** one schema source in `package/contracts` generating Go `piwire` and TypeScript types. Not started.
+- **D2 authority:** select host v2 and wire durable pairing (`RequirePairedRecovery`, `DeletionBindingV2`) as the production deletion authority. Not started.
+- **D3 Browser:** unavailable by default; enablement requires a verified external worker boundary, which does not exist yet. Default flip and gate pending.
+- **D4 reductions confirmed:** FC24 (subagents), FC27 (local llama.cpp) and FC28 (Signet) are optional and not release-blocking; FC01–FC23, FC25, FC26 and FC29–FC31 remain required.
+- **D5 native delete:** Pi's public RPC has no confirmed delete primitive; Go `session.delete` stays unsupported and reconciliation is confirm/retain. Verify against 0.85.1 before any change.
+- **D6 evidence:** gate evidence comes from local OCI-layout and archive inspection; registry publication stays a separate authorized step.
+- **D7 evidence bundle schema:** accepted; the versioned schema records source commit, release id, platform, profile, exact command, artifact digest, timestamp and result per assertion.
+- **D8 Settings:** remove the modal duplicate and keep the primary-area Settings view.
+- **arm64:** deferred to a separate Mac test pass, not part of this host campaign; record it as an explicit gap rather than a pass.
+- **Live target:** the host's legacy `pixie-assistant.service` remains the working instance. A Go full-host/controller test instance uses separate ports, data dir, and a copied agent directory; the operator authorized deploying and testing there. `PIXIE_PI_SECRET_KEY` was exposed in local tool output and should be rotated before any public sharing.
 
 ## Confirmed implemented baseline
 
@@ -55,7 +71,7 @@ Current fail-closed gates agree with that verdict:
 
 8. **Browser is enabled without containment — SEC-02/EXT-03, FC31, X12/X13.** Chromium uses `--no-sandbox` and shares controller UID, writable state, and host network. Compose capability/resource restrictions are defense in depth, not same-UID or network isolation. Required fix: make untrusted Browser unavailable unless a verified external worker boundary provides separate process authority, filesystem mediation, network policy, pre-exec limits, and cleanup.
 
-9. **CI evidence order — REL-01–REL-04/COVERAGE-01/PKG-01–PKG-03/PERF-01. Sequenced; producers missing.** Static validation no longer runs the live gates. `stage` and `image` produce exact-commit archives and the OCI tar first; a new `evidence` job downloads both and runs coverage/package/performance/release gates; `publish-image` and `publish` depend on that evidence job. Artifact names now use the identity job's source commit instead of `github.sha`. Still missing: gate collectors that ingest the archives/OCI layout, a coverage/performance evidence-bundle producer, and a `latest`/reachability collector, so the evidence job still fails closed on genuinely absent live inputs.
+9. **CI evidence order — REL-01–REL-04/COVERAGE-01/PKG-01–PKG-03/PERF-01. Sequenced; producers missing.** Static validation no longer runs the live gates. `stage` and `image` produce exact-commit archives and the OCI tar first; a new `evidence` job downloads both and runs coverage/package/performance/release gates; `publish-image` and `publish` depend on that evidence job. Artifact names now use the identity job's source commit instead of `github.sha`. A versioned evidence bundle (D7) and a local-only collector now inspect the four archives and the docker-save/OCI image tar, hash the contained binaries, and feed `check-package-artifacts --evidence` and `release-gate --evidence`; the workflow collects the bundle before the gates. Still missing and explicitly fail-closed: coverage/performance producers, packaged-binary execution/lifecycle/embedded-UI probes, non-local Git tag/GitHub Release/registry provenance/SBOM/latest evidence, and arm64 platform digests.
 
 10. **Operating documentation previously outran implementation — DOC-01/DOC-02.** Full-host topology, prompt settlement, stable identity, and migration descriptions were corrected to the observed behavior. Documentation checks validate links and commands, not truth of runtime claims; the remaining host-v2, Browser-worker and parity sections stay explicitly incomplete.
 

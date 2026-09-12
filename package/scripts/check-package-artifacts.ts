@@ -3,6 +3,13 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, relative, resolve } from "node:path";
+import {
+	decodePackageArchiveDetail,
+	type EvidenceBundle,
+	PACKAGE_ARCHIVE_ASSERTION_PREFIX,
+	parsePackageArchiveAssertionId,
+	readEvidenceBundle,
+} from "./evidence-bundle.ts";
 
 export const PACKAGE_VARIANTS = ["assistant", "host"] as const;
 export const PACKAGE_ARCHITECTURES = ["amd64", "arm64"] as const;
@@ -36,6 +43,11 @@ export interface PackageArtifactInput {
 	embeddedUiFiles?: readonly string[];
 	facadeSources?: Readonly<Record<string, string>>;
 	binaries?: readonly PackageBinaryEvidence[];
+	/**
+	 * Fail-closed findings produced while translating an evidence bundle. They
+	 * are always reported as violations and never weaken an archive/binary check.
+	 */
+	evidenceViolations?: readonly string[];
 }
 
 export interface PackageArtifactFacts {
@@ -65,7 +77,7 @@ function stripComments(source: string): string {
 	return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
 }
 
-function expectedArchiveName(
+export function expectedArchiveName(
 	variant: PackageVariant,
 	architecture: PackageArchitecture,
 	releaseId: string,
@@ -348,7 +360,7 @@ function checkBinaries(
 }
 
 export function inspectPackageArtifacts(input: PackageArtifactInput): PackageArtifactReport {
-	const violations: string[] = [];
+	const violations: string[] = [...(input.evidenceViolations ?? [])];
 	const staticChecks: string[] = [];
 	const missingLiveEvidence: string[] = [];
 	for (const [name, source] of Object.entries(input.units ?? {}))
@@ -463,6 +475,131 @@ export async function collectPackageArtifactInput(
 	return { commandSources, webuiSources, embeddedUiFiles, facadeSources, units, configs };
 }
 
+export interface PackageEvidenceMapping {
+	input: PackageArtifactInput;
+	violations: readonly string[];
+}
+
+/**
+ * Translate a validated evidence bundle into the archive side of the package
+ * input. Only `pass` archive assertions carry a machine-readable detail; any
+ * blocked/failed/malformed assertion becomes a precise violation. Binary
+ * presence is taken from the inspected archive members, but behavioral checks
+ * are intentionally not synthesized: the collector does not execute packaged
+ * binaries, so those inputs stay fail-closed.
+ */
+export function packageArtifactInputFromEvidence(
+	evidence: EvidenceBundle,
+	base: PackageArtifactInput,
+): PackageEvidenceMapping {
+	const violations: string[] = [];
+	const archives: PackageArchiveEvidence[] = [];
+	const binaries: PackageBinaryEvidence[] = [];
+	for (const assertion of evidence.assertions) {
+		if (assertion.kind !== "GATE") continue;
+		if (!assertion.id.startsWith(PACKAGE_ARCHIVE_ASSERTION_PREFIX)) continue;
+		if (assertion.status !== "pass") {
+			violations.push(
+				`evidence ${assertion.id}: archive assertion is ${assertion.status} (${assertion.detail})`,
+			);
+			continue;
+		}
+		const key = parsePackageArchiveAssertionId(assertion.id);
+		const artifact = assertion.artifact;
+		if (key === null || artifact === undefined) {
+			violations.push(
+				`evidence ${assertion.id}: archive artifact with a SHA-256 digest is required`,
+			);
+			continue;
+		}
+		const detail = decodePackageArchiveDetail(assertion.detail);
+		if (detail === null) {
+			violations.push(`evidence ${assertion.id}: malformed archive inspection detail`);
+			continue;
+		}
+		if (key.variant !== detail.variant || key.architecture !== detail.architecture) {
+			violations.push(
+				`evidence ${assertion.id}: assertion id does not match inspected ${detail.variant}/${detail.architecture}`,
+			);
+			continue;
+		}
+		if (
+			artifact.name !== expectedArchiveName(detail.variant, detail.architecture, evidence.releaseId)
+		) {
+			violations.push(
+				`evidence ${assertion.id}: artifact ${artifact.name} is not the expected release archive`,
+			);
+			continue;
+		}
+		archives.push({ name: artifact.name, entries: detail.entries });
+		binaries.push({
+			variant: detail.variant,
+			architecture: detail.architecture,
+			path: detail.binary,
+		});
+	}
+	return {
+		input: {
+			...base,
+			releaseId: evidence.releaseId,
+			archives,
+			evidenceViolations: violations,
+			...(binaries.length === 0 ? {} : { binaries }),
+		},
+		violations,
+	};
+}
+
+export const PACKAGE_ARTIFACTS_USAGE = [
+	"usage: bun scripts/check-package-artifacts.ts [--evidence <bundle.json>]",
+	"",
+	"Without --evidence this command keeps its fail-closed behavior: it inspects",
+	"the checked-in sources and reports every absent live archive and binary",
+	"input.",
+	"",
+	"With --evidence it consumes a schema-versioned bundle produced by",
+	"collect-evidence.ts for archive contents and digests. A missing, malformed or",
+	"non-passing archive assertion fails closed.",
+	"",
+	"Known gap: packaged binaries are not executed or emulated here, so",
+	"--version/doctor/readiness/lifecycle/uninstall evidence stays fail-closed.",
+	"Coverage and performance producers are owned by their own gates and are not",
+	"wired through this bundle.",
+].join("\n");
+
+interface PackageArtifactCliOptions {
+	repositoryRoot: string;
+	evidencePath?: string;
+}
+
+function parsePackageArtifactArgs(args: readonly string[]): PackageArtifactCliOptions {
+	const repositoryRoot = resolve(import.meta.dir, "../..");
+	let evidencePath: string | undefined;
+	for (let index = 0; index < args.length; index += 1) {
+		const argument = args[index];
+		if (argument === "--help" || argument === "-h") {
+			console.log(PACKAGE_ARTIFACTS_USAGE);
+			process.exit(0);
+		}
+		if (argument === "--evidence") {
+			const value = args[index + 1];
+			if (value === undefined || value.trim() === "")
+				throw new Error("--evidence requires a bundle path");
+			evidencePath = value;
+			index += 1;
+			continue;
+		}
+		if (argument?.startsWith("--evidence=")) {
+			const value = argument.slice("--evidence=".length).trim();
+			if (value === "") throw new Error("--evidence requires a bundle path");
+			evidencePath = value;
+			continue;
+		}
+		throw new Error(`unknown argument ${argument}`);
+	}
+	return evidencePath === undefined ? { repositoryRoot } : { repositoryRoot, evidencePath };
+}
+
 export function formatPackageArtifactReport(report: PackageArtifactReport): string {
 	if (report.ok) {
 		return (
@@ -479,12 +616,36 @@ export function formatPackageArtifactReport(report: PackageArtifactReport): stri
 
 export async function runPackageArtifactCheck(
 	repositoryRoot = resolve(import.meta.dir, "../.."),
+	evidencePath?: string,
 ): Promise<number> {
-	const report = inspectPackageArtifacts(await collectPackageArtifactInput(repositoryRoot));
+	const base = await collectPackageArtifactInput(repositoryRoot);
+	let input = base;
+	if (evidencePath !== undefined) {
+		let evidence: EvidenceBundle;
+		try {
+			evidence = await readEvidenceBundle(evidencePath);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.error(`check-package-artifacts: FAILED\n  - evidence: ${message}`);
+			return 1;
+		}
+		input = packageArtifactInputFromEvidence(evidence, base).input;
+	}
+	const report = inspectPackageArtifacts(input);
 	const output = formatPackageArtifactReport(report);
 	if (report.ok) console.log(output);
 	else console.error(output);
 	return report.ok ? 0 : 1;
 }
 
-if (import.meta.main) process.exit(await runPackageArtifactCheck());
+if (import.meta.main) {
+	try {
+		const options = parsePackageArtifactArgs(Bun.argv.slice(2));
+		process.exit(await runPackageArtifactCheck(options.repositoryRoot, options.evidencePath));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`check-package-artifacts: ${message}`);
+		console.error(PACKAGE_ARTIFACTS_USAGE);
+		process.exit(2);
+	}
+}

@@ -6,14 +6,28 @@ import {
 	inspectPackageArtifacts,
 	type PackageArtifactInput,
 	type PackageArtifactReport,
+	packageArtifactInputFromEvidence,
 } from "./check-package-artifacts.ts";
 import {
+	type ArchiveEvidence,
+	type BinaryEvidence,
 	collectReleaseIdentityInput,
+	type DockerEvidence,
 	inspectReleaseIdentity,
 	type ReleaseIdentityInput,
 	type ReleaseIdentityReport,
 	releaseIdForCommit,
 } from "./check-release-identity.ts";
+import {
+	CONTROLLER_IMAGE_ASSERTION_ID,
+	decodeControllerImageDetail,
+	decodePackageArchiveDetail,
+	type EvidenceBundle,
+	findAssertion,
+	PACKAGE_ARCHIVE_ASSERTION_PREFIX,
+	parsePackageArchiveAssertionId,
+	readEvidenceBundle,
+} from "./evidence-bundle.ts";
 
 const DOC_PATH = /^(?:\.github\/[^/]+\.md|(?:docs|roadmap)\/|[^/]+\.md$)/i;
 const RELEASE_SOURCE_PATH = /^(?:assistant|package|patches)\//i;
@@ -48,6 +62,11 @@ export interface ReleaseGateInput {
 	packages: PackageArtifactInput;
 	policy?: ReleasePolicyInput;
 	latest?: LatestPublicationEvidence;
+	/**
+	 * Fail-closed findings produced while translating an evidence bundle. They
+	 * never replace an identity/package/policy assertion.
+	 */
+	evidenceViolations?: readonly string[];
 }
 
 export interface ReleasePolicyFacts {
@@ -259,7 +278,12 @@ export function inspectReleaseGate(input: ReleaseGateInput): ReleaseGateReport {
 			? {}
 			: { workflowSources: input.identity.workflowSources });
 	const policy = inspectPolicy(policyInput);
-	const violations = [...identity.violations, ...packages.violations, ...policy.violations];
+	const violations = [
+		...(input.evidenceViolations ?? []),
+		...identity.violations,
+		...packages.violations,
+		...policy.violations,
+	];
 	const missingLiveInputs = [
 		...identity.facts.missingLiveInputs,
 		...packages.missingLiveEvidence,
@@ -301,20 +325,137 @@ export function inspectReleaseGate(input: ReleaseGateInput): ReleaseGateReport {
 
 export const inspectReleasePipeline = inspectReleaseGate;
 
+export interface ReleaseEvidenceMapping {
+	identity: ReleaseIdentityInput;
+	violations: readonly string[];
+}
+
+/**
+ * Translate package/image GATE assertions into release-identity evidence. Only
+ * `pass` assertions with a machine-readable detail are accepted; any
+ * blocked/failed/malformed assertion is surfaced as a violation. Git tag,
+ * GitHub Release, registry provenance and latest-promotion evidence are not
+ * local and therefore stay absent and fail-closed.
+ */
+export function identityInputFromEvidence(
+	evidence: EvidenceBundle,
+	base: ReleaseIdentityInput,
+): ReleaseEvidenceMapping {
+	const violations: string[] = [];
+	const archives: ArchiveEvidence[] = [];
+	const binaries: BinaryEvidence[] = [];
+	for (const assertion of evidence.assertions) {
+		if (assertion.kind !== "GATE") continue;
+		if (!assertion.id.startsWith(PACKAGE_ARCHIVE_ASSERTION_PREFIX)) continue;
+		if (assertion.status !== "pass") {
+			violations.push(
+				`evidence ${assertion.id}: archive assertion is ${assertion.status} (${assertion.detail})`,
+			);
+			continue;
+		}
+		const artifact = assertion.artifact;
+		const detail = decodePackageArchiveDetail(assertion.detail);
+		if (artifact === undefined || detail === null) {
+			violations.push(`evidence ${assertion.id}: malformed archive artifact evidence`);
+			continue;
+		}
+		const key = parsePackageArchiveAssertionId(assertion.id);
+		if (
+			key === null ||
+			key.variant !== detail.variant ||
+			key.architecture !== detail.architecture
+		) {
+			violations.push(
+				`evidence ${assertion.id}: assertion id does not match inspected ${detail.variant}/${detail.architecture}`,
+			);
+			continue;
+		}
+		archives.push({
+			name: artifact.name,
+			sourceCommit: evidence.sourceCommit,
+			releaseId: evidence.releaseId,
+			sha256: artifact.sha256,
+			binaryName: detail.binary,
+		});
+		binaries.push({
+			name: detail.binary,
+			variant: detail.variant,
+			architecture: detail.architecture,
+			sourceCommit: evidence.sourceCommit,
+			releaseId: evidence.releaseId,
+			sha256: detail.binarySha256,
+		});
+	}
+
+	const imageAssertion = findAssertion(evidence, "GATE", CONTROLLER_IMAGE_ASSERTION_ID);
+	let docker: DockerEvidence | undefined;
+	if (imageAssertion === undefined) {
+		violations.push(`evidence: missing ${CONTROLLER_IMAGE_ASSERTION_ID} assertion`);
+	} else if (imageAssertion.status !== "pass") {
+		violations.push(
+			`evidence ${CONTROLLER_IMAGE_ASSERTION_ID}: image assertion is ${imageAssertion.status} (${imageAssertion.detail})`,
+		);
+	} else {
+		const detail = decodeControllerImageDetail(imageAssertion.detail);
+		if (detail === null) {
+			violations.push(
+				`evidence ${CONTROLLER_IMAGE_ASSERTION_ID}: malformed image inspection detail`,
+			);
+		} else {
+			docker = {
+				tag: detail.tag ?? "",
+				version: detail.labels["org.opencontainers.image.version"] ?? "",
+				revision: detail.labels["org.opencontainers.image.revision"] ?? "",
+				indexDigest: detail.indexDigest ?? "",
+				platformDigests: detail.platformDigests,
+				labels: detail.labels,
+				provenance: detail.provenance,
+			};
+		}
+	}
+
+	return {
+		identity: {
+			...base,
+			sourceCommit: evidence.sourceCommit,
+			releaseId: evidence.releaseId,
+			archives,
+			binaries,
+			...(docker === undefined ? {} : { docker }),
+		},
+		violations,
+	};
+}
+
 export async function collectReleaseGateInput(
 	repositoryRoot = resolve(import.meta.dir, "../.."),
+	evidencePath?: string,
 ): Promise<ReleaseGateInput> {
-	const identity = await collectReleaseIdentityInput(repositoryRoot);
-	const releaseId =
-		identity.sourceCommit === undefined
-			? undefined
-			: (releaseIdForCommit(identity.sourceCommit) ?? undefined);
-	const packages = await collectPackageArtifactInput(repositoryRoot);
+	const identityBase = await collectReleaseIdentityInput(repositoryRoot);
+	const packagesBase = await collectPackageArtifactInput(repositoryRoot);
+	const policy =
+		identityBase.workflowSources === undefined
+			? {}
+			: { workflowSources: identityBase.workflowSources };
+	if (evidencePath === undefined) {
+		const releaseId =
+			identityBase.sourceCommit === undefined
+				? undefined
+				: (releaseIdForCommit(identityBase.sourceCommit) ?? undefined);
+		return {
+			identity: identityBase,
+			packages: { ...packagesBase, ...(releaseId === undefined ? {} : { releaseId }) },
+			policy,
+		};
+	}
+	const evidence = await readEvidenceBundle(evidencePath);
+	const identityMapping = identityInputFromEvidence(evidence, identityBase);
+	const packageMapping = packageArtifactInputFromEvidence(evidence, packagesBase);
 	return {
-		identity,
-		packages: { ...packages, ...(releaseId === undefined ? {} : { releaseId }) },
-		policy:
-			identity.workflowSources === undefined ? {} : { workflowSources: identity.workflowSources },
+		identity: identityMapping.identity,
+		packages: packageMapping.input,
+		policy,
+		evidenceViolations: identityMapping.violations,
 	};
 }
 
@@ -329,17 +470,85 @@ export function formatReleaseGateReport(report: ReleaseGateReport): string {
 	].join("\n");
 }
 
+export const RELEASE_GATE_USAGE = [
+	"usage: bun scripts/release-gate.ts [--evidence <bundle.json>]",
+	"",
+	"Without --evidence this command keeps its fail-closed behavior: it derives",
+	"the release identity from the checkout and reports every absent archive,",
+	"binary, manifest, OCI, tag/release and authorization input.",
+	"",
+	"With --evidence it consumes a schema-versioned bundle produced by",
+	"collect-evidence.ts for archive, binary and local controller-image identity.",
+	"A missing, malformed or non-passing assertion fails closed.",
+	"",
+	"Known gap: Git tag/GitHub Release, registry provenance, latest-promotion",
+	"ancestry and the coverage/performance producers are not local and are not",
+	"fabricated here; those inputs stay fail-closed.",
+].join("\n");
+
+interface ReleaseGateCliOptions {
+	repositoryRoot: string;
+	evidencePath?: string;
+}
+
+function parseReleaseGateArgs(args: readonly string[]): ReleaseGateCliOptions {
+	const repositoryRoot = resolve(import.meta.dir, "../..");
+	let evidencePath: string | undefined;
+	for (let index = 0; index < args.length; index += 1) {
+		const argument = args[index];
+		if (argument === "--help" || argument === "-h") {
+			console.log(RELEASE_GATE_USAGE);
+			process.exit(0);
+		}
+		if (argument === "--evidence") {
+			const value = args[index + 1];
+			if (value === undefined || value.trim() === "")
+				throw new Error("--evidence requires a bundle path");
+			evidencePath = value;
+			index += 1;
+			continue;
+		}
+		if (argument?.startsWith("--evidence=")) {
+			const value = argument.slice("--evidence=".length).trim();
+			if (value === "") throw new Error("--evidence requires a bundle path");
+			evidencePath = value;
+			continue;
+		}
+		throw new Error(`unknown argument ${argument}`);
+	}
+	return evidencePath === undefined ? { repositoryRoot } : { repositoryRoot, evidencePath };
+}
+
 export async function runReleaseGate(
 	repositoryRoot = resolve(import.meta.dir, "../.."),
+	evidencePath?: string,
 ): Promise<number> {
-	const report = inspectReleaseGate(await collectReleaseGateInput(repositoryRoot));
+	let input: ReleaseGateInput;
+	try {
+		input = await collectReleaseGateInput(repositoryRoot, evidencePath);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`release-gate: FAILED\n  - evidence: ${message}`);
+		return 1;
+	}
+	const report = inspectReleaseGate(input);
 	const output = formatReleaseGateReport(report);
 	if (report.ok) console.log(output);
 	else console.error(output);
 	return report.ok ? 0 : 1;
 }
 
-if (import.meta.main) process.exit(await runReleaseGate());
+if (import.meta.main) {
+	try {
+		const options = parseReleaseGateArgs(Bun.argv.slice(2));
+		process.exit(await runReleaseGate(options.repositoryRoot, options.evidencePath));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`release-gate: ${message}`);
+		console.error(RELEASE_GATE_USAGE);
+		process.exit(2);
+	}
+}
 
 export function isDocumentationOnlyChange(paths: readonly string[]): boolean {
 	return paths.length > 0 && paths.every((path) => DOC_PATH.test(path));
