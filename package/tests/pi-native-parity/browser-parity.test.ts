@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 // locks the documented contract so the model-facing API cannot drift.
 
 const guide = await Bun.file(new URL("../../internal/browser/guide.md", import.meta.url)).text();
-const mcpDoc = await Bun.file(new URL("../../../docs/mcp.md", import.meta.url)).text();
+const mcpDoc = await Bun.file(new URL("../../../docs/pi.md", import.meta.url)).text();
 
 describe("browser §28 command contract on Chromium", () => {
 	const supported = [

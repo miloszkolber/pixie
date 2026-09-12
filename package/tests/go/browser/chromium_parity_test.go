@@ -101,7 +101,7 @@ func startLiveRuntime(t *testing.T, agentBrowser, chromium string) *liveRuntime 
 	// Chromium's SingletonSocket lives under $TMPDIR and inherits its length
 	// limit (~107 bytes): use a short root because the default t.TempDir
 	// nesting plus a session name already exceeds it (see the documented
-	// session-length guidance in docs/mcp.md).
+	// session-length guidance in docs/pi.md).
 	root, err := os.MkdirTemp("", "pxlive")
 	if err != nil {
 		t.Fatal(err)

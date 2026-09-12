@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { startHost } from "../../../assistant/src/server.ts";
 
-// Conformance for the assistant wire contract documented in docs/pi-protocol.md:
+// Conformance for the assistant wire contract documented in docs/pi.md:
 // the welcome envelope, capability introspection, error frames, and the
 // transport bounds that keep one peer from wedging the host.
 // One host serves the whole file: the wire contract is per-connection, and a

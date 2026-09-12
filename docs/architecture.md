@@ -34,7 +34,7 @@ Each setting has one owner. Pixie never reads or writes another owner's state.
 | Pixie (application state) | Projects, sessions, MCP enablement, Browser engine, schedules, goals, settings, dialog and event projection | Controller data directory (`config.json`, `mcp-modules.json`, `browser.json`) |
 | External (operator-owned) | Memory daemon, search backend and credentials | `SIGNET_DAEMON_URL`, `~/.config/rpiv-web-tools/config.json`, provider `*_API_KEY` |
 
-See [Pi integration](pi.md) for Pi-owned settings, [MCP publisher](mcp.md) for Pixie-owned MCP and Browser state, and [deployment](deployment.md) for external services.
+See [Pi integration](pi.md) for Pi-owned settings, the extension bridge and MCP publication, and [deployment](deployment.md) for external services.
 
 ## State and lifecycle
 
