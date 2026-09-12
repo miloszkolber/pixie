@@ -117,7 +117,7 @@ test("area actions preserve selections on the other side", () => {
 		resourceId: "src/main.ts",
 		reviewId: "review-1",
 	};
-	let state = workspaceReducer(initialWorkspaceState, selectPrimary(primary));
+	let state = workspaceReducer(initialWorkspaceState, selectPrimary(primary, "settings"));
 	state = workspaceReducer(state, selectSecondary(secondary));
 	state = workspaceReducer(state, selectPrimaryArea("settings"));
 	state = workspaceReducer(state, selectSecondaryArea("git"));
@@ -126,6 +126,17 @@ test("area actions preserve selections on the other side", () => {
 	expect(state.secondaryArea).toBe("git");
 	expect(state.primarySelection).toEqual(primary);
 	expect(state.secondarySelection).toEqual(secondary);
+});
+
+test("switching primary areas remembers each area's own selection", () => {
+	const chat = { kind: "session", sessionId: "session-1" } as const;
+	const settings = { kind: "settings", sectionId: "providers" } as const;
+	let state = workspaceReducer(initialWorkspaceState, selectPrimary(chat, "chats"));
+	state = workspaceReducer(state, selectPrimary(settings, "settings"));
+	state = workspaceReducer(state, selectPrimaryArea("chats"));
+	expect(state.primarySelection).toEqual(chat);
+	state = workspaceReducer(state, selectPrimaryArea("settings"));
+	expect(state.primarySelection).toEqual(settings);
 });
 
 test("layout normalization clamps bounds and invalid focus", () => {

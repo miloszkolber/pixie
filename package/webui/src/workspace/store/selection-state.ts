@@ -31,10 +31,18 @@ export interface WorkspaceLayout {
 	primaryFraction: number;
 }
 
+/**
+ * Each primary area remembers its own selection so switching areas (for
+ * example visiting Settings) never discards the open chat, schedule or archive
+ * entry of another area.
+ */
+export type PrimarySelectionByArea = Partial<Record<PrimaryArea, PrimarySelection>>;
+
 export interface WorkspaceSelectionSnapshot {
 	primaryArea: PrimaryArea;
 	secondaryArea: SecondaryArea;
 	primarySelection: PrimarySelection;
+	primarySelectionByArea: PrimarySelectionByArea;
 	secondarySelection: SecondarySelection;
 	layout: WorkspaceLayout;
 }
@@ -173,6 +181,7 @@ export function createInitialWorkspaceState(): WorkspaceSelectionSnapshot {
 		primaryArea: "chats",
 		secondaryArea: "details",
 		primarySelection: null,
+		primarySelectionByArea: {},
 		secondarySelection: null,
 		layout: { ...WORKSPACE_LAYOUT_DEFAULTS },
 	};
@@ -256,7 +265,29 @@ export function workspaceSelectionForProject(
 	if (secondaryProject !== undefined && secondaryProject !== projectId) {
 		next = workspaceReducer(next, clearSecondary());
 	}
-	return next;
+	// Every area remembers its own selection, so prune entries that belong to a
+	// project that is no longer active instead of restoring them later.
+	const primarySelectionByArea: PrimarySelectionByArea = {};
+	for (const [area, selection] of Object.entries(next.primarySelectionByArea) as [
+		PrimaryArea,
+		PrimarySelection,
+	][]) {
+		if (selection !== null && primarySelectionMatchesProject(selection, projectId)) {
+			primarySelectionByArea[area] = selection;
+		}
+	}
+	return { ...next, primarySelectionByArea };
+}
+
+function primarySelectionMatchesProject(
+	selection: PrimarySelection,
+	projectId: string | null,
+): boolean {
+	if (selection?.kind === "session") {
+		return selection.projectId === undefined || selection.projectId === projectId;
+	}
+	if (selection?.kind === "schedule") return selection.projectId === projectId;
+	return true;
 }
 
 function sameLayout(left: WorkspaceLayout, right: WorkspaceLayout): boolean {
@@ -277,7 +308,17 @@ export function workspaceReducer(
 	switch (action.type) {
 		case "select-primary-area": {
 			const primaryArea = normalizePrimaryArea(action.area);
-			return state.primaryArea === primaryArea ? state : { ...state, primaryArea };
+			if (state.primaryArea === primaryArea) return state;
+			const primarySelectionByArea = {
+				...state.primarySelectionByArea,
+				[state.primaryArea]: state.primarySelection,
+			};
+			return {
+				...state,
+				primaryArea,
+				primarySelection: primarySelectionByArea[primaryArea] ?? null,
+				primarySelectionByArea,
+			};
 		}
 		case "select-secondary-area": {
 			const secondaryArea = normalizeSecondaryArea(action.area);
@@ -286,12 +327,23 @@ export function workspaceReducer(
 		case "select-primary": {
 			const primaryArea =
 				action.area === undefined ? state.primaryArea : normalizePrimaryArea(action.area);
-			return state.primarySelection === action.selection && state.primaryArea === primaryArea
-				? state
-				: { ...state, primaryArea, primarySelection: action.selection };
+			const primarySelectionByArea = {
+				...state.primarySelectionByArea,
+				[primaryArea]: action.selection,
+			};
+			if (state.primarySelection === action.selection && state.primaryArea === primaryArea) {
+				return state;
+			}
+			return { ...state, primaryArea, primarySelection: action.selection, primarySelectionByArea };
 		}
-		case "clear-primary":
-			return state.primarySelection === null ? state : { ...state, primarySelection: null };
+		case "clear-primary": {
+			if (state.primarySelection === null) return state;
+			return {
+				...state,
+				primarySelection: null,
+				primarySelectionByArea: { ...state.primarySelectionByArea, [state.primaryArea]: null },
+			};
+		}
 		case "select-secondary": {
 			const secondaryArea =
 				action.area === undefined ? state.secondaryArea : normalizeSecondaryArea(action.area);
@@ -409,6 +461,19 @@ export function sanitizeSecondarySelection(value: unknown): SecondarySelection {
 	return null;
 }
 
+const PRIMARY_AREAS: readonly PrimaryArea[] = ["chats", "archive", "schedules", "settings"];
+
+export function sanitizePrimarySelectionByArea(value: unknown): PrimarySelectionByArea {
+	const result: PrimarySelectionByArea = {};
+	if (!value || typeof value !== "object") return result;
+	const candidate = value as Record<string, unknown>;
+	for (const area of PRIMARY_AREAS) {
+		const selection = sanitizePrimarySelection(candidate[area]);
+		if (selection !== null) result[area] = selection;
+	}
+	return result;
+}
+
 /** Drop invalid restored selections while keeping valid layout and areas. */
 export function sanitizeWorkspaceSelection(value: unknown): WorkspaceSelectionSnapshot {
 	const base = createInitialWorkspaceState();
@@ -418,6 +483,7 @@ export function sanitizeWorkspaceSelection(value: unknown): WorkspaceSelectionSn
 		primaryArea: normalizePrimaryArea(candidate.primaryArea),
 		secondaryArea: normalizeSecondaryArea(candidate.secondaryArea),
 		primarySelection: sanitizePrimarySelection(candidate.primarySelection),
+		primarySelectionByArea: sanitizePrimarySelectionByArea(candidate.primarySelectionByArea),
 		secondarySelection: sanitizeSecondarySelection(candidate.secondarySelection),
 		layout: normalizeWorkspaceLayout(
 			(candidate.layout ?? {}) as Partial<WorkspaceLayout>,
