@@ -2,6 +2,12 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+	COVERAGE_ASSERTION_ID,
+	type EvidenceBundle,
+	findAssertion,
+	readEvidenceBundle,
+} from "./evidence-bundle.ts";
 
 /** Mandatory retained feature rows. Optional rows stay available for an
  * explicitly supplied profile, but do not silently become cutover gates. */
@@ -406,6 +412,66 @@ export async function collectCoverageInput(
 	return { mandatoryFeatureIds, applicableAcceptanceIds, evidence: [], staticViolations };
 }
 
+export interface CoverageEvidenceMapping {
+	input: CoverageInput;
+	violations: readonly string[];
+}
+
+function coverageInputFailure(message: string): CoverageEvidenceMapping {
+	return { input: { evidence: [], staticViolations: [message] }, violations: [message] };
+}
+
+/**
+ * Reconstruct coverage input from a validated evidence bundle. Only a `pass`
+ * COVERAGE-01 assertion carrying a JSON coverage input is accepted; a missing,
+ * blocked, failed or malformed assertion becomes a static violation so the gate
+ * stays fail-closed rather than trusting a status.
+ */
+export function coverageInputFromEvidence(evidence: EvidenceBundle): CoverageEvidenceMapping {
+	const assertion = findAssertion(evidence, "GATE", COVERAGE_ASSERTION_ID);
+	if (assertion === undefined) {
+		return coverageInputFailure(`evidence ${COVERAGE_ASSERTION_ID}: assertion is missing`);
+	}
+	if (assertion.status !== "pass") {
+		return coverageInputFailure(
+			`evidence ${COVERAGE_ASSERTION_ID}: assertion is ${assertion.status} (${assertion.detail})`,
+		);
+	}
+	let value: unknown;
+	try {
+		value = JSON.parse(assertion.detail);
+	} catch {
+		return coverageInputFailure(`evidence ${COVERAGE_ASSERTION_ID}: detail is not valid JSON`);
+	}
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return coverageInputFailure(
+			`evidence ${COVERAGE_ASSERTION_ID}: detail must be a coverage input object`,
+		);
+	}
+	return { input: value as CoverageInput, violations: [] };
+}
+
+async function readCoverageInputFile(path: string): Promise<CoverageInput> {
+	let text: string;
+	try {
+		text = await readFile(path, "utf8");
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return coverageInputFailure(`coverage input ${path} is absent or unreadable: ${message}`).input;
+	}
+	let value: unknown;
+	try {
+		value = JSON.parse(text);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return coverageInputFailure(`coverage input ${path} is not valid JSON: ${message}`).input;
+	}
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return coverageInputFailure(`coverage input ${path} must be a JSON object`).input;
+	}
+	return value as CoverageInput;
+}
+
 export function formatCoverageReport(report: CoverageReport): string {
 	const label = report.ok ? "OK" : "FAILED";
 	return [
@@ -426,8 +492,26 @@ export function formatCutoverReport(report: CutoverReport): string {
 
 export async function runCoverageCheck(
 	repositoryRoot = resolve(import.meta.dir, "../.."),
+	evidencePath?: string,
+	inputPath?: string,
 ): Promise<number> {
-	const coverage = inspectCoverage(await collectCoverageInput(repositoryRoot));
+	let coverageInput: CoverageInput;
+	if (inputPath !== undefined) {
+		coverageInput = await readCoverageInputFile(inputPath);
+	} else if (evidencePath !== undefined) {
+		let evidence: EvidenceBundle;
+		try {
+			evidence = await readEvidenceBundle(evidencePath);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.error(`check-coverage: FAILED\n  - evidence: ${message}`);
+			return 1;
+		}
+		coverageInput = coverageInputFromEvidence(evidence).input;
+	} else {
+		coverageInput = await collectCoverageInput(repositoryRoot);
+	}
+	const coverage = inspectCoverage(coverageInput);
 	const cutover = inspectCutover({ coverage });
 	const output = `${formatCoverageReport(coverage)}\n${formatCutoverReport(cutover)}`;
 	if (coverage.ok && cutover.ok) console.log(output);
@@ -435,4 +519,67 @@ export async function runCoverageCheck(
 	return coverage.ok && cutover.ok ? 0 : 1;
 }
 
-if (import.meta.main) process.exit(await runCoverageCheck());
+export const COVERAGE_USAGE = [
+	"usage: bun scripts/check-coverage.ts [--input <coverage-input.json>] [--evidence <bundle.json>]",
+	"",
+	"Without a flag this command keeps its current fail-closed behavior: it reads",
+	"the checked-in roadmap and reports every absent live FC/X evidence mapping.",
+	"",
+	"--input consumes a raw coverage input object (the same shape collect-evidence",
+	"embeds); --evidence consumes a schema-versioned bundle produced by",
+	"collect-evidence.ts. A missing, malformed or non-passing assertion fails closed.",
+].join("\n");
+
+interface CoverageCliOptions {
+	evidencePath?: string;
+	inputPath?: string;
+}
+
+function parseCoverageArgs(args: readonly string[]): CoverageCliOptions {
+	let evidencePath: string | undefined;
+	let inputPath: string | undefined;
+	for (let index = 0; index < args.length; index += 1) {
+		const argument = args[index];
+		if (argument === "--help" || argument === "-h") {
+			console.log(COVERAGE_USAGE);
+			process.exit(0);
+		}
+		const separator = argument?.indexOf("=") ?? -1;
+		if (argument === "--evidence" || argument === "--input") {
+			const value = args[index + 1];
+			if (value === undefined || value.trim() === "")
+				throw new Error(`${argument} requires a JSON path`);
+			if (argument === "--evidence") evidencePath = value;
+			else inputPath = value;
+			index += 1;
+			continue;
+		}
+		if (
+			separator > 2 &&
+			(argument?.startsWith("--evidence=") || argument?.startsWith("--input="))
+		) {
+			const value = argument.slice(separator + 1).trim();
+			if (value === "") throw new Error(`${argument.slice(0, separator)} requires a JSON path`);
+			if (argument.startsWith("--evidence=")) evidencePath = value;
+			else inputPath = value;
+			continue;
+		}
+		throw new Error(`unknown argument ${argument}`);
+	}
+	return {
+		...(evidencePath === undefined ? {} : { evidencePath }),
+		...(inputPath === undefined ? {} : { inputPath }),
+	};
+}
+
+if (import.meta.main) {
+	try {
+		const options = parseCoverageArgs(Bun.argv.slice(2));
+		process.exit(await runCoverageCheck(undefined, options.evidencePath, options.inputPath));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`check-coverage: ${message}`);
+		console.error(COVERAGE_USAGE);
+		process.exit(2);
+	}
+}

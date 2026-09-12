@@ -4,20 +4,29 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { type CoverageInput, formatCoverageReport, inspectCoverage } from "./check-coverage.ts";
 import {
 	expectedArchiveName,
 	type PackageArchitecture,
 	type PackageVariant,
 } from "./check-package-artifacts.ts";
 import {
+	formatPerformanceReport,
+	inspectPerformance,
+	type PerformanceInput,
+} from "./check-performance.ts";
+import {
 	buildEvidenceBundle,
 	CONTROLLER_IMAGE_ASSERTION_ID,
+	COVERAGE_ASSERTION_ID,
 	type ControllerImageDetail,
 	type EvidenceAssertion,
 	type EvidenceBundle,
 	type EvidencePlatformArchitecture,
 	encodeControllerImageDetail,
 	encodePackageArchiveDetail,
+	PACKAGED_BINARY_ASSERTION_PREFIX,
+	PERFORMANCE_ASSERTION_ID,
 	packageArchiveAssertionId,
 } from "./evidence-bundle.ts";
 
@@ -32,19 +41,26 @@ const ARCHITECTURES = ["amd64", "arm64"] as const;
 const USAGE = [
 	"usage: bun scripts/collect-evidence.ts --artifacts <dir> --image <dir-or-tar>",
 	"         --source-commit <40-hex> --release-id sha-<12> --output <evidence.json>",
+	"         [--coverage <json>] [--performance <json>] [--binary <path>]...",
+	"         [--base-url <origin>]",
 	"",
 	"Inputs may also come from ARTIFACT_DIR, IMAGE_DIR, SOURCE_COMMIT, RELEASE_ID and",
 	"EVIDENCE_OUTPUT. The artifact directory must hold the four commit-named",
 	"*.tar.gz archives plus checksums.txt, SHA256SUMS or release-manifest.json.",
 	"",
-	"All inspection is local: archives are decompressed and hashed, and the image",
-	"tar is read as docker-save or OCI layout. No docker daemon, registry or",
-	"network call is made. Missing expected artifacts are recorded as blocked,",
-	"never as pass.",
+	"Archive and image inspection is local: archives are decompressed and hashed,",
+	"and the image tar is read as docker-save or OCI layout. No docker daemon,",
+	"registry or publication state is involved. Missing expected artifacts are",
+	"recorded as blocked, never as pass.",
 	"",
-	"Known gap: packaged binaries are hashed but not executed, and coverage and",
-	"performance producers are owned by their own gates; this bundle does not",
-	"fabricate those results.",
+	"--coverage and --performance embed a real coverage/performance input after",
+	"re-running its gate; absent inputs produce blocked rows. Each --binary is",
+	"executed for --version and doctor, and a readiness GET is attempted against",
+	"--base-url when present. A probe is pass only after it ran and succeeded; a",
+	"skipped or unsupported probe is blocked and a failing probe is fail.",
+	"",
+	"Known gap: Git tag/GitHub Release, registry provenance/SBOM and latest",
+	"promotion evidence are not local and stay blocked.",
 ].join("\n");
 
 export interface CollectEvidenceOptions {
@@ -53,6 +69,14 @@ export interface CollectEvidenceOptions {
 	sourceCommit: string;
 	releaseId: string;
 	generatedAt: string;
+	/** Raw coverage evidence input; absent produces a blocked COVERAGE-01 row. */
+	coveragePath?: string;
+	/** Raw four-target performance evidence input; absent produces a blocked PERF-01 row. */
+	performancePath?: string;
+	/** Packaged binaries to execute. Absent produces a blocked BIN-PROBE-UNAVAILABLE row. */
+	binaryPaths?: readonly string[];
+	/** Origin used for the readiness GET; absent keeps readiness blocked. */
+	baseUrl?: string;
 }
 
 export interface TarEntry {
@@ -511,6 +535,322 @@ async function inspectImage(path: string): Promise<ImageInspection> {
 	return { assertion, detail };
 }
 
+const PROBE_OUTPUT_LIMIT = 4096;
+const READINESS_TIMEOUT_MS = 5000;
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function probeOutput(value: string): string {
+	return value.length <= PROBE_OUTPUT_LIMIT
+		? value
+		: `${value.slice(0, PROBE_OUTPUT_LIMIT)}...[truncated]`;
+}
+
+function gateAssertion(
+	id: string,
+	status: EvidenceAssertion["status"],
+	command: string,
+	detail: string,
+): EvidenceAssertion {
+	return { kind: "GATE", id, status, command, detail };
+}
+
+/**
+ * Re-run the coverage gate over a real coverage evidence input and embed the
+ * exact input in a passing assertion. An absent input is blocked; an input that
+ * cannot be read, parsed or satisfied is failed. The status is never promoted
+ * from the mere presence of a file.
+ */
+async function inspectCoverageEvidence(path: string | undefined): Promise<EvidenceAssertion> {
+	const command =
+		path === undefined
+			? "test -f <coverage-evidence.json>"
+			: `bun scripts/check-coverage.ts --input ${path}`;
+	if (path === undefined) {
+		return gateAssertion(
+			COVERAGE_ASSERTION_ID,
+			"blocked",
+			command,
+			"coverage evidence was not provided; live FC/X coverage stays blocked",
+		);
+	}
+	let text: string;
+	try {
+		text = await readFile(path, "utf8");
+	} catch (error) {
+		return gateAssertion(
+			COVERAGE_ASSERTION_ID,
+			"fail",
+			command,
+			`coverage evidence could not be read: ${errorMessage(error)}`,
+		);
+	}
+	let value: unknown;
+	try {
+		value = JSON.parse(text);
+	} catch (error) {
+		return gateAssertion(
+			COVERAGE_ASSERTION_ID,
+			"fail",
+			command,
+			`coverage evidence is not valid JSON: ${errorMessage(error)}`,
+		);
+	}
+	if (!isRecord(value)) {
+		return gateAssertion(
+			COVERAGE_ASSERTION_ID,
+			"fail",
+			command,
+			"coverage evidence root must be a JSON object",
+		);
+	}
+	let summary: string;
+	try {
+		const report = inspectCoverage(value as CoverageInput);
+		if (!report.ok) {
+			return gateAssertion(COVERAGE_ASSERTION_ID, "fail", command, formatCoverageReport(report));
+		}
+		summary = JSON.stringify(value);
+	} catch (error) {
+		return gateAssertion(
+			COVERAGE_ASSERTION_ID,
+			"fail",
+			command,
+			`coverage evidence could not be evaluated: ${errorMessage(error)}`,
+		);
+	}
+	return gateAssertion(COVERAGE_ASSERTION_ID, "pass", command, summary);
+}
+
+/**
+ * Re-run the performance gate over a real four-target performance input and
+ * embed the exact input in a passing assertion. Absent input is blocked;
+ * unreadable, malformed or incomplete input is failed.
+ */
+async function inspectPerformanceEvidence(path: string | undefined): Promise<EvidenceAssertion> {
+	const command =
+		path === undefined
+			? "test -f <performance-evidence.json>"
+			: `bun scripts/check-performance.ts --input ${path}`;
+	if (path === undefined) {
+		return gateAssertion(
+			PERFORMANCE_ASSERTION_ID,
+			"blocked",
+			command,
+			"performance evidence was not provided; the four process targets stay blocked",
+		);
+	}
+	let text: string;
+	try {
+		text = await readFile(path, "utf8");
+	} catch (error) {
+		return gateAssertion(
+			PERFORMANCE_ASSERTION_ID,
+			"fail",
+			command,
+			`performance evidence could not be read: ${errorMessage(error)}`,
+		);
+	}
+	let value: unknown;
+	try {
+		value = JSON.parse(text);
+	} catch (error) {
+		return gateAssertion(
+			PERFORMANCE_ASSERTION_ID,
+			"fail",
+			command,
+			`performance evidence is not valid JSON: ${errorMessage(error)}`,
+		);
+	}
+	if (!isRecord(value)) {
+		return gateAssertion(
+			PERFORMANCE_ASSERTION_ID,
+			"fail",
+			command,
+			"performance evidence root must be a JSON object",
+		);
+	}
+	let summary: string;
+	try {
+		const report = inspectPerformance(value as PerformanceInput);
+		if (!report.ok) {
+			return gateAssertion(
+				PERFORMANCE_ASSERTION_ID,
+				"fail",
+				command,
+				formatPerformanceReport(report),
+			);
+		}
+		summary = JSON.stringify(value);
+	} catch (error) {
+		return gateAssertion(
+			PERFORMANCE_ASSERTION_ID,
+			"fail",
+			command,
+			`performance evidence could not be evaluated: ${errorMessage(error)}`,
+		);
+	}
+	return gateAssertion(PERFORMANCE_ASSERTION_ID, "pass", command, summary);
+}
+
+interface CommandProbeResult {
+	exitCode: number | null;
+	stdout: string;
+	stderr: string;
+	spawnError: string | null;
+}
+
+async function runCommandProbe(command: readonly string[]): Promise<CommandProbeResult> {
+	try {
+		const child = Bun.spawn([...command], { stdout: "pipe", stderr: "pipe" });
+		const [stdout, stderr] = await Promise.all([
+			new Response(child.stdout).text(),
+			new Response(child.stderr).text(),
+		]);
+		const exitCode = await child.exited;
+		return {
+			exitCode,
+			stdout: probeOutput(stdout),
+			stderr: probeOutput(stderr),
+			spawnError: null,
+		};
+	} catch (error) {
+		return { exitCode: null, stdout: "", stderr: "", spawnError: errorMessage(error) };
+	}
+}
+
+function binaryProbeDetail(
+	path: string,
+	probe: string,
+	result: CommandProbeResult,
+	extra: Readonly<Record<string, unknown>> = {},
+): string {
+	return JSON.stringify({
+		path,
+		probe,
+		exitCode: result.exitCode,
+		stdout: result.stdout,
+		stderr: result.stderr,
+		...(result.spawnError === null ? {} : { spawnError: result.spawnError }),
+		...extra,
+	});
+}
+
+async function inspectVersionProbe(index: number, path: string): Promise<EvidenceAssertion> {
+	const id = `${PACKAGED_BINARY_ASSERTION_PREFIX}-${index}-version`;
+	const command = `${path} --version`;
+	const result = await runCommandProbe([path, "--version"]);
+	const detail = binaryProbeDetail(path, "version", result);
+	if (result.spawnError !== null) return gateAssertion(id, "blocked", command, detail);
+	return gateAssertion(id, result.exitCode === 0 ? "pass" : "fail", command, detail);
+}
+
+async function inspectDoctorProbe(index: number, path: string): Promise<EvidenceAssertion> {
+	const id = `${PACKAGED_BINARY_ASSERTION_PREFIX}-${index}-doctor`;
+	const command = `${path} doctor`;
+	const result = await runCommandProbe([path, "doctor"]);
+	if (result.spawnError !== null) {
+		return gateAssertion(id, "blocked", command, binaryProbeDetail(path, "doctor", result));
+	}
+	if (result.exitCode === 0) {
+		return gateAssertion(id, "pass", command, binaryProbeDetail(path, "doctor", result));
+	}
+	if (/unknown command/i.test(`${result.stdout}\n${result.stderr}`)) {
+		return gateAssertion(
+			id,
+			"blocked",
+			command,
+			binaryProbeDetail(path, "doctor", result, { supported: false }),
+		);
+	}
+	return gateAssertion(id, "fail", command, binaryProbeDetail(path, "doctor", result));
+}
+
+function readinessEndpoint(baseUrl: string): string {
+	const trimmed = baseUrl.replace(/\/+$/, "");
+	return /\/readyz$/.test(trimmed) ? trimmed : `${trimmed}/readyz`;
+}
+
+async function inspectReadinessProbe(
+	index: number,
+	path: string,
+	baseUrl: string | undefined,
+): Promise<EvidenceAssertion> {
+	const id = `${PACKAGED_BINARY_ASSERTION_PREFIX}-${index}-readiness`;
+	if (baseUrl === undefined || baseUrl.trim() === "") {
+		return gateAssertion(
+			id,
+			"blocked",
+			"test -n <base-url>",
+			JSON.stringify({
+				path,
+				probe: "readiness",
+				url: null,
+				httpStatus: null,
+				skipped: "--base-url was not provided",
+			}),
+		);
+	}
+	const url = readinessEndpoint(baseUrl.trim());
+	const command = `curl -fsS ${url}`;
+	try {
+		const response = await fetch(url, {
+			redirect: "manual",
+			signal: AbortSignal.timeout(READINESS_TIMEOUT_MS),
+		});
+		const body = probeOutput(await response.text().catch(() => ""));
+		const detail = JSON.stringify({
+			path,
+			probe: "readiness",
+			url,
+			httpStatus: response.status,
+			body,
+		});
+		return gateAssertion(id, response.ok ? "pass" : "fail", command, detail);
+	} catch (error) {
+		return gateAssertion(
+			id,
+			"fail",
+			command,
+			JSON.stringify({
+				path,
+				probe: "readiness",
+				url,
+				httpStatus: null,
+				error: errorMessage(error),
+			}),
+		);
+	}
+}
+
+async function inspectBinaryProbes(
+	paths: readonly string[],
+	baseUrl: string | undefined,
+): Promise<EvidenceAssertion[]> {
+	const unique = [
+		...new Set(paths.map((path) => path.trim()).filter((path) => path !== "")),
+	].sort();
+	if (unique.length === 0) {
+		return [
+			gateAssertion(
+				`${PACKAGED_BINARY_ASSERTION_PREFIX}-UNAVAILABLE`,
+				"blocked",
+				"test -n <packaged-binary>",
+				"no packaged binary path was provided; executable probes stay blocked",
+			),
+		];
+	}
+	const assertions: EvidenceAssertion[] = [];
+	for (const [index, path] of unique.entries()) {
+		assertions.push(await inspectVersionProbe(index, path));
+		assertions.push(await inspectDoctorProbe(index, path));
+		assertions.push(await inspectReadinessProbe(index, path, baseUrl));
+	}
+	return assertions;
+}
+
 export async function collectEvidence(options: CollectEvidenceOptions): Promise<EvidenceBundle> {
 	const artifactsDir = resolve(options.artifactsDir);
 	const declaredHashes = await readDeclaredHashes(artifactsDir);
@@ -530,6 +870,9 @@ export async function collectEvidence(options: CollectEvidenceOptions): Promise<
 	}
 	const image = await inspectImage(options.imagePath);
 	assertions.push(image.assertion);
+	assertions.push(await inspectCoverageEvidence(options.coveragePath));
+	assertions.push(await inspectPerformanceEvidence(options.performancePath));
+	assertions.push(...(await inspectBinaryProbes(options.binaryPaths ?? [], options.baseUrl)));
 	assertions.sort((left, right) =>
 		left.kind === right.kind
 			? left.id.localeCompare(right.id)
@@ -554,6 +897,7 @@ interface CollectEvidenceCliOptions extends CollectEvidenceOptions {
 
 function parseArgs(args: readonly string[]): CollectEvidenceCliOptions {
 	const values: Record<string, string> = {};
+	const binaries: string[] = [];
 	const read = (index: number, flag: string): [string, number] => {
 		const value = args[index + 1];
 		if (value === undefined || value.trim() === "") throw new Error(`${flag} requires a value`);
@@ -565,12 +909,21 @@ function parseArgs(args: readonly string[]): CollectEvidenceCliOptions {
 			console.log(USAGE);
 			process.exit(0);
 		}
+		if (argument === "--binary") {
+			const [value, next] = read(index, argument);
+			binaries.push(value);
+			index = next;
+			continue;
+		}
 		if (
 			argument === "--artifacts" ||
 			argument === "--image" ||
 			argument === "--source-commit" ||
 			argument === "--release-id" ||
-			argument === "--output"
+			argument === "--output" ||
+			argument === "--coverage" ||
+			argument === "--performance" ||
+			argument === "--base-url"
 		) {
 			const [value, next] = read(index, argument);
 			values[argument.slice(2)] = value;
@@ -579,7 +932,11 @@ function parseArgs(args: readonly string[]): CollectEvidenceCliOptions {
 		}
 		const separator = argument.indexOf("=");
 		if (argument.startsWith("--") && separator > 2) {
-			values[argument.slice(2, separator)] = argument.slice(separator + 1);
+			const key = argument.slice(2, separator);
+			const value = argument.slice(separator + 1);
+			if (value.trim() === "") throw new Error(`--${key} requires a value`);
+			if (key === "binary") binaries.push(value);
+			else values[key] = value;
 			continue;
 		}
 		throw new Error(`unknown argument ${argument}`);
@@ -589,6 +946,9 @@ function parseArgs(args: readonly string[]): CollectEvidenceCliOptions {
 	const sourceCommit = values["source-commit"] ?? process.env.SOURCE_COMMIT;
 	const releaseId = values["release-id"] ?? process.env.RELEASE_ID;
 	const output = values["output"] ?? process.env.EVIDENCE_OUTPUT;
+	const coveragePath = values["coverage"] ?? process.env.COVERAGE_INPUT;
+	const performancePath = values["performance"] ?? process.env.PERFORMANCE_INPUT;
+	const baseUrl = values["base-url"] ?? process.env.READINESS_BASE_URL;
 	if (artifactsDir === undefined || artifactsDir === "")
 		throw new Error("--artifacts <dir> or ARTIFACT_DIR is required");
 	if (imagePath === undefined || imagePath === "")
@@ -612,6 +972,10 @@ function parseArgs(args: readonly string[]): CollectEvidenceCliOptions {
 		releaseId: resolvedReleaseId,
 		generatedAt: new Date().toISOString(),
 		output,
+		...(coveragePath === undefined || coveragePath === "" ? {} : { coveragePath }),
+		...(performancePath === undefined || performancePath === "" ? {} : { performancePath }),
+		...(binaries.length === 0 ? {} : { binaryPaths: binaries }),
+		...(baseUrl === undefined || baseUrl === "" ? {} : { baseUrl }),
 	};
 }
 

@@ -321,7 +321,7 @@ test("collect-evidence inspects staged archives and a docker-save image", async 
 		expect(bundle.schemaVersion).toBe(1);
 		expect(bundle.profile).toBe("full-host");
 		expect(bundle.platform).toEqual({ os: "linux", arch: "amd64" });
-		expect(bundle.assertions).toHaveLength(5);
+		expect(bundle.assertions).toHaveLength(8);
 
 		for (const variant of VARIANTS) {
 			for (const architecture of ARCHITECTURES) {
@@ -348,6 +348,11 @@ test("collect-evidence inspects staged archives and a docker-save image", async 
 		expect(imageDetail?.architecture).toBe("amd64");
 		expect(imageDetail?.labels["org.opencontainers.image.revision"]).toBe(sourceCommit);
 		expect(imageDetail?.indexDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+		// Producers that were not fed real inputs stay explicitly blocked.
+		for (const id of ["COVERAGE-01", "PERF-01", "BIN-PROBE-UNAVAILABLE"]) {
+			expect(bundle.assertions.find((candidate) => candidate.id === id)?.status).toBe("blocked");
+		}
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -394,9 +399,11 @@ test("collect-evidence marks missing archives blocked instead of pass", async ()
 			generatedAt,
 		});
 		const blocked = bundle.assertions.filter((assertion) => assertion.status === "blocked");
-		expect(blocked).toHaveLength(3);
+		expect(blocked).toHaveLength(6);
 		expect(blocked.every((assertion) => assertion.artifact === undefined)).toBe(true);
-		expect(blocked.every((assertion) => assertion.detail.includes("missing"))).toBe(true);
+		const archiveBlocked = blocked.filter((assertion) => assertion.id.startsWith("PKG-ARCHIVE-"));
+		expect(archiveBlocked).toHaveLength(3);
+		expect(archiveBlocked.every((assertion) => assertion.detail.includes("missing"))).toBe(true);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

@@ -207,12 +207,48 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
+          # These are deliberately shell-local, not exported: collect-evidence
+          # treats an unset COVERAGE_INPUT/PERFORMANCE_INPUT as absent and records
+          # a blocked assertion. Exporting an absent path would be read as a
+          # provided-but-unreadable input and fail instead of block.
+          COVERAGE_FILE="$EVIDENCE_DIR/coverage.json"
+          PERFORMANCE_FILE="$EVIDENCE_DIR/performance.json"
+          READINESS_URL="${{ vars.PIXIE_READINESS_BASE_URL }}"
+          # Coverage and performance producers may place real inputs here; when a
+          # file is absent collect-evidence records a blocked assertion, never pass.
+          EXTRA_ARGS=()
+          if [[ -f "$COVERAGE_FILE" ]]; then
+            EXTRA_ARGS+=(--coverage "$COVERAGE_FILE")
+          fi
+          if [[ -f "$PERFORMANCE_FILE" ]]; then
+            EXTRA_ARGS+=(--performance "$PERFORMANCE_FILE")
+          fi
+          # Execute the amd64 archives that can actually run on this runner. arm64
+          # binaries are not emulated and their probes remain blocked.
+          BIN_DIR="$EVIDENCE_DIR/binaries"
+          mkdir -p "$BIN_DIR"
+          for archive in \
+            "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" \
+            "pixie-${RELEASE_ID}-linux-amd64.tar.gz"; do
+            if [[ -f "$ARTIFACT_DIR/$archive" ]]; then
+              tar -xzf "$ARTIFACT_DIR/$archive" -C "$BIN_DIR" || true
+            fi
+          done
+          for candidate in "$BIN_DIR/pixie-assistant" "$BIN_DIR/pixie"; do
+            if [[ -x "$candidate" ]]; then
+              EXTRA_ARGS+=(--binary "$candidate")
+            fi
+          done
+          if [[ -n "${READINESS_URL:-}" ]]; then
+            EXTRA_ARGS+=(--base-url "$READINESS_URL")
+          fi
           bun run scripts/collect-evidence.ts \
             --artifacts "$ARTIFACT_DIR" \
             --image "$IMAGE_DIR" \
             --source-commit "$SOURCE_COMMIT" \
             --release-id "$RELEASE_ID" \
-            --output "$EVIDENCE_DIR/evidence.json"
+            --output "$EVIDENCE_DIR/evidence.json" \
+            "${EXTRA_ARGS[@]}"
       - name: Run live evidence gates against staged artifacts
         env:
           SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
@@ -268,9 +304,9 @@ jobs:
             fi
           }
 
-          run_gate "check:coverage" bun run check:coverage
+          run_gate "check:coverage" bun run check:coverage -- --evidence "$EVIDENCE_PATH"
           run_gate "check-package-artifacts" bun scripts/check-package-artifacts.ts --evidence "$EVIDENCE_PATH"
-          run_gate "check-performance" bun scripts/check-performance.ts
+          run_gate "check-performance" bun scripts/check-performance.ts --evidence "$EVIDENCE_PATH"
           run_gate "release-gate" bun scripts/release-gate.ts --evidence "$EVIDENCE_PATH"
 
           {

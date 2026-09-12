@@ -29,6 +29,11 @@ export const EVIDENCE_SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
 export const PACKAGE_ARCHIVE_ASSERTION_PREFIX = "PKG-ARCHIVE-";
 export const CONTROLLER_IMAGE_ASSERTION_ID = "IMG-CONTROLLER";
+/** Local coverage and performance producers own these single-assertion rows. */
+export const COVERAGE_ASSERTION_ID = "COVERAGE-01";
+export const PERFORMANCE_ASSERTION_ID = "PERF-01";
+/** One `BIN-PROBE-<index>-<probe>` assertion is recorded per packaged-binary probe. */
+export const PACKAGED_BINARY_ASSERTION_PREFIX = "BIN-PROBE";
 
 const ISO8601_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 

@@ -2,6 +2,12 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+	type EvidenceBundle,
+	findAssertion,
+	PERFORMANCE_ASSERTION_ID,
+	readEvidenceBundle,
+} from "./evidence-bundle.ts";
 
 export const PERFORMANCE_ARCHITECTURES = ["amd64", "arm64"] as const;
 export const PERFORMANCE_VARIANTS = ["assistant", "full-host"] as const;
@@ -196,6 +202,47 @@ export async function collectPerformanceInput(
 	}
 }
 
+export interface PerformanceEvidenceMapping {
+	input: PerformanceInput;
+	violations: readonly string[];
+}
+
+function performanceInputFailure(message: string): PerformanceEvidenceMapping {
+	return { input: { measurements: [], staticViolations: [message] }, violations: [message] };
+}
+
+/**
+ * Reconstruct performance input from a validated evidence bundle. Only a `pass`
+ * PERF-01 assertion carrying a JSON performance input is accepted; a missing,
+ * blocked, failed or malformed assertion becomes a static violation so the gate
+ * stays fail-closed rather than trusting a status.
+ */
+export function performanceInputFromEvidence(evidence: EvidenceBundle): PerformanceEvidenceMapping {
+	const assertion = findAssertion(evidence, "GATE", PERFORMANCE_ASSERTION_ID);
+	if (assertion === undefined) {
+		return performanceInputFailure(`evidence ${PERFORMANCE_ASSERTION_ID}: assertion is missing`);
+	}
+	if (assertion.status !== "pass") {
+		return performanceInputFailure(
+			`evidence ${PERFORMANCE_ASSERTION_ID}: assertion is ${assertion.status} (${assertion.detail})`,
+		);
+	}
+	let value: unknown;
+	try {
+		value = JSON.parse(assertion.detail);
+	} catch {
+		return performanceInputFailure(
+			`evidence ${PERFORMANCE_ASSERTION_ID}: detail is not valid JSON`,
+		);
+	}
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return performanceInputFailure(
+			`evidence ${PERFORMANCE_ASSERTION_ID}: detail must be a performance input object`,
+		);
+	}
+	return { input: value as PerformanceInput, violations: [] };
+}
+
 export function formatPerformanceReport(report: PerformanceReport): string {
 	const label = report.ok ? "OK" : "FAILED";
 	return [
@@ -206,18 +253,93 @@ export function formatPerformanceReport(report: PerformanceReport): string {
 }
 
 export async function runPerformanceCheck(
-	path = resolve(import.meta.dir, "../performance-evidence.json"),
+	inputPath = resolve(import.meta.dir, "../performance-evidence.json"),
+	evidencePath?: string,
 ): Promise<number> {
-	const report = inspectPerformance(await collectPerformanceInput(path));
+	let input: PerformanceInput;
+	if (evidencePath !== undefined) {
+		let evidence: EvidenceBundle;
+		try {
+			evidence = await readEvidenceBundle(evidencePath);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.error(`check-performance: FAILED\n  - evidence: ${message}`);
+			return 1;
+		}
+		input = performanceInputFromEvidence(evidence).input;
+	} else {
+		input = await collectPerformanceInput(inputPath);
+	}
+	const report = inspectPerformance(input);
 	const output = formatPerformanceReport(report);
 	if (report.ok) console.log(output);
 	else console.error(output);
 	return report.ok ? 0 : 1;
 }
 
-if (import.meta.main)
-	process.exit(
-		await runPerformanceCheck(
-			process.argv[2] ?? resolve(import.meta.dir, "../performance-evidence.json"),
-		),
-	);
+export const PERFORMANCE_USAGE = [
+	"usage: bun scripts/check-performance.ts [<performance-input.json>] [--input <json>] [--evidence <bundle.json>]",
+	"",
+	"Without a flag this command keeps its current fail-closed behavior: it reads",
+	"package/performance-evidence.json and reports every absent target.",
+	"",
+	"--input (or the legacy positional path) consumes the raw four-target",
+	"performance input; --evidence consumes a schema-versioned bundle produced by",
+	"collect-evidence.ts. A missing, malformed or non-passing assertion fails closed.",
+].join("\n");
+
+interface PerformanceCliOptions {
+	inputPath?: string;
+	evidencePath?: string;
+}
+
+function parsePerformanceArgs(args: readonly string[]): PerformanceCliOptions {
+	let inputPath: string | undefined;
+	let evidencePath: string | undefined;
+	for (let index = 0; index < args.length; index += 1) {
+		const argument = args[index];
+		if (argument === "--help" || argument === "-h") {
+			console.log(PERFORMANCE_USAGE);
+			process.exit(0);
+		}
+		const separator = argument?.indexOf("=") ?? -1;
+		if (argument === "--input" || argument === "--evidence") {
+			const value = args[index + 1];
+			if (value === undefined || value.trim() === "")
+				throw new Error(`${argument} requires a JSON path`);
+			if (argument === "--evidence") evidencePath = value;
+			else inputPath = value;
+			index += 1;
+			continue;
+		}
+		if (
+			separator > 2 &&
+			(argument?.startsWith("--input=") || argument?.startsWith("--evidence="))
+		) {
+			const value = argument.slice(separator + 1).trim();
+			if (value === "") throw new Error(`${argument.slice(0, separator)} requires a JSON path`);
+			if (argument.startsWith("--evidence=")) evidencePath = value;
+			else inputPath = value;
+			continue;
+		}
+		if (argument?.startsWith("--")) throw new Error(`unknown argument ${argument}`);
+		if (argument !== undefined && argument.trim() !== "") inputPath = argument;
+	}
+	return {
+		...(inputPath === undefined ? {} : { inputPath }),
+		...(evidencePath === undefined ? {} : { evidencePath }),
+	};
+}
+
+if (import.meta.main) {
+	try {
+		const options = parsePerformanceArgs(Bun.argv.slice(2));
+		const defaultPath = resolve(import.meta.dir, "../performance-evidence.json");
+		process.exit(await runPerformanceCheck(options.inputPath ?? defaultPath, options.evidencePath));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`check-performance: ${message}`);
+		console.error(PERFORMANCE_USAGE);
+		process.exit(2);
+	}
+}
