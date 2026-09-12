@@ -24,6 +24,10 @@ Each archive records its SHA-256, variant, architecture, full source SHA and con
 
 The Docker reference is `ghcr.io/miloszkolber/pixie:sha-<12>`. Verify one multi-architecture index plus runnable `linux/amd64` and `linux/arm64` manifests; attestation descriptors do not replace platform evidence.
 
+## Architecture evidence status
+
+The current host campaign exercises `linux/amd64` only. The four-archive matrix and the `linux/arm64` OCI manifest and run remain required for a real release, but arm64 execution, systemd lifecycle and image runs are deferred to a separate Mac/arm64 pass and must be recorded as an open gap rather than a pass. No amd64 result substitutes for arm64 evidence, and the static gates continue to fail closed on the missing arm64 inputs.
+
 ## Validation-only paths
 
 Pull requests, scheduled checks and manual validation paths may derive and test candidate identities, but they must not publish tags, releases, archives or images. Only the explicitly authorized release path for a verified main-commit candidate may promote a complete set.

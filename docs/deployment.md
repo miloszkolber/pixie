@@ -60,6 +60,8 @@ The intended non-Docker topology is one self-contained full-host `pixie` binary 
 
 This topology is not yet an approved deployment recipe. Full-host startup now requires an absolute Pi agent directory and a resolvable Pi executable, joins assistant engine failure to the controller, degrades readiness while a lost session awaits reload, and supports an explicit `runtime.restart` that exits status 75. Fresh-archive install/start/stop/restart/upgrade/rollback/uninstall evidence under real systemd is still missing. See the [roadmap](../roadmap/README.md#confirmed-defects-and-integration-risks).
 
+Architecture status: the current host campaign covers `linux/amd64` only. The arm64 archives and `linux/arm64` image are still required release artifacts, but arm64 installation, systemd lifecycle and image runs are deferred to a separate Mac/arm64 pass and remain an open evidence gap; do not treat amd64 results as arm64 acceptance.
+
 For development inspection only, `bun run build:host` builds the embedded UI and full-host binary at `package/dist/pixie`. Do not replace a working service until final archive installation, native Pi selection, readiness, failure propagation, restart, upgrade, rollback, and uninstall checks pass.
 
 Advanced override only: `PIXIE_STATIC_DIR` serves the web UI from a disk directory instead of the embedded bundle (development use). A Go binary built before `bun run build:web` embeds only a placeholder and falls back to `PIXIE_STATIC_DIR`, then to the container asset path.
