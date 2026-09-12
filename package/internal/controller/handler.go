@@ -382,6 +382,20 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		// session.release is the explicit idle-runtime action. Require the
 		// caller's session lease so another browser cannot evict its resident.
 		return ack(h.Sessions.ReleaseIdleRuntimeForClient(ctx, request.SessionID, request.ProjectID, clientKey))
+	case "session.deletionRecovery":
+		if h.Sessions == nil {
+			return nil, fmt.Errorf("session manager is unavailable")
+		}
+		return h.Sessions.DeletionRecoveryStatus(), nil
+	case "session.confirmExternalDeletion":
+		var request struct {
+			ProjectID string `json:"projectId"`
+			SessionID string `json:"sessionId"`
+		}
+		if h.Sessions == nil || decodeParams(raw, &request) != nil {
+			return nil, fmt.Errorf("malformed session request")
+		}
+		return ack(h.Sessions.ConfirmExternalDeletion(request.ProjectID, request.SessionID))
 	case "session.rename", "session.archive", "session.delete":
 		var request struct {
 			ProjectID string `json:"projectId"`

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -203,6 +204,229 @@ func TestIdleSessionReleaseRevokesLiveNativeMCPRegistration(t *testing.T) {
 		Generation:     registration.Generation,
 	}); err == nil {
 		t.Fatal("idle runtime release left a native MCP registration usable")
+	}
+}
+
+func TestLowerLevelIdleReleaseRetainsResidenceOnNativeRejection(t *testing.T) {
+	initialize := piInitializeResponse()
+	initialize["operationSet"].(map[string]bool)["session.release"] = false
+	var loads atomic.Int32
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, initialize, nil, func(method string, _ map[string]any) {
+		if method == "session.load" {
+			loads.Add(1)
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.ReleaseIdleRuntime(ctx, "chat"); err == nil {
+		t.Fatal("unsupported native release succeeded")
+	}
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatalf("local residence was discarded: %v", err)
+	}
+	if loads.Load() != 1 {
+		t.Fatalf("session reloaded %d times; native release failure should retain residence", loads.Load())
+	}
+}
+
+func TestPromptRollbackOnlyForStructuredProvenRejection(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		code         int
+		wantMessages int
+		wantEligible bool
+	}{
+		{name: "proven rejection", code: -32004, wantMessages: 0, wantEligible: true},
+		{name: "uncertain dispatch", code: -32003, wantMessages: 1, wantEligible: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			requests := make(chan map[string]any, 1)
+			manager, _, project, _ := newSessionManager(t, nil, requests)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+				t.Fatal(err)
+			}
+			if err := manager.Prompt(ctx, "chat", "optimistic", nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			request := <-requests
+			connection := request["connection"].(*websocket.Conn)
+			if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": request["id"], "error": map[string]any{"code": test.code, "message": "classified"}}); err != nil {
+				t.Fatal(err)
+			}
+			deadline := time.Now().Add(time.Second)
+			for {
+				snapshot, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a")
+				if err != nil {
+					t.Fatal(err)
+				}
+				summary, _ := snapshot["summary"].(controller.SessionSummary)
+				streaming := summary.IsStreaming
+				if !streaming {
+					messages, _ := snapshot["messages"].([]any)
+					if len(messages) != test.wantMessages {
+						t.Fatalf("messages = %#v, want %d", messages, test.wantMessages)
+					}
+					if summary.Queue != nil && (len(summary.Queue.FollowUp) != 0 || len(summary.Queue.Steering) != 0 || summary.Queue.Blocked != nil) {
+						t.Fatalf("unexpected queue state after prompt outcome: %#v", summary.Queue)
+					}
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("prompt did not settle")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			eligible, _ := manager.IdleReleaseEligible("chat")
+			if eligible != test.wantEligible {
+				t.Fatalf("release eligibility = %v, want %v", eligible, test.wantEligible)
+			}
+			if test.wantEligible {
+				if err := manager.Prompt(ctx, "chat", "retry", nil, nil); err != nil {
+					t.Fatalf("retry after proven rejection: %v", err)
+				}
+				retry := <-requests
+				if err := writeRPC(retry["connection"].(*websocket.Conn), map[string]any{"jsonrpc": "2.0", "id": retry["id"], "error": map[string]any{"code": -32004, "message": "retry rejected"}}); err != nil {
+					t.Fatal(err)
+				}
+				deadline := time.Now().Add(time.Second)
+				for {
+					eligible, _ := manager.IdleReleaseEligible("chat")
+					if eligible {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatal("retry rejection did not restore release eligibility")
+					}
+					time.Sleep(time.Millisecond)
+				}
+			}
+		})
+	}
+}
+
+func TestDeletionRecoveryQuarantinesUnmatchedBindingWithoutBlocking(t *testing.T) {
+	manager, _, project, store := newSessionManager(t, nil, nil)
+	deletions := controller.NewSessionDeletions(store)
+	if err := deletions.Request(project.ID, "chat", "sha256:"+strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RecoverDeletions(context.Background()); err != nil {
+		t.Fatalf("unmatched deletion binding blocked startup: %v", err)
+	}
+	status := manager.DeletionRecoveryStatus()
+	if len(status) != 1 || status[0].SessionID != "chat" || status[0].Reason == "" {
+		t.Fatalf("quarantine = %#v", status)
+	}
+	pending, err := controller.NewSessionDeletions(store).List()
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("tombstone was not retained: %#v %v", pending, err)
+	}
+	if err := manager.ConfirmExternalDeletion(project.ID, "chat"); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = controller.NewSessionDeletions(store).List()
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("confirmed external deletion was not finished: %#v %v", pending, err)
+	}
+	if len(manager.DeletionRecoveryStatus()) != 0 {
+		t.Fatal("resolved deletion remained quarantined")
+	}
+}
+
+func TestReattachedSettledRunClearsStreamingAndAdmitsFollowUp(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	policy, err := workspace.NewPathPolicy([]string{root}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := persist.Store{Dir: t.TempDir()}
+	projects := workspace.NewProjects(store, policy)
+	project, err := projects.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := controller.NewSessionRecords(store)
+	if err := records.Record(controller.ProjectSessionRecord{ProjectID: project.ID, SessionID: "chat", CWD: project.Roots[0]}); err != nil {
+		t.Fatal(err)
+	}
+	manager := controller.NewSessionManager(projects, policy, records, controller.NewSessionQueues(store), controller.NewObjectives(store), func(string, any) {})
+	settle := make(chan struct{})
+	var writeMu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		socket, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer socket.CloseNow()
+		for {
+			_, payload, err := socket.Read(ctx)
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil {
+				return
+			}
+			writeMu.Lock()
+			switch rpc.Method {
+			case "runtime.hello":
+				_ = writeRPC(socket, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": piInitializeResponse()})
+			case "session.load":
+				_ = writeRPC(socket, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": map[string]any{"sessionId": "chat", "capabilities": map[string]any{"sessions": 1}, "runId": "native-1", "messages": []any{}}})
+				go func() {
+					<-settle
+					writeMu.Lock()
+					defer writeMu.Unlock()
+					_ = writeRPC(socket, map[string]any{"jsonrpc": "2.0", "method": "session.event", "params": map[string]any{"sessionId": "chat", "event": map[string]any{"type": "agent_settled"}}})
+				}()
+			default:
+				_ = writeRPC(socket, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": map[string]any{}})
+			}
+			writeMu.Unlock()
+		}
+	}))
+	defer server.Close()
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", manager)
+	manager.SetClient(client)
+	defer client.Close()
+
+	snapshot, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary, _ := snapshot["summary"].(controller.SessionSummary); !summary.IsStreaming {
+		t.Fatalf("reattached active run was not streaming: %#v", summary)
+	}
+	if eligible, reason := manager.IdleReleaseEligible("chat"); eligible {
+		t.Fatalf("active reattached run was idle-release eligible: %s", reason)
+	}
+	close(settle)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		snapshot, err = manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		summary, _ := snapshot["summary"].(controller.SessionSummary)
+		if !summary.IsStreaming {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("settlement did not clear the reattached run: %#v", summary)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if eligible, reason := manager.IdleReleaseEligible("chat"); !eligible {
+		t.Fatalf("settled reattached session is not idle-release eligible: %s", reason)
 	}
 }
 

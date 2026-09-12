@@ -133,7 +133,7 @@ jobs:
           [[ "$("$CANDIDATE_DIR/pixie" --version)" == "pixie $RELEASE_ID (revision $SOURCE_COMMIT)" ]]
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: pixie-release-${{ github.sha }}
+          name: pixie-release-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-release
           if-no-files-found: error
           retention-days: 14
@@ -165,13 +165,114 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
-          name: pixie-image-${{ github.sha }}
+          name: pixie-image-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-*
           if-no-files-found: warn
           retention-days: 14
+
+  evidence:
+    name: Run live evidence gates on exact-commit artifacts
+    needs: [validate, identity, stage, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.identity.outputs.source_commit }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - name: Install evidence dependencies
+        run: bun install --frozen-lockfile
+        working-directory: package
+      - name: Download staged commit archives
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-release-${{ needs.identity.outputs.source_commit }}
+          path: ${{ runner.temp }}/pixie-release
+      - name: Download staged OCI image tar
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-image-${{ needs.identity.outputs.source_commit }}
+          path: ${{ runner.temp }}/pixie-image
+      - name: Run live evidence gates against staged artifacts
+        env:
+          SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
+          RELEASE_ID: ${{ needs.identity.outputs.release_id }}
+          ARTIFACT_DIR: ${{ runner.temp }}/pixie-release
+          IMAGE_DIR: ${{ runner.temp }}/pixie-image
+          EVIDENCE_DIR: ${{ runner.temp }}/pixie-evidence
+        working-directory: package
+        run: |
+          set -uo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          LOG="$EVIDENCE_DIR/decision-log.txt"
+          {
+            echo "pixie live evidence decision log"
+            echo "source_commit=$SOURCE_COMMIT"
+            echo "release_id=$RELEASE_ID"
+            echo
+            echo "staged archive directory ($ARTIFACT_DIR):"
+            ls -la "$ARTIFACT_DIR" || true
+            echo
+            echo "staged OCI image directory ($IMAGE_DIR):"
+            ls -la "$IMAGE_DIR" || true
+            echo
+            echo "staged archive checksums:"
+            (cd "$ARTIFACT_DIR" && sha256sum ./*.tar.gz) || true
+            echo
+            echo "expected exact-commit archives:"
+            for archive in \
+              "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" \
+              "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" \
+              "pixie-${RELEASE_ID}-linux-amd64.tar.gz" \
+              "pixie-${RELEASE_ID}-linux-arm64.tar.gz"; do
+              if [[ -f "$ARTIFACT_DIR/$archive" ]]; then
+                echo "  present: $archive"
+              else
+                echo "  MISSING: $archive"
+              fi
+            done
+            echo
+          } | tee -a "$LOG"
+
+          GATE_FAILURES=0
+          run_gate() {
+            local name="$1"
+            shift
+            echo "=== gate: $name ===" | tee -a "$LOG"
+            "$@" 2>&1 | tee -a "$LOG"
+            local status="${PIPESTATUS[0]}"
+            echo "--- $name exit status: $status ---" | tee -a "$LOG"
+            if [[ "$status" -ne 0 ]]; then
+              GATE_FAILURES=$((GATE_FAILURES + 1))
+            fi
+          }
+
+          run_gate "check:coverage" bun run check:coverage
+          run_gate "check-package-artifacts" bun scripts/check-package-artifacts.ts
+          run_gate "check-performance" bun scripts/check-performance.ts
+          run_gate "release-gate" bun scripts/release-gate.ts
+
+          {
+            echo
+            echo "gate failures: $GATE_FAILURES"
+            echo "evidence gates are fail-closed; missing or invalid live inputs block publication"
+          } | tee -a "$LOG"
+          [[ "$GATE_FAILURES" -eq 0 ]]
+      - name: Upload live evidence decision log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pixie-evidence-${{ needs.identity.outputs.source_commit }}
+          path: ${{ runner.temp }}/pixie-evidence
+          if-no-files-found: warn
+          retention-days: 14
+
   publish-image:
     name: Publish matching controller image after complete validation
-    needs: [validate, identity, stage, image]
+    needs: [validate, identity, stage, image, evidence]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -244,14 +345,14 @@ jobs:
             > "$RUNNER_TEMP/pixie-image-evidence.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: pixie-image-evidence-${{ github.sha }}
+          name: pixie-image-evidence-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-image-evidence.json
           if-no-files-found: error
           retention-days: 14
 
   publish:
     name: Publish immutable GitHub Release
-    needs: [validate, identity, stage, image, publish-image]
+    needs: [validate, identity, stage, image, evidence, publish-image]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -259,15 +360,15 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.identity.outputs.source_commit }}
           fetch-depth: 0
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
         with:
-          name: pixie-release-${{ github.sha }}
+          name: pixie-release-${{ needs.identity.outputs.source_commit }}
           path: release
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
         with:
-          name: pixie-image-evidence-${{ github.sha }}
+          name: pixie-image-evidence-${{ needs.identity.outputs.source_commit }}
           path: image-evidence
       - name: Guard short-ID collisions
         working-directory: release
@@ -312,10 +413,11 @@ jobs:
         working-directory: release
         run: |
           set -euo pipefail
+          SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
           RELEASE_ID='${{ needs.identity.outputs.release_id }}'
           # Existing identical payloads are no-ops. A mismatch stops the retry;
           # partial publication is retained and never promotes latest.
-          gh release view "$RELEASE_ID" >/dev/null 2>&1 || gh release create "$RELEASE_ID" --draft --title "$RELEASE_ID" --target "$GITHUB_SHA"
+          gh release view "$RELEASE_ID" >/dev/null 2>&1 || gh release create "$RELEASE_ID" --draft --title "$RELEASE_ID" --target "$SOURCE_COMMIT"
           TEMP_DIR=$(mktemp -d)
           trap 'rm -rf "$TEMP_DIR"' EXIT
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_ID" > "$TEMP_DIR/release.json"

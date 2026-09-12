@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,6 +69,40 @@ func TestControllerRejectsLocalAssistantSettings(t *testing.T) {
 	}
 	if err := rejectControllerConfigAssistantSettings(runtimeConfigFile{PiExecutable: "/usr/local/bin/pi"}); err == nil {
 		t.Fatal("controller accepted a piExecutable from configuration")
+	}
+}
+
+func TestFullHostRequiresResolvedPiSelection(t *testing.T) {
+	if _, err := validateFullHostPiSelection("", "/usr/local/bin/pi"); err == nil {
+		t.Fatal("missing agent directory was accepted")
+	}
+	if _, err := validateFullHostPiSelection("relative/agent", "/usr/local/bin/pi"); err == nil {
+		t.Fatal("relative agent directory was accepted")
+	}
+	if _, err := validateFullHostPiSelection(t.TempDir(), "definitely-not-a-pi-binary"); err == nil {
+		t.Fatal("missing Pi executable was accepted")
+	}
+	if _, err := validateFullHostPiSelection(t.TempDir(), "sh"); err != nil {
+		t.Fatalf("resolvable Pi executable was rejected: %v", err)
+	}
+}
+
+func TestFullHostWaitsOnAssistantLifecycle(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitFullHost(cancelled, make(chan error), make(chan error), make(chan struct{})); err != nil {
+		t.Fatal(err)
+	}
+	assistantErr := make(chan error, 1)
+	assistantErr <- errors.New("native engine lost")
+	err := waitFullHost(context.Background(), make(chan error), assistantErr, make(chan struct{}))
+	if err == nil || !strings.Contains(err.Error(), "native engine lost") {
+		t.Fatalf("assistant failure was not joined: %v", err)
+	}
+	restart := make(chan struct{})
+	close(restart)
+	if err := waitFullHost(context.Background(), make(chan error), make(chan error), restart); !errors.Is(err, errRestartRequested) {
+		t.Fatalf("restart signal = %v, want errRestartRequested", err)
 	}
 }
 

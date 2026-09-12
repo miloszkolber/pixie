@@ -1,6 +1,6 @@
 # Pixie
 
-Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). The current host assistant uses Pi's SDK; the Pixie controller, interface and Browser MCP publisher run in Docker, with a supported single-binary install documented in [deployment](docs/deployment.md).
+Pixie is a self-hosted Web UI for [Pi](https://github.com/earendil-works/pi). The release design uses a Go host assistant that supervises the selected Pi executable through native RPC; its remaining cutover defects are tracked in the [roadmap](roadmap/README.md). The Pixie controller, interface and Browser MCP publisher run in Docker, with the binary layout documented in [deployment](docs/deployment.md).
 
 The interface provides persistent chats, streaming, image/text attachments, native model controls, read-only files and Git views, goals and schedules. Optional native integrations provide delegation, plans, MCP tools and memory.
 
@@ -16,6 +16,6 @@ Open <http://127.0.0.1:7312>. Pixie is intended for one trusted user.
 
 [Architecture](docs/architecture.md) · [Pi integration](docs/pi.md) · [Extensions](docs/pi-extensions.md) · [MCP](docs/mcp.md) · [Development](docs/development.md) · [Security](docs/security.md)
 
-The [implementation roadmap](roadmap/README.md) covers the shared Go assistant, six-column workspace, both host builds, commit-named Docker/releases and optional Canvas/Design modules. Those are implementation targets, not a description of features already shipped.
+The central [roadmap and investigation backlog](roadmap/README.md) distinguishes verified source behavior, integration defects, deferred work, evidence gaps, and improvement ideas.
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).

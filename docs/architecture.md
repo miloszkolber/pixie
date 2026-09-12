@@ -2,10 +2,10 @@
 
 | Process | Location | Owns |
 | --- | --- | --- |
-| Pi SDK service, `:3284` | Host user | Native sessions, providers, credentials, models and extensions |
+| Pi assistant service, `:3284` | Host user | Selected Pi process, native sessions, providers, credentials, models and extensions; Go is the release target and the current local deployment retains the legacy service pending cutover |
 | Pixie, `:7312` | Application container | Web UI, projects, files, Git, goals, questions, queues, schedules, Browser MCP publisher, Chromium and artifacts |
 
-Host networking lets the container reach host services over loopback. Only the application receives project mounts, read-only and at the same absolute paths used by Pi. Browser state lives under the controller data directory (`browser/{artifacts,state}`, mounted at `/var/lib/pixie/browser` in Compose) and has no project, application-state or Pi-configuration mounts.
+Host networking lets the container reach host services over loopback. The application receives project mounts, read-only and at the same absolute paths used by Pi. In-process Browser children receive scoped working directories and environment values, but they share the controller UID, mount namespace, host network, and writable application data; those conventions are not isolation. Browser state lives under `browser/{artifacts,state}` inside the controller data directory.
 
 ## Source
 
@@ -13,7 +13,7 @@ Paths below are relative to `pixie/`, which holds the shared Bun workspace and l
 
 | Directory | Responsibility |
 | --- | --- |
-| `assistant/` | Pi SDK service and thin application bridges (native sessions, providers, UI bridge) |
+| `assistant/` | Go assistant facade/native Pi supervisor plus retained legacy parity implementation and fixtures |
 | `package/cmd`, `package/internal/controller` | Application HTTP/WebSocket/MCP, MCP publisher, native Pi projection and lifecycle |
 | `package/internal/mcpserver`, `package/internal/browser` | In-process Browser module publication and browser runtime |
 | `package/internal/workspace`, `package/internal/persist` | Bounded project access and durable state |

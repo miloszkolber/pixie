@@ -127,6 +127,19 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 			entry.state.Unlock()
 			return nil
 		}
+		wakeQueue := false
+		if kind == "agent_settled" && !target.promptActive && (target.streaming || target.runID != "") {
+			// A reload can reattach to a session whose native run was still
+			// active in the snapshot. The Go host reports settlement with
+			// agent_settled, so this is the authoritative signal that the
+			// replayed run ended. Clear it to admit durable follow-ups and idle
+			// release. An in-flight controller prompt keeps its RPC result
+			// authoritative and is excluded by the promptActive guard.
+			target.streaming = false
+			target.runID = ""
+			target.settlement = &SessionSettlement{StopReason: "complete"}
+			wakeQueue = true
+		}
 		event := make(map[string]any, len(update))
 		for key, value := range update {
 			if key != "sessionUpdate" {
@@ -135,7 +148,13 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 		}
 		event["type"] = kind
 		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": event})
+		if wakeQueue {
+			m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "complete", "status": "complete"}})
+		}
 		entry.state.Unlock()
+		if wakeQueue {
+			m.scheduleFollowUp(sessionID, entry)
+		}
 		return nil
 	}
 	// Late message events from an older run must not resurrect a completed

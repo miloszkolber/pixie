@@ -7,6 +7,9 @@ import (
 	"os/exec"
 )
 
+func lockNativeFile(*os.File) error   { return nil }
+func unlockNativeFile(*os.File) error { return nil }
+
 func configureNativeProcess(_ *exec.Cmd) {}
 
 func interruptNativeProcess(process *os.Process) {

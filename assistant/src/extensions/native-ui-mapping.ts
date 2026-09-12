@@ -28,7 +28,7 @@ export interface NativeUiRow {
 	readonly finalMapping: string;
 }
 
-// Bounds mirror contracts.md and the live bridge so mapping validation agrees
+// Bounds mirror roadmap/README.md and the live bridge so mapping validation agrees
 // with admission. They are repeated here (not imported) to keep this contract
 // readable without a runtime dependency.
 export const NATIVE_UI_BOUNDS = {

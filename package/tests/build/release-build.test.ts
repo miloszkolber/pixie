@@ -3,6 +3,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { installInstructions } from "../../scripts/build-release.ts";
 import { writeDeterministicTarGz } from "../../scripts/deterministic-tar.ts";
 
 const packageRoot = resolve(import.meta.dir, "../..");
@@ -161,4 +162,18 @@ test("release archives are deterministic, regular-file-only, and readable by the
 	} finally {
 		await rm(temporary, { recursive: true, force: true });
 	}
+});
+
+test("generated install instructions carry required private configuration", () => {
+	const assistant = installInstructions("assistant");
+	expect(assistant).toContain("~/.config/pixie/pixie.env");
+	expect(assistant).toContain("PIXIE_PI_SECRET_KEY");
+	expect(assistant).not.toContain("PIXIE_MCP_TOKEN");
+	expect(assistant).toContain("agentDir");
+
+	const host = installInstructions("host");
+	expect(host).toContain("~/.config/pixie/pixie.env");
+	expect(host).toContain("PIXIE_PI_SECRET_KEY");
+	expect(host).toContain("PIXIE_MCP_TOKEN");
+	expect(host).toContain("piExecutable");
 });

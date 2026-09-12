@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const packageRoot = resolve(import.meta.dir, "../..");
@@ -67,9 +66,7 @@ test("checked-in runtime composition has explicit controller-only and drain gate
 });
 
 test("controller and full-host executable fixtures exercise mode boundaries without live Pi claims", async () => {
-	const buildTempRoot = process.env.TMPDIR?.trim() || resolve(repositoryRoot, ".pixie-tmp");
-	await mkdir(buildTempRoot, { recursive: true });
-	const temporary = await mkdtemp(join(buildTempRoot, "pixie-runtime-gates-"));
+	const temporary = await mkdtemp(join(repositoryRoot, ".pixie-runtime-gates-"));
 	try {
 		const fullHostBinary = join(temporary, "pixie");
 		const controllerBinary = join(temporary, "pixie-controller");

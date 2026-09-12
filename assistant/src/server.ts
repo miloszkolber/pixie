@@ -242,6 +242,18 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			// Start from the canonical retained-operation catalog so every operation
 			// has an explicit negotiated value, including newly added bridge routes.
 			...Object.fromEntries(ADMIN_OPERATIONS.map(({ id }) => [id, false])),
+			// Core methods are explicit too. Controllers reject absent/partial maps;
+			// this keeps the retained Bun compatibility host fail-closed without an
+			// optimistic legacy fallback.
+			"session.list": true,
+			"session.create": true,
+			"session.load": true,
+			"session.prompt": true,
+			"session.cancel": true,
+			"session.configure": true,
+			"session.release": true,
+			"runtime.release": true,
+			"runtime.releaseToTui": true,
 			// Session administration still travels through the native RPC-backed
 			// session owner, but is listed explicitly so Go does not need a broad
 			// Administration assumption.
@@ -254,6 +266,9 @@ async function startUnlockedHost(options: HostOptions, startup?: Deadline) {
 			"session.prompt.resource": true,
 			"session.uiResponse": true,
 			"session.uiCancel": true,
+			// Restart is executable-owned and is available only when both admission
+			// and the termination hook were wired by the composition root.
+			"runtime.restart": options.allowSelfRestart === true && typeof options.onRestart === "function",
 			"pi.session.info": true,
 			"pi.session.rename": true,
 			"pi.session.archive": true,

@@ -105,6 +105,8 @@ type sessionEntry struct {
 type userEcho struct {
 	text            string
 	offset          int
+	messageIndex    int
+	optimistic      any
 	images          []map[string]any
 	resources       []map[string]any
 	matched         []bool
@@ -148,6 +150,10 @@ type SessionManager struct {
 	deviceCode      func(map[string]any)
 	history         *HistoryIndex
 	nativeMCP       nativeMCPRevoker
+
+	// deletionQuarantine retains requested records that could not be safely
+	// resumed this boot. They are never dispatched or forgotten implicitly.
+	deletionQuarantine map[string]DeletionRecovery
 }
 
 type pendingCommandCatalog struct {
@@ -160,7 +166,7 @@ func NewSessionManager(projects *workspace.Projects, policy *workspace.PathPolic
 	if records != nil {
 		deletions = NewSessionDeletions(records.store)
 	}
-	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now}
+	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now, deletionQuarantine: make(map[string]DeletionRecovery)}
 	manager.history = newHistoryIndex(manager)
 	return manager
 }
@@ -236,6 +242,12 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 	}
 	if !profile.Compatible {
 		return nil, nil, unsupportedAgentCapability(strings.Join(profile.MissingRequired, " and "))
+	}
+	// Model and thinking changes are separate native mutations. Reject them
+	// before session.create so an unsupported host cannot leave an orphan native
+	// transcript or a local record behind.
+	if (model != nil || thinking != "") && !profile.OperationSet["session.configure"] {
+		return nil, nil, unsupportedAgentCapability("create-time model/thinking overrides")
 	}
 	m.mu.Lock()
 	if m.closed {
@@ -544,9 +556,9 @@ func (m *SessionManager) attachLockedWithCanvas(ctx context.Context, sessionID s
 	replay.configOptions = jsonValues(response.ConfigOptions)
 	replay.model = modelFromSetup(replay.configOptions, response.Meta)
 	replay.thinkingLevel = thinkingFromOptions(replay.configOptions)
-	// session.load replays a completed transcript. Message and tool chunks seen
-	// during that RPC describe history, not a live prompt.
-	replay.streaming = false
+	// A native host may report an accepted run while replaying the transcript.
+	// Preserve that explicit run identity; only a snapshot without one is idle.
+	replay.streaming = replay.runID != ""
 	replay.attached = generation
 	if canvasAttached {
 		replay.canvasAttached = generation
@@ -1191,7 +1203,7 @@ func (m *SessionManager) summary(sessionID string, entry *sessionEntry) SessionS
 
 func (m *SessionManager) summaryLocked(sessionID string, entry *sessionEntry) SessionSummary {
 	queue := entry.queue.wire(!entry.promptActive)
-	return SessionSummary{Capabilities: entry.capabilities, SessionID: sessionID, ProjectID: entry.projectID, CWD: entry.cwd, ParentSessionID: entry.parentSessionID, Title: entry.title, Model: entry.model, ThinkingLevel: entry.thinkingLevel, IsStreaming: entry.streaming || entry.promptActive, MessageCount: len(entry.messages), UpdatedAt: m.now().UnixMilli(), Live: true, Archived: false, LastSettlement: entry.settlement, Queue: &queue, ConfigOptions: projectConfigOptions(entry.configOptions)}
+	return SessionSummary{Capabilities: entry.capabilities, SessionID: sessionID, ProjectID: entry.projectID, CWD: entry.cwd, ParentSessionID: entry.parentSessionID, Title: entry.title, Model: entry.model, ThinkingLevel: entry.thinkingLevel, IsStreaming: entry.streaming || entry.promptActive || entry.runID != "", MessageCount: len(entry.messages), UpdatedAt: m.now().UnixMilli(), Live: true, Archived: false, LastSettlement: entry.settlement, Queue: &queue, ConfigOptions: projectConfigOptions(entry.configOptions)}
 }
 
 func (m *SessionManager) evictLocked() {
@@ -1357,6 +1369,11 @@ func (m *SessionManager) sessionServers(profile AgentProfile, token string) ([]p
 	// Signet memory attaches through the Pi-native managed extension
 	// (`~/.pi/agent/extensions/signet-pi.js`, operator-installed); Pixie
 	// connects no MCP connection for it.
+	if !profile.Operations.HTTPMCP {
+		// Objectives and Canvas are optional contributions. Their absence must not
+		// block ordinary chat when the selected host cannot attach MCP servers.
+		return []piwire.McpServer{}, nil
+	}
 	return m.objectiveServers(profile, token), nil
 }
 

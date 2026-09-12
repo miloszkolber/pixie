@@ -69,7 +69,7 @@ async function run(
 	cwd: string,
 	env: Record<string, string> = {},
 ): Promise<string> {
-	const child = Bun.spawn(command, {
+	const child = Bun.spawn([...command], {
 		cwd,
 		env: { ...process.env, ...env },
 		stdout: "pipe",
@@ -115,10 +115,19 @@ async function commitIdentity(
 	};
 }
 
-function installInstructions(variant: Variant): string {
+export function installInstructions(variant: Variant): string {
 	const binary = variant === "assistant" ? "pixie-assistant" : "pixie";
 	const unit = `${binary}.service`;
-	return `# Pixie ${binary}\n\nCopy ${binary} to ~/.local/bin/${binary}, install ${unit} under ~/.config/systemd/user/, then run:\n\n    systemctl --user daemon-reload\n    systemctl --user enable --now ${unit}\n\nStop and disable the unit before replacing or removing the binary. This archive does not include native Pi state or credentials.\n`;
+	const config = variant === "assistant" ? "assistant.json" : "pixie.json";
+	const secrets =
+		variant === "assistant"
+			? "PIXIE_PI_SECRET_KEY=<at-least-32-random-characters>"
+			: "PIXIE_PI_SECRET_KEY=<at-least-32-random-characters>\nPIXIE_MCP_TOKEN=<strong-random-token>";
+	const selection =
+		variant === "assistant"
+			? "Set an absolute agentDir (and optionally piExecutable) in assistant.json, or PI_CODING_AGENT_DIR / PIXIE_PI_EXECUTABLE."
+			: "Keep an absolute agentDir and piExecutable in pixie.json, or set PI_CODING_AGENT_DIR / PIXIE_PI_EXECUTABLE. Full-host startup fails without a resolvable Pi executable.";
+	return `# Pixie ${binary}\n\nCopy ${binary} to ~/.local/bin/${binary}, install ${unit} and ${config} under ~/.config/systemd/user/, and create the private environment file the unit loads:\n\n    install -d -m 700 ~/.config/pixie\n    umask 077\n    printf '${secrets}\\n' > ~/.config/pixie/pixie.env\n\n${selection}\n\nThen run:\n\n    systemctl --user daemon-reload\n    systemctl --user enable --now ${unit}\n\nStop and disable the unit before replacing or removing the binary. This archive does not include native Pi state or credentials.\n`;
 }
 
 async function buildBinary(
@@ -305,9 +314,11 @@ async function main(): Promise<void> {
 	}
 }
 
-try {
-	await main();
-} catch (error) {
-	console.error(`build-release: ${error instanceof Error ? error.message : String(error)}`);
-	process.exitCode = 1;
+if (import.meta.main) {
+	try {
+		await main();
+	} catch (error) {
+		console.error(`build-release: ${error instanceof Error ? error.message : String(error)}`);
+		process.exitCode = 1;
+	}
 }

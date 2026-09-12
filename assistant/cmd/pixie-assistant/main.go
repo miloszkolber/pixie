@@ -19,11 +19,12 @@ var version = "0.0.0-dev"
 var revision = "unknown"
 
 type assistantConfig struct {
-	Host         string `json:"host"`
-	Port         int    `json:"port"`
-	Secret       string `json:"secret"`
-	AgentDir     string `json:"agentDir"`
-	PiExecutable string `json:"piExecutable"`
+	Host             string `json:"host"`
+	Port             int    `json:"port"`
+	Secret           string `json:"secret"`
+	AgentDir         string `json:"agentDir"`
+	PiExecutable     string `json:"piExecutable"`
+	AllowSelfRestart bool   `json:"allowSelfRestart"`
 }
 
 func main() {
@@ -52,29 +53,52 @@ func main() {
 	}
 
 	assistant, err := host.Start(context.Background(), host.Config{
-		Host:         firstNonEmpty(os.Getenv("PIXIE_ASSISTANT_HOST"), fileConfig.Host, "127.0.0.1"),
-		Port:         assistantPort(fileConfig.Port),
-		Secret:       firstNonEmpty(os.Getenv("PIXIE_PI_SECRET_KEY"), fileConfig.Secret),
-		AgentDir:     expandHomePath(firstNonEmpty(os.Getenv("PI_CODING_AGENT_DIR"), fileConfig.AgentDir)),
-		PiExecutable: expandHomePath(firstNonEmpty(os.Getenv("PIXIE_PI_EXECUTABLE"), fileConfig.PiExecutable)),
+		Host:             firstNonEmpty(os.Getenv("PIXIE_ASSISTANT_HOST"), fileConfig.Host, "127.0.0.1"),
+		Port:             assistantPort(fileConfig.Port),
+		Secret:           firstNonEmpty(os.Getenv("PIXIE_PI_SECRET_KEY"), fileConfig.Secret),
+		AgentDir:         expandHomePath(firstNonEmpty(os.Getenv("PI_CODING_AGENT_DIR"), fileConfig.AgentDir)),
+		PiExecutable:     expandHomePath(firstNonEmpty(os.Getenv("PIXIE_PI_EXECUTABLE"), fileConfig.PiExecutable)),
+		AllowSelfRestart: selfRestartAllowed(fileConfig.AllowSelfRestart),
 	})
 	if err != nil {
 		fail(err)
 	}
 	stop, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	restart := false
 	select {
 	case err := <-assistant.Errors():
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "pixie-assistant: %v\n", err)
 			os.Exit(1)
 		}
+	case <-assistant.RestartRequested():
+		restart = true
 	case <-stop.Done():
 	}
 	shutdown, release := context.WithTimeout(context.Background(), 25*time.Second)
 	defer release()
 	if err := assistant.Close(shutdown); err != nil {
 		fail(fmt.Errorf("shutdown: %w", err))
+	}
+	if restart {
+		os.Exit(restartExitCode)
+	}
+}
+
+// restartExitCode matches the systemd RestartForceExitStatus used by the
+// packaged units. A plain failure never uses it.
+const restartExitCode = 75
+
+func selfRestartAllowed(configAllowed bool) bool {
+	if configAllowed {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PIXIE_ALLOW_SELF_RESTART"))) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -684,10 +685,17 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 		// prompt, after the SDK has drained the prior turn's notifications.
 		entry.pendingToolOutputs = nil
 	}
-	entry.messages = append(entry.messages, map[string]any{"role": "user", "content": content})
+	optimistic := map[string]any{"role": "user", "content": content}
+	messageIndex := len(entry.messages)
+	entry.messages = append(entry.messages, optimistic)
 	entry.userResourceBytes = resourceBytes
 	entry.pendingEcho = &userEcho{
-		text:            text,
+		text:         text,
+		messageIndex: messageIndex,
+		// Keep an independent deep copy so the rollback guard can detect a
+		// native echo that merged or mutated the live optimistic message
+		// instead of comparing a map against itself.
+		optimistic:      cloneJSON(optimistic),
 		images:          echoImages,
 		resources:       echoResources,
 		matched:         make([]bool, len(echoImages)),
@@ -726,6 +734,9 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 		}
 		entry.promptActive = false
 		entry.streaming = false
+		provenRejected := provenPromptRejection(promptErr)
+		provenRejectionRolledBack := provenRejected && rollbackOptimisticPromptLocked(entry)
+		ambiguousNativeOutcome := promptErr != nil && !provenRejectionRolledBack
 		acknowledged := entry.promptAcknowledged
 		entry.promptAcknowledged = false
 		queueErr := m.settleQueuedPromptLocked(sessionID, entry, queueID, promptErr == nil || acknowledged, promptErr != nil)
@@ -737,7 +748,11 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 			}
 		}
 		if promptErr != nil {
-			entry.detachedWork = detachedWorkUncertain
+			if ambiguousNativeOutcome {
+				entry.detachedWork = detachedWorkUncertain
+			} else {
+				entry.detachedWork = detachedWorkNone
+			}
 			entry.settlement = &SessionSettlement{StopReason: "error", ErrorMessage: promptErr.Error()}
 			m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "error", "error": promptErr.Error()}})
 			entry.state.Unlock()
@@ -756,6 +771,26 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 	}()
 	handedOff = true
 	return nil
+}
+
+func provenPromptRejection(err error) bool {
+	var requestError *piwire.RequestError
+	return errors.As(err, &requestError) && requestError.Code == -32004
+}
+
+// rollbackOptimisticPromptLocked removes only the exact object installed for
+// this still-pending prompt. Any native echo/acknowledgement clears pendingEcho
+// first, so accepted or uncertain turns are retained for transcript recovery.
+func rollbackOptimisticPromptLocked(entry *sessionEntry) bool {
+	echo := entry.pendingEcho
+	if echo == nil || echo.messageIndex < 0 || echo.messageIndex >= len(entry.messages) || !reflect.DeepEqual(entry.messages[echo.messageIndex], echo.optimistic) {
+		return false
+	}
+	entry.messages = append(entry.messages[:echo.messageIndex], entry.messages[echo.messageIndex+1:]...)
+	entry.pendingEcho = nil
+	entry.userResourceBytes = 0
+	entry.stats.TotalMessages = len(entry.messages)
+	return true
 }
 
 func (m *SessionManager) scheduleFollowUp(sessionID string, entry *sessionEntry) {

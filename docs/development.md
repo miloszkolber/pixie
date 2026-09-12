@@ -2,7 +2,7 @@
 
 Use the pinned Bun and Go versions in `package.json` and `package/go.mod`. Go filesystem checks require Linux; use disposable containers on macOS.
 
-The `pixie/` directory holds the Bun workspace, lockfile and shared tooling. The Pi SDK service lives in `assistant/`; application source and tests live in `package/`; workspace patches live in `patches/`.
+The `pixie/` directory holds the Bun workspace, lockfile and shared build/test tooling. The Go assistant module and retained legacy compatibility implementation live in `assistant/`; application source and tests live in `package/`; workspace patches live in `patches/`.
 
 From `pixie/`:
 
@@ -19,7 +19,7 @@ bun run build
 
 `bun run test` runs the WebUI/contract suites plus the Go suite. To run the Go suite directly, use `go test -race -count=1 ./...` and `go vet ./...` from `package/`.
 
-Native SDK tests use temporary Pi state, local fixture providers, authenticated WebSockets and real local MCP transports. They cover vanilla fallback, credentials, sessions, streaming/replay, agents and MCP. The Go controller suite also launches the real Bun/Pi host and verifies vanilla and optional-extension sessions through the application WebSocket. This requires Bun; CI runs it on amd64 and arm64. Go tests cover application persistence with staged publication outcomes, queues, schedules, nullable project grouping, reserved routing, project ownership and Browser boundaries. No real provider credentials are required.
+Legacy native-SDK tests use temporary Pi state, local fixture providers, authenticated WebSockets and real local MCP transports. They cover the behavior the Go replacement must retain. The controller compatibility test still launches that Bun/Pi host, so it is legacy parity evidence rather than Go-assistant evidence. Separate Go tests cover the assistant facade and application persistence, queues, schedules, nullable project grouping, reserved routing, project ownership and Browser boundaries. No real provider credentials are required.
 
 ## SDK upgrade gate
 

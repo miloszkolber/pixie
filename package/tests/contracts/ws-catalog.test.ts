@@ -32,6 +32,8 @@ const CATALOG = [
 	{ method: "session.queueRetry", fc: "FC05", owner: "controller", profile: "V", nativeRoute: "controller:queues" },
 	{ method: "session.abort", fc: "FC05", owner: "pi", profile: "V", nativeRoute: "piwire:Cancel" },
 	{ method: "session.delete", fc: "FC09", owner: "controller", profile: "V", nativeRoute: "controller:deletions" },
+	{ method: "session.deletionRecovery", fc: "FC09", owner: "controller", profile: "controller-local", nativeRoute: "controller:deletions" },
+	{ method: "session.confirmExternalDeletion", fc: "FC09", owner: "controller", profile: "controller-local", nativeRoute: "controller:deletions" },
 	{ method: "session.rename", fc: "FC07", owner: "pi", profile: "V", nativeRoute: "pi.session.rename" },
 	{ method: "session.archive", fc: "FC08", owner: "pi", profile: "V", nativeRoute: "pi.session.archive" },
 	{ method: "session.unarchive", fc: "FC08", owner: "pi", profile: "V", nativeRoute: "pi.session.unarchive" },
@@ -141,8 +143,8 @@ function extractHandlerMethods(source: string): string[] {
 test("exhaustive catalog covers every WS_METHODS value", () => {
 	const values = Object.values(WS_METHODS);
 	const catalogMethods = CATALOG.map((row) => row.method);
-	expect(values.length).toBe(96);
-	expect(CATALOG.length).toBe(96);
+	expect(values.length).toBe(98);
+	expect(CATALOG.length).toBe(98);
 	expect(new Set(values).size).toBe(values.length);
 	expect(new Set(catalogMethods).size).toBe(CATALOG.length);
 	expect(new Set(catalogMethods)).toEqual(new Set(values));
@@ -198,7 +200,7 @@ test("generated binding check matches Go handler cases both directions", async (
 	]);
 	const wsValues = new Set<string>(Object.values(WS_METHODS));
 	const catalogMethods = new Set<string>(CATALOG.map((row) => row.method));
-	expect(handlerMethods.size).toBe(96);
+	expect(handlerMethods.size).toBe(98);
 	expect(handlerMethods).toEqual(wsValues);
 	expect(handlerMethods).toEqual(catalogMethods);
 });

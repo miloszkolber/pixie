@@ -372,15 +372,17 @@ async function readOptional(path: string): Promise<string> {
 export async function collectCoverageInput(
 	repositoryRoot = resolve(import.meta.dir, "../.."),
 ): Promise<CoverageInput> {
-	// Reading the ledgers makes a missing/renamed roadmap visible to this helper,
-	// while keeping the authoritative FC/X lists in this script stable.
-	const featureLedger = await readOptional(resolve(repositoryRoot, "roadmap/feature-coverage.md"));
-	const acceptanceLedger = await readOptional(resolve(repositoryRoot, "roadmap/acceptance.md"));
-	const declaredFeatures = [...featureLedger.matchAll(/\bFC\d{2}\b/g)].map((match) => match[0]);
-	const declaredAcceptance = [...acceptanceLedger.matchAll(/\bX\d{2}\b/g)].map((match) => match[0]);
+	// Reading the concise implementation summary makes a missing/renamed roadmap
+	// visible to this helper while keeping the authoritative FC/X lists stable.
+	const implementationSummary = await readOptional(resolve(repositoryRoot, "roadmap/README.md"));
+	const declaredFeatures = [...implementationSummary.matchAll(/\bFC\d{2}\b/g)].map(
+		(match) => match[0],
+	);
+	const declaredAcceptance = [...implementationSummary.matchAll(/\bX\d{2}\b/g)].map(
+		(match) => match[0],
+	);
 	const staticViolations: string[] = [];
-	if (featureLedger.trim() === "") staticViolations.push("roadmap/feature-coverage.md is missing");
-	if (acceptanceLedger.trim() === "") staticViolations.push("roadmap/acceptance.md is missing");
+	if (implementationSummary.trim() === "") staticViolations.push("roadmap/README.md is missing");
 	for (const id of new Set(declaredFeatures)) {
 		if (!(ALL_FEATURE_IDS as readonly string[]).includes(id))
 			staticViolations.push(`unknown feature row ${id}`);

@@ -10,7 +10,7 @@ Settings → Extensions distinguishes configured resources from extensions loade
 
 Browser `pi.nativeExtensions` maps to host `pi.extensions.list`; `pi.nativeExtensionConfigure` maps to `pi.extensions.configure`. The current configuration writer uses native resolver/settings APIs, a scoped resource key and expected revision. Confirmed changes preserve unrelated settings and resource filters. Unsupported changes, malformed targets and stale revisions are rejected. Static CLI resources such as `--llama` are not editable here.
 
-A successful save reports `saved=true`, `loaded=false` and `reload=deferred`. Refresh inventory before retrying an uncertain save. A subsequent load failure is reported separately and does not silently roll back the saved configuration. Reopen the session or restart the configured host service to apply changes. Per-session hot reload is not exposed. The [implementation roadmap](../roadmap/README.md) covers the replacement runtime and its compatibility gates.
+A successful save reports `saved=true`, `loaded=false` and `reload=deferred`. Refresh inventory before retrying an uncertain save. A subsequent load failure is reported separately and does not silently roll back the saved configuration. Reopen the session or restart the configured host service to apply changes. Per-session hot reload is not exposed. The [roadmap](../roadmap/README.md) covers the replacement runtime and compatibility rules.
 
 Native extension inventory is separate from MCP connection administration. The similarly named `pi.config.extensions.*` and `pi.session.extensions.*` methods concern MCP connections, not this resource inventory.
 
@@ -24,7 +24,7 @@ Each session permits 16 pending dialogs. Passive status/widget collections each 
 
 Terminal input, custom TUI factories, footers/headers, autocomplete and composer get/set/paste APIs are unsupported by the current SDK bridge. The multiline editor dialog has its own draft. Stop and session teardown cancel pending interactions. Generic extension liveness can keep background work resident without redefining native run settlement.
 
-The planned native-RPC bridge differs from this implementation; [feature coverage](../roadmap/feature-coverage.md) records those differences and the required tests. Do not assume RPC provides every SDK bridge method.
+The planned native-RPC bridge differs from this implementation; the [retained feature index](../roadmap/README.md#retained-feature-index) records required behavior and the [integration findings](../roadmap/README.md#confirmed-defects-and-integration-risks) record unresolved fidelity work. Do not assume RPC provides every SDK bridge method.
 
 ## Agent definitions
 

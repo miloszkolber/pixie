@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"sort"
 	"strings"
 	"time"
 
@@ -337,7 +338,12 @@ func (m *SessionManager) cleanupSessionDeletion(projectID, sessionID string) err
 	return errors.Join(cleanup...)
 }
 
-func (m *SessionManager) recoverDeletions(ctx context.Context) error {
+// RecoverDeletions resumes or quarantines retained deletion records. Only an
+// unreadable journal fails startup; a record that cannot be matched to the
+// connected authority, or whose host does not support deletion, is retained and
+// surfaced as recovery-blocked. This is what keeps an ordinary restart (new
+// runtime identity, ephemeral port, rotated secret) from aborting boot.
+func (m *SessionManager) RecoverDeletions(ctx context.Context) error {
 	if m.deletions == nil {
 		return nil
 	}
@@ -345,54 +351,94 @@ func (m *SessionManager) recoverDeletions(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var recovery []error
+	quarantine := make(map[string]DeletionRecovery)
 	for _, record := range records {
-		if record.Phase == deletionRequested {
-			if m.client == nil {
-				recovery = append(recovery, fmt.Errorf("resume deletion of session %s: Pi client is not configured", record.SessionID))
-				continue
-			}
-			generation, profile, profileErr := m.client.Profile(ctx)
-			if profileErr != nil {
-				recovery = append(recovery, fmt.Errorf("resume deletion of session %s: %w", record.SessionID, profileErr))
-				continue
-			}
-			binding, bindingErr := m.client.deletionAgentBinding(agentProfileIdentity(profile, generation))
-			if bindingErr != nil {
-				recovery = append(recovery, fmt.Errorf("resume deletion of session %s: %w", record.SessionID, bindingErr))
-				continue
-			}
-			if binding != record.AgentBinding {
-				recovery = append(recovery, fmt.Errorf("resume deletion of session %s: connected Pi agent binding changed (identity, endpoint, or configuration)", record.SessionID))
-				continue
-			}
-			if !profile.Operations.DeleteSession {
-				recovery = append(recovery, fmt.Errorf("resume deletion of session %s: %w", record.SessionID, unsupportedAgentCapability("session.delete")))
-				continue
-			}
-			deleteContext := context.WithValue(ctx, connectionGenerationKey{}, generation)
-			if deleteErr := m.client.DeleteSession(deleteContext, record.SessionID); deleteErr != nil && !agentSessionMissing(deleteErr) {
-				recovery = append(recovery, fmt.Errorf("resume deletion of session %s: %w", record.SessionID, deleteErr))
-				continue
-			}
-			if confirmErr := m.deletions.Confirm(record.ProjectID, record.SessionID); confirmErr != nil {
-				recovery = append(recovery, fmt.Errorf("confirm deletion of session %s: %w", record.SessionID, confirmErr))
-				continue
-			}
-		}
-		if canvasErr := m.cleanupNativeMCPSession(record.SessionID); canvasErr != nil {
-			recovery = append(recovery, fmt.Errorf("clean up Canvas for deleted session %s: %w", record.SessionID, canvasErr))
-			continue
-		}
-		if cleanupErr := m.cleanupSessionDeletion(record.ProjectID, record.SessionID); cleanupErr != nil {
-			recovery = append(recovery, fmt.Errorf("resume deletion of session %s: %w", record.SessionID, cleanupErr))
-			continue
-		}
-		if forgetErr := m.deletions.Forget(record.ProjectID, record.SessionID); forgetErr != nil {
-			recovery = append(recovery, fmt.Errorf("finish deletion of session %s: %w", record.SessionID, forgetErr))
+		if reason := m.recoverDeletionRecord(ctx, record); reason != "" {
+			quarantine[record.SessionID] = DeletionRecovery{ProjectID: record.ProjectID, SessionID: record.SessionID, Phase: record.Phase, Reason: reason}
 		}
 	}
-	return errors.Join(recovery...)
+	m.mu.Lock()
+	m.deletionQuarantine = quarantine
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *SessionManager) recoverDeletionRecord(ctx context.Context, record sessionDeletion) string {
+	if record.Phase == deletionRequested {
+		if m.client == nil {
+			return "Pi client is not configured"
+		}
+		generation, profile, profileErr := m.client.Profile(ctx)
+		if profileErr != nil {
+			return fmt.Sprintf("agent profile unavailable: %v", profileErr)
+		}
+		if !profile.Operations.DeleteSession {
+			return unsupportedAgentCapability("session.delete").Error()
+		}
+		matches, bindingErr := m.client.matchesDeletionAgentBinding(agentProfileIdentity(profile, generation), record.AgentBinding)
+		if bindingErr != nil {
+			return bindingErr.Error()
+		}
+		if !matches {
+			return "connected Pi agent binding changed; retain for operator reconciliation and never replay against a new endpoint"
+		}
+		deleteContext := context.WithValue(ctx, connectionGenerationKey{}, generation)
+		if deleteErr := m.client.DeleteSession(deleteContext, record.SessionID); deleteErr != nil && !agentSessionMissing(deleteErr) {
+			return fmt.Sprintf("delete dispatch outcome is uncertain: %v", deleteErr)
+		}
+		if confirmErr := m.deletions.Confirm(record.ProjectID, record.SessionID); confirmErr != nil {
+			return fmt.Sprintf("confirm deletion: %v", confirmErr)
+		}
+	}
+	if canvasErr := m.cleanupNativeMCPSession(record.SessionID); canvasErr != nil {
+		return fmt.Sprintf("clean up Canvas: %v", canvasErr)
+	}
+	if cleanupErr := m.cleanupSessionDeletion(record.ProjectID, record.SessionID); cleanupErr != nil {
+		return fmt.Sprintf("clean up session: %v", cleanupErr)
+	}
+	if forgetErr := m.deletions.Forget(record.ProjectID, record.SessionID); forgetErr != nil {
+		return fmt.Sprintf("finish deletion: %v", forgetErr)
+	}
+	return ""
+}
+
+// DeletionRecoveryStatus returns the retained, unauthorized deletion records
+// for operator reconciliation. It never dispatches or forgets them.
+func (m *SessionManager) DeletionRecoveryStatus() []DeletionRecovery {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]DeletionRecovery, 0, len(m.deletionQuarantine))
+	for _, record := range m.deletionQuarantine {
+		result = append(result, record)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].SessionID < result[j].SessionID })
+	return result
+}
+
+// ConfirmExternalDeletion is the operator reconciliation action that asserts
+// the native session is already gone. It records the confirmation and finishes
+// local cleanup without dispatching another delete.
+func (m *SessionManager) ConfirmExternalDeletion(projectID, sessionID string) error {
+	if m.deletions == nil {
+		return fmt.Errorf("session deletion journal is not configured")
+	}
+	if err := m.deletions.Confirm(projectID, sessionID); err != nil {
+		return err
+	}
+	m.revokeNativeMCPSession(sessionID)
+	if err := m.cleanupNativeMCPSession(sessionID); err != nil {
+		return fmt.Errorf("clean up Canvas: %w", err)
+	}
+	if err := m.cleanupSessionDeletion(projectID, sessionID); err != nil {
+		return fmt.Errorf("clean up session: %w", err)
+	}
+	if err := m.deletions.Forget(projectID, sessionID); err != nil {
+		return fmt.Errorf("finish deletion: %w", err)
+	}
+	m.mu.Lock()
+	delete(m.deletionQuarantine, sessionID)
+	m.mu.Unlock()
+	return nil
 }
 
 func agentSessionMissing(err error) bool {
@@ -655,6 +701,29 @@ func (m *SessionManager) ReleaseIdleRuntime(ctx context.Context, sessionID strin
 		m.mu.Unlock()
 		return fmt.Errorf("session is not idle: %s", reason)
 	}
+	if m.lifecycle == nil {
+		m.lifecycle = make(map[string]bool)
+	}
+	m.lifecycle[sessionID] = true
+	entry.state.Unlock()
+	m.mu.Unlock()
+	// Host release repeats exact native identity and quiescence checks. The
+	// controller entry remains authoritative until that operation succeeds, so
+	// a timeout/rejection cannot silently claim resident capacity.
+	if err := m.client.ReleaseSession(ctx, sessionID, entry.cwd); err != nil {
+		m.mu.Lock()
+		delete(m.lifecycle, sessionID)
+		m.mu.Unlock()
+		return err
+	}
+	m.mu.Lock()
+	entry.state.Lock()
+	if m.closed || m.sessions[sessionID] != entry {
+		entry.state.Unlock()
+		delete(m.lifecycle, sessionID)
+		m.mu.Unlock()
+		return fmt.Errorf("session changed while releasing its native runtime")
+	}
 	// Invalidate the resident generation before dropping the projection. Late
 	// native callbacks must not revive a runtime that the user explicitly
 	// released; the durable association and transcript remain available for a
@@ -662,6 +731,7 @@ func (m *SessionManager) ReleaseIdleRuntime(ctx context.Context, sessionID strin
 	entry.attached = 0
 	entry.promptGeneration++
 	delete(m.sessions, sessionID)
+	delete(m.lifecycle, sessionID)
 	entry.state.Unlock()
 	m.mu.Unlock()
 	m.revokeNativeMCPSession(sessionID)

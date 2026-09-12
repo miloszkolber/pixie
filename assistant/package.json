@@ -1,32 +1,11 @@
 {
 	"name": "@pixie_ai/pixie-assistant",
+	"private": true,
 	"version": "0.1.0",
 	"license": "Apache-2.0",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/miloszkolber/pixie.git",
-		"directory": "assistant"
-	},
 	"type": "module",
-	"bin": {
-		"pixie-assistant": "dist/main.js"
-	},
-	"files": [
-		"dist",
-		"patches"
-	],
-	"publishConfig": {
-		"access": "public"
-	},
-	"exports": {
-		"./capabilities": "./dist/capabilities.js",
-		"./mcp-admin-bridge": "./dist/extensions/mcp-admin-bridge.js"
-	},
 	"scripts": {
-		"start": "bun dist/main.js",
-		"typecheck": "tsc --noEmit",
-		"build": "bun build src/main.ts src/server.ts src/doctor.ts src/capabilities.ts src/extensions/mcp-admin-bridge.ts --target=bun --outdir=dist",
-		"postinstall": "node patches/apply-patches.mjs"
+		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "0.85.1",

@@ -216,6 +216,9 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		if profile, ok := status["agentProfile"]; ok {
 			result["agentProfile"] = profile
 		}
+		if recoveries := sessions.DeletionRecoveryStatus(); len(recoveries) > 0 {
+			result["deletionRecovery"] = recoveries
+		}
 		if config.AppVersion != "" {
 			result["appVersion"] = config.AppVersion
 		}
@@ -236,6 +239,11 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		status["applicationReady"] = localReady
 		if !localReady {
 			status["applicationError"] = localDetail
+		}
+		if recoveries := sessions.DeletionRecoveryStatus(); len(recoveries) > 0 {
+			// Retained tombstones are surfaced for operator reconciliation but do
+			// not by themselves make the application unready.
+			status["deletionRecovery"] = recoveries
 		}
 		code := http.StatusOK
 		profile, _ := status["agentProfile"].(AgentProfile)
@@ -282,7 +290,7 @@ func validateControllerRuntime(host string, port int, auth AuthConfig) error {
 }
 
 func (r *Runtime) Start() (string, error) {
-	if err := r.sessions.recoverDeletions(context.Background()); err != nil {
+	if err := r.sessions.RecoverDeletions(context.Background()); err != nil {
 		return "", fmt.Errorf("resume session deletions: %w", err)
 	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(r.config.Host, strconv.Itoa(r.config.Port)))

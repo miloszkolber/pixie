@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -27,13 +28,52 @@ const (
 )
 
 type runtimeConfigFile struct {
-	Host         string `json:"host"`
-	Port         int    `json:"port"`
-	DataDir      string `json:"dataDir"`
-	StaticDir    string `json:"staticDir"`
-	Mode         string `json:"mode"`
-	AgentDir     string `json:"agentDir"`
-	PiExecutable string `json:"piExecutable"`
+	Host             string `json:"host"`
+	Port             int    `json:"port"`
+	DataDir          string `json:"dataDir"`
+	StaticDir        string `json:"staticDir"`
+	Mode             string `json:"mode"`
+	AgentDir         string `json:"agentDir"`
+	PiExecutable     string `json:"piExecutable"`
+	AllowSelfRestart bool   `json:"allowSelfRestart"`
+}
+
+// restartExitCode matches RestartForceExitStatus in the packaged systemd
+// units. It is only ever produced by an accepted runtime.restart.
+const restartExitCode = 75
+
+// errRestartRequested is the composition sentinel for an accepted reload.
+var errRestartRequested = errors.New("restart requested")
+
+// validateFullHostPiSelection fails full-host startup unless an absolute Pi
+// agent directory and a resolvable Pi executable are selected. Full-host mode
+// must never fall back to a transport-only service with no native engine.
+func validateFullHostPiSelection(agentDir, piExecutable string) (string, error) {
+	cleanAgentDir := expandHomePath(agentDir)
+	if cleanAgentDir == "" {
+		return "", errors.New("full-host mode requires an absolute Pi agent directory (PI_CODING_AGENT_DIR or config agentDir)")
+	}
+	if !filepath.IsAbs(cleanAgentDir) {
+		return "", errors.New("full-host Pi agent directory must be an absolute path")
+	}
+	resolvedExecutable := expandHomePath(piExecutable)
+	if resolvedExecutable == "" {
+		resolvedExecutable = "pi"
+	}
+	resolved, err := exec.LookPath(resolvedExecutable)
+	if err != nil {
+		return "", fmt.Errorf("full-host mode requires a selected Pi executable: %w", err)
+	}
+	return resolved, nil
+}
+
+func selfRestartAllowed() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PIXIE_ALLOW_SELF_RESTART"))) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseMode(args []string) (runMode, error) {

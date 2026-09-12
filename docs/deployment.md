@@ -1,36 +1,24 @@
 # Deployment
 
-The primary setup is Linux x86-64 or arm64 with Docker Compose and Bun on the host. Pi runs as the host user through the source SDK service. No custom Pi executable is built.
+The intended setup is Linux x86-64 or arm64 with the Go `pixie-assistant` binary on the host and either the Go full-host binary or the controller-only Docker image. Pi runs as the host user through its public executable in RPC mode. Bun is a source build/test tool, not an assistant runtime dependency.
 
 ## Host service
 
-```sh
-git clone https://github.com/miloszkolber/pixie.git
-cd pixie
-bun install --frozen-lockfile --production --filter @pixie_ai/pixie-assistant
-```
+Install `pixie-assistant` from the matching commit-named binary archive. For a source build, run `CGO_ENABLED=0 go build -trimpath -o ../package/dist/pixie-assistant ./cmd/pixie-assistant` from `assistant/`. Install and configure optional extensions through Pi's native mechanisms.
 
-This installs the assistant's runtime dependencies without optional packages or the web development toolchain. Install and configure optional extensions through Pi's native mechanisms.
-
-Generate separate random values for `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file. The optional Browser connection expands its token from the host environment.
+Generate separate random values for `PIXIE_PI_SECRET_KEY`, `PIXIE_MCP_TOKEN`, and controller `PIXIE_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file. The optional Browser connection expands its token from the host environment.
 
 ```sh
-bun assistant/src/main.ts --llama
+PIXIE_PI_SECRET_KEY=<at-least-32-characters> \
+PI_CODING_AGENT_DIR="$HOME/.pi/agent" \
+pixie-assistant serve --config "$HOME/.config/pixie/assistant.json"
 ```
 
-`--agent-dir /absolute/path` selects Pi state, defaulting to `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The service listens at `127.0.0.1:3284`; `--port` selects another port and `--host` accepts only the literal loopback forms `localhost`, `127.0.0.1` and `::1`. A service manager can run the same command and environment file. Provider setup is available in Pixie or Pi's native configuration. Existing native user and project resources load without a prescribed extension bundle. List optional packages by file path or preinstall them: bare package names wait on Pi's missing-source approval in headless use. Enable optional packages by absolute path in the agent directory's `settings.json` `extensions`: `@mjakl/pi-subagent` (subagents, with the Bun child-launch patch from `patches/`), `@juicesharp/rpiv-todo`, `@juicesharp/rpiv-web-tools`, `@juicesharp/rpiv-ask-user-question`, and `pi-mcp-adapter` as the native MCP client runtime (without it Pi sessions have no MCP tools, while the assistant's admin bridge stays fail-closed and basic sessions still work). `@signetai/connector-pi` is a library without a Pi extension manifest; Signet stays an operator-owned external service.
-
-The npm workflow uses `pixie-assistant-v*` tags for `@pixie_ai/pixie-assistant`, with OIDC trusted publishing and provenance. Publication is a separate approval gate. `0.1.1` and `0.1.2` are published from their tags; `0.1.0` stays immutable. For an approved release containing this loading path:
-
-```sh
-bunx @pixie_ai/pixie-assistant@<version>
-```
-
-Subagents stay optional: the production install ships no subagent package. To enable them standalone, install the exact pinned version alongside (`bun add @mjakl/pi-subagent@3.0.1` or `npm install -S @mjakl/pi-subagent@3.0.1`) and apply the Bun child-launch patch from the repository's `patches/`; without the patch, Bun-run children cannot launch, and without the package, Pi simply offers no subagent extension.
+The JSON configuration selects the literal loopback host, port, agent directory, and optional Pi executable; see `package/systemd/assistant.json`. Environment values override the secret and selected Pi paths. Provider setup and optional extensions remain native Pi configuration. The Go adapter is not ready for production cutover until the critical session-routing, settlement, capability, recovery, and restart gaps in the [roadmap](../roadmap/README.md#confirmed-defects-and-integration-risks) close, so do not replace a working legacy service merely because the binary builds.
 
 ## Optional local models
 
-Use `--llama` to load Pi's built-in llama.cpp provider inside assistant sessions. The embedded SDK does not automatically supply this CLI built-in. The endpoint comes from `LLAMA_BASE_URL` in the service environment, and authentication falls back to the dummy key `local`. This stays opt-in and uses Pi's existing provider implementation, not a Pixie model database.
+Configure local providers through the selected Pi installation. `LLAMA_BASE_URL` is passed to the native Pi child when present; Pixie does not maintain a separate provider database.
 
 ## Containers
 
@@ -68,93 +56,11 @@ Optional Signet memory is an operator-owned external service, not a Pixie-manage
 
 ## Without Docker
 
-Docker stays the primary method. Where containers are unavailable, the supported non-Docker installation is a single self-contained `pixie` binary with the web UI embedded at build time plus the published `pixie-assistant` package (no checkout, web toolchain or asset directory needed at run time). The Browser module stays optional and degrades to `disabled` without Chromium and `agent-browser` on `PATH`.
+The intended non-Docker topology is one self-contained full-host `pixie` binary containing the assistant, controller, and embedded web UI. It must not run beside a separate `pixie-assistant` service for the same sessions. Neither final binary needs Bun at run time.
 
-Build once from a checkout (build time needs the Go, Bun and Node toolchains):
+This topology is not yet an approved deployment recipe. Full-host startup now requires an absolute Pi agent directory and a resolvable Pi executable, joins assistant engine failure to the controller, degrades readiness while a lost session awaits reload, and supports an explicit `runtime.restart` that exits status 75. Fresh-archive install/start/stop/restart/upgrade/rollback/uninstall evidence under real systemd is still missing. See the [roadmap](../roadmap/README.md#confirmed-defects-and-integration-risks).
 
-```sh
-bun install --frozen-lockfile
-bun run build   # builds the web UI first so the Go binary embeds it
-```
-
-Install the result as your own user (no root, no privileged services): copy `package/dist/pixie` to `~/.local/bin/pixie` and install the assistant from the registry:
-
-```sh
-bun add --global @pixie_ai/pixie-assistant@<version>
-```
-
-Generate separate random values for `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. Store them in a private environment file such as `~/.config/pixie/pixie.env` with mode `0600`:
-
-```sh
-PIXIE_PI_SECRET_KEY=<secret>
-PIXIE_MCP_TOKEN=<token>
-```
-
-Both secrets live in that one file: the assistant reads `PIXIE_PI_SECRET_KEY` for its Bearer credential, and `pixie` reads both. Reuse your existing Pi configuration; no Pi setup is needed beyond what the TUI already uses, and uninstalling Pixie never touches native Pi state.
-
-The service listens on loopback (`127.0.0.1:7312` by default; `--host`/`--port` on the assistant, `PIXIE_CONTROLLER_HOST`/`PIXIE_CONTROLLER_PORT` on `pixie`). Controller-owned local service calls use the loopback HTTP exception described above; the remote-access rules from the container layout apply unchanged otherwise: either enable authentication with HTTPS and an exact public origin, or stay on a trusted LAN with firewall-only protection and explicit `PIXIE_ALLOW_UNAUTHENTICATED_REMOTE=true` plus the exact `PIXIE_PUBLIC_ORIGIN`, leaving `PIXIE_TRUSTED_PROXY_CIDRS` unset. A cleartext reverse-proxy hop additionally requires controller authentication and the explicit `PIXIE_TRUSTED_PROXY_CIDRS` Host-rewrite policy described above. State defaults to `$XDG_DATA_HOME/pixie` (`~/.local/share/pixie`) when `PIXIE_DATA_DIR` is unset; set it explicitly only to use a different directory.
-
-Foreground (two terminals, or one service manager):
-
-```sh
-pixie-assistant --agent-dir "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-```
-
-```sh
-pixie
-```
-
-`pixie --version` prints the stamped version and revision. Logs go to stderr as JSON; under a service manager, read them with `journalctl --user -u pixie` and `journalctl --user -u pixie-assistant`.
-
-Optional systemd user units (`~/.config/systemd/user/`). `pixie-assistant.service`:
-
-```ini
-[Unit]
-Description=Pixie assistant (native Pi host)
-After=network-online.target
-
-[Service]
-Type=simple
-EnvironmentFile=%h/.config/pixie/pixie.env
-ExecStart=%h/.bun/bin/pixie-assistant --port 3284
-Restart=on-failure
-NoNewPrivileges=true
-
-[Install]
-WantedBy=default.target
-```
-
-`pixie.service`:
-
-```ini
-[Unit]
-Description=Pixie web application
-After=network-online.target pixie-assistant.service
-Requires=pixie-assistant.service
-
-[Service]
-Type=simple
-EnvironmentFile=%h/.config/pixie/pixie.env
-ExecStart=%h/.local/bin/pixie
-Restart=on-failure
-NoNewPrivileges=true
-
-[Install]
-WantedBy=default.target
-```
-
-Adjust the `ExecStart` paths to the actual install locations, then:
-
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now pixie-assistant.service pixie.service
-```
-
-Whole-host reload: `pi.reload` asks the assistant to end itself so the service manager brings a fresh process up, applying configured native extensions to every session at once. Enable it on the assistant unit with `Restart=always` and `PIXIE_ALLOW_SELF_RESTART=1`. In-flight runs interrupt ([Pi integration](pi.md)); session transcripts stay durable on disk.
-
-Upgrade by replacing the binary and reinstalling the assistant package, then restarting both units. Keep the previous binary (for example as `pixie.prev`) for instant rollback: the binary is self-contained, so rollback is just swapping the file back and restarting. Back up `PIXIE_DATA_DIR` and the private environment file after active work settles; both survive upgrades and rollbacks in place.
-
-Removal: stop and disable both units, delete the binary (`~/.local/bin/pixie`), remove the global package (`bun remove --global @pixie_ai/pixie-assistant`), and delete the environment file. Optionally delete `PIXIE_DATA_DIR`. Native Pi state (`PI_CODING_AGENT_DIR` or `~/.pi/agent`) is left intact.
+For development inspection only, `bun run build:host` builds the embedded UI and full-host binary at `package/dist/pixie`. Do not replace a working service until final archive installation, native Pi selection, readiness, failure propagation, restart, upgrade, rollback, and uninstall checks pass.
 
 Advanced override only: `PIXIE_STATIC_DIR` serves the web UI from a disk directory instead of the embedded bundle (development use). A Go binary built before `bun run build:web` embeds only a placeholder and falls back to `PIXIE_STATIC_DIR`, then to the container asset path.
 

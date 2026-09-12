@@ -2,5 +2,7 @@
 	"host": "127.0.0.1",
 	"port": 7312,
 	"dataDir": "~/.local/share/pixie",
+	"agentDir": "~/.pi/agent",
+	"piExecutable": "pi",
 	"mode": "full-host"
 }

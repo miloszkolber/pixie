@@ -6,7 +6,7 @@
  * preserving never discards input, and classifying never reloads. Callers
  * perform explicit user-gesture retries and reloads separately.
  *
- * Contracts covered (roadmap/contracts.md UI navigation and persistence):
+ * Contracts covered (roadmap/README.md UI navigation and persistence):
  * - Compare browser protocol and capabilities independently of build hash
  *   and host v2. Unsupported peers stop new mutations and present explicit
  *   refresh or recovery.

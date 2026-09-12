@@ -59,6 +59,10 @@ func main() {
 	stop, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	if err := runWithConfig(stop, build, mode, configFile); err != nil {
+		if errors.Is(err, errRestartRequested) {
+			slog.Info("restart requested by an authorized operation; exiting for the service manager")
+			os.Exit(restartExitCode)
+		}
 		fatal(err)
 	}
 }
@@ -94,15 +98,23 @@ func runFullHostWithConfig(ctx context.Context, build diagnostics.BuildInfo, con
 	if piExecutable == "" {
 		piExecutable = fileConfig.PiExecutable
 	}
+	// Full-host mode must never run without a native supervisor. The packaged
+	// config previously selected neither path, which let a full host serve a
+	// capability-less controller. Resolve and verify the selection first.
+	piExecutable, err = validateFullHostPiSelection(agentDir, piExecutable)
+	if err != nil {
+		return err
+	}
 	// Full-host composition obtains the assistant through the public facade.
 	// The facade owns the engine lifecycle and private transport; the
 	// controller never reaches into assistant internals.
 	assistant, err := assistantHost.Start(ctx, assistantHost.Config{
-		Host:         "127.0.0.1",
-		Port:         0,
-		Secret:       os.Getenv("PIXIE_PI_SECRET_KEY"),
-		AgentDir:     agentDir,
-		PiExecutable: piExecutable,
+		Host:             "127.0.0.1",
+		Port:             0,
+		Secret:           os.Getenv("PIXIE_PI_SECRET_KEY"),
+		AgentDir:         agentDir,
+		PiExecutable:     piExecutable,
+		AllowSelfRestart: fileConfig.AllowSelfRestart || selfRestartAllowed(),
 	})
 	if err != nil {
 		return fmt.Errorf("start embedded assistant: %w", err)
@@ -139,8 +151,46 @@ func runFullHostWithConfig(ctx context.Context, build diagnostics.BuildInfo, con
 	if err != nil {
 		return err
 	}
-	serveErr := serveController(ctx, runtime)
+	serveErr := serveFullHost(ctx, runtime, assistant)
 	shutdownContext, release := context.WithTimeout(context.Background(), applicationDrainTimeout)
 	defer release()
 	return errors.Join(serveErr, assistant.Close(shutdownContext))
+}
+
+// serveFullHost runs the controller until either side of the composition fails
+// or an accepted reload is requested. Joining the assistant error channel is
+// what turns a lost native engine into a process restart instead of a
+// half-alive host.
+func serveFullHost(ctx context.Context, runtime *controller.Runtime, assistant *assistantHost.Handle) error {
+	endpoint, err := runtime.Start()
+	if err != nil {
+		return err
+	}
+	slog.Info("listening", "address", endpoint)
+	result := waitFullHost(ctx, runtime.Errors(), assistant.Errors(), assistant.RestartRequested())
+	shutdownContext, release := context.WithTimeout(context.Background(), applicationDrainTimeout)
+	defer release()
+	shutdownErr := runtime.Shutdown(shutdownContext)
+	if errors.Is(result, errRestartRequested) {
+		return errors.Join(errRestartRequested, shutdownErr)
+	}
+	return errors.Join(result, shutdownErr)
+}
+
+// waitFullHost selects the first authoritative composition signal. It is
+// factored out so the join semantics are testable without a live listener.
+func waitFullHost(ctx context.Context, runtimeErr, assistantErr <-chan error, restart <-chan struct{}) error {
+	select {
+	case err := <-runtimeErr:
+		return err
+	case err := <-assistantErr:
+		if err != nil {
+			return fmt.Errorf("assistant engine failed: %w", err)
+		}
+		return nil
+	case <-restart:
+		return errRestartRequested
+	case <-ctx.Done():
+		return nil
+	}
 }

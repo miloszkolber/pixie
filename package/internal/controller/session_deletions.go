@@ -29,6 +29,16 @@ type storedSessionDeletions struct {
 	Records []sessionDeletion `json:"records"`
 }
 
+// DeletionRecovery is one retained unauthorized deletion record that could not
+// be safely resumed. It is surfaced for operator reconciliation; the tombstone
+// is never replayed or discarded implicitly.
+type DeletionRecovery struct {
+	ProjectID string `json:"projectId"`
+	SessionID string `json:"sessionId"`
+	Phase     string `json:"phase"`
+	Reason    string `json:"reason"`
+}
+
 // SessionDeletions is a fail-closed journal. Its primary file is the only
 // deletion authority: an older backup must never resurrect a completed delete.
 type SessionDeletions struct {

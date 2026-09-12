@@ -28,7 +28,11 @@ import (
 	"github.com/coder/websocket"
 )
 
-const minSecretLength = 32
+const (
+	minSecretLength      = 32
+	hostWriteTimeout     = 10 * time.Second
+	hostEventEnqueueTime = time.Second
+)
 
 // Config contains the assistant-owned startup inputs. The full-host
 // composition supplies this same value to the shared engine instead of
@@ -41,6 +45,10 @@ type Config struct {
 	PiExecutable string
 	PiArgs       []string
 	Llama        bool
+	// AllowSelfRestart opts the host into the explicit runtime.restart
+	// operation. The response drains the process and the service manager
+	// restarts it; the default stays fail-closed.
+	AllowSelfRestart bool
 }
 
 // Handle is the lifecycle handle returned by Start. Its methods form the
@@ -58,13 +66,15 @@ type Handle struct {
 	supervisor *nativeSupervisor
 	once       sync.Once
 	closeErr   error
+	restart    chan struct{}
+	restartOne sync.Once
 }
 
 // Start starts the shared assistant engine for config.
 //
 // The Go facade owns the private lifecycle endpoint used by the full-host
 // composition. When PiExecutable is provided, the selected Pi is launched as
-// one bounded child and all native execution remains behind this facade. A
+// one bounded child per resident logical session and all native execution remains behind this facade. A
 // missing executable keeps the transport useful for composition tests but
 // advertises no native capability rather than starting another SDK process.
 func Start(ctx context.Context, config Config) (*Handle, error) {
@@ -103,7 +113,13 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 			return nil, err
 		}
 	}
+	// The durable host authority is the deletion/pairing identity; bootID stays
+	// process-scoped for diagnostics. Transport-only composition (no
+	// supervisor) keeps a random, non-durable identity.
 	runtimeID := randomID()
+	if supervisor != nil && supervisor.hostIdentity != "" {
+		runtimeID = supervisor.hostIdentity
+	}
 	bootID := randomID()
 	ready := make(chan struct{})
 	errorsCh := make(chan error, 1)
@@ -116,6 +132,7 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 		closed:     closed,
 		secret:     secret,
 		supervisor: supervisor,
+		restart:    make(chan struct{}),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/livez", func(response http.ResponseWriter, request *http.Request) {
@@ -134,11 +151,18 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 			response.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		healthy, detail := handle.health()
+		if !healthy {
+			response.WriteHeader(http.StatusServiceUnavailable)
+		}
 		_ = json.NewEncoder(response).Encode(map[string]any{
 			"protocolVersion": 1,
 			"runtimeId":       runtimeID,
 			"bootId":          bootID,
 			"capabilities":    handle.capabilities(),
+			"operationSet":    handle.operationSet(),
+			"ready":           healthy,
+			"detail":          detail,
 		})
 	})
 	mux.HandleFunc("/pi", func(response http.ResponseWriter, request *http.Request) {
@@ -227,12 +251,58 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 	connection.SetReadLimit(32 * 1024 * 1024)
 	ctx, cancel := context.WithCancel(request.Context())
 	defer cancel()
-	var writeMu sync.Mutex
-	write := func(payload []byte) error {
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		return connection.Write(ctx, websocket.MessageText, payload)
+	type outboundRecord struct {
+		payload []byte
+		done    chan error
 	}
+	// Keep only a small number of complete records per observer. A slow client
+	// is isolated and forced to reload rather than retaining native event memory.
+	outbound := make(chan outboundRecord, 4)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case record := <-outbound:
+				writeCtx, stopWrite := context.WithTimeout(ctx, hostWriteTimeout)
+				err := connection.Write(writeCtx, websocket.MessageText, record.payload)
+				stopWrite()
+				if record.done != nil {
+					record.done <- err
+				}
+				if err != nil {
+					_ = connection.Close(websocket.StatusTryAgainLater, "event delivery lost; reload required")
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	enqueue := func(callCtx context.Context, payload []byte, wait bool) error {
+		var done chan error
+		if wait {
+			done = make(chan error, 1)
+		}
+		select {
+		case outbound <- outboundRecord{payload: payload, done: done}:
+		case <-callCtx.Done():
+			return callCtx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		if done == nil {
+			return nil
+		}
+		select {
+		case err := <-done:
+			return err
+		case <-callCtx.Done():
+			return callCtx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	write := func(payload []byte) error { return enqueue(ctx, payload, true) }
 	var unsubscribe func()
 	defer func() {
 		if unsubscribe != nil {
@@ -246,19 +316,18 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 		if handle.supervisor == nil || unsubscribe != nil {
 			return
 		}
-		events, stop := handle.supervisor.subscribe()
-		unsubscribe = stop
-		go func() {
-			for event := range events {
-				frame, ok := nativeEventFrame(handle.supervisor, event)
-				if !ok {
-					continue
-				}
-				if err := write(mustJSON(frame)); err != nil {
-					return
-				}
+		unsubscribe = handle.supervisor.subscribe(func(event nativeEvent) error {
+			eventCtx, stopEvent := context.WithTimeout(ctx, hostEventEnqueueTime)
+			err := enqueue(eventCtx, mustJSON(nativeEventFrame(event)), false)
+			stopEvent()
+			if err != nil {
+				// There is no host replay journal. Closing with an explicit reason is
+				// the only conservative recovery signal for a dropped observer event.
+				_ = connection.Close(websocket.StatusTryAgainLater, "event delivery lost; reload required")
+				cancel()
 			}
-		}()
+			return nil
+		})
 	}
 	for {
 		kind, payload, readErr := connection.Read(ctx)
@@ -295,6 +364,7 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 				"bootId":          bootID,
 				"version":         "embedded-go-native",
 				"capabilities":    handle.capabilities(),
+				"operationSet":    handle.operationSet(),
 			}})); err != nil {
 				return
 			}
@@ -326,15 +396,39 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 				delete(active, id)
 				activeMu.Unlock()
 			}()
+			if method == "runtime.restart" {
+				// Reload is an explicit opt-in. Acknowledge before draining so
+				// the controller knows the request was accepted, then let the
+				// service manager replace the process.
+				if !handle.restartAllowed() {
+					_ = writeErrorWithCode(write, id, -32000, "runtime.restart is disabled by configuration")
+					return
+				}
+				_ = write(mustJSON(map[string]any{"id": id, "result": map[string]any{"ok": true}}))
+				handle.requestRestart()
+				return
+			}
 			if handle.supervisor == nil {
 				_ = writeErrorWith(write, id, "embedded assistant native engine is unavailable")
 				return
 			}
-			callContext, release := context.WithTimeout(ctx, nativeRequestTimeout)
+			callContext := ctx
+			release := func() {}
+			if method != "session.prompt" {
+				callContext, release = context.WithTimeout(ctx, nativeRequestTimeout)
+			}
 			result, callErr := handle.supervisor.callHost(callContext, method, params)
 			release()
 			if callErr != nil {
-				_ = writeErrorWith(write, id, callErr.Error())
+				code := -32000
+				var rejected *promptRejectedError
+				var uncertain *promptUncertainError
+				if errors.As(callErr, &rejected) {
+					code = -32004
+				} else if errors.As(callErr, &uncertain) {
+					code = -32003
+				}
+				_ = writeErrorWithCode(write, id, code, callErr.Error())
 				return
 			}
 			_ = write(mustJSON(map[string]any{"id": id, "result": json.RawMessage(result)}))
@@ -342,27 +436,15 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 	}
 }
 
-func nativeEventFrame(supervisor *nativeSupervisor, event map[string]any) (map[string]any, bool) {
-	copyEvent := make(map[string]any, len(event))
-	for key, value := range event {
+func nativeEventFrame(event nativeEvent) map[string]any {
+	copyEvent := make(map[string]any, len(event.event))
+	for key, value := range event.event {
 		copyEvent[key] = value
-	}
-	if method, ok := event["method"].(string); ok && method != "" {
-		if _, ok := event["params"]; ok {
-			delete(copyEvent, "id")
-			return copyEvent, true
-		}
-	}
-	sessionID, _ := event["sessionId"].(string)
-	if sessionID == "" {
-		supervisor.mu.Lock()
-		sessionID = supervisor.currentSession
-		supervisor.mu.Unlock()
 	}
 	return map[string]any{
 		"method": "session.event",
-		"params": map[string]any{"sessionId": sessionID, "event": copyEvent},
-	}, true
+		"params": map[string]any{"sessionId": event.sessionID, "event": copyEvent},
+	}
 }
 
 func numberParam(value any) int {
@@ -379,10 +461,14 @@ func numberParam(value any) int {
 }
 
 func writeErrorWith(write func([]byte) error, id uint64, message string) error {
+	return writeErrorWithCode(write, id, -32000, message)
+}
+
+func writeErrorWithCode(write func([]byte) error, id uint64, code int, message string) error {
 	return write(mustJSON(map[string]any{
 		"id": id,
 		"error": map[string]any{
-			"code":    -32000,
+			"code":    code,
 			"message": message,
 		},
 	}))
@@ -418,6 +504,44 @@ func (h *Handle) Errors() <-chan error {
 		return nil
 	}
 	return h.errors
+}
+
+// RestartRequested is closed after an accepted runtime.restart. The process
+// owner drains and exits with the service-manager restart code.
+func (h *Handle) RestartRequested() <-chan struct{} {
+	if h == nil || h.restart == nil {
+		return nil
+	}
+	return h.restart
+}
+
+func (h *Handle) restartAllowed() bool {
+	return h != nil && h.supervisor != nil && h.supervisor.config.AllowSelfRestart
+}
+
+func (h *Handle) requestRestart() {
+	if h == nil || h.restart == nil {
+		return
+	}
+	h.restartOne.Do(func() { close(h.restart) })
+}
+
+func (h *Handle) operationSet() map[string]bool {
+	result := nativeOperationSet()
+	if h.restartAllowed() {
+		result["runtime.restart"] = true
+	}
+	return result
+}
+
+// health reports whether the native engine can currently serve every
+// registered session. A lost child degrades readiness until its session is
+// reloaded; transport-only compositions stay ready.
+func (h *Handle) health() (bool, string) {
+	if h == nil || h.supervisor == nil {
+		return true, ""
+	}
+	return h.supervisor.health()
 }
 
 // Close releases assistant-owned resources and waits for the private listener

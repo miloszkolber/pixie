@@ -20,7 +20,7 @@ import (
 const (
 	// NativeJSONLMaxRecordBytes bounds one native JSONL record in serialized
 	// UTF-8 bytes, excluding the LF delimiter and its optional preceding CR.
-	// It matches the 32 MiB host/native frame ceiling from contracts.md and
+	// It matches the 32 MiB host/native frame ceiling from roadmap/README.md and
 	// is not an allocation budget: decoded structures are bounded
 	// separately by the caller.
 	NativeJSONLMaxRecordBytes = 32 * 1024 * 1024

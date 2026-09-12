@@ -48,4 +48,4 @@ Its failure output separates static violations from missing live inputs. A green
 
 From `package/`, `bun scripts/check-release-identity.ts`, `bun scripts/check-package-artifacts.ts` and `bun scripts/release-gate.ts` are static checks. The commit release workflow is present and validate-only paths are guarded, while this checkout still lacks a published tag/release, complete archive/binary evidence, Docker labels/digests, provenance, live package runs and explicit publication authorization. Those missing inputs are intentionally not represented as completed release evidence.
 
-The canonical policy and exact publication order are in [builds-and-releases.md](../../roadmap/builds-and-releases.md#5-commit-based-release-identity), with task status in [execution.md](../../roadmap/execution.md#builds-and-release-pipeline).
+The canonical status, release gaps, and sequencing are in the [roadmap](../roadmap/README.md#current-verdict) and its [next steps](../roadmap/README.md#dependency-ordered-next-steps).

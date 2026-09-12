@@ -33,7 +33,23 @@ func (e *recordingEvents) snapshot() []string {
 }
 
 func piInitializeResponse() map[string]any {
-	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}}
+	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}, "operationSet": map[string]bool{
+		"session.list": true, "session.create": true, "session.load": true, "session.prompt": true, "session.cancel": true,
+		"session.delete": true, "session.fork": true, "session.prompt.image": true, "session.prompt.resource": true,
+		"session.steer": true, "session.rename": true, "session.archive": true, "session.configure": true,
+		"session.release": true, "runtime.release": true, "runtime.releaseToTui": true,
+		"session.uiResponse": true, "session.uiCancel": true, "mcp.attach": true,
+		"pi.session.info": true, "pi.session.rename": true, "pi.session.archive": true, "pi.session.unarchive": true, "pi.session.steer": true,
+		"pi.tools.list": true, "runtime.capabilities": true, "pi.slash-commands.list": true,
+		"pi.providers.list": true, "pi.providers.canonical-model-info": true, "pi.providers.inventory.refresh": true, "pi.providers.readiness.check": true,
+		"provider.loginStart": true, "provider.loginBegin": true, "provider.loginReply": true, "provider.loginCancel": true,
+		"pi.providers.config.read": true, "pi.providers.config.delete": true, "pi.defaults.read": true, "pi.defaults.save": true, "pi.defaults.clear": true,
+		"pi.preferences.read": true, "pi.preferences.save": true, "pi.preferences.reset": true, "pi.extensions.list": true, "pi.extensions.configure": true,
+		"pi.sources.list": true, "pi.sources.create": true, "pi.sources.update": true, "pi.sources.delete": true, "pi.agent-mentions.list": true,
+		"pi.todo.plan": true, "pi.config.extensions.list": true, "pi.config.extensions.add": true, "pi.config.extensions.set-enabled": true,
+		"pi.config.extensions.remove": true, "pi.session.extensions.list": true, "pi.session.extensions.add": true, "pi.session.extensions.remove": true,
+		"adapter.status": true, "adapter.registerBrowser": true, "adapter.session.forget": true,
+	}}
 }
 
 func writeRPC(connection *websocket.Conn, value any) error {

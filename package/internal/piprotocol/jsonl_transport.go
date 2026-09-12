@@ -39,7 +39,7 @@ type NativeTransportConfig struct {
 	DrainTimeout        time.Duration
 }
 
-// DefaultNativeTransportConfig returns the contracts.md initial bounds with
+// DefaultNativeTransportConfig returns the roadmap/README.md initial bounds with
 // explicit timeouts. No buffer is unbounded.
 func DefaultNativeTransportConfig() NativeTransportConfig {
 	return NativeTransportConfig{

@@ -1,7 +1,7 @@
 /*
  * MEWA-03 content-filled layout probes.
  *
- * Five named desktop fixtures from roadmap/workspace-ui.md section 2, each
+ * Five named desktop fixtures from roadmap/README.md, each
  * exercised with content (chat transcript plus file or diff preview, long
  * names, large history) in light and dark via the pinned Mewa contract.
  * Pixie owns composition here: grid tracks, independent overflow regions,

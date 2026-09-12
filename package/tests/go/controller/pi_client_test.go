@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/miloszkolber/pixie/internal/controller"
+	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 )
 
 func TestPiClientFramesPiAndOrdersNotifications(t *testing.T) {
@@ -125,7 +126,7 @@ func TestPiClientUsesOperationSetWithoutProviderAdministrationGate(t *testing.T)
 						"bootId":          "operation-set-boot",
 						"version":         "0.85.1",
 						"capabilities":    map[string]any{"sessions": 1},
-						"operationSet":    map[string]bool{},
+						"operationSet":    map[string]bool{"session.delete": true},
 					},
 				})
 			}
@@ -141,7 +142,7 @@ func TestPiClientUsesOperationSetWithoutProviderAdministrationGate(t *testing.T)
 	if err != nil {
 		t.Fatalf("profile: %v", err)
 	}
-	if !profile.Compatible || profile.OperationSet["pi.tools.call"] {
+	if profile.Compatible || profile.Operations.DeleteSession || profile.OperationSet["pi.tools.call"] || !containsAll(profile.MissingRequired, "session.list", "session.create", "session.load", "session.prompt", "session.cancel") {
 		t.Fatalf("unexpected operation-set profile: %#v", profile)
 	}
 	if _, err := client.CallPi(ctx, "pi.tools.call", map[string]any{}); err == nil || !strings.Contains(err.Error(), "pi.tools.call") {
@@ -149,6 +150,18 @@ func TestPiClientUsesOperationSetWithoutProviderAdministrationGate(t *testing.T)
 	}
 	if _, err := client.CallPi(ctx, "pi.unadvertised", map[string]any{}); err == nil || !strings.Contains(err.Error(), "pi.unadvertised") {
 		t.Fatalf("unadvertised operation was dispatched: %v", err)
+	}
+	if err := client.DeleteSession(ctx, "session"); err == nil {
+		t.Fatal("unsupported delete was dispatched")
+	}
+	if _, err := client.NewSession(ctx, piwire.NewSessionRequest{Cwd: "/tmp", Meta: map[string]any{"thinkingLevel": "high"}}); err == nil {
+		t.Fatal("create-time thinking override was dispatched")
+	}
+	if _, err := client.Prompt(ctx, piwire.PromptRequest{SessionId: "session", Prompt: []piwire.ContentBlock{piwire.ResourceBlock(piwire.EmbeddedResourceResource{TextResourceContents: &piwire.TextResourceContents{Text: "x", Uri: "file:///x"}})}}); err == nil {
+		t.Fatal("resource prompt was dispatched")
+	}
+	if _, err := client.SetConfig(ctx, piwire.SetSessionConfigOptionRequest{ValueId: &piwire.SetSessionConfigOptionValueId{SessionId: "session", ConfigId: "model", Value: "provider/model"}}); err == nil {
+		t.Fatal("model mutation was dispatched")
 	}
 	for {
 		select {
@@ -160,6 +173,19 @@ func TestPiClientUsesOperationSetWithoutProviderAdministrationGate(t *testing.T)
 			return
 		}
 	}
+}
+
+func containsAll(values []string, wanted ...string) bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[value] = true
+	}
+	for _, value := range wanted {
+		if !set[value] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestPiClientSharesCancellableSetupAndReconnectsAfterReset(t *testing.T) {

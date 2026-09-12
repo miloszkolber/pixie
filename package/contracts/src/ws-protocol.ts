@@ -106,6 +106,8 @@ export const WS_METHODS = {
 	sessionQueueRetry: "session.queueRetry",
 	sessionAbort: "session.abort",
 	sessionDelete: "session.delete",
+	sessionDeletionRecovery: "session.deletionRecovery",
+	sessionConfirmExternalDeletion: "session.confirmExternalDeletion",
 	sessionRename: "session.rename",
 	sessionArchive: "session.archive",
 	sessionUnarchive: "session.unarchive",
@@ -199,6 +201,15 @@ export type WsChannel = (typeof WS_CHANNELS)[keyof typeof WS_CHANNELS];
 
 export interface Ack {
 	ok: true;
+}
+
+// A retained deletion tombstone that could not be safely resumed. Operators
+// resolve it explicitly; it is never replayed or discarded implicitly.
+export interface DeletionRecovery {
+	projectId: string;
+	sessionId: string;
+	phase: string;
+	reason: string;
 }
 
 export interface ProjectWatchReadyResult {
@@ -313,6 +324,11 @@ export interface WsMethodMap {
 	};
 	"session.abort": { params: { sessionId: string }; result: Ack };
 	"session.delete": { params: { projectId: string; sessionId: string }; result: Ack };
+	"session.deletionRecovery": { params: Record<string, never>; result: DeletionRecovery[] };
+	"session.confirmExternalDeletion": {
+		params: { projectId: string; sessionId: string };
+		result: Ack;
+	};
 	"session.rename": {
 		params: { projectId: string; sessionId: string; title: string };
 		result: Ack;

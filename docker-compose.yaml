@@ -27,6 +27,13 @@ services:
         volumes:
             - ${PIXIE_DATA_PATH}:/var/lib/pixie
             # Add each admitted project root here as a read-only bind at the same absolute path.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        pids_limit: 512
+        mem_limit: 2g
+        cpus: 2.0
         tmpfs:
             - /tmp:size=128m,mode=1777,uid=1000,gid=1000
             - /run:size=16m,mode=700,uid=1000,gid=1000

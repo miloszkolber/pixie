@@ -52,15 +52,6 @@ jobs:
         working-directory: package
       - run: bun run build
         working-directory: package
-      - name: Enforce coverage gate
-        run: bun run check:coverage
-        working-directory: package
-      - name: Enforce package artifact gate
-        run: bun scripts/check-package-artifacts.ts
-        working-directory: package
-      - name: Enforce release identity and policy gate
-        run: bun scripts/release-gate.ts
-        working-directory: package
       - name: Validate Compose service isolation
         run: sh package/tests/deployment/compose.test.sh
       - run: gofmt -d cmd internal tests | tee /tmp/pixie-gofmt.diff && test ! -s /tmp/pixie-gofmt.diff
@@ -73,6 +64,11 @@ jobs:
         env:
           CGO_ENABLED: "0"
         working-directory: package
+      - name: Test Go assistant module
+        run: go test -count=1 ./...
+        env:
+          CGO_ENABLED: "0"
+        working-directory: assistant
   ui:
     name: Browser acceptance
     runs-on: ubuntu-latest
@@ -116,7 +112,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   pi:
-    name: Official Pi compatibility (${{ matrix.arch }})
+    name: Legacy Pi parity (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
@@ -145,6 +141,6 @@ jobs:
         working-directory: package
       - run: bun test tests/pixie-assistant
         working-directory: package
-      - name: Verify application against native Pi host
+      - name: Verify application against legacy native Pi host
         run: go test -count=1 ./tests/go/controller -run TestApplicationThroughNativePiHost
         working-directory: package
