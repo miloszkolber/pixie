@@ -26,7 +26,7 @@ Current fail-closed gates agree with that verdict:
 - The Go host persists a stable host identity under the agent directory and exposes it as `runtimeId`. Deletion binding v2 excludes ephemeral endpoint, port and transport secret, with legacy endpoint-bound records still matchable; unmatched or unsupported records are retained and surfaced instead of aborting startup.
 - Full-host startup fails without an absolute Pi agent directory and a resolvable Pi executable; the composition joins `assistant.Errors()` with the controller; assistant readiness degrades while a lost session awaits reload; `runtime.restart` is explicit opt-in and exits status 75; generated install instructions include the private environment file and Pi selection.
 - Bounded native JSONL parsing, aggregate admission, control reserve, pending limits, timeouts, and process-group teardown have focused tests.
-- Controller Host/Origin policy, loopback Pi restrictions, reserved module routes, non-executing Git inspection, bounded controller child termination, typed persistence outcomes, and storage bounds have focused implementation tests.
+- Controller Host/Origin policy, loopback Pi restrictions, reserved module routes, non-executing Git inspection, bounded controller child termination, typed persistence outcomes, and storage bounds have focused implementation tests. Typed outcomes are not yet applied to every store: `settings.go`, `session_state.go`, `browser_panel_ownership.go` and `project-root-migration.go` still call `persist.Write`, which discards the outcome.
 - The six-slot workspace, responsive Settings behavior, rail keyboard navigation, read-only Files/Git views, Mewa foundations, Browser leases/artifacts, and packaged Chromium shell have source or fixture acceptance.
 - The local controller and legacy assistant are live and healthy. Both Go modules pass `CGO_ENABLED=0 go test -count=1 ./...` and `CGO_ENABLED=0 go vet ./...`; this verifies isolated Go code, not full integration.
 - npm assistant publication has been removed. The private Bun workspace remains only as a fallback and parity oracle until Go cutover.
@@ -39,15 +39,15 @@ Current fail-closed gates agree with that verdict:
 
 2. **Acceptance is mistaken for settlement — GO-05, FC03/FC05/FC11, X10. Repaired at source.** The host separates accepted from settled, waits for the pre-dispatch barrier plus `agent_settled` (or an authoritative post-acceptance state probe) before returning, and classifies rejected versus uncertain prompts. The controller clears a reattached run on `agent_settled` and admits follow-ups only afterwards. Focused tests cover late settlement, timeout poisoning, reconnect settlement, and proven-rejection rollback. Still missing: real-provider retry/compaction event-order testing.
 
-3. **False capabilities and startup-blocking deletion recovery — API-01/API-03/FIX-01/BUILD-05, FC07–FC09/FC22. Repaired at source; reconciliation UX incomplete.** Hello advertises an exhaustive `operationSet`; missing/false operations fail closed before mutation, and unsupported delete cannot write a durable intent. The host persists a stable identity exposed as `runtimeId`; deletion binding v2 excludes endpoint/port/secret and still matches legacy records. Recovery quarantines unmatched or unsupported records, keeps their tombstones, surfaces them in readiness/welcome, and exposes `session.deletionRecovery`/`session.confirmExternalDeletion`. Still missing: a WebUI reconciliation view, retry-same-authority execution (Go delete remains unsupported), and migration/quarantine of pre-v2 unreadable records.
+3. **False capabilities and startup-blocking deletion recovery — API-01/FIX-01/BUILD-05, FC07–FC09/FC22. Repaired at source; reconciliation UX incomplete.** Hello advertises an exhaustive `operationSet`; missing/false operations fail closed before mutation, and unsupported delete cannot write a durable intent. The host persists a stable identity exposed as `runtimeId`; deletion binding v2 excludes endpoint/port/secret and still matches legacy records. Recovery quarantines unmatched or unsupported records, keeps their tombstones, surfaces them in readiness/welcome, and exposes `session.deletionRecovery`/`session.confirmExternalDeletion`. Still missing: a WebUI reconciliation view, retry-same-authority execution (Go delete remains unsupported), migration/quarantine of pre-v2 unreadable records, and a non-test binding between the host's hand-maintained `nativeOperationSet` and the controller RPC call sites (the exhaustive binding covers browser/controller only). Durable pairing authority (API-03) belongs to defect 7 and remains helper-only.
 
 ### P1 — retained functionality and lifecycle
 
-4. **Model, thinking, and resource contracts disagree — FC04/FC10/FC17–FC19. Partially repaired.** Go now rejects create-time model/thinking/MCP overrides and text-resource prompts before any native mutation, and its snapshot returns real provider/model/thinking config options. The controller already gates resources on `session.prompt.resource`. Still missing: one generated typed schema shared by Go and TypeScript, authoritative snapshot projection for provider/model catalogs, and transactional or reconciled create when a settings step fails.
+4. **Model, thinking, and resource contracts disagree — FC04/FC10/FC17–FC19. Partially repaired.** Go now rejects create-time model/thinking/MCP overrides and text-resource prompts before any native mutation, and its snapshot returns real provider/model/thinking config options. The controller already gates resources on `session.prompt.resource`. Still missing: the Go host does not enable `session.configure`, so FC10 model/thinking selection is unavailable there despite the retained-feature index marking it vanilla; one generated typed schema shared by Go and TypeScript; authoritative snapshot projection for provider/model catalogs; and transactional or reconciled create when a settings step fails.
 
 5. **Full-host packaging and supervision — BUILD-03/BUILD-05/PKG-01–PKG-03, FC22. Substantially repaired at source.** Full-host startup now requires an absolute agent directory and a resolvable Pi executable, `serveFullHost` joins `assistant.Errors()` and the controller error channel, assistant readiness degrades while a lost session awaits reload, `runtime.restart` is explicit opt-in and exits status 75, packaged `pixie.json` selects Pi, and generated install instructions include the private environment file and selection. Still missing: fresh-archive systemd install/start/stop/restart/upgrade/rollback/uninstall evidence on both architectures.
 
-6. **Native administration and parity remain legacy-only — BRIDGE-01–BRIDGE-03/GO-06/GO-08/GO-09/EXT-01/EXT-04, FC13–FC28.** Provider/auth/settings/extensions/MCP/native-UI tests primarily execute `assistant/src` under Bun. They do not prove the Go binary or independent npm/standalone Pi profiles. Required fix: integrate only supported selected-Pi public APIs, preserve explicit unsupported states, and run each operation through the Go binary against both distributions.
+6. **Native administration and parity remain legacy-only — BRIDGE-01–BRIDGE-03/GO-06/GO-08/GO-09/EXT-01/EXT-04, FC13–FC28.** Provider/auth/settings/extensions/MCP/native-UI tests primarily execute `assistant/src` under Bun. They do not prove the Go binary or independent npm/standalone Pi profiles. Required fix: integrate only supported selected-Pi public APIs, preserve explicit unsupported states, and run each operation through the Go binary against both distributions. FC15 stays a cutover gate: the retained public API cannot provide request-specific dialog cancellation or non-empty editor text, so exact working hints and UI cancellation are known-reduced and must not be presented as parity. The assistant bridge package named by the original plan does not exist.
 
 ### P1 — architecture and delivery
 
@@ -82,7 +82,7 @@ Current fail-closed gates agree with that verdict:
 | FIX-01 | Partial | Go `runtime.restart` is opt-in and exits status 75 with lifecycle tests; real systemd restart evidence is absent. |
 | FIX-02–FIX-04, FIX-06–FIX-13 | Partial | Focused regressions exist, but several prove controller or legacy behavior rather than target Go/final artifacts. |
 | FIX-05/API-02/API-03/MIG-01 | Not done end-to-end | Versioned transport, durable authority, and staged topology recovery are disconnected helpers. |
-| API-01 | Done at source level | Catalogs exist and Go advertises an exhaustive, fail-closed operation set enforced before dispatch. |
+| API-01 | Partial | Browser/controller methods are bound both ways and Go advertises an exhaustive, fail-closed operation set before dispatch. The Go host catalog is hand-maintained with no non-test binding to controller call sites. |
 | STATE-01/MODULE-01/ROUTE-01/LIMIT-01 | Done at source level | Workspace state, module routing, and bound helpers are integrated with focused tests. |
 | LIFE-01 | Partial | Controller Stop/idle-release exists and release now verifies native quiescence before dropping residence; full real-Pi lifecycle evidence is absent. |
 | GO-01/GO-02 | Partial | Go module, facade, bounded transport, and teardown exist; production contract is incomplete. |
@@ -93,7 +93,7 @@ Current fail-closed gates agree with that verdict:
 | BUILD-04 | Done at source/local-controller level | Docker is controller-only; evidence is local amd64 source, not a release. |
 | BUILD-05 | Partial | Restart, lifecycle join, readiness degradation, and failure propagation exist at source; real systemd transitions are unverified. |
 | REL-01–REL-04 | Partial | Commit identity and workflow sequencing exist; complete artifacts, collectors and authorized release evidence do not. |
-| UI-01–UI-06/MEWA-01–MEWA-03 | Done at source/fixture level | Workspace and foundation acceptance is credible within its tested boundary. |
+| UI-01–UI-06/MEWA-01–MEWA-03 | Partial | Workspace and foundation acceptance is credible within its tested boundary, but residual UI-04 scope is open: ungrouped sessions are hardcoded empty with no host metadata over `session.list`, there is no shared visibility-aware poller (four independent 5 s loops), Settings is both a primary area and a modal, and zoom/layout checks are source/CSS substring assertions rather than rendered acceptance. |
 | UI-07 | Partial | Recovery code exists; real old-client/new-server artifact evidence is absent. |
 | EXT-01/EXT-04 | Not done for Go | Native UI/MCP integration remains legacy-only. |
 | EXT-02 | Done at source level | Registry desired/readiness separation and local failure handling have focused tests. |
@@ -102,13 +102,26 @@ Current fail-closed gates agree with that verdict:
 | PKG-01–PKG-03 | Not done | Final archive installation and lifecycle evidence are absent. |
 | DOC-01/DOC-02 | Partial | Concise docs and link checks exist; runtime accuracy must follow fixes. |
 | COVERAGE-01/CUTOVER-01 | Not done | The checker explicitly refuses cutover. |
-| CAN-01–CAN-05 | Not done | Scaffolding is not contained Canvas processing or Gate 6 evidence. |
-| FIG-01–FIG-06 | Not done | Scaffolding is not an independent parser, hostile-file safety, or real frame rendering. |
+| CAN-01–CAN-05 | Not done | Bounded storage, revisions, cursors, MCP tools and UI exist, but no contained worker launcher or production `CanvasConfig` is wired, so production Canvas can never reach Ready. Gate 6 evidence is absent. |
+| FIG-01–FIG-06 | Not done | Bounded preflight, transactional source lifecycle, cursors, MCP tools and UI exist, but no real parser, no design worker package, and no `openfig-core` pin. The deterministic fixture adapter now fails closed on an archive without design JSON instead of fabricating a document; actual frame rendering remains open. |
+
+## Previous plan verification
+
+The prior 17-file plan was re-audited against the current tree using `git show 8c3d4e7:roadmap/<file>`. The consolidated table already downgraded the largest overclaims; this pass adds the corrections below. The old per-task `execution.md`/`CHANGELOG.md` evidence ledger was removed in the consolidation, so the task-to-commit-to-evidence mapping now exists only in Git history.
+
+- **Corrected:** API-01 is partial, not done. Only browser/controller methods are bound both ways (`package/tests/contracts/ws-catalog.test.ts`); the Go host `nativeOperationSet` is hand-maintained with no non-test binding to controller call sites. Durable pairing (API-03) is helper-only and is no longer grouped with the repaired deletion path — `PairAuthority`/`RequirePairedRecovery`/`DeletionBindingV2` have no production caller.
+- **Corrected:** FC10 model/thinking mutation is unavailable on the Go host because `session.configure` is false, although the retained index marks it vanilla.
+- **Restored:** FC15 public-API fidelity limits and its explicit cutover-gate status, including that the assistant bridge package named by the original plan does not exist.
+- **Restored:** gate applicability — X09 belongs to Design/Gate 7 and X12–X13 to Browser, while `check-coverage` currently counts all 14 X rows into Gate 5. The Gate 6/7 definitions and numeric bounds table now live only in code.
+- **Recorded:** the packed-artifact assistant build boundary (`check-assistant-build.ts`, `distribution.test.ts`, `dist/main.js`) was removed with npm retirement without a named reduction; the Go binary is the only assistant artifact.
+- **Recorded:** documentation checks now cover `roadmap/README.md` and `assistant/README.md`, and the fixture design parser now rejects an archive without design JSON rather than fabricating a document.
+- **Recorded:** several stores still discard typed persistence outcomes (`persist.Write` in `settings.go`, `session_state.go`, `browser_panel_ownership.go`, `project-root-migration.go`), and shared UI poller ownership, rail/dialog unification, ungrouped session listing, and rendered zoom acceptance remain open.
+- **Still uncovered:** the environment-discovery matrix from `assistant-go.md` (symlinks, spaces, custom prefixes, systemd non-login PATH) belongs in the real-Pi integration work.
 
 ## Dependency-ordered next steps
 
 1. **Keep unsafe transitions frozen:** retain the legacy assistant; block Go cutover and publication; do not enable untrusted Browser work. The Go operation set is exhaustive and fail-closed.
-2. **Prove core execution authority against real Pi:** run the new per-session ownership, cwd, settlement, abort, reconnect, and event-order tests against the pinned standalone and npm Pi distributions, including A/B/A, concurrent chat, and schedule-versus-chat.
+2. **Prove core execution authority against real Pi:** run the new per-session ownership, cwd, settlement, abort, reconnect, and event-order tests against the pinned standalone and npm Pi distributions, including A/B/A, concurrent chat, and schedule-versus-chat. Cover executable discovery with symlinks, spaces, custom prefixes and systemd's non-login PATH.
 3. **Align the shared contracts (remaining):** generate one typed model/thinking/resource schema for Go and TypeScript, project authoritative provider/model catalog snapshots, and reconcile partial create failures.
 4. **Finish destructive recovery (remaining):** add a WebUI reconciliation view for retained tombstones, implement retry-same-authority once Go delete exists, and migrate/quarantine pre-v2 records.
 5. **Prove full-host lifecycle (remaining):** verify fresh archive install/start/stop/restart/upgrade/rollback/uninstall under real systemd on both architectures.
@@ -150,8 +163,8 @@ Current fail-closed gates agree with that verdict:
 
 ## Deferred feature phases
 
-- **Canvas — CAN-01–CAN-05:** enforce session authority and worker containment; implement immutable revisions, CAS/quota/tombstones, six bounded tools, exact-version raster previews, registered UI/routes, and both-mode/architecture hostile/recovery evidence. Applicable X04/X05/X12/X13 must pass.
-- **Openfig — FIG-01–FIG-06:** use an independently released licensed parser/runtime; implement bounded preflight/index artifacts, transactional source lifecycle, five query tools, focus/draft identity, hostile/offline/recovery tests, and actual upstream frame rendering. Cover extraction never substitutes for FIG-06.
+- **Canvas — CAN-01–CAN-05:** the bounded storage, revisions, cursors, tools and UI are substantive. Remaining blockers: a contained `WorkerLauncher` implementation and production `CanvasConfig` wiring, exact-version raster previews, registered native authority, and both-mode/architecture hostile/recovery evidence. Applicable X04/X05/X12/X13 must pass.
+- **Openfig — FIG-01–FIG-06:** the bounded preflight, transactional lifecycle, cursors, tools and UI are substantive. Remaining blockers: an independently released licensed parser/runtime behind the `Parser` interface, the pinned design worker package, focus/draft identity, hostile/offline/recovery tests, and actual upstream frame rendering. Cover extraction never substitutes for FIG-06.
 
 ## Deviations from the original plan
 
@@ -159,6 +172,9 @@ Current fail-closed gates agree with that verdict:
 - The active assistant stayed on Bun rather than Go because rollout reused the existing service; subsequent audits found that switching would risk wrong-session execution and startup-blocking recovery.
 - Independent npm and standalone Pi profiles were not used for the live test, so compatibility remains unproved.
 - The deletion binding changed from endpoint/secret-derived v1 to stable v2 while keeping v1 records matchable. A requested record whose binding matches neither is retained and quarantined rather than aborting startup; this is an intentional safety change from the previous fail-stop behavior.
+- npm retirement removed the packed assistant build boundary check and `distribution.test.ts`. The Go binary is now the only assistant artifact; no packaged-artifact boundary check replaced them.
+- The deterministic design fixture parser now rejects an archive without a design JSON document instead of producing a synthetic one-page projection. A real `.fig` requires the licensed upstream parser, which is still absent.
+- Documentation link/path checks now include `roadmap/README.md` and `assistant/README.md`, not only the root README and `docs/`.
 - Initial host Compose exposed an unauthenticated wildcard listener and mounted `/home/core`; the rollout corrected it to authenticated loopback, removed that mount, and added restrictions.
 - Browser was smoke-tested for UI liveness without claiming containment; its architecture still deviates from the enforced-worker requirement.
 - Temporary rollback archives and the preceding image were removed by the later explicit cleanup request. Create a fresh snapshot before any future upgrade.
@@ -223,6 +239,8 @@ Every row remains required unless the user approves a named reduction. V means v
 | X12 | Workers have verified pre-exec containment and bounds |
 | X13 | Browser non-isolation and worker fail-closed behavior are explicit |
 | X14 | Upgrade recovery preserves drafts and avoids duplicate mutations |
+
+Gate applicability is conditional: X09 belongs to Design and Gate 7, and X12–X13 to Browser/worker containment, but `check-coverage` currently counts all 14 X rows as applicable and requires only Gates 1–5. The original Gate 6 (Canvas) and Gate 7 (Openfig/X09) definitions and the numeric bounds table existed only in the removed planning files; they must be restored here or explicitly reduced. The numeric limits themselves remain implemented in code (`internal/canvas`, `internal/design`) and tested.
 
 ## Evidence and authority rules
 
