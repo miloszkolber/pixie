@@ -2,6 +2,7 @@ package mcpserver_test
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -54,6 +55,17 @@ func testBinaries(t *testing.T, root, agentBrowser, configPath string) *mcpserve
 	}
 }
 
+// enableBrowser marks the external worker boundary verified and enables the
+// untrusted Browser module for tests whose subject is Browser routing or
+// lifecycle rather than the fail-closed default.
+func enableBrowser(t *testing.T, registry *mcpserver.Registry) {
+	t.Helper()
+	registry.SetWorkerBoundaryVerified(true)
+	if err := registry.SetEnabled("browser", true); err != nil {
+		t.Fatalf("enable browser with verified worker boundary: %v", err)
+	}
+}
+
 func serve(registry *mcpserver.Registry, method, path, body, host string, headers map[string]string) *httptest.ResponseRecorder {
 	var reader io.Reader
 	if body != "" {
@@ -69,30 +81,68 @@ func serve(registry *mcpserver.Registry, method, path, body, host string, header
 	return response
 }
 
-func TestRegistryPublishesBrowserByDefault(t *testing.T) {
+func TestRegistryBrowserDisabledUntilWorkerBoundaryVerified(t *testing.T) {
 	registry := testRegistry(t, nil)
 	catalog := registry.Catalog()
-	if catalog.SchemaVersion != 1 || catalog.Engine != "in-process" || catalog.Gateway.State != "ready" {
+	if catalog.SchemaVersion != 1 || catalog.Engine != "in-process" {
 		t.Fatalf("default catalog = %#v", catalog)
+	}
+	if catalog.Gateway.State != "degraded" {
+		t.Fatalf("disabled Browser must degrade the gateway: %#v", catalog.Gateway)
 	}
 	if len(catalog.Modules) != 3 {
 		t.Fatalf("default modules = %#v", catalog.Modules)
 	}
 	module := catalog.Modules[0]
 	if module.ID != "browser" || module.ExtensionName != "pixie-browser" || module.Path != "/mcp/browser" ||
-		module.Transport != "streamable_http" || !module.Enabled || module.State != "ready" {
+		module.Transport != "streamable_http" || module.Enabled || module.State != "unavailable" {
 		t.Fatalf("default module = %#v", module)
 	}
 	if module.Endpoint != "http://127.0.0.1:17871/mcp/browser" {
 		t.Fatalf("default endpoint = %q", module.Endpoint)
 	}
-	if ready, _ := registry.Health("browser"); !ready {
-		t.Fatal("browser module is not ready with fixture binaries")
+	if ready, _ := registry.Health("browser"); ready {
+		t.Fatal("browser module is ready without a verified worker boundary")
+	}
+	// Enabling without a verified boundary is refused, and the persisted and
+	// catalog state stay disabled.
+	if err := registry.SetEnabled("browser", true); !errors.Is(err, mcpserver.ErrUnverifiedWorkerBoundary) {
+		t.Fatalf("unverified browser enable error = %v", err)
+	}
+	if after := registry.Catalog(); after.Modules[0].Enabled || after.Revision != catalog.Revision {
+		t.Fatalf("refused enable changed catalog: %#v", after.Modules[0])
+	}
+	// A repeated disable still leaves the module disabled.
+	if err := registry.SetEnabled("browser", false); err != nil {
+		t.Fatalf("repeated disable: %v", err)
+	}
+	if after := registry.Catalog(); after.Modules[0].Enabled {
+		t.Fatal("repeated disable enabled the module")
+	}
+	// Only a verified boundary opens the enablement gate.
+	enableBrowser(t, registry)
+	if module := registry.Catalog().Modules[0]; !module.Enabled || module.State != "ready" {
+		t.Fatalf("verified browser = %#v", module)
+	}
+	if ready, detail := registry.Health("browser"); !ready {
+		t.Fatalf("browser module is not ready with fixture binaries: %s", detail)
+	}
+	if gateway := registry.Catalog().Gateway; gateway.State != "ready" {
+		t.Fatalf("gateway after verified enable = %#v", gateway)
+	}
+	// Losing verification fails closed while preserving desired state.
+	registry.SetWorkerBoundaryVerified(false)
+	if ready, _ := registry.Health("browser"); ready {
+		t.Fatal("browser stayed ready after the worker boundary was revoked")
+	}
+	if snapshot := registry.ModuleLifecycle("browser"); !snapshot.Desired || snapshot.Ready {
+		t.Fatalf("revoked-boundary lifecycle = %+v", snapshot)
 	}
 }
 
 func TestRegistryUnchangedEnablePreservesBrowserHandle(t *testing.T) {
 	registry := testRegistry(t, nil)
+	enableBrowser(t, registry)
 	previous := registry.BrowserLegacyHandler()()
 	if previous == nil {
 		t.Fatal("Browser handler was unavailable before unchanged enable")
@@ -114,6 +164,7 @@ func TestRegistryUnchangedEnablePreservesBrowserHandle(t *testing.T) {
 
 func TestRegistryExplicitRestartReplacesBrowserHandle(t *testing.T) {
 	registry := testRegistry(t, nil)
+	enableBrowser(t, registry)
 	previous := registry.BrowserLegacyHandler()()
 	if previous == nil {
 		t.Fatal("Browser handler was unavailable before restart")
@@ -159,6 +210,9 @@ func TestRegistryPrePublicationPersistenceFailurePreservesStateAndRuntime(t *tes
 		t.Fatal(err)
 	}
 	t.Cleanup(registry.Shutdown)
+	// Persisted desired state is already true; a verified boundary is required
+	// before the runtime may start.
+	registry.SetWorkerBoundaryVerified(true)
 	before := registry.Catalog()
 	if err := os.Mkdir(statePath+".bak", 0o700); err != nil {
 		t.Fatal(err)
@@ -183,6 +237,7 @@ func TestRegistryPrePublicationPersistenceFailurePreservesStateAndRuntime(t *tes
 
 func TestRegistryRoutesBrowserModuleWithToken(t *testing.T) {
 	registry := testRegistry(t, func(config *mcpserver.Config) { config.Token = registryTestToken })
+	enableBrowser(t, registry)
 	host := "127.0.0.1:17871"
 	auth := map[string]string{"Authorization": "Bearer " + registryTestToken}
 	if response := serve(registry, http.MethodGet, mcpserver.CatalogPath, "", host, nil); response.Code != http.StatusUnauthorized {
@@ -242,6 +297,7 @@ func TestRegistryDisableStopsModuleAndPersists(t *testing.T) {
 		return registry
 	}
 	registry := newRegistry()
+	enableBrowser(t, registry)
 	if err := registry.SetEnabled("browser", false); err != nil {
 		t.Fatal(err)
 	}
@@ -256,13 +312,13 @@ func TestRegistryDisableStopsModuleAndPersists(t *testing.T) {
 		t.Fatalf("disabled browser status = %d", response.Code)
 	}
 	registry.Shutdown()
-	// Persisted disablement wins over the enabled-by-default environment on
-	// the next start.
+	// Persisted disablement survives the next start.
 	reloaded := newRegistry()
 	defer reloaded.Shutdown()
 	if reloaded.Catalog().Modules[0].Enabled {
 		t.Fatal("disablement did not survive restart")
 	}
+	reloaded.SetWorkerBoundaryVerified(true)
 	if err := reloaded.SetEnabled("browser", true); err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +331,15 @@ func TestRegistryDisableStopsModuleAndPersists(t *testing.T) {
 }
 
 func TestRegistryIgnoresRetiredEnvironmentSelection(t *testing.T) {
+	// Persisted enablement is the owner: the retired env variable must not
+	// override durable desired state.
+	dataDir := t.TempDir()
+	statePath := filepath.Join(dataDir, "mcp-modules.json")
+	if err := os.WriteFile(statePath, []byte("{\"modules\":{\"browser\":{\"enabled\":true}}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	registry := testRegistry(t, func(config *mcpserver.Config) {
+		config.DataDir = dataDir
 		config.Getenv = func(key string) (string, bool) {
 			if key == "PIXIE_MCP_DISABLED_MODULES" {
 				return "browser", true
@@ -283,13 +347,18 @@ func TestRegistryIgnoresRetiredEnvironmentSelection(t *testing.T) {
 			return "", false
 		}
 	})
-	if !registry.Catalog().Modules[0].Enabled {
+	if !registry.DesiredEnabled("browser") {
 		t.Fatal("retired PIXIE_MCP_DISABLED_MODULES fallback disabled the module")
+	}
+	// Persisted desired state alone must not start the untrusted module.
+	if ready, _ := registry.Health("browser"); ready {
+		t.Fatal("persisted enablement started Browser without a verified worker boundary")
 	}
 }
 
 func TestRegistryUnknownMCPRoutesReturnNotFound(t *testing.T) {
 	registry := testRegistry(t, nil)
+	enableBrowser(t, registry)
 	host := "127.0.0.1:17871"
 	// Control: the owned Browser sub-route delegates to the module service.
 	if response := serve(registry, http.MethodGet, "/mcp/browser/readyz", "", host, nil); response.Code != http.StatusOK {
@@ -343,6 +412,7 @@ func TestRegistryUnknownMCPRoutesReturnNotFound(t *testing.T) {
 	// registry still reports unknown /mcp/* as not_found without credentials,
 	// while metadata routes keep their bearer boundary.
 	tokenRegistry := testRegistry(t, func(config *mcpserver.Config) { config.Token = registryTestToken })
+	enableBrowser(t, tokenRegistry)
 	for _, path := range []string{"/mcp/unknown", "/mcp/browser-evil"} {
 		response := serve(tokenRegistry, http.MethodGet, path, "", host, nil)
 		if response.Code != http.StatusNotFound {

@@ -194,6 +194,7 @@ func TestNativeMCPExpiryAndInvalidRegistrationFailClosed(t *testing.T) {
 
 func TestRegistryOwnsNativeMCPRegistrationsAcrossModuleAndShutdownLifecycle(t *testing.T) {
 	registry := testRegistry(t, nil)
+	registry.SetWorkerBoundaryVerified(true)
 	registration, err := registry.Register(mcpserver.NativeMCPRegistrationRequest{
 		ModuleID: "browser", ServerID: "server-a", SessionID: "session-live",
 		Generation: 1, TTL: time.Hour,

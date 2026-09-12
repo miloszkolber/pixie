@@ -46,6 +46,7 @@ func configuredModuleRegistry(t *testing.T) *mcpserver.Registry {
 		t.Fatal(err)
 	}
 	t.Cleanup(registry.Shutdown)
+	enableBrowser(t, registry)
 	return registry
 }
 

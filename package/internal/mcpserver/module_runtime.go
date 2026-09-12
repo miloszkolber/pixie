@@ -189,7 +189,16 @@ func (r *Registry) constructModule(id string, enabled bool) (*moduleRuntime, err
 	config := r.config
 	build := r.build
 	logger := r.logger
+	definition, haveDefinition := r.definitionLocked(id)
+	boundaryAllowed := !haveDefinition || r.workerBoundaryAllowsLocked(definition)
 	r.mu.RUnlock()
+	// An untrusted module never starts merely because it was enabled in
+	// persisted state; the verified boundary must exist at construction time.
+	// Existing desired state stays true and the failure is recorded locally so
+	// readiness reports the missing boundary.
+	if enabled && !boundaryAllowed {
+		return nil, ErrUnverifiedWorkerBoundary
+	}
 	switch id {
 	case browserID:
 		browserConfig, err := StrictBrowserConfig(config)

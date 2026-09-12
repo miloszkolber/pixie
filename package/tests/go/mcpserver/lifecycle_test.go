@@ -15,6 +15,7 @@ import (
 
 func TestLifecycleDesiredRemainsTrueWhenStartupFails(t *testing.T) {
 	ready := testRegistry(t, nil)
+	enableBrowser(t, ready)
 	if !ready.DesiredEnabled("browser") {
 		t.Fatal("ready registry lost desired enablement")
 	}
@@ -43,6 +44,12 @@ func TestLifecycleDesiredRemainsTrueWhenStartupFails(t *testing.T) {
 		t.Fatalf("startup failure must degrade the module, not the publisher: %v", err)
 	}
 	t.Cleanup(failed.Shutdown)
+	// The boundary is verified, so enablement is admitted and only the local
+	// startup failure may keep readiness false.
+	failed.SetWorkerBoundaryVerified(true)
+	if err := failed.SetEnabled("browser", true); err != nil {
+		t.Fatal(err)
+	}
 	if !failed.DesiredEnabled("browser") {
 		t.Fatal("startup failure erased desired enablement")
 	}
@@ -115,6 +122,7 @@ func TestLifecycleStrictConfigFailsLocallyWithoutFallback(t *testing.T) {
 		t.Fatalf("restrictive host was not rejected locally: %v", err)
 	}
 	good := testRegistry(t, nil)
+	enableBrowser(t, good)
 	snapshotConfig, desired := good.SnapshotStartupConfig()
 	if !desired["browser"] {
 		t.Fatalf("startup snapshot lost desired state: %#v", desired)

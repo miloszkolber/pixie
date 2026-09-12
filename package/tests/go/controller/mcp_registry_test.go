@@ -20,7 +20,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
-func testInProcessRegistry(t *testing.T) *mcpserver.Registry {
+func newTestInProcessRegistry(t *testing.T) *mcpserver.Registry {
 	t.Helper()
 	root := t.TempDir()
 	agentBrowser, err := os.Executable()
@@ -46,6 +46,18 @@ func testInProcessRegistry(t *testing.T) *mcpserver.Registry {
 		t.Fatal(err)
 	}
 	t.Cleanup(registry.Shutdown)
+	return registry
+}
+
+// testInProcessRegistry marks the external worker boundary verified and enables
+// Browser, for tests whose subject is not the fail-closed default.
+func testInProcessRegistry(t *testing.T) *mcpserver.Registry {
+	t.Helper()
+	registry := newTestInProcessRegistry(t)
+	registry.SetWorkerBoundaryVerified(true)
+	if err := registry.SetEnabled("browser", true); err != nil {
+		t.Fatalf("enable browser with verified worker boundary: %v", err)
+	}
 	return registry
 }
 
@@ -90,6 +102,26 @@ func TestMCPRegistryHandlerTogglesPersistedEnablement(t *testing.T) {
 	optional := handleJSON(t, empty, "mcpRegistry.catalog", "{}").(map[string]any)
 	if optional["gateway"].(map[string]any)["state"] != "not-configured" {
 		t.Fatalf("unconfigured registry catalog = %#v", optional)
+	}
+}
+
+func TestMCPRegistryRefusesBrowserEnableWithoutVerifiedWorkerBoundary(t *testing.T) {
+	registry := newTestInProcessRegistry(t)
+	handler := controller.CoreHandler{MCPRegistry: registry}
+	catalog := handleJSON(t, handler, "mcpRegistry.catalog", "{}").(mcpserver.Catalog)
+	if catalog.Modules[0].Enabled || catalog.Modules[0].State != "unavailable" {
+		t.Fatalf("browser default = %#v", catalog.Modules[0])
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := handler.Handle(ctx, "mcpRegistry.moduleSetEnabled", json.RawMessage(`{"moduleId":"browser","enabled":true}`), "test-client"); err == nil {
+		t.Fatal("browser enable without a verified worker boundary was accepted")
+	} else if !strings.Contains(err.Error(), "verified external worker boundary") {
+		t.Fatalf("browser enable error = %v", err)
+	}
+	after := handleJSON(t, handler, "mcpRegistry.catalog", "{}").(mcpserver.Catalog)
+	if after.Modules[0].Enabled || after.Modules[0].State != "unavailable" {
+		t.Fatalf("refused enable changed catalog = %#v", after.Modules[0])
 	}
 }
 

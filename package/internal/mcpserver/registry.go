@@ -54,8 +54,9 @@ const (
 // Retired environment selection: PIXIE_MCP_MODULES and
 // PIXIE_MCP_DISABLED_MODULES are ignored. Module enablement is owned by the
 // Pixie persist store (mcp-modules.json) and toggled from the Tools UI; the
-// Browser module defaults to enabled. A startup warning names the migration
-// path when either variable is still set.
+// untrusted Browser module defaults to disabled and stays unavailable until a
+// verified external worker boundary exists. A startup warning names the
+// migration path when either variable is still set.
 const (
 	envModules  = "PIXIE_MCP_MODULES"
 	envDisabled = "PIXIE_MCP_DISABLED_MODULES"
@@ -183,7 +184,12 @@ type Registry struct {
 	definitions []ModuleDefinition
 	persisted   persistedState
 	enabled     map[string]bool
-	nativeMCP   *NativeMCPRegistry
+	// workerBoundaryVerified records whether a real external worker
+	// containment boundary has been verified. It is false by default, so
+	// untrusted modules stay unavailable until the owning worker implementation
+	// confirms containment; it is never derived from operator configuration.
+	workerBoundaryVerified bool
+	nativeMCP              *NativeMCPRegistry
 }
 
 // moduleRuntime is the small lifecycle adapter shared by Browser, Canvas and
@@ -412,16 +418,71 @@ func validateState(value persistedState) error {
 	return validateCompleteState(value)
 }
 
+// SetWorkerBoundaryVerified records whether a verified external worker
+// containment boundary exists. It defaults to false and is a narrow seam for
+// tests and for the future worker implementation to call only after real
+// containment verification; it is never a self-asserted production setting.
+// Losing verification fails closed: already-running boundary-gated runtimes are
+// stopped while their persisted desired state is preserved.
+func (r *Registry) SetWorkerBoundaryVerified(verified bool) {
+	if r == nil {
+		return
+	}
+	r.mutationMu.Lock()
+	defer r.mutationMu.Unlock()
+	r.mu.Lock()
+	r.workerBoundaryVerified = verified
+	r.mu.Unlock()
+	for _, definition := range r.definitionsSnapshot() {
+		if !definition.RequiresVerifiedWorkerBoundary {
+			continue
+		}
+		if !verified {
+			// Revoke and stop the runtime without touching persisted desired
+			// state; the desired/readiness split keeps user intent visible.
+			r.RevokeModule(definition.ID)
+			_ = r.reconcileModule(definition.ID, false)
+			continue
+		}
+		if r.DesiredEnabled(definition.ID) {
+			_ = r.reconcileModule(definition.ID, true)
+		}
+	}
+}
+
+// workerBoundaryAllowsLocked reports whether a definition may run under the
+// current boundary-verification state. Non-boundary modules are always allowed.
+// Callers must hold r.mu.
+func (r *Registry) workerBoundaryAllowsLocked(definition ModuleDefinition) bool {
+	return !definition.RequiresVerifiedWorkerBoundary || r.workerBoundaryVerified
+}
+
+func (r *Registry) definitionsSnapshot() []ModuleDefinition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]ModuleDefinition(nil), r.definitions...)
+}
+
 // SetEnabled persists module enablement in the Pixie app state and reconciles
-// the owning service. Unknown modules fail closed. Persisted desired state is
-// published before a service is enabled, while slow construction happens
-// outside the registry request lock.
+// the owning service. Unknown modules fail closed, and an untrusted module is
+// refused while no verified external worker boundary exists. Persisted desired
+// state is published before a service is enabled, while slow construction
+// happens outside the registry request lock.
 func (r *Registry) SetEnabled(id string, enabled bool) error {
-	if _, ok := r.ModuleDefinition(id); !ok {
+	definition, ok := r.ModuleDefinition(id)
+	if !ok {
 		return fmt.Errorf("unknown in-process MCP module %q", id)
 	}
 	r.mutationMu.Lock()
 	defer r.mutationMu.Unlock()
+	if enabled {
+		r.mu.RLock()
+		allowed := r.workerBoundaryAllowsLocked(definition)
+		r.mu.RUnlock()
+		if !allowed {
+			return ErrUnverifiedWorkerBoundary
+		}
+	}
 	r.mu.RLock()
 	unchanged := r.enabled[id] == enabled
 	current := clonePersistedState(r.persisted)
