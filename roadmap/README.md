@@ -189,9 +189,9 @@ A 19-state visual and interaction review (desktop/mobile, light/dark, every prim
 
 ## Legacy removal readiness
 
-The production entrypoints no longer import `assistant/src/**`; the legacy service is reachable only from tests and fixtures, so removal is blocked by parity and evidence, not by a production edge. The audit found a real controller/host gap now fixed (canonical `session.steer`/`session.rename`), and the remaining `pi.session.*`/admin names still fail closed on Go.
+The production entrypoints no longer import the `assistant/src` tree; the legacy service is reachable only from tests and fixtures, so removal is blocked by parity and evidence, not by a production edge. The audit found a real controller/host gap now fixed (canonical `session.steer`/`session.rename`), and the remaining `pi.session.*`/admin names still fail closed on Go.
 
-- **Delete now (no parity gate):** dead modules with no live caller — `assistant/src/bridge/**`, `compatibility/**`, `discovery-compat.ts`, `discovery.ts`, `doctor.ts`, `facade.ts`, the `history/index.ts` and `session/index.ts` barrels, `history/continuity.ts`, `module-boundary.ts`, `admin-profiles/evaluate.ts` and `bridge/feasibility.ts` — plus their legacy-only tests. These are also the only implementation of the FC06 discovery/doctor and MIG-01 compatibility behaviors, so delete only with the matching reduction or port decision.
+- **Delete now (no parity gate):** dead modules with no live caller — `assistant/src/bridge`, `compatibility/**`, `discovery-compat.ts`, `discovery.ts`, `doctor.ts`, `facade.ts`, the `history/index.ts` and `session/index.ts` barrels, `history/continuity.ts`, `module-boundary.ts`, `admin-profiles/evaluate.ts` and `bridge/feasibility.ts` — plus their legacy-only tests. These are also the only implementation of the FC06 discovery/doctor and MIG-01 compatibility behaviors, so delete only with the matching reduction or port decision.
 - **Gate before deleting the rest:** FC13/FC14 raw UI frames, FC17–FC21/FC26 bridge, FC23 `pi.sources.*`, FC22 lifecycle, the reductions above, then `check:coverage` all 28 FC + 14 X + Gates 1–5 with `legacyPaths` and live evidence. Test assets to port rather than retire: `protocol-conformance`, `transport-jsonl`, `serialize`, and the `pi-native-parity` scenario suites.
 
 ## Deviations from the original plan
