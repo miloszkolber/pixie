@@ -443,7 +443,7 @@ func TestSnapshotPreservesActiveRunAndActiveFailureUncertainty(t *testing.T) {
 	if json.Unmarshal(raw, &snapshot) != nil || snapshot.RunID == "" || !snapshot.IsStreaming {
 		t.Fatalf("active snapshot = %s", raw)
 	}
-	child := supervisor.children[id]
+	child := supervisor.testChild(id)
 	killNativeProcess(child.cmd.Process)
 	if err := <-promptDone; err == nil {
 		t.Fatal("active child failure reported success")
@@ -455,9 +455,7 @@ func TestSnapshotPreservesActiveRunAndActiveFailureUncertainty(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for {
-		supervisor.mu.Lock()
-		current := supervisor.children[id]
-		supervisor.mu.Unlock()
+		current := supervisor.testChild(id)
 		if current == nil {
 			break
 		}
@@ -481,7 +479,7 @@ func TestSnapshotPreservesActiveRunAndActiveFailureUncertainty(t *testing.T) {
 func TestDurableRegistryReloadUsesExactPathAndCWD(t *testing.T) {
 	supervisor, logPath, cwd := startStatefulPiFixture(t)
 	id := createFixtureSession(t, supervisor, cwd)
-	ref := supervisor.sessions[id]
+	ref, _ := supervisor.testSession(id)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := supervisor.close(ctx); err != nil {
@@ -535,11 +533,11 @@ func TestRegistryDropsOnlyMissingUnmaterializedSessionAtStartup(t *testing.T) {
 		t.Fatalf("missing planned transcript blocked startup: %v", err)
 	}
 	t.Cleanup(func() { _ = supervisor.close(context.Background()) })
-	if _, ok := supervisor.sessions["planned"]; ok {
+	if _, ok := supervisor.testSession("planned"); ok {
 		t.Fatal("missing unmaterialized session survived restart")
 	}
-	if ref, ok := supervisor.sessions["materialized"]; !ok || ref.Path != materializedPath {
-		t.Fatalf("materialized session was not preserved: %#v", supervisor.sessions)
+	if ref, ok := supervisor.testSession("materialized"); !ok || ref.Path != materializedPath {
+		t.Fatalf("materialized session was not preserved: %#v", supervisor.testSessionsSnapshot())
 	}
 	persisted, err := os.ReadFile(supervisor.registryPath())
 	if err != nil {
@@ -554,7 +552,7 @@ func TestUnmaterializedTranscriptMustExistAndBeRegularBeforeReload(t *testing.T)
 	cwd, agentDir := t.TempDir(), t.TempDir()
 	planned := filepath.Join(agentDir, "planned.jsonl")
 	supervisor := newNativeSupervisor(Config{PiExecutable: "/bin/true", AgentDir: agentDir})
-	supervisor.sessions["planned"] = nativeSessionRef{Path: planned, CWD: cwd, Unmaterialized: true}
+	supervisor.testSetSession("planned", nativeSessionRef{Path: planned, CWD: cwd, Unmaterialized: true})
 	if _, err := supervisor.loadChild(context.Background(), "planned", cwd); err == nil || !strings.Contains(err.Error(), "not materialized") {
 		t.Fatalf("missing planned transcript reload error = %v", err)
 	}
@@ -573,7 +571,7 @@ func TestUnmaterializedTranscriptMustExistAndBeRegularBeforeReload(t *testing.T)
 func TestIdleChildFailureCanReloadExactRegisteredSession(t *testing.T) {
 	supervisor, logPath, cwd := startStatefulPiFixture(t)
 	id := createFixtureSession(t, supervisor, cwd)
-	child := supervisor.children[id]
+	child := supervisor.testChild(id)
 	killNativeProcess(child.cmd.Process)
 	select {
 	case <-child.done:
@@ -582,9 +580,7 @@ func TestIdleChildFailureCanReloadExactRegisteredSession(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for {
-		supervisor.mu.Lock()
-		resident := supervisor.children[id]
-		supervisor.mu.Unlock()
+		resident := supervisor.testChild(id)
 		if resident == nil {
 			break
 		}
@@ -597,7 +593,8 @@ func TestIdleChildFailureCanReloadExactRegisteredSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(logPath)
-	if !strings.Contains(string(raw), "switch:"+supervisor.sessions[id].Path) {
+	ref, _ := supervisor.testSession(id)
+	if !strings.Contains(string(raw), "switch:"+ref.Path) {
 		t.Fatalf("idle crash did not reload exact path: %s", raw)
 	}
 }
@@ -663,7 +660,7 @@ func TestSelfRestartIsExplicitlyOptIn(t *testing.T) {
 func TestIdleChildLossDegradesReadinessUntilReload(t *testing.T) {
 	supervisor, _, cwd := startStatefulPiFixture(t)
 	id := createFixtureSession(t, supervisor, cwd)
-	child := supervisor.children[id]
+	child := supervisor.testChild(id)
 	killNativeProcess(child.cmd.Process)
 	select {
 	case <-child.done:
@@ -696,7 +693,7 @@ func TestActiveChildLossReachesSupervisorErrors(t *testing.T) {
 		_, err := supervisor.callHost(context.Background(), "session.prompt", map[string]any{"sessionId": id, "content": []any{map[string]any{"type": "text", "text": "work"}}})
 		prompt <- err
 	}()
-	child := supervisor.children[id]
+	child := supervisor.testChild(id)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		child.mu.Lock()
@@ -731,17 +728,15 @@ func TestIdleReleaseClosesOnlyResidentAndRetainsRegistry(t *testing.T) {
 	if _, err := supervisor.callHost(context.Background(), "session.release", map[string]any{"sessionId": first, "cwd": filepath.Dir(cwd)}); err == nil || !strings.Contains(err.Error(), "identity") {
 		t.Fatalf("mismatched release cwd error = %v", err)
 	}
-	if supervisor.children[first] == nil {
+	if supervisor.testChild(first) == nil {
 		t.Fatal("mismatched release cwd removed resident child")
 	}
 	if _, err := supervisor.callHost(context.Background(), "session.release", map[string]any{"sessionId": first, "cwd": cwd}); err != nil {
 		t.Fatal(err)
 	}
-	supervisor.mu.Lock()
-	_, firstResident := supervisor.children[first]
-	_, firstRegistered := supervisor.sessions[first]
-	_, secondResident := supervisor.children[second]
-	supervisor.mu.Unlock()
+	firstResident := supervisor.testChild(first) != nil
+	_, firstRegistered := supervisor.testSession(first)
+	secondResident := supervisor.testChild(second) != nil
 	if firstResident || !firstRegistered || !secondResident {
 		t.Fatalf("release residence: first=%v registered=%v second=%v", firstResident, firstRegistered, secondResident)
 	}
@@ -789,7 +784,7 @@ func TestConcurrentReleaseHasOneCommittedWinner(t *testing.T) {
 	if (firstErr == nil) == (secondErr == nil) {
 		t.Fatalf("concurrent release outcomes must have one winner: %v, %v", firstErr, secondErr)
 	}
-	if supervisor.children[id] != nil {
+	if supervisor.testChild(id) != nil {
 		t.Fatal("committed release retained resident child")
 	}
 }
@@ -810,16 +805,17 @@ func TestFailedOrStoppingChildCannotEnterCreateOrLoadRegistry(t *testing.T) {
 			if err := created.install("session", nativeSessionRef{Path: path, CWD: cwd}, child); err == nil {
 				t.Fatal("failed create child was installed")
 			}
-			if len(created.sessions) != 0 || len(created.children) != 0 {
-				t.Fatalf("failed create child changed registry: %#v %#v", created.sessions, created.children)
+			sessions, children := created.testSessionsSnapshot(), created.testChildrenSnapshot()
+			if len(sessions) != 0 || len(children) != 0 {
+				t.Fatalf("failed create child changed registry: %#v %#v", sessions, children)
 			}
 			loaded := newNativeSupervisor(Config{AgentDir: agentDir})
-			loaded.sessions["session"] = nativeSessionRef{Path: path, CWD: cwd}
+			loaded.testSetSession("session", nativeSessionRef{Path: path, CWD: cwd})
 			if _, err := loaded.installLoadedChild("session", child); err == nil {
 				t.Fatal("failed load child was installed")
 			}
-			if len(loaded.children) != 0 {
-				t.Fatalf("failed load child became resident: %#v", loaded.children)
+			if children := loaded.testChildrenSnapshot(); len(children) != 0 {
+				t.Fatalf("failed load child became resident: %#v", children)
 			}
 		})
 	}
@@ -836,7 +832,7 @@ func TestUnsafeSessionSelectingPiArgsRejectedBeforeLaunch(t *testing.T) {
 func TestSupervisorBoundsResidentChildrenAndInstallationOwner(t *testing.T) {
 	supervisor := newNativeSupervisor(Config{PiExecutable: "/bin/true", AgentDir: t.TempDir()})
 	for index := 0; index < nativeMaxChildren; index++ {
-		supervisor.children[strconv.Itoa(index)] = &nativeChild{}
+		supervisor.testSetChild(strconv.Itoa(index), &nativeChild{})
 	}
 	if _, err := supervisor.launch(context.Background(), t.TempDir()); err == nil || !strings.Contains(err.Error(), "capacity") {
 		t.Fatalf("resident capacity error = %v", err)
@@ -1059,9 +1055,7 @@ done
 	if err == nil {
 		t.Fatalf("method RPC error = %v", err)
 	}
-	supervisor.mu.Lock()
-	children, launching := len(supervisor.children), supervisor.launching
-	supervisor.mu.Unlock()
+	children, launching := supervisor.testResidents()
 	if children != 0 || launching != 0 {
 		t.Fatalf("failed child consumed capacity: children=%d launching=%d", children, launching)
 	}
@@ -1095,7 +1089,7 @@ done
 		t.Fatal(err)
 	}
 	id := createFixtureSession(t, supervisor, cwd)
-	supervisor.children[id].acceptTimeout = 25 * time.Millisecond
+	supervisor.testSetAcceptTimeout(id, 25*time.Millisecond)
 	_, err := supervisor.callHost(context.Background(), "session.prompt", map[string]any{"sessionId": id, "content": []any{map[string]any{"type": "text", "text": "one"}}})
 	if err == nil || !strings.Contains(err.Error(), "acceptance is uncertain") {
 		t.Fatalf("acceptance timeout = %v", err)

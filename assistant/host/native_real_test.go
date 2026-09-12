@@ -58,18 +58,19 @@ func TestInstalledOfficialPiSessionOwnership(t *testing.T) {
 	if json.Unmarshal(raw, &created) != nil || created.SessionID == "" {
 		t.Fatalf("invalid official Pi create snapshot: %s", raw)
 	}
-	child := supervisor.children[created.SessionID]
+	child := supervisor.testChild(created.SessionID)
 	if child == nil || child.nextID == 0 || child.nextID > 9_007_199_254_740_991 {
 		t.Fatalf("official Pi requests did not use bounded numeric IDs: %#v", child)
 	}
-	ref := supervisor.sessions[created.SessionID]
+	ref, _ := supervisor.testSession(created.SessionID)
 	if !filepath.IsAbs(ref.Path) || ref.CWD != cwd || !ref.Unmaterialized {
 		t.Fatalf("official Pi identity was not exact: %#v", ref)
 	}
 	if _, err := supervisor.callHost(ctx, "session.release", map[string]any{"sessionId": created.SessionID, "cwd": cwd}); err == nil || !strings.Contains(err.Error(), "transcript validation") {
 		t.Fatalf("unmaterialized official Pi release error = %v", err)
 	}
-	if supervisor.children[created.SessionID] != child || supervisor.sessions[created.SessionID] != ref || !ref.Unmaterialized {
+	currentRef, _ := supervisor.testSession(created.SessionID)
+	if supervisor.testChild(created.SessionID) != child || currentRef != ref || !ref.Unmaterialized {
 		t.Fatal("rejected release did not retain the unmaterialized resident child")
 	}
 	if _, err := os.Lstat(ref.Path); !os.IsNotExist(err) {
@@ -87,7 +88,7 @@ func TestInstalledOfficialPiSessionOwnership(t *testing.T) {
 		defer stopClose()
 		_ = restarted.close(closeCtx)
 	})
-	if _, exists := restarted.sessions[created.SessionID]; exists {
+	if _, exists := restarted.testSession(created.SessionID); exists {
 		t.Fatal("restart retained the missing unmaterialized registry entry")
 	}
 	registryRaw, err := os.ReadFile(restarted.registryPath())
