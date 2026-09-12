@@ -39,6 +39,14 @@ func (s *nativeSupervisor) testSetAcceptTimeout(id string, d time.Duration) {
 	}
 }
 
+// testSubscriberCount reports how many event subscribers are installed. Tests
+// use it to wait for connection setup instead of sleeping.
+func (s *nativeSupervisor) testSubscriberCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.subscribers)
+}
+
 // testResidents reports the resident child count and the launching reservation
 // count.
 func (s *nativeSupervisor) testResidents() (int, int) {

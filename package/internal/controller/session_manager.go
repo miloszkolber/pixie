@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 	"github.com/miloszkolber/pixie/internal/canvas"
 	"github.com/miloszkolber/pixie/internal/identifier"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
 

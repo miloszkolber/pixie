@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 func dialogUpdate(update map[string]any) piwire.SessionNotification {

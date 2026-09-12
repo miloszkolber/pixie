@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 	"github.com/miloszkolber/pixie/internal/identifier"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 )
 
 type ImageContent struct {

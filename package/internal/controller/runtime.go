@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 	"github.com/miloszkolber/pixie/internal/canvas"
 	"github.com/miloszkolber/pixie/internal/design"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
@@ -43,6 +44,10 @@ type RuntimeConfig struct {
 	PiURL  string
 	Policy *workspace.PathPolicy
 	Getenv func(string) string
+	// ProtocolMode is the raw PIXIE_PI_PROTOCOL value (v1, auto or v2,
+	// case-insensitive). Empty selects the byte-identical v1 default. An
+	// invalid value fails NewRuntime.
+	ProtocolMode string
 	// AgentDir is the selected full-host native agent directory. When set, the
 	// deletion pairing storage key is derived from it. Controller-only runs
 	// leave it empty and read PIXIE_PI_STORAGE_KEY instead.
@@ -110,6 +115,18 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	// Destructive-recovery authority is resolved before any listener, store or
 	// client is created so an invalid selection fails startup.
 	deletionAuthority, err := ParseDeletionAuthorityMode(config.Getenv("PIXIE_DELETION_AUTHORITY"))
+	if err != nil {
+		return nil, err
+	}
+	// Host protocol negotiation is resolved before any listener or client so
+	// an invalid PIXIE_PI_PROTOCOL fails startup rather than dialing a
+	// downgraded transport. An explicit RuntimeConfig value wins; otherwise
+	// the controller resolves the process environment.
+	protocolRaw := strings.TrimSpace(config.ProtocolMode)
+	if protocolRaw == "" {
+		protocolRaw = config.Getenv(piwire.HostProtocolEnvVar)
+	}
+	protocolMode, err := piwire.ParseHostProtocolMode(protocolRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +218,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		}
 		config.PiURL = resolved
 	}
-	client := NewPiClient(config.PiURL, strings.TrimSpace(config.Getenv("PIXIE_PI_SECRET_KEY")), config.AppVersion, sessions)
+	client := NewPiClientWithProtocol(config.PiURL, strings.TrimSpace(config.Getenv("PIXIE_PI_SECRET_KEY")), config.AppVersion, sessions, protocolMode)
 	client.profileChanged = func(profile AgentProfile) { publish("agent.profileChanged", profile) }
 	sessions.SetClient(client)
 	sessions.SetSettings(settings)

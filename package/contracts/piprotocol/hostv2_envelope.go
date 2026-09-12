@@ -191,15 +191,20 @@ type HostV2HelloParams struct {
 
 // HostV2HelloResult reports release/source, host identity, boot identity,
 // native version/executable and capability versions without credentials.
+// SupportedProtocolVersions carries the negotiation advertisement and
+// OperationSet preserves the exhaustive fail-closed operation map the v1 hello
+// already exposed.
 type HostV2HelloResult struct {
-	ProtocolVersion  int            `json:"protocolVersion"`
-	HostIdentity     string         `json:"hostIdentity"`
-	BootID           string         `json:"bootId"`
-	SourceCommit     string         `json:"sourceCommit,omitempty"`
-	ReleaseID        string         `json:"releaseId,omitempty"`
-	NativeVersion    string         `json:"nativeVersion,omitempty"`
-	NativeExecutable string         `json:"nativeExecutable,omitempty"`
-	Capabilities     map[string]int `json:"capabilities,omitempty"`
+	ProtocolVersion           int             `json:"protocolVersion"`
+	SupportedProtocolVersions []int           `json:"supportedProtocolVersions,omitempty"`
+	HostIdentity              string          `json:"hostIdentity"`
+	BootID                    string          `json:"bootId"`
+	SourceCommit              string          `json:"sourceCommit,omitempty"`
+	ReleaseID                 string          `json:"releaseId,omitempty"`
+	NativeVersion             string          `json:"nativeVersion,omitempty"`
+	NativeExecutable          string          `json:"nativeExecutable,omitempty"`
+	Capabilities              map[string]int  `json:"capabilities,omitempty"`
+	OperationSet              map[string]bool `json:"operationSet,omitempty"`
 }
 
 // ValidateHostV2Method checks the nonempty method rule. Length is bounded by

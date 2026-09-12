@@ -121,6 +121,7 @@ func runFullHostWithConfig(ctx context.Context, build diagnostics.BuildInfo, con
 		AgentDir:         agentDir,
 		PiExecutable:     piExecutable,
 		AllowSelfRestart: fileConfig.AllowSelfRestart || selfRestartAllowed(),
+		ProtocolMode:     os.Getenv("PIXIE_PI_PROTOCOL"),
 	})
 	if err != nil {
 		return fmt.Errorf("start embedded assistant: %w", err)
@@ -146,14 +147,15 @@ func runFullHostWithConfig(ctx context.Context, build diagnostics.BuildInfo, con
 		staticDir = fileConfig.StaticDir
 	}
 	runtime, err := controller.NewRuntime(controller.RuntimeConfig{
-		Host:        host,
-		AppVersion:  build.Version,
-		AppRevision: build.Revision,
-		DataDir:     dataDir,
-		StaticDir:   staticDir,
-		Port:        port,
-		PiURL:       assistant.Endpoint(),
-		AgentDir:    agentDir,
+		Host:         host,
+		AppVersion:   build.Version,
+		AppRevision:  build.Revision,
+		DataDir:      dataDir,
+		StaticDir:    staticDir,
+		Port:         port,
+		PiURL:        assistant.Endpoint(),
+		AgentDir:     agentDir,
+		ProtocolMode: os.Getenv("PIXIE_PI_PROTOCOL"),
 	})
 	if err != nil {
 		return err

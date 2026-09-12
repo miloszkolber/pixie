@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 func TestHostV2IDDomainsRejectCrossDomainJSON(t *testing.T) {

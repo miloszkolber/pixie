@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 const (
@@ -84,6 +84,7 @@ type piConnectionScope struct {
 	secret        string
 	requireSecret bool
 	requirePi     bool
+	protocolMode  piwire.HostProtocolMode
 }
 
 type piConnectAttempt struct {
@@ -92,14 +93,38 @@ type piConnectAttempt struct {
 	err    error // Written before done closes.
 }
 
-type piConnection struct {
-	client  *piRPC
-	stream  *websocket.Conn
-	cancel  context.CancelFunc
-	profile AgentProfile
+// piTransport is the per-connection request/reply surface. The v1 JSON-RPC
+// transport implements it directly; the negotiated v2 adapter wraps it to
+// carry the fixed protocol version and v2 method validation.
+type piTransport interface {
+	call(ctx context.Context, method string, params, out any) error
+	CallExtension(ctx context.Context, method string, params any) (json.RawMessage, error)
+	ListSessions(ctx context.Context, req piwire.ListSessionsRequest) (piwire.ListSessionsResponse, error)
+	NewSession(ctx context.Context, req piwire.NewSessionRequest) (piwire.NewSessionResponse, error)
+	LoadSession(ctx context.Context, req piwire.LoadSessionRequest) (piwire.LoadSessionResponse, error)
+	ForkSession(ctx context.Context, req piwire.LoadSessionRequest) (piwire.NewSessionResponse, error)
+	Prompt(ctx context.Context, req piwire.PromptRequest) (piwire.PromptResponse, error)
+	SetSessionConfigOption(ctx context.Context, req piwire.SetSessionConfigOptionRequest) (piwire.SetSessionConfigOptionResponse, error)
+	Done() <-chan struct{}
 }
 
+type piConnection struct {
+	client          piTransport
+	stream          *websocket.Conn
+	cancel          context.CancelFunc
+	profile         AgentProfile
+	protocolVersion int
+}
+
+// NewPiClient builds a v1 client, preserving today's byte-identical hello.
+// Callers that select a protocol mode use NewPiClientWithProtocol.
 func NewPiClient(url, secret, version string, events PiEvents) *PiClient {
+	return NewPiClientWithProtocol(url, secret, version, events, piwire.HostProtocolV1)
+}
+
+// NewPiClientWithProtocol builds a client that negotiates PIXIE_PI_PROTOCOL
+// against the host. The mode applies to every connection the client dials.
+func NewPiClientWithProtocol(url, secret, version string, events PiEvents, protocolMode piwire.HostProtocolMode) *PiClient {
 	requireSecret := url == ""
 	requirePi := url == ""
 	if url == "" {
@@ -114,6 +139,7 @@ func NewPiClient(url, secret, version string, events PiEvents) *PiClient {
 			secret:        secret,
 			requireSecret: requireSecret,
 			requirePi:     requirePi,
+			protocolMode:  protocolMode,
 		},
 	}
 }
@@ -249,6 +275,9 @@ func (c *PiClient) publishProfile(generation uint64, publish func(AgentProfile),
 }
 
 func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (AgentProfile, error) {
+	if c.scope.protocolMode.Negotiates() {
+		return c.initializeNegotiated(ctx, connection)
+	}
 	var response struct {
 		ProtocolVersion int             `json:"protocolVersion"`
 		RuntimeID       string          `json:"runtimeId"`
@@ -263,25 +292,32 @@ func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (Ag
 	if response.ProtocolVersion != 1 || response.RuntimeID == "" {
 		return AgentProfile{}, fmt.Errorf("incompatible Pi host service")
 	}
-	caps := response.Capabilities
+	connection.protocolVersion = response.ProtocolVersion
+	return buildAgentProfile("pi:"+response.RuntimeID, response.Version, response.BootID, response.Capabilities, response.OperationSet), nil
+}
+
+// buildAgentProfile projects a hello response into the internal profile used
+// by SessionManager and the publisher. It is shared by the v1 and v2 paths so
+// capability and fail-closed semantics cannot drift between them.
+func buildAgentProfile(identity, version, bootID string, caps map[string]int, operationSet map[string]bool) AgentProfile {
 	p := AgentProfile{
-		Name: "Pi", Version: response.Version, BootID: response.BootID, Pi: true,
+		Name: "Pi", Version: version, BootID: bootID, Pi: true,
 		Compatible: true, MissingRequired: []string{}, Capabilities: caps,
-		OperationSet: cloneBoolMap(response.OperationSet), operationSetNegotiated: response.OperationSet != nil,
-		identity: "pi:" + response.RuntimeID,
+		OperationSet: cloneBoolMap(operationSet), operationSetNegotiated: operationSet != nil,
+		identity: identity,
 	}
 	// Keep the fixed booleans as a compatibility projection for old browser
 	// clients. New callers use the negotiated operationSet so each optional route is
 	// visible independently.
 	p.Operations = AgentOperations{
-		DeleteSession:         operationValue(response.OperationSet, "session.delete"),
-		ForkSession:           operationValue(response.OperationSet, "session.fork"),
-		PromptImage:           operationValue(response.OperationSet, "session.prompt.image"),
-		PromptEmbeddedContext: operationValue(response.OperationSet, "session.prompt.resource"),
-		Steer:                 operationValue(response.OperationSet, "session.steer"),
-		RenameSession:         operationValue(response.OperationSet, "session.rename"),
-		ArchiveSession:        operationValue(response.OperationSet, "session.archive"),
-		HTTPMCP:               operationValue(response.OperationSet, "mcp.attach"),
+		DeleteSession:         operationValue(operationSet, "session.delete"),
+		ForkSession:           operationValue(operationSet, "session.fork"),
+		PromptImage:           operationValue(operationSet, "session.prompt.image"),
+		PromptEmbeddedContext: operationValue(operationSet, "session.prompt.resource"),
+		Steer:                 operationValue(operationSet, "session.steer"),
+		RenameSession:         operationValue(operationSet, "session.rename"),
+		ArchiveSession:        operationValue(operationSet, "session.archive"),
+		HTTPMCP:               operationValue(operationSet, "mcp.attach"),
 	}
 	for _, capability := range []string{"sessions"} {
 		if caps[capability] != 1 {
@@ -290,7 +326,7 @@ func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (Ag
 		}
 	}
 	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel"} {
-		if supported, present := response.OperationSet[operation]; !present || !supported {
+		if supported, present := operationSet[operation]; !present || !supported {
 			p.Compatible = false
 			p.MissingRequired = append(p.MissingRequired, operation)
 		}
@@ -301,7 +337,7 @@ func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (Ag
 		// established.
 		p.Operations = AgentOperations{}
 	}
-	return p, nil
+	return p
 }
 
 func cloneBoolMap(values map[string]bool) map[string]bool {

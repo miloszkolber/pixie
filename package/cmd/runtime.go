@@ -259,7 +259,7 @@ func runControllerWithConfig(ctx context.Context, build diagnostics.BuildInfo, c
 	if strings.TrimSpace(staticDir) == "" {
 		staticDir = fileConfig.StaticDir
 	}
-	runtime, err := controller.NewRuntime(controller.RuntimeConfig{Host: host, AppVersion: build.Version, AppRevision: build.Revision, DataDir: dataDir, StaticDir: staticDir, Port: port})
+	runtime, err := controller.NewRuntime(controller.RuntimeConfig{Host: host, AppVersion: build.Version, AppRevision: build.Revision, DataDir: dataDir, StaticDir: staticDir, Port: port, ProtocolMode: os.Getenv("PIXIE_PI_PROTOCOL")})
 	if err != nil {
 		return err
 	}

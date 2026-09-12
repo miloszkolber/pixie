@@ -86,7 +86,7 @@ The operator authorized live host testing and settled the open decisions. Execut
 | Capability negotiation and deletion recovery | `package/internal/controller/pi_client.go`; `package/internal/controller/session_lifecycle.go`; `package/internal/controller/runtime.go` |
 | Model/thinking configuration and resources | `package/internal/controller/session_manager.go`; `package/internal/controller/session_actions.go`; `assistant/host/native_child.go` |
 | Full-host startup, child supervision, and packaging | `package/cmd/main.go`; `package/cmd/runtime.go`; `package/systemd/pixie.json`; `package/scripts/build-release.ts` |
-| Host v2, authority, and migration helpers | `package/internal/piprotocol/hostv2_envelope.go`; `package/internal/controller/pairing_authority.go`; `package/internal/persist/migration_apply.go` |
+| Host v2, authority, and migration helpers | `package/contracts/piprotocol/hostv2_envelope.go`; `package/internal/controller/pairing_authority.go`; `package/internal/persist/migration_apply.go` |
 | Browser defaults and containment | `package/internal/mcpserver/modules.go`; `package/internal/browser/config.json`; `package/internal/browser/service.go`; `docker-compose.yaml`; `docs/security.md` |
 | CI evidence dependency cycle | `.github/workflows/ci.yml`; `.github/workflows/release.yml`; `package/scripts/check-coverage.ts`; `package/scripts/check-package-artifacts.ts`; `package/scripts/release-gate.ts` |
 

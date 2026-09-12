@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 	"github.com/miloszkolber/pixie/internal/identifier"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
 )
 
 func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd string) (SessionSummary, error) {

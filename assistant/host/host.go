@@ -20,12 +20,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 const (
@@ -49,6 +51,9 @@ type Config struct {
 	// operation. The response drains the process and the service manager
 	// restarts it; the default stays fail-closed.
 	AllowSelfRestart bool
+	// ProtocolMode is the raw PIXIE_PI_PROTOCOL value (v1, auto or v2,
+	// case-insensitive). Empty selects v1. An invalid value fails Start.
+	ProtocolMode string
 }
 
 // Handle is the lifecycle handle returned by Start. Its methods form the
@@ -56,18 +61,19 @@ type Config struct {
 // entrypoints. A zero Handle is safe to close, which keeps composition roots
 // straightforward during staged engine migration.
 type Handle struct {
-	endpoint   string
-	ready      <-chan struct{}
-	errors     <-chan error
-	server     *http.Server
-	listener   net.Listener
-	closed     chan struct{}
-	secret     string
-	supervisor *nativeSupervisor
-	once       sync.Once
-	closeErr   error
-	restart    chan struct{}
-	restartOne sync.Once
+	endpoint     string
+	ready        <-chan struct{}
+	errors       <-chan error
+	server       *http.Server
+	listener     net.Listener
+	closed       chan struct{}
+	secret       string
+	supervisor   *nativeSupervisor
+	protocolMode piwire.HostProtocolMode
+	once         sync.Once
+	closeErr     error
+	restart      chan struct{}
+	restartOne   sync.Once
 }
 
 // Start starts the shared assistant engine for config.
@@ -94,6 +100,18 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	}
 	if config.Port < 0 || config.Port > 65535 {
 		return nil, fmt.Errorf("assistant port must be between 0 and 65535")
+	}
+	// Resolve the protocol mode before opening the listener so an invalid
+	// PIXIE_PI_PROTOCOL fails startup rather than serving a partial transport.
+	// An explicit Config value wins; otherwise the standalone host resolves
+	// the process environment.
+	protocolRaw := strings.TrimSpace(config.ProtocolMode)
+	if protocolRaw == "" {
+		protocolRaw = strings.TrimSpace(os.Getenv(piwire.HostProtocolEnvVar))
+	}
+	protocolMode, err := piwire.ParseHostProtocolMode(protocolRaw)
+	if err != nil {
+		return nil, err
 	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(config.Port)))
 	if err != nil {
@@ -125,14 +143,15 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	errorsCh := make(chan error, 1)
 	closed := make(chan struct{})
 	handle := &Handle{
-		endpoint:   "ws://" + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)) + "/pi",
-		ready:      ready,
-		errors:     errorsCh,
-		listener:   listener,
-		closed:     closed,
-		secret:     secret,
-		supervisor: supervisor,
-		restart:    make(chan struct{}),
+		endpoint:     "ws://" + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)) + "/pi",
+		ready:        ready,
+		errors:       errorsCh,
+		listener:     listener,
+		closed:       closed,
+		secret:       secret,
+		supervisor:   supervisor,
+		protocolMode: protocolMode,
+		restart:      make(chan struct{}),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/livez", func(response http.ResponseWriter, request *http.Request) {
@@ -310,15 +329,19 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 		}
 	}()
 	handshaken := false
+	negotiated := 0
 	active := make(map[uint64]struct{})
 	var activeMu sync.Mutex
+	var inflight *piwire.HostV2InflightSet
+	var inflightMu sync.Mutex
+	eventFrame := func(event nativeEvent) []byte { return mustJSON(nativeEventFrame(event)) }
 	startEvents := func() {
 		if handle.supervisor == nil || unsubscribe != nil {
 			return
 		}
 		unsubscribe = handle.supervisor.subscribe(func(event nativeEvent) error {
 			eventCtx, stopEvent := context.WithTimeout(ctx, hostEventEnqueueTime)
-			err := enqueue(eventCtx, mustJSON(nativeEventFrame(event)), false)
+			err := enqueue(eventCtx, eventFrame(event), false)
 			stopEvent()
 			if err != nil {
 				// There is no host replay journal. Closing with an explicit reason is
@@ -338,6 +361,34 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 			_ = connection.Close(websocket.StatusUnsupportedData, "text frames required")
 			return
 		}
+		// Negotiation-aware modes handle the additive hello before the legacy
+		// v1 envelope checks so a v2 offer is never rejected as a v1 frame.
+		if handle.protocolMode.Negotiates() && !handshaken {
+			selected, helloFrame, handshakeErr := negotiateHostHello(handle, runtimeID, bootID, payload)
+			if handshakeErr != nil {
+				closeHostV2Connection(connection, handshakeErr)
+				return
+			}
+			negotiated = selected
+			if negotiated == piwire.HostV2ProtocolVersion {
+				inflight = piwire.NewHostV2InflightSet()
+				eventFrame = func(event nativeEvent) []byte { return mustJSON(nativeEventFrameV2(event)) }
+			}
+			if err := write(helloFrame); err != nil {
+				return
+			}
+			handshaken = true
+			startEvents()
+			continue
+		}
+		if negotiated == piwire.HostV2ProtocolVersion {
+			if !serveHostV2Frame(handle, connection, ctx, write, inflight, &inflightMu, payload) {
+				return
+			}
+			continue
+		}
+		// Legacy v1 envelope path, used by the default mode and by an auto
+		// connection that negotiated down to a v1 peer.
 		var envelope struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
@@ -396,54 +447,31 @@ func handleConnection(handle *Handle, response http.ResponseWriter, request *htt
 				delete(active, id)
 				activeMu.Unlock()
 			}()
-			if method == "runtime.restart" {
-				// Reload is an explicit opt-in. Acknowledge before draining so
-				// the controller knows the request was accepted, then let the
-				// service manager replace the process.
-				if !handle.restartAllowed() {
-					_ = writeErrorWithCode(write, id, -32000, "runtime.restart is disabled by configuration")
-					return
-				}
-				_ = write(mustJSON(map[string]any{"id": id, "result": map[string]any{"ok": true}}))
-				handle.requestRestart()
-				return
-			}
-			if handle.supervisor == nil {
-				_ = writeErrorWith(write, id, "embedded assistant native engine is unavailable")
-				return
-			}
-			callContext := ctx
-			release := func() {}
-			if method != "session.prompt" {
-				callContext, release = context.WithTimeout(ctx, nativeRequestTimeout)
-			}
-			result, callErr := handle.supervisor.callHost(callContext, method, params)
-			release()
-			if callErr != nil {
-				code := -32000
-				var rejected *promptRejectedError
-				var uncertain *promptUncertainError
-				if errors.As(callErr, &rejected) {
-					code = -32004
-				} else if errors.As(callErr, &uncertain) {
-					code = -32003
-				}
-				_ = writeErrorWithCode(write, id, code, callErr.Error())
+			result, detail, restart := runHostOperation(handle, ctx, method, params)
+			if detail != nil {
+				_ = writeErrorWithCode(write, id, int(detail.Code), detail.Message)
 				return
 			}
 			_ = write(mustJSON(map[string]any{"id": id, "result": json.RawMessage(result)}))
+			if restart {
+				handle.requestRestart()
+			}
 		}(id, envelope.Method, envelope.Params)
 	}
 }
 
-func nativeEventFrame(event nativeEvent) map[string]any {
+func nativeEventParams(event nativeEvent) map[string]any {
 	copyEvent := make(map[string]any, len(event.event))
 	for key, value := range event.event {
 		copyEvent[key] = value
 	}
+	return map[string]any{"sessionId": event.sessionID, "event": copyEvent}
+}
+
+func nativeEventFrame(event nativeEvent) map[string]any {
 	return map[string]any{
 		"method": "session.event",
-		"params": map[string]any{"sessionId": event.sessionID, "event": copyEvent},
+		"params": nativeEventParams(event),
 	}
 }
 

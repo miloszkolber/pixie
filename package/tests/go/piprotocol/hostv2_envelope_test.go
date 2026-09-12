@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 func TestHostV2RequestFrameAcceptsValidEnvelope(t *testing.T) {

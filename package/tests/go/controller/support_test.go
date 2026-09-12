@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/coder/websocket"
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 type recordingEvents struct {
@@ -50,6 +50,20 @@ func piInitializeResponse() map[string]any {
 		"pi.config.extensions.remove": true, "pi.session.extensions.list": true, "pi.session.extensions.add": true, "pi.session.extensions.remove": true,
 		"adapter.status": true, "adapter.registerBrowser": true, "adapter.session.forget": true,
 	}}
+}
+
+// piInitializeV2Response is the negotiation-aware hello result. It keeps the
+// same operation set and capabilities as the v1 fixture so profile projection
+// is exercised identically.
+func piInitializeV2Response() map[string]any {
+	response := piInitializeResponse()
+	delete(response, "runtimeId")
+	delete(response, "version")
+	response["protocolVersion"] = 2
+	response["supportedProtocolVersions"] = []int{2, 1}
+	response["hostIdentity"] = "v2-runtime"
+	response["nativeVersion"] = "0.85.1"
+	return response
 }
 
 func writeRPC(connection *websocket.Conn, value any) error {

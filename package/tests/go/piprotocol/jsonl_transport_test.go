@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 func testNativeConfig() piwire.NativeTransportConfig {

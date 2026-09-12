@@ -32,7 +32,7 @@ export interface GeneratedArtifact {
 export const SCHEMA_RELATIVE_PATH = "contracts/schema/protocol-catalog.json";
 
 export const TYPESCRIPT_ARTIFACT_PATH = "contracts/src/generated/protocol-catalog.ts";
-export const GO_ARTIFACT_PATH = "internal/piprotocol/catalog_generated.go";
+export const GO_ARTIFACT_PATH = "contracts/piprotocol/catalog_generated.go";
 
 function fail(message: string): never {
 	throw new Error(`protocol catalog: ${message}`);

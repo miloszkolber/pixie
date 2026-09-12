@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	piwire "github.com/miloszkolber/pixie/internal/piprotocol"
+	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
 )
 
 func validBase64Chars(n int) string {
