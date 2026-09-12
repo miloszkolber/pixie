@@ -42,6 +42,8 @@ jobs:
         working-directory: package
       - run: bun run check:deps
         working-directory: package
+      - run: bun run check:contracts
+        working-directory: package
       - run: bun audit --audit-level=high
         working-directory: package
       - run: bun run lint

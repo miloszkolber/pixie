@@ -44,6 +44,8 @@
 		"check:coverage": "bun run --cwd package check:coverage",
 		"check:filenames": "bun run --cwd package check:filenames",
 		"check:docs": "bun run --cwd package check:docs",
+		"generate:contracts": "bun run --cwd package generate:contracts",
+		"check:contracts": "bun run --cwd package check:contracts",
 		"check:parity": "bun run --cwd package check:parity",
 		"dev:web": "bun run --cwd package dev:web",
 		"format": "bun run --cwd package format",

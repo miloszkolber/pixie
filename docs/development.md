@@ -10,6 +10,7 @@ From `pixie/`:
 bun install --frozen-lockfile
 bun run check:deps
 bun run check:docs
+bun run check:contracts
 bun run check:coverage
 bun run lint
 bun run typecheck
