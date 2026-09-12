@@ -113,13 +113,16 @@ jobs:
             '.releaseId == $release_id and .sourceCommit == $source and .cleanSourceTree == true and .completeSet == false and .checksumsPresent == true and .sbomPresent == false and .provenancePresent == false and (.archiveHashes | length == 4)' \
             release-manifest.json >/dev/null
           verify_archive() {
-            local archive="$1" binary="$2" unit="$3" config="$4"
-            tar -tzf "$archive" | grep -qx "$binary"
-            tar -tzf "$archive" | grep -qx "$unit"
-            tar -tzf "$archive" | grep -qx "$config"
-            tar -tzf "$archive" | grep -qx 'INSTALL.md'
-            tar -tzf "$archive" | grep -qx 'LICENSE'
-            tar -tzf "$archive" | grep -qx 'NOTICE.md'
+            local archive="$1" binary="$2" unit="$3" config="$4" listing
+            # List once: piping tar into `grep -q` under pipefail fails with a
+            # SIGPIPE write error as soon as grep matches and exits.
+            listing="$(tar -tzf "$archive")"
+            grep -qx "$binary" <<<"$listing"
+            grep -qx "$unit" <<<"$listing"
+            grep -qx "$config" <<<"$listing"
+            grep -qx 'INSTALL.md' <<<"$listing"
+            grep -qx 'LICENSE' <<<"$listing"
+            grep -qx 'NOTICE.md' <<<"$listing"
           }
           verify_archive "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" pixie-assistant pixie-assistant.service assistant.json
           verify_archive "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" pixie-assistant pixie-assistant.service assistant.json
