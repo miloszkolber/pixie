@@ -4,6 +4,7 @@ import { compile } from "svelte/compiler";
 const settingsRoot = new URL("../../../webui/src/settings/", import.meta.url);
 const requiredComponents = [
 	"login/login-dialog.svelte",
+	"settings-area.svelte",
 	"sections/agent-settings.svelte",
 	"sections/deletion-recovery.svelte",
 	"sections/pi-settings.svelte",
@@ -78,4 +79,17 @@ test("the settings modal is gone and the primary-area view owns settings navigat
 	expect(workArea).toContain('data-testid="settings-section-row"');
 	expect(workArea).toContain('role="tablist"');
 	expect(workArea).not.toContain("settings-dialog.svelte");
+
+	// The standalone fallback surface is a primary-area region, not a modal.
+	const shell = await Bun.file(
+		new URL("../../../webui/src/workspace/shell.svelte", import.meta.url),
+	).text();
+	const standalone = await Bun.file(
+		new URL("settings-area.svelte", settingsRoot),
+	).text();
+	expect(shell).toContain("<SettingsArea");
+	expect(standalone).toContain('data-testid="settings-area"');
+	expect(standalone).not.toContain('role="dialog"');
+	expect(shell).not.toContain('data-testid="settings-dialog"');
+	expect(standalone).not.toContain("settings-dialog.svelte");
 });

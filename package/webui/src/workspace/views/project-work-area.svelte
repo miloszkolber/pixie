@@ -34,6 +34,7 @@ import ScheduleList from "../../schedules/schedule-list.svelte";
 import { resolveWorkspaceSettingsSection } from "../../schedules/schedules-workspace";
 import AgentSettings from "../../settings/sections/agent-settings.svelte";
 import { resolveSettingsSection, settingsTabs } from "../../settings/settings-dialog";
+import { SETTINGS_SECTION_LOADERS } from "../../settings/settings-sections";
 import { SettingsSection } from "../../settings/state";
 import {
 	appStore,
@@ -403,17 +404,6 @@ let settingsActiveSection = $derived(
 let settingsTabList = $derived(
 	settingsTabs(settingsGenericAgent, settingsProfilePending, settingsAgentProfile),
 );
-const settingsSectionLoaders: Partial<
-	Record<SettingsSection, () => Promise<{ default: Component<any> }>>
-> = {
-	pi: () => import("../../settings/sections/pi-settings.svelte"),
-	tools: () => import("../../settings/sections/pi-tools-settings.svelte"),
-	extensions: () => import("../../settings/sections/extensions-settings.svelte"),
-	models: () => import("../../settings/sections/models-settings.svelte"),
-	providers: () => import("../../settings/sections/providers-settings.svelte"),
-	system: () => import("../../settings/sections/system-settings.svelte"),
-	schedules: () => import("../../settings/sections/schedules-section.svelte"),
-};
 let settingsVisited = $state<SettingsSection[]>([]);
 let settingsModules = $state.raw<Partial<Record<SettingsSection, Component<any>>>>({});
 let settingsSectionPending = $state<Partial<Record<SettingsSection, boolean>>>({});
@@ -484,7 +474,7 @@ function recordSettingsRecovery(section: SettingsSection, cause: unknown): void 
 }
 
 async function loadSettingsSection(section: SettingsSection): Promise<void> {
-	const loader = settingsSectionLoaders[section];
+	const loader = SETTINGS_SECTION_LOADERS[section];
 	if (!loader || settingsModules[section] || settingsSectionPending[section]) return;
 	const current = settingsLoadGeneration;
 	settingsSectionPending = { ...settingsSectionPending, [section]: true };

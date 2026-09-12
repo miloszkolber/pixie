@@ -21,17 +21,17 @@ function selectedProjectId(): string | null {
 }
 
 /**
- * Activate the primary-area Settings view. Settings lives in the project work
- * area, so an unopened project is entered first when one is available; the
- * primary-area view is the only settings surface.
+ * Activate the primary-area Settings view. The request is recorded first so
+ * the shell can render the standalone settings surface when no project area is
+ * active (unconfigured/incompatible/disconnected/error or no admitted project).
+ * With a project available the ready path is unchanged: ProjectWorkArea owns
+ * the Settings area.
  */
 export async function openSettingsArea(section?: SettingsSection): Promise<void> {
-	if (appStoreApi.getState().activeProjectAreaId === null) {
-		const projectId = selectedProjectId();
-		if (!projectId) return;
-		const area = await enterDefaultProjectArea(projectId);
-		if (!area) return;
-	}
 	if (section) openAreaWithSection(section);
 	else openAreaWithoutSection();
+	if (appStoreApi.getState().activeProjectAreaId !== null) return;
+	const projectId = selectedProjectId();
+	if (!projectId) return;
+	await enterDefaultProjectArea(projectId);
 }

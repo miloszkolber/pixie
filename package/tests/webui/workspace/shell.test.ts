@@ -9,7 +9,11 @@ import {
 	SettingsSection,
 } from "@/store";
 import { openSettingsArea } from "@/workspace/navigation/open-settings-area";
-import { hasConfiguredProvider, resolveShellAvailability } from "@/workspace/shell-state";
+import {
+	hasConfiguredProvider,
+	resolveShellAvailability,
+	resolveShellPrimarySurface,
+} from "@/workspace/shell-state";
 import { selectTabSessionStreaming } from "@/workspace/views/project-work-area-state";
 
 const project: Project = {
@@ -37,6 +41,16 @@ const genericProfile: AgentProfile = {
 		archiveSession: false,
 		administration: false,
 	},
+};
+const piProfile: AgentProfile = {
+	...genericProfile,
+	pi: true,
+	operations: { ...genericProfile.operations, administration: true },
+};
+const incompatibleProfile: AgentProfile = {
+	...genericProfile,
+	compatible: false,
+	missingRequired: ["session.load"],
 };
 
 beforeEach(() => {
@@ -101,6 +115,71 @@ test("opening settings activates the primary settings area without a modal", asy
 	expect(appStoreApi.getState().settingsSection).toBe(SettingsSection.Providers);
 });
 
+test("settings stay reachable through the standalone surface in every non-ready state", () => {
+	function surface(
+		status: Parameters<typeof resolveShellAvailability>[0],
+		profile: AgentProfile | null,
+		providerConfigured: boolean | null,
+		providerError: boolean,
+		activeProjectAreaId: string | null,
+		settingsRequested: boolean,
+	) {
+		const availability = resolveShellAvailability(status, profile, providerConfigured, providerError);
+		const hasActiveProjectArea = availability === "ready" && activeProjectAreaId !== null;
+		return { availability, surface: resolveShellPrimarySurface(hasActiveProjectArea, settingsRequested) };
+	}
+
+	// Fresh install: Pi is compatible but no provider is configured and no
+	// project area exists, so the old open path could not enter anywhere.
+	expect(surface("connected", piProfile, false, false, null, true)).toEqual({
+		availability: "unconfigured",
+		surface: "standalone-settings",
+	});
+	// Controller could not read provider status (error panel).
+	expect(surface("connected", piProfile, null, true, null, true)).toEqual({
+		availability: "error",
+		surface: "standalone-settings",
+	});
+	expect(surface("connected", incompatibleProfile, null, false, null, true)).toEqual({
+		availability: "incompatible",
+		surface: "standalone-settings",
+	});
+	expect(surface("disconnected", null, null, false, null, true)).toEqual({
+		availability: "disconnected",
+		surface: "standalone-settings",
+	});
+	// Without a settings request the explanatory panel keeps the content surface.
+	expect(surface("connected", piProfile, false, false, null, false).surface).toBe("content");
+	// Ready with an active project area keeps ProjectWorkArea as the owner.
+	expect(surface("connected", piProfile, true, false, area.id, true)).toEqual({
+		availability: "ready",
+		surface: "project-work-area",
+	});
+});
+
+test("openSettingsArea records the request even when no project area can be entered", async () => {
+	appStoreApi.setState({
+		status: "connected",
+		agentProfile: piProfile,
+		providerConfigured: false,
+		projects: [],
+		recentProjects: [],
+		projectAreas: {},
+		selectedProjectId: null,
+		activeProjectAreaId: null,
+		settingsSection: SettingsSection.Models,
+	});
+	await openSettingsArea(SettingsSection.Providers);
+	const selection = appStoreApi.getState().workspaceSelection;
+	expect(appStoreApi.getState().activeProjectAreaId).toBeNull();
+	expect(selection.primaryArea).toBe("settings");
+	expect(selection.primarySelection).toEqual({
+		kind: "settings",
+		sectionId: SettingsSection.Providers,
+	});
+	expect(appStoreApi.getState().settingsSection).toBe(SettingsSection.Providers);
+});
+
 test("workspace streaming selection ignores transcript content", () => {
 	appStoreApi.setState({
 		tabsByProjectArea: {
@@ -125,6 +204,7 @@ test("the Svelte shell keeps one responsive activity surface and every blocked s
 	const urls = [
 		new URL("../../../webui/src/workspace/shell.svelte", import.meta.url),
 		new URL("../../../webui/src/workspace/views/project-work-area.svelte", import.meta.url),
+		new URL("../../../webui/src/settings/settings-area.svelte", import.meta.url),
 	];
 	const sources = await Promise.all(urls.map((url) => Bun.file(url).text()));
 	for (const [index, source] of sources.entries()) {
@@ -155,6 +235,14 @@ test("the Svelte shell keeps one responsive activity surface and every blocked s
 		'data-testid="design-sidebar"',
 		"canvasManagementStatusUrl",
 		'"/api/design/status"',
+		'data-testid="settings-area"',
+		'data-settings-surface="standalone"',
+		'data-testid="settings-area-sidebar"',
+		'data-testid="settings-area-close"',
+		'aria-label="Back from settings"',
+		'primarySurface === "standalone-settings"',
+		"resolveShellPrimarySurface",
+		"<SettingsArea",
 	]) {
 		expect(source).toContain(contract);
 	}
@@ -164,4 +252,16 @@ test("the Svelte shell keeps one responsive activity surface and every blocked s
 	expect(source).not.toContain("settings-dialog.svelte");
 	expect(source).toContain("onOpenChanges={showActivity}");
 	expect(source.match(/id="activity-panel"/g)).toHaveLength(1);
+
+	// Ready-with-area routes to ProjectWorkArea; the standalone surface is a
+	// fallback that only renders when no project area is active.
+	const shell = sources[0] ?? "";
+	const projectBranch = shell.lastIndexOf('primarySurface === "project-work-area"');
+	const standaloneBranch = shell.lastIndexOf('primarySurface === "standalone-settings"');
+	const standaloneComponent = shell.indexOf("<SettingsArea");
+	expect(projectBranch).toBeGreaterThanOrEqual(0);
+	expect(standaloneBranch).toBeGreaterThan(projectBranch);
+	expect(standaloneComponent).toBeGreaterThan(standaloneBranch);
+	expect(shell).not.toContain('data-testid="settings-dialog"');
+	expect(shell).not.toContain('role="dialog"');
 });

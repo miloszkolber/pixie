@@ -5,12 +5,23 @@ import Button from "../components/button.svelte";
 import Icon from "../components/icon.svelte";
 import Toaster from "../components/toaster.svelte";
 import { getTransport, logoutController } from "../connection";
-import { appStore, appStoreApi, selectActiveProjectArea, selectContextProject } from "../store";
+import SettingsArea from "../settings/settings-area.svelte";
+import {
+	appStore,
+	appStoreApi,
+	selectActiveProjectArea,
+	selectContextProject,
+	selectPrimaryArea,
+} from "../store";
 import { initGlobalHotkeys } from "./navigation/global-hotkeys";
 import { openSettingsArea } from "./navigation/open-settings-area";
 import { focusFirstVisible, panelHasFocusableContent } from "./focus-control";
 import ProjectTree from "./projects/project-tree.svelte";
-import { hasConfiguredProvider, resolveShellAvailability } from "./shell-state";
+import {
+	hasConfiguredProvider,
+	resolveShellAvailability,
+	resolveShellPrimarySurface,
+} from "./shell-state";
 import NoProviderWelcome from "./views/no-provider-welcome.svelte";
 import { UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS } from "./views/upgrade-recovery";
 import WelcomePanel from "./views/welcome-panel.svelte";
@@ -49,6 +60,10 @@ let availability = $derived(
 );
 let hasActiveProjectArea = $derived(
 	availability === "ready" && $appStore.activeProjectAreaId !== null,
+);
+let settingsRequested = $derived($appStore.workspaceSelection.primaryArea === "settings");
+let primarySurface = $derived(
+	resolveShellPrimarySurface(hasActiveProjectArea, settingsRequested),
 );
 
 function loadProjectWorkArea(): void {
@@ -165,6 +180,12 @@ $effect(() => {
 	};
 });
 
+function closeSettingsArea(): void {
+	// Leaving the standalone surface returns to the explanatory panel. The
+	// requested section stays in the store, so reopening resumes it.
+	appStoreApi.getState().dispatchWorkspaceSelection(selectPrimaryArea("chats"));
+}
+
 function signOut(): void {
 	void logoutController().finally(() => window.dispatchEvent(new Event("pixie-auth-lost")));
 }
@@ -172,7 +193,7 @@ function signOut(): void {
 
 <div data-testid="shell" class="app-shell app-shell-edge pixie-shell">
 	<a class="skip-link" href="#main-content">Skip to content</a>
-	{#if hasActiveProjectArea && $appStore.activeProjectAreaId}
+	{#if primarySurface === "project-work-area" && $appStore.activeProjectAreaId}
 		<div data-testid="project-shell" class="flex min-h-0 min-w-0 flex-1 flex-col">
 			{#if ProjectWorkArea}
 				{#key $appStore.activeProjectAreaId}<ProjectWorkArea projectAreaId={$appStore.activeProjectAreaId} />{/key}
@@ -233,8 +254,10 @@ function signOut(): void {
 			</div>
 		</header>
 	{/if}
-	{#if hasActiveProjectArea && $appStore.activeProjectAreaId}
+	{#if primarySurface === "project-work-area" && $appStore.activeProjectAreaId}
 		<!-- Project chrome renders inside ProjectWorkArea. -->
+	{:else if primarySurface === "standalone-settings"}
+		<SettingsArea onClose={closeSettingsArea} />
 	{:else if availability === "unconfigured"}
 		<NoProviderWelcome />
 	{:else if availability === "incompatible"}

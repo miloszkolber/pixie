@@ -34,11 +34,15 @@ test("the primary settings area reuses section components through list/detail sl
 		'settings-section-row"',
 		"settings-panel-",
 		"AgentSettings",
-		"schedules-section",
+		"SETTINGS_SECTION_LOADERS",
 		"Settings is a primary area",
 	]) {
 		expect(workArea).toContain(contract);
 	}
+	const loaders = await Bun.file(
+		new URL("../../../webui/src/settings/settings-sections.ts", import.meta.url),
+	).text();
+	expect(loaders).toContain("./sections/schedules-section.svelte");
 	const section = await Bun.file(
 		new URL("../../../webui/src/settings/sections/schedules-section.svelte", import.meta.url),
 	).text();
