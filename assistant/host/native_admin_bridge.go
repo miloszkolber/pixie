@@ -3,11 +3,12 @@ package host
 // This file owns the explicitly opt-in administration bridge. The Go host
 // cannot load the selected Pi installation's SDK in-process, so when an
 // operator enables the bridge the host spawns a bounded sidecar lazily on the
-// first administration request and proxies exactly the allowlisted FC17
-// operations. Everything here fails closed: a disabled or unverified bridge
-// advertises no administration operation and refuses every request. The
-// sidecar command, selected package path and agent directory are supplied by
-// explicit configuration only; there is no global or bundled SDK fallback.
+// first administration request and proxies exactly the allowlisted FC17,
+// FC19 and FC20 operations. Everything here fails closed: a disabled or
+// unverified bridge advertises no administration operation and refuses every
+// request. The sidecar command, selected package path and agent directory are
+// supplied by explicit configuration only; there is no global or bundled SDK
+// fallback.
 
 import (
 	"bufio"
@@ -37,14 +38,24 @@ const (
 	nativeAdminBridgeMaxPackageJSON = 64 * 1024
 )
 
-// nativeAdminBridgeOperations is the only administration surface this
-// foundation task proxies. FC18-FC21/FC26 stay absent and therefore fail
-// closed until later work lands.
+// nativeAdminBridgeOperations is the only administration surface this bridge
+// proxies. FC18/FC21/FC26 stay absent and therefore fail closed until later
+// work lands.
 var nativeAdminBridgeOperations = []string{
 	"pi.providers.list",
 	"pi.providers.readiness.check",
 	"pi.providers.inventory.refresh",
 	"pi.providers.canonical-model-info",
+	"pi.defaults.read",
+	"pi.defaults.save",
+	"pi.defaults.clear",
+	"pi.preferences.read",
+	"pi.preferences.save",
+	"pi.preferences.reset",
+	"pi.extensions.list",
+	"pi.config.extensions.list",
+	"pi.session.extensions.list",
+	"pi.slash-commands.list",
 }
 
 var nativeAdminBridgeVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.+-]+)?$`)

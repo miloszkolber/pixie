@@ -7,10 +7,11 @@
  * shaping paths.
  */
 
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { describe, expect, test } from "bun:test";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
+import * as realPi from "@earendil-works/pi-coding-agent";
 import {
 	BRIDGE_MAX_FRAME_BYTES,
 	createBridge,
@@ -38,7 +39,72 @@ async function stubInstallation(version = "0.85.1"): Promise<string> {
 	);
 	await writeFile(
 		join(dir, "index.js"),
-		`export class ModelRuntime {
+		`import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const readSettings = (agentDir) => {
+  try { return JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")); } catch { return {}; }
+};
+export class SettingsManager {
+  static create(cwd, agentDir) {
+    const manager = new SettingsManager(readSettings(agentDir));
+    manager.agentDir = agentDir;
+    return manager;
+  }
+  static fromStorage(storage) { const manager = new SettingsManager({}); manager.storage = storage; return manager; }
+  constructor(state = {}, storage) { this.state = state; this.storage = storage; }
+  async reload() {}
+  async flush() {
+    if (this.storage) {
+      const state = this.state;
+      this.storage.withLock("global", (current) => {
+        const base = current ? JSON.parse(current) : {};
+        const merged = { ...base, ...state };
+        for (const key of Object.keys(state)) if (state[key] === undefined) delete merged[key];
+        return JSON.stringify(merged, null, 2);
+      });
+      return;
+    }
+    if (!this.agentDir) return;
+    const path = join(this.agentDir, "settings.json");
+    let base = {};
+    try { base = JSON.parse(readFileSync(path, "utf8")); } catch {}
+    const merged = { ...base, ...this.state };
+    for (const key of Object.keys(this.state)) if (this.state[key] === undefined) delete merged[key];
+    writeFileSync(path, JSON.stringify(merged, null, 2));
+  }
+  drainErrors() { return []; }
+  getGlobalSettings() { return JSON.parse(JSON.stringify(this.state)); }
+  getProjectSettings() { return {}; }
+  getDefaultProvider() { return this.state.defaultProvider; }
+  getDefaultModel() { return this.state.defaultModel; }
+  setDefaultProvider(value) { this.state.defaultProvider = value; }
+  setDefaultModel(value) { this.state.defaultModel = value; }
+  getDefaultThinkingLevel() { return this.state.defaultThinkingLevel; }
+  setDefaultThinkingLevel(value) { this.state.defaultThinkingLevel = value; }
+  getCompactionReserveTokens() { return this.state.compaction?.reserveTokens ?? 16384; }
+  getLastChangelogVersion() { return this.state.lastChangelogVersion; }
+  setLastChangelogVersion(value) { this.state.lastChangelogVersion = value; }
+}
+export class DefaultPackageManager {
+  constructor() {}
+  listConfiguredPackages() {
+    return [{ source: "npm:demo", scope: "user", filtered: false }];
+  }
+  async resolve() {
+    return {
+      extensions: [{ path: "/tmp/demo/ext.js", enabled: true, metadata: { source: "npm:demo", scope: "user", origin: "package" } }],
+      skills: [{ path: "/tmp/demo/skills/demo/SKILL.md", enabled: true, metadata: { source: "npm:demo", scope: "user", origin: "package" } }],
+      prompts: [{ path: "/tmp/demo/prompts/review.md", enabled: true, metadata: { source: "npm:demo", scope: "user", origin: "package" } }],
+      themes: [],
+    };
+  }
+}
+export class ProjectTrustStore {
+  constructor() {}
+  get() { return null; }
+}
+export function hasTrustRequiringProjectResources() { return false; }
+export class ModelRuntime {
 	static async create() {
 		return {
 			async getAvailable() { return [{ provider: "alpha" }]; },
@@ -70,7 +136,7 @@ async function stubBridge(version = "0.85.1") {
 	const installation = await resolveInstallation(dir);
 	const module = await loadPublicApi(installation);
 	const agentDir = await mkdtemp(join(tmpdir(), "pixie-agent-"));
-	return { dir, bridge: createBridge({ installation, module, agentDir }) };
+	return { dir, agentDir, bridge: createBridge({ installation, module, agentDir }) };
 }
 
 describe("bridge frame parsing", () => {
@@ -97,7 +163,9 @@ describe("bridge frame parsing", () => {
 	});
 
 	test("bounds encoded responses", () => {
-		expect(encodeResponse({ id: 1, ok: true, result: {} })).toBe('{"id":1,"ok":true,"result":{}}\n');
+		expect(encodeResponse({ id: 1, ok: true, result: {} })).toBe(
+			'{"id":1,"ok":true,"result":{}}\n',
+		);
 		expect(() =>
 			encodeResponse({ id: 1, ok: true, result: "x".repeat(BRIDGE_MAX_FRAME_BYTES) }),
 		).toThrow();
@@ -130,7 +198,13 @@ describe("bridge hello and FC17 mapping", () => {
 		expect(hello.packageName).toBe(STUB_PACKAGE);
 		expect(hello.packageVersion).toBe("0.85.1");
 		expect(hello.moduleOrigin).toBe(bridge.installation.entryPath);
-		expect(hello.publicSymbols).toEqual(["ModelRuntime"]);
+		expect(hello.publicSymbols).toEqual([
+			"ModelRuntime",
+			"SettingsManager",
+			"DefaultPackageManager",
+			"ProjectTrustStore",
+			"hasTrustRequiringProjectResources",
+		]);
 	});
 
 	test("pi.providers.list mirrors the legacy inventory shape", async () => {
@@ -148,7 +222,9 @@ describe("bridge hello and FC17 mapping", () => {
 			canOAuth: false,
 			readinessCheck: true,
 		});
-		expect(alpha.configKeys).toEqual([{ name: "api_key", secret: true, required: true, primary: true }]);
+		expect(alpha.configKeys).toEqual([
+			{ name: "api_key", secret: true, required: true, primary: true },
+		]);
 		expect(alpha.models[0]).toEqual({
 			id: "alpha-1",
 			name: "Model alpha",
@@ -183,7 +259,10 @@ describe("bridge hello and FC17 mapping", () => {
 	test("pi.providers.canonical-model-info returns canonical metadata", async () => {
 		const { bridge } = await stubBridge();
 		expect(
-			await bridge.dispatch("pi.providers.canonical-model-info", { provider: "alpha", model: "alpha-1" }),
+			await bridge.dispatch("pi.providers.canonical-model-info", {
+				provider: "alpha",
+				model: "alpha-1",
+			}),
 		).toEqual({
 			modelInfo: {
 				provider: "alpha",
@@ -232,9 +311,228 @@ describe("bridge hello and FC17 mapping", () => {
 	});
 });
 
+describe("bridge FC19 defaults and preferences", () => {
+	test("pi.defaults read, save and clear round-trip", async () => {
+		const { bridge } = await stubBridge();
+		expect(await bridge.dispatch("pi.defaults.read", {})).toEqual({
+			providerId: null,
+			modelId: null,
+		});
+		expect(
+			await bridge.dispatch("pi.defaults.save", { providerId: "alpha", modelId: "alpha-1" }),
+		).toEqual({ providerId: "alpha", modelId: "alpha-1" });
+		expect(await bridge.dispatch("pi.defaults.read", {})).toEqual({
+			providerId: "alpha",
+			modelId: "alpha-1",
+		});
+		expect(await bridge.dispatch("pi.defaults.clear", {})).toEqual({
+			providerId: null,
+			modelId: null,
+		});
+	});
+
+	test("pi.preferences save and reset persist the thinking effort", async () => {
+		const { bridge, agentDir } = await stubBridge();
+		expect(
+			await bridge.dispatch("pi.preferences.save", {
+				values: [{ key: "piThinkingEffort", value: "max" }],
+			}),
+		).toEqual({
+			values: [
+				{ key: "piThinkingEffort", value: "max" },
+				{ key: "compactionReserveTokens", value: null },
+			],
+		});
+		expect(await bridge.dispatch("pi.preferences.reset", { keys: ["piThinkingEffort"] })).toEqual({
+			values: [
+				{ key: "piThinkingEffort", value: null },
+				{ key: "compactionReserveTokens", value: null },
+			],
+		});
+		expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8"))).toEqual({});
+	});
+
+	test("preference validation fails closed", async () => {
+		const { bridge } = await stubBridge();
+		await expect(
+			bridge.dispatch("pi.preferences.save", {
+				values: [{ key: "piThinkingEffort", value: "bogus" }],
+			}),
+		).rejects.toThrow("Unsupported thinking effort");
+		await expect(
+			bridge.dispatch("pi.preferences.save", {
+				values: [{ key: "compactionReserveTokens", value: 10 }],
+			}),
+		).rejects.toThrow("no public setter");
+		await expect(
+			bridge.dispatch("pi.preferences.save", { values: [{ key: "unknown", value: 1 }] }),
+		).rejects.toThrow("Unknown preference");
+	});
+});
+
+describe("bridge FC20 inventory and MCP configuration", () => {
+	test("pi.extensions.list reports configured resource inventory", async () => {
+		const { bridge } = await stubBridge();
+		const result = (await bridge.dispatch("pi.extensions.list", {})) as Record<string, any>;
+		expect(result.version).toBe(1);
+		expect(result.context.reader).toBe("service");
+		expect(result.packages[0]).toMatchObject({
+			source: "npm:demo",
+			scope: "user",
+			state: "missing",
+		});
+		expect(result.resources[0]).toMatchObject({
+			path: "/tmp/demo/ext.js",
+			state: "not-observed",
+			enabled: true,
+		});
+		expect(result.extensions).toEqual([]);
+		expect(result.errors).toEqual([]);
+	});
+
+	test("pi.extensions.list reports a session reader without live evidence", async () => {
+		const { bridge } = await stubBridge();
+		const result = (await bridge.dispatch("pi.extensions.list", {
+			cwd: "/tmp/project",
+			sessionId: "session-1",
+		})) as Record<string, any>;
+		expect(result.context.reader).toBe("not-resident");
+		expect(result.context.sessionId).toBe("session-1");
+		expect(result.extensions).toEqual([]);
+	});
+
+	test("pi.config.extensions.list mirrors persisted MCP configuration", async () => {
+		const { bridge, agentDir } = await stubBridge();
+		await writeFile(
+			join(agentDir, "mcp.json"),
+			JSON.stringify({
+				demo: { command: "node", args: ["server.js"], env: {} },
+				bad: { url: "not a url" },
+			}),
+		);
+		const result = (await bridge.dispatch("pi.config.extensions.list", {})) as Record<string, any>;
+		const demo = result.extensions.find((entry: any) => entry.configKey === "demo");
+		expect(demo.enabled).toBe(true);
+		expect(demo.extension.type).toBe("mcp");
+		expect(demo.extension.server).toMatchObject({ name: "demo", command: "node" });
+		const bad = result.extensions.find((entry: any) => entry.configKey === "bad");
+		expect(bad.invalid).toBe(true);
+		expect(result.warnings).toEqual(["Invalid MCP configuration: bad"]);
+	});
+
+	test("pi.config.extensions.list rejects native pi-mcp-adapter configuration", async () => {
+		const { bridge, agentDir } = await stubBridge();
+		await writeFile(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {} }));
+		await expect(bridge.dispatch("pi.config.extensions.list", {})).rejects.toThrow(
+			"pi-mcp-adapter",
+		);
+	});
+
+	test("pi.session.extensions.list merges persisted memberships", async () => {
+		const { bridge, agentDir } = await stubBridge();
+		await writeFile(join(agentDir, "mcp.json"), JSON.stringify({ base: { command: "node" } }));
+		await writeFile(
+			join(agentDir, "mcp-sessions.json"),
+			JSON.stringify({ "session-1": { add: { active: { command: "node" } }, remove: ["base"] } }),
+		);
+		const result = (await bridge.dispatch("pi.session.extensions.list", {
+			sessionId: "session-1",
+		})) as Record<string, any>;
+		expect(result.extensions.map((entry: any) => entry.extensionKey)).toEqual(["active"]);
+		expect(result.extensions[0].extension.type).toBe("mcp");
+	});
+
+	test("pi.slash-commands.list reports builtin and resolved commands", async () => {
+		const { bridge } = await stubBridge();
+		const result = (await bridge.dispatch("pi.slash-commands.list", {})) as Record<string, any>;
+		expect(result.availableCommands.map((command: any) => command.name)).toEqual([
+			"compact",
+			"review",
+			"skill:demo",
+		]);
+	});
+
+	test("unsupported FC18/FC21 methods still fail closed", async () => {
+		const { bridge } = await stubBridge();
+		await expect(bridge.dispatch("pi.extensions.configure", {})).rejects.toThrow(
+			"Unsupported bridge method",
+		);
+		await expect(bridge.dispatch("pi.providers.config.delete", {})).rejects.toThrow(
+			"Unsupported bridge method",
+		);
+	});
+});
+
+describe.skipIf(typeof realPi.SettingsManager !== "function")("real Pi 0.85.1 SDK smoke", () => {
+	const installation = {
+		packageName: STUB_PACKAGE,
+		packageVersion: "0.85.1",
+		packageDir: "/tmp/pixie-real-pi",
+		entryPath: "/tmp/pixie-real-pi/dist/index.js",
+		moduleOrigin: "/tmp/pixie-real-pi/dist/index.js",
+	};
+
+	test("native settings serve defaults and preferences", async () => {
+		const agentDir = await mkdtemp(join(tmpdir(), "pixie-real-agent-"));
+		const bridge = createBridge({
+			installation,
+			module: realPi as unknown as Record<string, unknown>,
+			agentDir,
+		});
+		expect(await bridge.dispatch("pi.defaults.read", {})).toEqual({
+			providerId: null,
+			modelId: null,
+		});
+		expect(
+			await bridge.dispatch("pi.defaults.save", { providerId: "alpha", modelId: "alpha-1" }),
+		).toEqual({ providerId: "alpha", modelId: "alpha-1" });
+		expect(await bridge.dispatch("pi.defaults.clear", {})).toEqual({
+			providerId: null,
+			modelId: null,
+		});
+		expect(
+			await bridge.dispatch("pi.preferences.save", {
+				values: [{ key: "piThinkingEffort", value: "high" }],
+			}),
+		).toEqual({
+			values: [
+				{ key: "piThinkingEffort", value: "high" },
+				{ key: "compactionReserveTokens", value: null },
+			],
+		});
+		await expect(
+			bridge.dispatch("pi.preferences.save", {
+				values: [{ key: "compactionReserveTokens", value: 20000 }],
+			}),
+		).rejects.toThrow("no public setter");
+		expect(await bridge.dispatch("pi.preferences.reset", { keys: ["piThinkingEffort"] })).toEqual({
+			values: [
+				{ key: "piThinkingEffort", value: null },
+				{ key: "compactionReserveTokens", value: null },
+			],
+		});
+	});
+
+	test("native package inventory resolves configured resources", async () => {
+		const agentDir = await mkdtemp(join(tmpdir(), "pixie-real-agent-"));
+		const bridge = createBridge({
+			installation,
+			module: realPi as unknown as Record<string, unknown>,
+			agentDir,
+		});
+		const result = (await bridge.dispatch("pi.extensions.list", {})) as Record<string, any>;
+		expect(result.version).toBe(1);
+		expect(result.context.reader).toBe("service");
+		expect(Array.isArray(result.packages)).toBe(true);
+		expect(Array.isArray(result.resources)).toBe(true);
+	});
+});
+
 describe("argument resolution", () => {
 	test("prefers explicit arguments and never silently defaults", () => {
-		expect(resolvePackagePath(["--package", "/opt/pi", "--agent-dir", "/tmp/agent"])).toBe("/opt/pi");
+		expect(resolvePackagePath(["--package", "/opt/pi", "--agent-dir", "/tmp/agent"])).toBe(
+			"/opt/pi",
+		);
 		expect(resolvePackagePath(["--package=/opt/pi"])).toBe("/opt/pi");
 		expect(resolveAgentDir(["--agent-dir", "/tmp/agent"])).toBe("/tmp/agent");
 		const previous = process.env.PIXIE_PI_PACKAGE;

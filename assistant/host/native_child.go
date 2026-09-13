@@ -1057,7 +1057,10 @@ func (s *nativeSupervisor) callHost(ctx context.Context, method string, params m
 		return s.deleteAgentSource(params)
 	case "pi.agent-mentions.list":
 		return s.agentMentionsOperation(params)
-	case "pi.providers.list", "pi.providers.readiness.check", "pi.providers.inventory.refresh", "pi.providers.canonical-model-info":
+	case "pi.providers.list", "pi.providers.readiness.check", "pi.providers.inventory.refresh", "pi.providers.canonical-model-info",
+		"pi.defaults.read", "pi.defaults.save", "pi.defaults.clear",
+		"pi.preferences.read", "pi.preferences.save", "pi.preferences.reset",
+		"pi.extensions.list", "pi.config.extensions.list", "pi.session.extensions.list", "pi.slash-commands.list":
 		return s.adminBridgeCall(ctx, method, params)
 	case "session.release", "runtime.release":
 		id, _ := params["sessionId"].(string)
@@ -1536,8 +1539,8 @@ func nativeOperationSet(adminEnabled bool) map[string]bool {
 	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.uiResponse", "session.uiCancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch", "pi.sources.list", "pi.sources.create", "pi.sources.update", "pi.sources.delete", "pi.agent-mentions.list"} {
 		result[operation] = true
 	}
-	// The FC17 administration operations are owned by the opt-in bridge and
-	// stay false unless the selected installation was verified.
+	// The FC17/FC19/FC20 administration operations are owned by the opt-in
+	// bridge and stay false unless the selected installation was verified.
 	if adminEnabled {
 		for _, operation := range nativeAdminBridgeOperations {
 			result[operation] = true

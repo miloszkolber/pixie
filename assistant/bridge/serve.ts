@@ -19,8 +19,21 @@
  * It never falls back to a global or bundled SDK.
  */
 
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import {
+	closeSync,
+	fsyncSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	renameSync,
+	rmdirSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
@@ -33,14 +46,29 @@ const PROVIDER_LIST_AVAILABLE_TIMEOUT_MS = 10_000;
 const PROVIDER_AUTH_TIMEOUT_MS = 5_000;
 const PROVIDER_REFRESH_TIMEOUT_MS = 25_000;
 const MODEL_INFO_CURRENCY = "USD";
+const MCP_STATE_MAX_BYTES = 4 * 1024 * 1024;
+const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
+const INVENTORY_LIMIT = 500;
+const CONTRIBUTION_BUDGET = 5000;
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** Methods this foundation task implements. Everything else fails closed. */
+/** Methods this bridge implements. Everything else fails closed. */
 export const BRIDGE_METHODS = [
 	"bridge.hello",
 	"pi.providers.list",
 	"pi.providers.readiness.check",
 	"pi.providers.inventory.refresh",
 	"pi.providers.canonical-model-info",
+	"pi.defaults.read",
+	"pi.defaults.save",
+	"pi.defaults.clear",
+	"pi.preferences.read",
+	"pi.preferences.save",
+	"pi.preferences.reset",
+	"pi.extensions.list",
+	"pi.config.extensions.list",
+	"pi.session.extensions.list",
+	"pi.slash-commands.list",
 ] as const;
 export type BridgeMethod = (typeof BRIDGE_METHODS)[number];
 
@@ -111,7 +139,10 @@ export function parseRequest(line: string): BridgeRequest {
 	const { id, method } = parsed;
 	const numericID = typeof id === "number" && Number.isSafeInteger(id) && id > 0;
 	const stringID =
-		typeof id === "string" && id.length > 0 && id.length <= BRIDGE_MAX_ID_LENGTH && !id.includes("\0");
+		typeof id === "string" &&
+		id.length > 0 &&
+		id.length <= BRIDGE_MAX_ID_LENGTH &&
+		!id.includes("\0");
 	if (!numericID && !stringID) throw new Error("invalid bridge request id");
 	if (
 		typeof method !== "string" ||
@@ -183,16 +214,12 @@ export async function resolveInstallation(packagePath: string): Promise<PiInstal
 	let packageDir = resolve(raw);
 	const info = await stat(packageDir).catch(() => undefined);
 	if (info?.isFile()) packageDir = dirname(packageDir);
-	else if (!info?.isDirectory())
-		throw new Error(`selected installation does not exist: ${raw}`);
+	else if (!info?.isDirectory()) throw new Error(`selected installation does not exist: ${raw}`);
 	const manifest = await readPackageManifest(packageDir);
 	if (manifest.name !== PI_CODING_AGENT_PACKAGE)
 		throw new Error(`selected installation is not ${PI_CODING_AGENT_PACKAGE}`);
 	const version = manifest.version;
-	if (
-		typeof version !== "string" ||
-		!/^\d+\.\d+\.\d+(?:[-+][a-z0-9.+-]+)?$/i.test(version)
-	)
+	if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][a-z0-9.+-]+)?$/i.test(version))
 		throw new Error("selected installation has no valid package version");
 	const entry = manifestEntry(manifest);
 	if (!entry) throw new Error("selected installation exposes no public entrypoint");
@@ -237,6 +264,418 @@ function textArray(params: Record<string, unknown>, key: string): string[] {
 	});
 }
 
+function objectValue(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+
+function stringValue(value: unknown): string {
+	return typeof value === "string" ? value : "";
+}
+
+function requiredString(value: unknown, label: string, max = 4096): string {
+	if (typeof value !== "string" || value.length === 0 || value.length > max || value.includes("\0"))
+		throw new Error(`Invalid ${label}`);
+	return value;
+}
+
+/** Resolve one operation's working directory, defaulting to the agent dir. */
+function optionalCwd(params: Record<string, unknown>, fallback: string): string {
+	const value = params.cwd;
+	if (value === undefined || value === null) return fallback;
+	if (typeof value !== "string" || !isAbsolute(value) || value.includes("\0"))
+		throw new Error("bridge parameter cwd must be an absolute path");
+	return value;
+}
+
+interface SettingsShape extends Record<string, unknown> {
+	defaultProvider?: string;
+	defaultModel?: string;
+	defaultThinkingLevel?: string;
+	compaction?: { reserveTokens?: number; [key: string]: unknown };
+	extensions?: unknown[];
+	packages?: unknown[];
+	lastChangelogVersion?: string;
+}
+
+interface SettingsManagerLike {
+	reload(): Promise<void>;
+	flush(): Promise<void>;
+	drainErrors(): unknown[];
+	getGlobalSettings(): SettingsShape;
+	getProjectSettings(): SettingsShape;
+	getDefaultProvider(): string | undefined;
+	getDefaultModel(): string | undefined;
+	setDefaultProvider(provider: string | undefined): void;
+	setDefaultModel(model: string | undefined): void;
+	getDefaultThinkingLevel(): string | undefined;
+	setDefaultThinkingLevel(level: string | undefined): void;
+	getCompactionReserveTokens(): number;
+	getLastChangelogVersion(): string | undefined;
+	setLastChangelogVersion(version: string | undefined): void;
+}
+
+interface SettingsManagerApi {
+	create(cwd: string, agentDir: string, options?: unknown): SettingsManagerLike;
+	fromStorage(storage: unknown, options?: unknown): SettingsManagerLike;
+}
+
+interface NativeResource {
+	path: string;
+	enabled: boolean;
+	metadata: { source: string; scope: string; origin: string; baseDir?: string };
+}
+
+interface ConfiguredPackage {
+	source: string;
+	scope: string;
+	filtered: boolean;
+	installedPath?: string;
+}
+
+interface PackageManagerLike {
+	listConfiguredPackages(): ConfiguredPackage[];
+	resolve(onMissing?: (source: string) => Promise<"skip">): Promise<{
+		extensions: NativeResource[];
+		skills: NativeResource[];
+		prompts: NativeResource[];
+		themes: NativeResource[];
+	}>;
+}
+
+interface PackageManagerApi {
+	new (options: {
+		cwd: string;
+		agentDir: string;
+		settingsManager: SettingsManagerLike;
+	}): PackageManagerLike;
+}
+
+interface TrustStoreLike {
+	get(cwd: string): boolean | null;
+}
+
+interface BridgeSdk {
+	SettingsManager: SettingsManagerApi;
+	DefaultPackageManager: PackageManagerApi;
+	ProjectTrustStore: new (agentDir: string) => TrustStoreLike;
+	hasTrustRequiringProjectResources(cwd: string): boolean;
+}
+
+const resourceTokenKey = randomBytes(32);
+
+function resourceToken(value: unknown): string {
+	return createHmac("sha256", resourceTokenKey).update(JSON.stringify(value)).digest("hex");
+}
+
+function extensionRevision(scope: string, settings: SettingsShape): string {
+	return resourceToken([scope, settings.packages ?? [], settings.extensions ?? []]);
+}
+
+function extensionResourceKey(resource: NativeResource): string {
+	return resourceToken([resource.path, resource.metadata]);
+}
+
+// Source references are display metadata, never URLs to fetch. Credentials,
+// query strings, fragments and control characters are removed here.
+function inventoryReference(value: string): string {
+	return value
+		.replace(/\p{Cc}/gu, "")
+		.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s]*@/gi, "$1")
+		.split(/[?#]/, 1)[0]
+		.slice(0, 1024);
+}
+
+async function packageIdentity(
+	path?: string,
+): Promise<{ name: string | null; version: string | null }> {
+	const unknown = { name: null, version: null };
+	if (!path) return unknown;
+	try {
+		const manifestPath = join(path, "package.json");
+		const info = await stat(manifestPath);
+		if (!info.isFile() || info.size === 0 || info.size > PACKAGE_MANIFEST_MAX_BYTES) return unknown;
+		const data = objectValue(JSON.parse(await readFile(manifestPath, "utf8")));
+		return {
+			name:
+				typeof data.name === "string" && /^@?[a-z0-9._/-]{1,200}$/i.test(data.name)
+					? data.name
+					: null,
+			version:
+				typeof data.version === "string" &&
+				/^\d+\.\d+\.\d+(?:[-+][a-z0-9.+-]+)?$/i.test(data.version)
+					? data.version
+					: null,
+		};
+	} catch {
+		return unknown;
+	}
+}
+
+function safeSource(source: { source: string; scope: string; origin: string }) {
+	return {
+		source: inventoryReference(source.source),
+		scope: source.scope,
+		origin: source.origin,
+	};
+}
+
+function readStateFile(path: string, max: number): unknown {
+	let raw: string;
+	try {
+		const info = statSync(path);
+		if (!info.isFile() || info.size === 0 || info.size > max)
+			throw new Error(`state file is not a bounded regular file: ${path}`);
+		raw = readFileSync(path, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+	try {
+		return JSON.parse(raw);
+	} catch {
+		throw new Error(`state file is not valid JSON: ${path}`);
+	}
+}
+
+// Compatibility for persisted Pixie MCP connection records only. Registration
+// and execution belong to the upstream adapter, not a second MCP client here.
+function mcpConnection(
+	value: unknown,
+	agentDir: string,
+): { name: string; definition: Record<string, unknown>; source: Record<string, unknown> } {
+	const raw = objectValue(value);
+	const source = raw.type === "mcp" ? objectValue(raw.server) : raw;
+	const name = requiredString(source.name, "MCP name", 128);
+	if (!/^[a-zA-Z0-9_-]+$/.test(name) || name.includes("__")) throw new Error("Invalid MCP name");
+	const definition: Record<string, unknown> = {};
+	if (source.command !== undefined || source.type === "stdio") {
+		definition.command = requiredString(source.command, "MCP command");
+		if (
+			source.args !== undefined &&
+			(!Array.isArray(source.args) || source.args.some((item) => typeof item !== "string"))
+		)
+			throw new Error("MCP arguments must be strings");
+		definition.args = source.args ?? [];
+		definition.env = Object.fromEntries(
+			Object.entries(objectValue(source.env)).map(([key, item]) => {
+				if (typeof item !== "string") throw new Error("MCP environment values must be strings");
+				return [key, item];
+			}),
+		);
+		if (source.cwd)
+			definition.cwd = resolve(
+				agentDir,
+				requiredString(source.cwd, "MCP working directory").replace(
+					/\$\{([A-Z0-9_]+)\}/g,
+					(_match, key: string) => {
+						const value = process.env[key];
+						if (value === undefined) throw new Error(`Missing MCP environment variable: ${key}`);
+						return value;
+					},
+				),
+			);
+	} else {
+		const url = new URL(requiredString(source.uri ?? source.url, "MCP URL"));
+		if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+			throw new Error("MCP requires HTTP(S) without URL credentials");
+		if (source.type && !["http", "streamable_http", "sse"].includes(stringValue(source.type)))
+			throw new Error("Unsupported MCP transport");
+		definition.url = url.href;
+		if (source.type === "sse") definition.httpTransport = "sse";
+		definition.headers = Array.isArray(source.headers)
+			? Object.fromEntries(
+					source.headers.map((item) => {
+						const header = objectValue(item);
+						return [requiredString(header.name, "header"), stringValue(header.value)];
+					}),
+				)
+			: Object.fromEntries(
+					Object.entries(objectValue(source.headers)).map(([key, item]) => [
+						key,
+						stringValue(item),
+					]),
+				);
+	}
+	return {
+		name,
+		definition,
+		source: {
+			...source,
+			name,
+			type: definition.command ? "stdio" : source.type === "sse" ? "sse" : "http",
+		},
+	};
+}
+
+function wrapMcp(source: Record<string, unknown>): Record<string, unknown> {
+	return {
+		type: "mcp",
+		server: {
+			...source,
+			url: source.url ?? source.uri,
+			type: source.type === "streamable_http" ? "http" : source.type,
+		},
+	};
+}
+
+function legacyMcp(value: Record<string, unknown>): Record<string, unknown> {
+	if (
+		!value ||
+		Array.isArray(value) ||
+		typeof value !== "object" ||
+		Object.hasOwn(value, "mcpServers")
+	)
+		throw new Error(
+			"Native MCP configuration is managed by pi-mcp-adapter, not legacy connection administration",
+		);
+	return value;
+}
+
+function slashCommandName(path: string): string {
+	const name = basename(path).replace(/\.md$/i, "");
+	return name === "SKILL" ? basename(dirname(path)) : name;
+}
+
+/**
+ * FC20 native resource inventory. The sidecar has no resident `AgentSession`,
+ * so loaded-extension evidence is always absent and the reader is reported as
+ * `service`, `configured-only` or `not-resident`; the controller accepts those
+ * readers and requires empty loaded/errors arrays for them.
+ */
+async function nativeExtensionInventory(
+	agentDir: string,
+	cwd: string,
+	sessionId: string | null,
+	reader: string,
+	sdk: BridgeSdk,
+): Promise<Record<string, unknown>> {
+	const warnings: string[] = [];
+	const settings = sdk.SettingsManager.create(cwd, agentDir);
+	if (settings.drainErrors().length) warnings.push("settings-read-failed");
+	const manager = new sdk.DefaultPackageManager({ cwd, agentDir, settingsManager: settings });
+	let packages: ConfiguredPackage[] = [];
+	let resources: NativeResource[] = [];
+	try {
+		packages = manager.listConfiguredPackages();
+	} catch {
+		warnings.push("package-discovery-failed");
+	}
+	try {
+		// The explicit skip callback resolves manifests and paths only; missing
+		// or mismatched packages are never installed during inspection.
+		resources = (await manager.resolve(async () => "skip")).extensions;
+	} catch {
+		warnings.push("resource-discovery-failed");
+	}
+	const globalSettings = settings.getGlobalSettings();
+	const projectSettings = settings.getProjectSettings();
+	if (
+		packages.length > INVENTORY_LIMIT ||
+		resources.length > INVENTORY_LIMIT ||
+		(globalSettings.extensions?.length ?? 0) > INVENTORY_LIMIT ||
+		(projectSettings.extensions?.length ?? 0) > INVENTORY_LIMIT
+	)
+		warnings.push("inventory-truncated");
+	const configuredPackages = await Promise.all(
+		packages.slice(0, INVENTORY_LIMIT).map(async (pkg) => ({
+			source: inventoryReference(pkg.source),
+			scope: pkg.scope,
+			filtered: pkg.filtered,
+			installed: Boolean(pkg.installedPath),
+			...(await packageIdentity(pkg.installedPath)),
+			state: pkg.installedPath ? "not-observed" : "missing",
+		})),
+	);
+	const configurationSupported = (resource: NativeResource) => {
+		if (resource.metadata.scope !== "user" && resource.metadata.scope !== "project") return false;
+		if (resource.metadata.origin === "top-level") return true;
+		const installedPath = packages.find(
+			(pkg) => pkg.source === resource.metadata.source && pkg.scope === resource.metadata.scope,
+		)?.installedPath;
+		try {
+			return Boolean(
+				installedPath && installedPath !== resource.path && statSync(installedPath).isDirectory(),
+			);
+		} catch {
+			return false;
+		}
+	};
+	const trustStore = new sdk.ProjectTrustStore(agentDir);
+	let trustDecision: boolean | null = null;
+	try {
+		trustDecision = trustStore.get(cwd);
+	} catch {
+		warnings.push("trust-read-failed");
+	}
+	const requiresDecision = sdk.hasTrustRequiringProjectResources(cwd);
+	return {
+		version: 1,
+		trust: {
+			projectTrusted: !requiresDecision || trustDecision === true,
+			decision: trustDecision,
+			requiresDecision: requiresDecision && trustDecision === null,
+		},
+		configurationRevisions: {
+			user: extensionRevision("user", globalSettings),
+			project: extensionRevision("project", projectSettings),
+		},
+		context: { cwd: inventoryReference(cwd), sessionId, reader },
+		packages: configuredPackages,
+		paths: (
+			[
+				["user", globalSettings],
+				["project", projectSettings],
+			] as const
+		).flatMap(([scope, values]) =>
+			(Array.isArray(values.extensions) ? values.extensions : [])
+				.filter((path): path is string => typeof path === "string")
+				.slice(0, INVENTORY_LIMIT)
+				.map((path) => ({ path: inventoryReference(path), scope })),
+		),
+		resources: resources.slice(0, INVENTORY_LIMIT).map((resource) => ({
+			resourceKey: extensionResourceKey(resource),
+			configurationSupported: configurationSupported(resource),
+			path: inventoryReference(resource.path),
+			...safeSource(resource.metadata),
+			enabled: resource.enabled,
+			state: "not-observed",
+		})),
+		extensions: [],
+		errors: [],
+		warnings,
+	};
+}
+
+function bridgeSdk(module: Record<string, unknown>): BridgeSdk {
+	const SettingsManager = module.SettingsManager as SettingsManagerApi | undefined;
+	if (
+		!SettingsManager ||
+		typeof SettingsManager.create !== "function" ||
+		typeof SettingsManager.fromStorage !== "function"
+	)
+		throw new Error("selected installation does not expose public SettingsManager");
+	const DefaultPackageManager = module.DefaultPackageManager as PackageManagerApi | undefined;
+	if (typeof DefaultPackageManager !== "function")
+		throw new Error("selected installation does not expose public DefaultPackageManager");
+	const ProjectTrustStore = module.ProjectTrustStore as BridgeSdk["ProjectTrustStore"] | undefined;
+	if (typeof ProjectTrustStore !== "function")
+		throw new Error("selected installation does not expose public ProjectTrustStore");
+	const hasTrustRequiringProjectResources = module.hasTrustRequiringProjectResources;
+	if (typeof hasTrustRequiringProjectResources !== "function")
+		throw new Error(
+			"selected installation does not expose public hasTrustRequiringProjectResources",
+		);
+	return {
+		SettingsManager,
+		DefaultPackageManager,
+		ProjectTrustStore,
+		hasTrustRequiringProjectResources:
+			hasTrustRequiringProjectResources as BridgeSdk["hasTrustRequiringProjectResources"],
+	};
+}
+
 /**
  * The ModelRuntime surfaced to the bridge methods. It is created lazily so a
  * `bridge.hello` identity check never touches native credential files.
@@ -273,6 +712,7 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 		| undefined;
 	if (!ModelRuntime || typeof ModelRuntime.create !== "function")
 		throw new Error("selected installation does not expose public ModelRuntime");
+	const sdk = bridgeSdk(module);
 	let runtime: BridgeRuntime | undefined;
 	const runtimeFor = async (): Promise<BridgeRuntime> => {
 		if (!runtime) {
@@ -291,7 +731,13 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 		packageVersion: installation.packageVersion,
 		packageDir: installation.packageDir,
 		moduleOrigin: installation.moduleOrigin,
-		publicSymbols: ["ModelRuntime"],
+		publicSymbols: [
+			"ModelRuntime",
+			"SettingsManager",
+			"DefaultPackageManager",
+			"ProjectTrustStore",
+			"hasTrustRequiringProjectResources",
+		],
 	};
 
 	const inventory = async (providerIds: string[]): Promise<Record<string, unknown>> => {
@@ -340,7 +786,9 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 		return { entries };
 	};
 
-	const canonicalModelInfo = async (params: Record<string, unknown>): Promise<Record<string, unknown>> => {
+	const canonicalModelInfo = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
 		const active = await runtimeFor();
 		const provider = requiredText(params, "provider");
 		const model = requiredText(params, "model");
@@ -363,7 +811,9 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 		};
 	};
 
-	const readinessCheck = async (params: Record<string, unknown>): Promise<Record<string, unknown>> => {
+	const readinessCheck = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
 		const active = await runtimeFor();
 		const providerId = requiredText(params, "providerId");
 		const configured = Boolean(
@@ -382,6 +832,202 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 		return { started: [], skipped: [], errors };
 	};
 
+	// --- FC19: global defaults and preferences (SettingsManager) ---
+
+	const readDefaults = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const cwd = optionalCwd(params, agentDir);
+		const manager = sdk.SettingsManager.create(cwd, agentDir);
+		await manager.reload();
+		return {
+			providerId: manager.getDefaultProvider() || null,
+			modelId: manager.getDefaultModel() || null,
+		};
+	};
+
+	const saveDefaults = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const cwd = optionalCwd(params, agentDir);
+		const provider = requiredText(params, "providerId");
+		const rawModel = params.modelId;
+		if (
+			rawModel !== undefined &&
+			rawModel !== null &&
+			(typeof rawModel !== "string" || rawModel.includes("\0"))
+		)
+			throw new Error("bridge parameter modelId must be a string");
+		const manager = sdk.SettingsManager.create(cwd, agentDir);
+		manager.setDefaultProvider(provider);
+		manager.setDefaultModel(typeof rawModel === "string" ? rawModel : "");
+		await manager.flush();
+		return readDefaults(params);
+	};
+
+	const clearDefaults = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const cwd = optionalCwd(params, agentDir);
+		const manager = sdk.SettingsManager.create(cwd, agentDir);
+		manager.setDefaultProvider(undefined);
+		manager.setDefaultModel(undefined);
+		await manager.flush();
+		return readDefaults(params);
+	};
+
+	const readPreferences = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const cwd = optionalCwd(params, agentDir);
+		const manager = sdk.SettingsManager.create(cwd, agentDir);
+		await manager.reload();
+		const global = manager.getGlobalSettings();
+		const storedReserve = global.compaction?.reserveTokens;
+		return {
+			values: [
+				{ key: "piThinkingEffort", value: global.defaultThinkingLevel ?? null },
+				{
+					key: "compactionReserveTokens",
+					value: storedReserve === undefined ? null : manager.getCompactionReserveTokens(),
+				},
+			],
+		};
+	};
+
+	const writePreferences = async (
+		params: Record<string, unknown>,
+		reset: boolean,
+	): Promise<Record<string, unknown>> => {
+		const cwd = optionalCwd(params, agentDir);
+		const manager = sdk.SettingsManager.create(cwd, agentDir);
+		await manager.reload();
+		const rawEntries = reset
+			? (Array.isArray(params.keys) ? params.keys : []).map((key) => ({ key, value: null }))
+			: Array.isArray(params.values)
+				? params.values
+				: [];
+		for (const raw of rawEntries) {
+			const entry = objectValue(raw);
+			const key = stringValue(entry.key);
+			if (key === "piThinkingEffort") {
+				if (entry.value === null || entry.value === undefined) {
+					manager.setDefaultThinkingLevel(undefined);
+				} else if (
+					typeof entry.value === "string" &&
+					(THINKING_LEVELS as readonly string[]).includes(entry.value)
+				) {
+					manager.setDefaultThinkingLevel(entry.value);
+				} else {
+					throw new Error("Unsupported thinking effort");
+				}
+			} else if (key === "compactionReserveTokens") {
+				// Pi 0.85.1 exposes getCompactionReserveTokens but no setter.
+				// Refuse rather than edit settings.json behind the SDK's back.
+				throw new Error("compactionReserveTokens has no public setter in the selected Pi");
+			} else {
+				throw new Error("Unknown preference");
+			}
+		}
+		await manager.flush();
+		return readPreferences(params);
+	};
+
+	const listExtensions = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const sessionId =
+			typeof params.sessionId === "string" && params.sessionId.length ? params.sessionId : null;
+		const hasCwd = params.cwd !== undefined && params.cwd !== null;
+		const cwd = optionalCwd(params, agentDir);
+		const reader = sessionId ? "not-resident" : hasCwd ? "configured-only" : "service";
+		return nativeExtensionInventory(agentDir, cwd, sessionId, reader, sdk);
+	};
+
+	const listConfiguredMcp = async (): Promise<Record<string, unknown>> => {
+		const stored = legacyMcp(
+			objectValue(readStateFile(join(agentDir, "mcp.json"), MCP_STATE_MAX_BYTES)),
+		);
+		const warnings: string[] = [];
+		const extensions = Object.entries(stored).map(([configKey, raw]) => {
+			const source = objectValue(raw);
+			try {
+				mcpConnection({ ...source, name: configKey }, agentDir);
+			} catch {
+				warnings.push(`Invalid MCP configuration: ${configKey}`);
+				return {
+					configKey,
+					enabled: source.enabled !== false,
+					invalid: true,
+					extension: { type: "mcp", server: { name: configKey, type: "invalid" } },
+				};
+			}
+			return {
+				configKey,
+				enabled: source.enabled !== false,
+				extension: wrapMcp({ ...source, name: configKey }),
+			};
+		});
+		return { extensions, warnings };
+	};
+
+	const listSessionMcp = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const sessionId = requiredText(params, "sessionId");
+		const stored = objectValue(readStateFile(join(agentDir, "mcp.json"), MCP_STATE_MAX_BYTES));
+		const base = Object.hasOwn(stored, "mcpServers") ? {} : legacyMcp(stored);
+		const memberships = objectValue(
+			readStateFile(join(agentDir, "mcp-sessions.json"), MCP_STATE_MAX_BYTES),
+		);
+		const membership = objectValue(memberships[sessionId]);
+		const all: Record<string, unknown> = { ...base, ...objectValue(membership.add) };
+		for (const name of Array.isArray(membership.remove) ? membership.remove : []) {
+			if (typeof name === "string") delete all[name];
+		}
+		const extensions: Array<Record<string, unknown>> = [];
+		for (const [name, raw] of Object.entries(all)) {
+			let parsed: ReturnType<typeof mcpConnection>;
+			try {
+				parsed = mcpConnection({ ...objectValue(raw), name }, agentDir);
+			} catch {
+				continue;
+			}
+			if (parsed.source.enabled === false) continue;
+			extensions.push({ extensionKey: name, extension: wrapMcp(parsed.source) });
+		}
+		return { extensions, warnings: [] };
+	};
+
+	const listSlashCommands = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const cwd = optionalCwd(params, agentDir);
+		const availableCommands: Array<Record<string, unknown>> = [
+			{ name: "compact", description: "Compact the conversation" },
+		];
+		const seen = new Set(["compact"]);
+		const add = (name: string) => {
+			if (!name || seen.has(name)) return;
+			seen.add(name);
+			availableCommands.push({ name, description: "" });
+		};
+		try {
+			// The sidecar has no resident AgentSession, so this reports the
+			// configured prompt and skill commands the package resolver exposes;
+			// extension-registered commands require a live session and are absent.
+			const settings = sdk.SettingsManager.create(cwd, agentDir);
+			const manager = new sdk.DefaultPackageManager({ cwd, agentDir, settingsManager: settings });
+			const resolved = await manager.resolve(async () => "skip");
+			for (const prompt of resolved.prompts) if (prompt.enabled) add(slashCommandName(prompt.path));
+			for (const skill of resolved.skills)
+				if (skill.enabled) add(`skill:${slashCommandName(skill.path)}`);
+		} catch {
+			// Keep the builtin command when native resource discovery is unavailable.
+		}
+		return { availableCommands };
+	};
+
 	const dispatch = async (method: string, params: Record<string, unknown>): Promise<unknown> => {
 		switch (method) {
 			case "bridge.hello":
@@ -394,6 +1040,26 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 				return readinessCheck(params);
 			case "pi.providers.inventory.refresh":
 				return inventoryRefresh();
+			case "pi.defaults.read":
+				return readDefaults(params);
+			case "pi.defaults.save":
+				return saveDefaults(params);
+			case "pi.defaults.clear":
+				return clearDefaults(params);
+			case "pi.preferences.read":
+				return readPreferences(params);
+			case "pi.preferences.save":
+				return writePreferences(params, false);
+			case "pi.preferences.reset":
+				return writePreferences(params, true);
+			case "pi.extensions.list":
+				return listExtensions(params);
+			case "pi.config.extensions.list":
+				return listConfiguredMcp();
+			case "pi.session.extensions.list":
+				return listSessionMcp(params);
+			case "pi.slash-commands.list":
+				return listSlashCommands(params);
 			default:
 				throw new Error(`Unsupported bridge method: ${method}`);
 		}

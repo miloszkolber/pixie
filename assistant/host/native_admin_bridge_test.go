@@ -36,7 +36,8 @@ func writeAdminStubPackage(t *testing.T, version string) string {
 
 // writeAdminStubSidecar writes a tiny POSIX shell sidecar. It never executes
 // arbitrary payloads: it parses the documented flags, replies to
-// bridge.hello and pi.providers.list, and errors on everything else.
+// bridge.hello plus representative FC17/FC19/FC20 methods, and errors on
+// everything else.
 func writeAdminStubSidecar(t *testing.T) string {
 	t.Helper()
 	script := `#!/bin/sh
@@ -64,6 +65,15 @@ while IFS= read -r line; do
       ;;
     *'"method":"pi.providers.list"'*)
       printf '{"id":%s,"ok":true,"result":{"entries":[]}}\n' "$id"
+      ;;
+    *'"method":"pi.defaults.read"'*)
+      printf '{"id":%s,"ok":true,"result":{"providerId":null,"modelId":null}}\n' "$id"
+      ;;
+    *'"method":"pi.preferences.read"'*)
+      printf '{"id":%s,"ok":true,"result":{"values":[{"key":"piThinkingEffort","value":null},{"key":"compactionReserveTokens","value":null}]}}\n' "$id"
+      ;;
+    *'"method":"pi.extensions.list"'*)
+      printf '{"id":%s,"ok":true,"result":{"version":1,"context":{"cwd":"/tmp","sessionId":null,"reader":"service"},"configurationRevisions":{"user":"0000000000000000000000000000000000000000000000000000000000000000","project":"0000000000000000000000000000000000000000000000000000000000000000"},"packages":[],"paths":[],"resources":[],"extensions":[],"errors":[],"warnings":[],"trust":{"projectTrusted":true,"decision":null,"requiresDecision":false}}}\n' "$id"
       ;;
     *)
       printf '{"id":%s,"ok":false,"error":"unsupported"}\n' "$id"
@@ -177,6 +187,48 @@ func TestAdminBridgeProxiesFC17Operations(t *testing.T) {
 	}
 }
 
+func TestAdminBridgeProxiesFC19AndFC20Operations(t *testing.T) {
+	agentDir := t.TempDir()
+	config := AdminBridgeConfig{
+		Enabled:     true,
+		Executable:  "/bin/sh",
+		Args:        []string{writeAdminStubSidecar(t)},
+		PackagePath: writeAdminStubPackage(t, "0.85.1"),
+	}
+	supervisor := testAdminBridgeSupervisor(t, config, agentDir)
+	t.Cleanup(func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := supervisor.adminBridge.close(shutdown); err != nil {
+			t.Errorf("close administration bridge: %v", err)
+		}
+	})
+	raw, err := supervisor.callHost(context.Background(), "pi.defaults.read", map[string]any{})
+	if err != nil {
+		t.Fatalf("proxied pi.defaults.read: %v", err)
+	}
+	if string(raw) != `{"providerId":null,"modelId":null}` {
+		t.Fatalf("proxied pi.defaults.read = %s", raw)
+	}
+	raw, err = supervisor.callHost(context.Background(), "pi.extensions.list", map[string]any{})
+	if err != nil {
+		t.Fatalf("proxied pi.extensions.list: %v", err)
+	}
+	var inventory struct {
+		Version int `json:"version"`
+		Context struct {
+			Reader string `json:"reader"`
+		} `json:"context"`
+		Packages []any `json:"packages"`
+	}
+	if json.Unmarshal(raw, &inventory) != nil || inventory.Version != 1 || inventory.Context.Reader != "service" || inventory.Packages == nil {
+		t.Fatalf("proxied pi.extensions.list = %s", raw)
+	}
+	if !supervisor.operationSet()["pi.defaults.read"] || !supervisor.operationSet()["pi.extensions.list"] {
+		t.Fatal("FC19/FC20 operations are not advertised after verification")
+	}
+}
+
 func TestVerifySelectedPiPackageRejectsWrongIdentity(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"not-pi","version":"1.0.0"}`), 0o600); err != nil {
@@ -194,7 +246,7 @@ func TestVerifySelectedPiPackageRejectsWrongIdentity(t *testing.T) {
 }
 
 // TestAdminBridgeAdvertisesAndProxiesOverHost verifies the whole seam: an
-// opted-in host advertises the FC17 operations at hello and proxies one of
+// opted-in host advertises the bridge operations at hello and proxies one of
 // them through the lazily spawned sidecar.
 func TestAdminBridgeAdvertisesAndProxiesOverHost(t *testing.T) {
 	handle, err := Start(context.Background(), Config{
