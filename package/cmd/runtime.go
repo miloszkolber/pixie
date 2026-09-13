@@ -28,14 +28,36 @@ const (
 )
 
 type runtimeConfigFile struct {
-	Host             string `json:"host"`
-	Port             int    `json:"port"`
-	DataDir          string `json:"dataDir"`
-	StaticDir        string `json:"staticDir"`
-	Mode             string `json:"mode"`
-	AgentDir         string `json:"agentDir"`
-	PiExecutable     string `json:"piExecutable"`
-	AllowSelfRestart bool   `json:"allowSelfRestart"`
+	Host              string `json:"host"`
+	Port              int    `json:"port"`
+	DataDir           string `json:"dataDir"`
+	StaticDir         string `json:"staticDir"`
+	Mode              string `json:"mode"`
+	AgentDir          string `json:"agentDir"`
+	PiExecutable      string `json:"piExecutable"`
+	AllowSelfRestart  bool   `json:"allowSelfRestart"`
+	AdminBridge       bool   `json:"adminBridge"`
+	PiPackage         string `json:"piPackage"`
+	AdminBridgeBun    string `json:"adminBridgeBun"`
+	AdminBridgeScript string `json:"adminBridgeScript"`
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func envFlag(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 // restartExitCode matches RestartForceExitStatus in the packaged systemd

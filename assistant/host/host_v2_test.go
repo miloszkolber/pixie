@@ -15,7 +15,7 @@ import (
 // operation map used by v2 method validation to the generated catalog so a
 // protocol-catalog change cannot silently diverge.
 func TestNativeOperationSetTracksGeneratedCatalog(t *testing.T) {
-	operations := nativeOperationSet()
+	operations := nativeOperationSet(false)
 	for _, operation := range piwire.CatalogHostOperations {
 		if _, present := operations[operation]; !present {
 			t.Errorf("generated catalog operation %q is absent from nativeOperationSet", operation)

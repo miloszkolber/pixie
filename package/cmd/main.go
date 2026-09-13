@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -114,6 +115,19 @@ func runFullHostWithConfig(ctx context.Context, build diagnostics.BuildInfo, con
 	// Full-host composition obtains the assistant through the public facade.
 	// The facade owns the engine lifecycle and private transport; the
 	// controller never reaches into assistant internals.
+	// The administration bridge is explicit opt-in and only advertises
+	// operations after it verifies the selected installation. The sidecar
+	// defaults to bridge/serve.ts beside the binary.
+	adminBridgeScript := expandHomePath(firstNonEmpty(os.Getenv("PIXIE_ADMIN_BRIDGE_SCRIPT"), fileConfig.AdminBridgeScript))
+	if adminBridgeScript == "" {
+		if executable, err := os.Executable(); err == nil {
+			adminBridgeScript = filepath.Join(filepath.Dir(executable), "bridge", "serve.ts")
+		}
+	}
+	var bridgeArgs []string
+	if adminBridgeScript != "" {
+		bridgeArgs = []string{adminBridgeScript}
+	}
 	assistant, err := assistantHost.Start(ctx, assistantHost.Config{
 		Host:             "127.0.0.1",
 		Port:             0,
@@ -122,6 +136,12 @@ func runFullHostWithConfig(ctx context.Context, build diagnostics.BuildInfo, con
 		PiExecutable:     piExecutable,
 		AllowSelfRestart: fileConfig.AllowSelfRestart || selfRestartAllowed(),
 		ProtocolMode:     os.Getenv("PIXIE_PI_PROTOCOL"),
+		AdminBridge: assistantHost.AdminBridgeConfig{
+			Enabled:     fileConfig.AdminBridge || envFlag("PIXIE_ADMIN_BRIDGE"),
+			Executable:  firstNonEmpty(os.Getenv("PIXIE_ADMIN_BRIDGE_BUN"), fileConfig.AdminBridgeBun, "bun"),
+			Args:        bridgeArgs,
+			PackagePath: expandHomePath(firstNonEmpty(os.Getenv("PIXIE_PI_PACKAGE"), fileConfig.PiPackage)),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("start embedded assistant: %w", err)

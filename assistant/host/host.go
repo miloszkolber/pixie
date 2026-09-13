@@ -57,6 +57,9 @@ type Config struct {
 	// ProtocolMode is the raw PIXIE_PI_PROTOCOL value (v1, auto or v2,
 	// case-insensitive). Empty selects v1. An invalid value fails Start.
 	ProtocolMode string
+	// AdminBridge is the explicit opt-in administration sidecar. Its zero
+	// value keeps every administration operation false and starts no process.
+	AdminBridge AdminBridgeConfig
 }
 
 // Handle is the lifecycle handle returned by Start. Its methods form the
@@ -132,6 +135,10 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 		if err := supervisor.start(ctx); err != nil {
 			_ = listener.Close()
 			return nil, err
+		}
+		supervisor.adminBridge = newNativeAdminBridge(config.AdminBridge, config.AgentDir)
+		if config.AdminBridge.Enabled && supervisor.adminBridge.verificationError() != nil {
+			fmt.Fprintf(os.Stderr, "pixie-assistant: administration bridge unavailable: %v\n", supervisor.adminBridge.verificationError())
 		}
 	}
 	// The durable host authority is the deletion/pairing identity; bootID stays
@@ -567,7 +574,10 @@ func (h *Handle) requestRestart() {
 }
 
 func (h *Handle) operationSet() map[string]bool {
-	result := nativeOperationSet()
+	result := nativeOperationSet(false)
+	if h != nil && h.supervisor != nil {
+		result = h.supervisor.operationSet()
+	}
 	if h.restartAllowed() {
 		result["runtime.restart"] = true
 	}

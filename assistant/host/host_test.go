@@ -109,7 +109,7 @@ func TestV1EnvelopeAcceptsNullParamsForNoArgumentRequests(t *testing.T) {
 }
 
 func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
-	operations := nativeOperationSet()
+	operations := nativeOperationSet(false)
 	// The exact enabled subset is declared here so adding or removing native
 	// support is an intentional review step, not an incidental edit.
 	wantEnabled := map[string]bool{
@@ -134,9 +134,25 @@ func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
 			t.Errorf("enabled operation %q is absent from the catalog", operation)
 		}
 	}
-	for _, unsupported := range []string{"session.delete", "session.archive", "session.prompt.resource", "runtime.restart", "mcp.attach", "pi.tools.call", "pi.defaults.save"} {
+	for _, unsupported := range []string{"session.delete", "session.archive", "session.prompt.resource", "runtime.restart", "mcp.attach", "pi.tools.call", "pi.defaults.save", "pi.providers.list", "pi.providers.readiness.check", "pi.providers.inventory.refresh", "pi.providers.canonical-model-info"} {
 		if value, present := operations[unsupported]; !present || value {
 			t.Errorf("unsupported operation %q = %v, present %v", unsupported, value, present)
+		}
+	}
+	// The same catalog with the administration determination enabled exposes
+	// exactly the verified FC17 bridge surface and nothing else.
+	enabled := nativeOperationSet(true)
+	for _, operation := range nativeAdminBridgeOperations {
+		if !enabled[operation] {
+			t.Errorf("bridge operation %q stays false when administration is enabled", operation)
+		}
+	}
+	for operation, value := range enabled {
+		if value == operations[operation] {
+			continue
+		}
+		if !isNativeAdminBridgeOperation(operation) {
+			t.Errorf("operation %q changed outside the FC17 bridge surface", operation)
 		}
 	}
 }

@@ -130,6 +130,7 @@ type nativeSupervisor struct {
 	lost           map[string]string
 	registryLock   *os.File
 	hostIdentity   string
+	adminBridge    *nativeAdminBridge
 }
 
 type nativeChild struct {
@@ -921,7 +922,7 @@ func (c *nativeChild) snapshot(ctx context.Context) (json.RawMessage, error) {
 }
 
 func (s *nativeSupervisor) callHost(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
-	if !nativeOperationSet()[method] {
+	if !s.operationSet()[method] {
 		return nil, fmt.Errorf("operation %q is unsupported by the Go assistant", method)
 	}
 	switch method {
@@ -1056,6 +1057,8 @@ func (s *nativeSupervisor) callHost(ctx context.Context, method string, params m
 		return s.deleteAgentSource(params)
 	case "pi.agent-mentions.list":
 		return s.agentMentionsOperation(params)
+	case "pi.providers.list", "pi.providers.readiness.check", "pi.providers.inventory.refresh", "pi.providers.canonical-model-info":
+		return s.adminBridgeCall(ctx, method, params)
 	case "session.release", "runtime.release":
 		id, _ := params["sessionId"].(string)
 		cwd, _ := params["cwd"].(string)
@@ -1518,7 +1521,7 @@ func promptPayload(params map[string]any) (string, []any, error) {
 	return strings.Join(texts, "\n"), images, nil
 }
 
-func nativeOperationSet() map[string]bool {
+func nativeOperationSet(adminEnabled bool) map[string]bool {
 	result := map[string]bool{}
 	for _, operation := range []string{
 		"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.configure", "session.delete", "session.fork", "session.steer", "session.rename", "session.archive", "session.release", "runtime.release", "runtime.releaseToTui",
@@ -1533,7 +1536,31 @@ func nativeOperationSet() map[string]bool {
 	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.uiResponse", "session.uiCancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch", "pi.sources.list", "pi.sources.create", "pi.sources.update", "pi.sources.delete", "pi.agent-mentions.list"} {
 		result[operation] = true
 	}
+	// The FC17 administration operations are owned by the opt-in bridge and
+	// stay false unless the selected installation was verified.
+	if adminEnabled {
+		for _, operation := range nativeAdminBridgeOperations {
+			result[operation] = true
+		}
+	}
 	return result
+}
+
+// operationSet projects the injected administration determination onto the
+// exhaustive native catalog.
+func (s *nativeSupervisor) operationSet() map[string]bool {
+	admin := s != nil && s.adminBridge != nil && s.adminBridge.available()
+	return nativeOperationSet(admin)
+}
+
+// adminBridgeCall bounds one proxied administration request.
+func (s *nativeSupervisor) adminBridgeCall(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
+	if s == nil || s.adminBridge == nil {
+		return nil, errors.New("administration bridge is unavailable")
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, nativeAdminBridgeRequestTimeout)
+	defer cancel()
+	return s.adminBridge.call(requestCtx, method, params)
 }
 
 func (s *nativeSupervisor) capabilitySnapshot() map[string]int { return map[string]int{"sessions": 1} }
@@ -1708,6 +1735,9 @@ func (s *nativeSupervisor) close(ctx context.Context) error {
 	var result error
 	for _, child := range children {
 		result = errors.Join(result, child.close(ctx))
+	}
+	if s.adminBridge != nil {
+		result = errors.Join(result, s.adminBridge.close(ctx))
 	}
 	if s.registryLock != nil {
 		result = errors.Join(result, unlockNativeFile(s.registryLock), s.registryLock.Close())
