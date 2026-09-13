@@ -91,10 +91,9 @@ test("producer merges every documented reduction and emits measurable inputs", a
 		for (const field of ["decodedMemoryBytes", "workerMemoryBytes", "scratchInodes"]) {
 			expect(reducedFields.has(field)).toBe(true);
 		}
-		expect(result.performance.targetReductions?.map((row) => row.target)).toEqual([
-			"assistant/arm64",
-			"full-host/arm64",
-		]);
+		// The arm64 targets are no longer reduced: a single native runner's output
+		// stays incomplete until the release workflow merges the other architecture.
+		expect(result.performance.targetReductions ?? []).toEqual([]);
 
 		// FC01 is the only coverage claim, and it comes from executed probes.
 		expect(result.coverage.evidence?.length).toBeGreaterThan(0);
@@ -179,7 +178,7 @@ test("coverage passes only for executed or approved-reduced rows and fails for a
 	}
 });
 
-test("performance accepts measured startup evidence with reductions and rejects invented values", async () => {
+test("performance producer measures native startup evidence, leaves the other architecture required and rejects invented values", async () => {
 	const fixture = await makeFixture();
 	try {
 		const result = await produceEvidenceInputs({
@@ -189,9 +188,11 @@ test("performance accepts measured startup evidence with reductions and rejects 
 		});
 
 		const report = inspectPerformance(result.performance);
-		expect(report.ok).toBe(true);
+		expect(report.staticOk).toBe(true);
+		expect(report.complete).toBe(false);
 		expect(report.facts.measuredTargets).toHaveLength(2);
-		expect(report.facts.reducedTargets).toEqual(["assistant/arm64", "full-host/arm64"]);
+		expect(report.facts.missingTargets).toEqual(["assistant/arm64", "full-host/arm64"]);
+		expect(report.facts.reducedTargets).toEqual([]);
 		for (const measurement of result.performance.measurements ?? []) {
 			expect(measurement.sampleDurationsMs.length).toBeGreaterThanOrEqual(5);
 			expect(measurement.peakProcessRssBytes).toBeGreaterThan(0);

@@ -120,7 +120,7 @@ test("release stages exact-commit artifacts before evidence and does not gate st
 
 	expect(stage).toContain("needs: [validate, identity]");
 	expect(image).toContain("needs: [validate, identity]");
-	expect(evidence).toContain("needs: [validate, identity, stage, image]");
+	expect(evidence).toContain("needs: [validate, identity, stage, image, evidence-arm64]");
 	expect(evidence).toContain("pixie-release-${{ needs.identity.outputs.source_commit }}");
 	expect(evidence).toContain("pixie-image-${{ needs.identity.outputs.source_commit }}");
 	expect(evidence).toContain('run_gate "check:coverage" bun run check:coverage');
@@ -129,6 +129,31 @@ test("release stages exact-commit artifacts before evidence and does not gate st
 	);
 	expect(evidence).toContain('run_gate "check-performance" bun scripts/check-performance.ts');
 	expect(evidence).toContain('run_gate "release-gate" bun scripts/release-gate.ts');
+});
+
+test("release produces native arm64 performance evidence before the gate and publication", async () => {
+	const workflow = await readFile(workflowPath, "utf8");
+	const arm64 = jobBlock(workflow, "evidence-arm64");
+	const evidence = jobBlock(workflow, "evidence");
+	const publishImage = jobBlock(workflow, "publish-image");
+
+	expect(arm64).toContain("needs: [validate, identity, stage]");
+	expect(arm64).toContain("runs-on: ubuntu-24.04-arm");
+	expect(arm64).toContain("produce-evidence-inputs.ts");
+	expect(arm64).not.toContain("--base-url");
+	expect(arm64).toContain("pixie-performance-arm64-${{ needs.identity.outputs.source_commit }}");
+	expect(evidence).toContain("needs: [validate, identity, stage, image, evidence-arm64]");
+	expect(evidence).toContain("merge-performance.ts");
+	expect(evidence).toContain("pixie-performance-arm64-${{ needs.identity.outputs.source_commit }}");
+	expect(publishImage).toContain("needs: [validate, identity, stage, image, evidence]");
+
+	// The arm64 producer runs before the gate job, which runs before publication.
+	const arm64Index = workflow.indexOf("\n  evidence-arm64:");
+	const evidenceIndex = workflow.indexOf("\n  evidence:");
+	const publishIndex = workflow.indexOf("\n  publish:");
+	expect(arm64Index).toBeGreaterThan(-1);
+	expect(evidenceIndex).toBeGreaterThan(arm64Index);
+	expect(publishIndex).toBeGreaterThan(evidenceIndex);
 });
 
 test("publication depends on the passing evidence job and uses the exact source commit", async () => {

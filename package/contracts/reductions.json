@@ -103,12 +103,6 @@
 				"fields": ["contentFilledUI"],
 				"reason": "The produced performance evidence is a fresh-process startup probe, not a content-filled UI session fixture, so the legacy content-filled-UI requirement does not apply."
 			}
-		],
-		"targetReductions": [
-			{
-				"targets": ["assistant/arm64", "full-host/arm64"],
-				"reason": "The evidence job runs on linux/amd64 and does not emulate arm64. arm64 startup targets cannot be executed honestly in this job, so they are recorded as explicit reductions; arm64 performance remains unproven and is called out in the release checklist."
-			}
 		]
 	},
 	"packageArtifacts": {

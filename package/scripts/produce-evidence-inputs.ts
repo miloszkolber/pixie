@@ -125,7 +125,8 @@ export interface ReductionsManifest {
 	};
 	performance: {
 		fieldReductions: readonly FieldReductionGroup[];
-		targetReductions: readonly TargetReductionGroup[];
+		/** Optional: the current manifest carries no target reductions. */
+		targetReductions?: readonly TargetReductionGroup[];
 	};
 	namedReductions?: readonly { id: string; reason: string }[];
 }
@@ -237,7 +238,7 @@ export function expandReductions(manifest: ReductionsManifest): ExpandedReductio
 		}
 	}
 	const targetReductions: PerformanceTargetReduction[] = [];
-	for (const group of manifest.performance.targetReductions) {
+	for (const group of manifest.performance.targetReductions ?? []) {
 		for (const target of group.targets) {
 			if (!targets.includes(target)) {
 				throw new Error(
