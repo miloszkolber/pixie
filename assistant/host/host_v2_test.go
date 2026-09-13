@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	piwire "github.com/miloszkolber/pixie/contracts/piprotocol"
+	piwire "github.com/miloszkolber/pixie/shared/piprotocol"
 )
 
 // TestNativeOperationSetTracksGeneratedCatalog binds the hand-written host

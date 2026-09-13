@@ -34,7 +34,7 @@ const (
 
 // piAgentDefinition is the wire projection of one native agent Markdown file.
 // Field names match the legacy Definition and the controller's
-// parseAgentSource contract in package/internal/controller/pi_agents.go.
+// parseAgentSource contract in web/internal/controller/pi_agents.go.
 type piAgentDefinition struct {
 	Type                 string         `json:"type"`
 	Path                 string         `json:"path"`

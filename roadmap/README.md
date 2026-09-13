@@ -191,7 +191,7 @@ A 19-state visual and interaction review (desktop/mobile, light/dark, every prim
 
 ## Legacy removal
 
-The operator approved a breaking removal of the legacy Bun assistant service and every artifact that existed only to serve it. The repository now contains the Go assistant (`assistant/cmd/pixie-assistant`, `assistant/host`), the controller/UI (`package/`), and the opt-in Bun administration bridge (`assistant/bridge/`). The legacy assistant TypeScript tree, its compiled output, both patch directories, the Bun parity suites, the native-SDK controller test, the root `patchedDependencies` declaration and the `check:parity` script are deleted.
+The operator approved a breaking removal of the legacy Bun assistant service and every artifact that existed only to serve it. The repository now contains the Go assistant (`assistant/cmd`, `assistant/host`), the controller/UI (`web/`), and the opt-in Bun administration bridge (`assistant/bridge/`). The legacy assistant TypeScript tree, its compiled output, both patch directories, the Bun parity suites, the native-SDK controller test, the root `patchedDependencies` declaration and the `check:parity` script are deleted.
 
 This removal is an explicit operator reduction, not evidence that the corresponding FC/X rows pass. The production entrypoints already used only Go; the audit-found controller/host gap (canonical `session.steer`/`session.rename`) remains fixed. Remaining `pi.session.*`/admin names still fail closed on Go.
 

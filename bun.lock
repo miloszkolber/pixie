@@ -18,27 +18,27 @@
         "typescript": "catalog:",
       },
     },
-    "package": {
-      "name": "pixie",
-      "devDependencies": {
-        "@modelcontextprotocol/sdk": "1.30.0",
-      },
-    },
-    "package/contracts": {
-      "name": "@pixie/contracts",
+    "shared": {
+      "name": "@pixie/shared",
       "version": "0.0.0",
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
-    "package/webui": {
+    "web": {
+      "name": "pixie",
+      "devDependencies": {
+        "@modelcontextprotocol/sdk": "1.30.0",
+      },
+    },
+    "web/webui": {
       "name": "@pixie/web",
       "version": "0.0.0",
       "dependencies": {
         "@modelcontextprotocol/ext-apps": "1.7.5",
         "@modelcontextprotocol/sdk": "1.30.0",
-        "@pixie/contracts": "workspace:*",
+        "@pixie/shared": "workspace:*",
         "@shikijs/langs": "4.2.0",
         "micromark": "catalog:",
         "micromark-extension-gfm": "catalog:",
@@ -271,9 +271,9 @@
 
     "@parcel/watcher-win32-x64": ["@parcel/watcher-win32-x64@2.5.1", "", { "os": "win32", "cpu": "x64" }, "sha512-9lHBdJITeNR++EvSQVUcaZoWupyHfXe1jZvGZ06O/5MflPcuPLtEphScIBL+AiCWBO46tDSHzWyD0uDmmZqsgA=="],
 
-    "@pixie/contracts": ["@pixie/contracts@workspace:package/contracts"],
+    "@pixie/shared": ["@pixie/shared@workspace:shared"],
 
-    "@pixie/web": ["@pixie/web@workspace:package/webui"],
+    "@pixie/web": ["@pixie/web@workspace:web/webui"],
 
     "@pixie_ai/pixie-assistant": ["@pixie_ai/pixie-assistant@workspace:assistant"],
 
@@ -755,7 +755,7 @@
 
     "picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
 
-    "pixie": ["pixie@workspace:package"],
+    "pixie": ["pixie@workspace:web"],
 
     "pkce-challenge": ["pkce-challenge@5.0.1", "", {}, "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="],
 

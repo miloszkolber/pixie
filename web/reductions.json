@@ -1,0 +1,179 @@
+{
+	"$comment": "Committed reductions for the legacy live-evidence matrix and the staged-artifact gates. The evidence producer (web/scripts/produce-evidence-inputs.ts) merges the coverage/gates/performance groups into the inputs it emits, and check-package-artifacts/release-gate load the packageArtifacts/releaseGate groups directly (default path or --reductions/PIXIE_REDUCTIONS_MANIFEST); nothing here is inferred at runtime. A reduction removes a live-matrix or publication requirement, it is not evidence that the retained behavior passes, and it is never reported as a pass.",
+	"schemaVersion": 1,
+	"approval": {
+		"approved": true,
+		"approver": "operator",
+		"reference": "roadmap/README.md#legacy-removal, roadmap/README.md#d4-reductions-confirmed",
+		"statement": "The operator approved the breaking removal of the legacy Bun assistant and the lean live-evidence reductions recorded here. Each reduction removes a legacy live-matrix requirement; the retained feature remains a release requirement unless it is listed in optionalFeatures. No reduced row is recorded as passing."
+	},
+	"coverage": {
+		"reductionGroups": [
+			{
+				"ids": [
+					"FC02",
+					"FC03",
+					"FC04",
+					"FC05",
+					"FC06",
+					"FC07",
+					"FC08",
+					"FC09",
+					"FC10",
+					"FC11",
+					"FC12",
+					"FC13",
+					"FC14",
+					"FC17",
+					"FC18",
+					"FC19",
+					"FC20",
+					"FC21",
+					"FC22",
+					"FC23",
+					"FC25",
+					"FC29",
+					"FC30",
+					"FC31"
+				],
+				"reason": "Live FC/X matrix row is not produced by the lean artifact-only producer after the legacy Bun assistant removal. The retained behavior is covered by focused Go/controller/bridge tests, not by an independently exercised deployment. Compaction reserve (FC11), pi.tools.call (FC25/native tools) and session.prompt.resource (text resources) are among the operation-level reductions. The live-matrix requirement is reduced by explicit operator approval; the feature remains a release requirement unless separately listed as optional."
+			},
+			{
+				"ids": ["FC15"],
+				"reason": "Exact working hints and request-specific UI cancellation are not available from the retained selected-Pi public API. Named reduction approved with the D4 reductions; the row is not presented as parity."
+			},
+			{
+				"ids": ["FC16"],
+				"reason": "The editor read path (getEditorText() returns empty) is reduced; the write projection remains. Named reduction approved with the D4 reductions."
+			},
+			{
+				"ids": ["FC26"],
+				"reason": "mcp.attach, adapter.status and pi.tools.list require a live Pi extension event bus the standalone sidecar cannot provide without starting a second adapter. Named reduction approved with the legacy removal."
+			},
+			{
+				"ids": [
+					"X01",
+					"X02",
+					"X03",
+					"X04",
+					"X05",
+					"X06",
+					"X07",
+					"X08",
+					"X09",
+					"X10",
+					"X11",
+					"X12",
+					"X13",
+					"X14"
+				],
+				"reason": "Cross-boundary acceptance rows belong to the former legacy live matrix. The lean producer executes only staged-binary identity/configuration/readiness probes; the retained behavior is covered by focused Go/controller tests. The live-matrix requirement is reduced by explicit operator approval."
+			}
+		],
+		"optionalFeatures": ["FC24", "FC27", "FC28", "FC32", "FC33"],
+		"evidenceNote": "FC01 is the only required coverage row the producer exercises. It records actual/live evidence for the staged-binary --version and doctor probes and, when a base URL is supplied, the readiness probe."
+	},
+	"gates": {
+		"reductionGroups": [
+			{
+				"ids": ["Gate 1", "Gate 2", "Gate 3", "Gate 4", "Gate 5"],
+				"reason": "The original Gate 1-5 definitions existed only in the removed planning files and have no producer in the Go architecture. The gate live-matrix requirement is reduced by explicit operator approval."
+			}
+		]
+	},
+	"performance": {
+		"fieldReductions": [
+			{
+				"target": "*",
+				"fields": [
+					"decodedMemoryBytes",
+					"bufferMemoryBytes",
+					"workerMemoryBytes",
+					"workerPids",
+					"workerCpuQuotaMillis",
+					"workerWallTimeMs",
+					"workerOutputBytes",
+					"scratchBytes",
+					"scratchInodes"
+				],
+				"reason": "The current Go engine has no separate decoded-buffer pipeline and no worker pool, so decoded/buffer memory, worker memory/PIDs/CPU/wall/output and scratch bytes/inodes cannot be measured. The producer records zero placeholders only alongside this approved reduction; no positive value is invented."
+			},
+			{
+				"target": "*",
+				"fields": ["contentFilledUI"],
+				"reason": "The produced performance evidence is a fresh-process startup probe, not a content-filled UI session fixture, so the legacy content-filled-UI requirement does not apply."
+			}
+		]
+	},
+	"packageArtifacts": {
+		"approval": {
+			"approved": true,
+			"approver": "operator",
+			"reference": "roadmap/README.md#legacy-removal, docs/release-checklist.md#live-evidence-production",
+			"statement": "The operator approved reducing the staged-binary live-execution and full-host rows that the exact-commit evidence job cannot produce without a running host. This exempts only the listed rows; every structural archive, systemd, configuration and static command check stays mandatory, and no reduced row is recorded as passing."
+		},
+		"reductionGroups": [
+			{
+				"ids": [
+					"binary.readiness/*",
+					"binary.lifecycle/*",
+					"binary.uninstall/*",
+					"binary.embedded-ui/host/*",
+					"facade.native-engine"
+				],
+				"reason": "The amd64 evidence job executes only native staged binaries, so the native arm64 version/doctor probes are produced by the separate arm64 evidence job and merged into the single bundle. Readiness needs a running host or operator-supplied base URL, and lifecycle, uninstall and embedded-UI execution plus the full-host native-engine facade need a running service. Archive contents, entry structure and both architectures' native version/doctor rows stay mandatory; each row is filled from the collector's BIN-PROBE assertions carrying its own architecture."
+			}
+		]
+	},
+	"releaseGate": {
+		"approval": {
+			"approved": true,
+			"approver": "operator",
+			"reference": "roadmap/README.md#legacy-removal, docs/release-checklist.md#live-evidence-production",
+			"statement": "The operator approved reducing the release-gate inputs that require an actual publication or registry. This exempts only the listed rows; the static workflow publication-policy checks, source reachability from main, archive/binary identity and checksum consistency, and the controller-image evidence mapping stay mandatory, and no reduced row is recorded as passing."
+		},
+		"reductionGroups": [
+			{
+				"ids": [
+					"tag.identity",
+					"release.identity",
+					"registry.tag",
+					"registry.provenance",
+					"registry.sbom",
+					"registry.image-index",
+					"registry.platform-digest/amd64",
+					"registry.platform-digest/arm64",
+					"manifest.complete-set",
+					"latest.promotion"
+				],
+				"reason": "Git tag and GitHub Release state, the published ghcr.io tag, registry provenance and SBOM attestations, registry image/platform digests and latest-promotion ancestry cannot exist until a real publication and registry are present. The staged manifest's local release ID, source commit, clean-tree flag, archive hashes and checksums remain mandatory; publication-only manifest fields and the non-native arm64 platform digest are reduced rather than invented."
+			}
+		]
+	},
+	"namedReductions": [
+		{
+			"id": "FC15",
+			"reason": "No observable working-message and no request-specific cancellation frame upstream."
+		},
+		{
+			"id": "FC16",
+			"reason": "getEditorText() returns empty; only the write projection remains."
+		},
+		{
+			"id": "pi.tools.call",
+			"reason": "Upstream blocks execution; the operation stays unsupported and fails closed."
+		},
+		{
+			"id": "session.prompt.resource",
+			"reason": "No RPC representation for bounded text resources."
+		},
+		{
+			"id": "compaction-reserve",
+			"reason": "The legacy compaction reserve is not exposed by the selected-Pi RPC surface."
+		},
+		{
+			"id": "FC26",
+			"reason": "mcp.attach, adapter.status and pi.tools.list need a live Pi extension event bus."
+		}
+	]
+}

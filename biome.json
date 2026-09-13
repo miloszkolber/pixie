@@ -12,9 +12,9 @@
 			"!**/.claude",
 			"!**/node_modules",
 			"!**/dist",
-			"!package/webui/.build",
-			"!package/webui/vendor",
-			"!package/webui/src/styles/generated"
+			"!web/webui/.build",
+			"!web/webui/vendor",
+			"!web/webui/src/styles/generated"
 		]
 	},
 	"formatter": {

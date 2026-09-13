@@ -1551,7 +1551,7 @@ func nativeOperationSet(adminEnabled bool) map[string]bool {
 		// not Pi RPC commands.
 		"pi.mcp.servers.read", "pi.mcp.servers.upsert", "pi.mcp.servers.remove", "pi.mcp.servers.probe",
 		// Vanilla Pi RPC operations implemented in native_operations.go. They
-		// are listed here so callHost admits them; package/contracts still owns
+		// are listed here so callHost admits them; shared still owns
 		// adding them to the generated protocol catalog.
 		"session.clone", "session.compact", "session.commands", "session.followUp", "session.clearQueue", "session.getMessages", "session.stats", "session.switch",
 	} {

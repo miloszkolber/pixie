@@ -88,11 +88,11 @@ jobs:
           bun-version-file: package.json
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: package/go.mod
-          cache-dependency-path: package/go.sum
+          go-version-file: web/go.mod
+          cache-dependency-path: web/go.sum
       - name: Install release build dependencies
         run: bun install --frozen-lockfile
-        working-directory: package
+        working-directory: web
       - name: Build and stage immutable archives
         run: bun run build:release --output "$RUNNER_TEMP/pixie-release"
       - name: Verify complete archive names and checksums
@@ -158,7 +158,7 @@ jobs:
           set -euo pipefail
           SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
           RELEASE_ID='${{ needs.identity.outputs.release_id }}'
-          docker buildx build --platform linux/amd64,linux/arm64 --file package/Dockerfile --target pixie \
+          docker buildx build --platform linux/amd64,linux/arm64 --file web/Dockerfile --target pixie \
             --build-arg "VERSION=$RELEASE_ID" \
             --build-arg "REVISION=$SOURCE_COMMIT" \
             --tag "pixie:${RELEASE_ID}" \
@@ -188,7 +188,7 @@ jobs:
           bun-version-file: package.json
       - name: Install evidence dependencies
         run: bun install --frozen-lockfile
-        working-directory: package
+        working-directory: web
       - name: Download staged commit archives
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
         with:
@@ -200,7 +200,7 @@ jobs:
           name: pixie-image-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-image
       - name: Produce native arm64 performance evidence
-        working-directory: package
+        working-directory: web
         env:
           SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
           RELEASE_ID: ${{ needs.identity.outputs.release_id }}
@@ -217,9 +217,9 @@ jobs:
             --output "$EVIDENCE_DIR" \
             --source-commit "$SOURCE_COMMIT" \
             --release-id "$RELEASE_ID" \
-            --reduction-manifest "$GITHUB_WORKSPACE/package/contracts/reductions.json"
+            --reduction-manifest "$GITHUB_WORKSPACE/web/reductions.json"
       - name: Collect native arm64 probe evidence
-        working-directory: package
+        working-directory: web
         env:
           SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
           RELEASE_ID: ${{ needs.identity.outputs.release_id }}
@@ -275,10 +275,10 @@ jobs:
           bun-version-file: package.json
       - name: Install evidence dependencies
         run: bun install --frozen-lockfile
-        working-directory: package
+        working-directory: web
       - name: Build the embedded web bundle
         run: bun run build:web
-        working-directory: package
+        working-directory: web
       - name: Download staged commit archives
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
         with:
@@ -300,7 +300,7 @@ jobs:
           name: pixie-probe-evidence-arm64-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-probe-evidence-arm64
       - name: Produce coverage and performance evidence inputs
-        working-directory: package
+        working-directory: web
         env:
           SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
           RELEASE_ID: ${{ needs.identity.outputs.release_id }}
@@ -324,10 +324,10 @@ jobs:
             --output "$EVIDENCE_DIR" \
             --source-commit "$SOURCE_COMMIT" \
             --release-id "$RELEASE_ID" \
-            --reduction-manifest "$GITHUB_WORKSPACE/package/contracts/reductions.json" \
+            --reduction-manifest "$GITHUB_WORKSPACE/web/reductions.json" \
             "${EXTRA_ARGS[@]}"
       - name: Merge native arm64 performance measurements
-        working-directory: package
+        working-directory: web
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/pixie-evidence
           ARM64_PERFORMANCE_DIR: ${{ runner.temp }}/pixie-performance-arm64
@@ -340,7 +340,7 @@ jobs:
             --into "$EVIDENCE_DIR/performance.json" \
             --from "$ARM64_PERFORMANCE_DIR/performance.json"
       - name: Collect local evidence bundle from staged artifacts
-        working-directory: package
+        working-directory: web
         env:
           SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
           RELEASE_ID: ${{ needs.identity.outputs.release_id }}
@@ -401,7 +401,7 @@ jobs:
           # the identity job verified the source commit is reachable from main.
           PIXIE_AUTOMATIC_MAIN_AUTHORIZED: "true"
           PIXIE_SOURCE_REACHABLE_FROM_MAIN: "true"
-        working-directory: package
+        working-directory: web
         run: |
           set -uo pipefail
           mkdir -p "$EVIDENCE_DIR"
@@ -496,7 +496,7 @@ jobs:
           SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
           RELEASE_ID='${{ needs.identity.outputs.release_id }}'
           REF="ghcr.io/${GITHUB_REPOSITORY_OWNER}/pixie:${RELEASE_ID}"
-          docker buildx build --platform linux/amd64,linux/arm64 --file package/Dockerfile --target pixie \
+          docker buildx build --platform linux/amd64,linux/arm64 --file web/Dockerfile --target pixie \
             --build-arg "VERSION=$RELEASE_ID" \
             --build-arg "REVISION=$SOURCE_COMMIT" \
             --tag "$REF" \

@@ -4,9 +4,9 @@
 	"packageManager": "bun@1.4.0",
 	"workspaces": {
 		"packages": [
-			"package",
-			"package/contracts",
-			"package/webui",
+			"web",
+			"shared",
+			"web/webui",
 			"assistant"
 		],
 		"catalog": {
@@ -29,23 +29,23 @@
 		"@biomejs/biome"
 	],
 	"scripts": {
-		"build": "bun run --cwd package build",
-		"build:assistant": "bun run --cwd package build:assistant",
-		"build:go": "bun run --cwd package build:go",
-		"build:host": "bun run --cwd package build:host",
-		"build:release": "bun run --cwd package build:release",
-		"build:web": "bun run --cwd package build:web",
-		"check:deps": "bun run --cwd package check:deps",
-		"check:coverage": "bun run --cwd package check:coverage",
-		"check:filenames": "bun run --cwd package check:filenames",
-		"check:docs": "bun run --cwd package check:docs",
-		"generate:contracts": "bun run --cwd package generate:contracts",
-		"check:contracts": "bun run --cwd package check:contracts",
-		"dev:web": "bun run --cwd package dev:web",
-		"format": "bun run --cwd package format",
-		"lint": "bun run --cwd package lint",
-		"mewa:check": "bun run --cwd package mewa:check",
-		"test": "bun run --cwd package test",
-		"typecheck": "bun run --cwd package typecheck"
+		"build": "bun run --cwd web build",
+		"build:assistant": "bun run --cwd web build:assistant",
+		"build:go": "bun run --cwd web build:go",
+		"build:host": "bun run --cwd web build:host",
+		"build:release": "bun run --cwd web build:release",
+		"build:web": "bun run --cwd web build:web",
+		"check:deps": "bun run --cwd web check:deps",
+		"check:coverage": "bun run --cwd web check:coverage",
+		"check:filenames": "bun run --cwd web check:filenames",
+		"check:docs": "bun run --cwd web check:docs",
+		"generate:contracts": "bun run --cwd web generate:contracts",
+		"check:contracts": "bun run --cwd web check:contracts",
+		"dev:web": "bun run --cwd web dev:web",
+		"format": "bun run --cwd web format",
+		"lint": "bun run --cwd web lint",
+		"mewa:check": "bun run --cwd web mewa:check",
+		"test": "bun run --cwd web test",
+		"typecheck": "bun run --cwd web typecheck"
 	}
 }
