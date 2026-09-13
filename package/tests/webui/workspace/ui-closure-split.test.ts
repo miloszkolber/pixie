@@ -5,10 +5,6 @@ import { hasActiveSessionWork } from "@/workspace/store/session-state";
 beforeEach(() => appStoreApi.setState(appStoreApi.getInitialState(), true));
 afterEach(() => appStoreApi.setState(appStoreApi.getInitialState(), true));
 
-function chatTab(id: string, sessionId: string): ContentTab {
-	return { kind: "chat", id, projectAreaId: "area-1", name: id, sessionId };
-}
-
 function fileTab(id: string): ContentTab {
 	return {
 		kind: "file",

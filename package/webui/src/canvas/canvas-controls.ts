@@ -114,9 +114,6 @@ export function canvasRenderingDisplay(state: CanvasState): CanvasRenderingDispl
 export function canvasVersionDisplay(state: CanvasState): CanvasVersionDisplay {
 	const viewedVersion = state.viewedVersion;
 	const currentVersion = state.currentVersion;
-	const isStale =
-		state.preview.status === "stale" ||
-		(viewedVersion !== null && currentVersion !== null && viewedVersion !== currentVersion);
 	if (currentVersion === null) {
 		return {
 			viewedVersion,
