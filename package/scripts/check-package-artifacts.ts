@@ -7,6 +7,7 @@ import {
 	decodePackageArchiveDetail,
 	type EvidenceBundle,
 	PACKAGE_ARCHIVE_ASSERTION_PREFIX,
+	PACKAGED_BINARY_ASSERTION_PREFIX,
 	parsePackageArchiveAssertionId,
 	readEvidenceBundle,
 } from "./evidence-bundle.ts";
@@ -33,6 +34,19 @@ export interface PackageBinaryEvidence {
 	uiEmbedded?: boolean;
 }
 
+/**
+ * One explicitly approved package-artifact reduction. A reduction removes a
+ * live-execution requirement from the staged-artifact gate; it is never a pass.
+ * The row id is `base` or `base/target`; a trailing `/*` wildcard matches every
+ * target under that base.
+ */
+export interface PackageArtifactReduction {
+	id: string;
+	approved: boolean;
+	approver?: string;
+	reason?: string;
+}
+
 export interface PackageArtifactInput {
 	releaseId?: string;
 	archives?: readonly PackageArchiveEvidence[];
@@ -43,6 +57,8 @@ export interface PackageArtifactInput {
 	embeddedUiFiles?: readonly string[];
 	facadeSources?: Readonly<Record<string, string>>;
 	binaries?: readonly PackageBinaryEvidence[];
+	/** Explicitly approved reductions for rows that cannot be produced locally. */
+	reductions?: readonly PackageArtifactReduction[];
 	/**
 	 * Fail-closed findings produced while translating an evidence bundle. They
 	 * are always reported as violations and never weaken an archive/binary check.
@@ -57,6 +73,8 @@ export interface PackageArtifactFacts {
 	configFiles: readonly string[];
 	staticChecks: readonly string[];
 	missingLiveEvidence: readonly string[];
+	/** Missing rows that an approved reduction removed from the blocking set. */
+	reducedLiveEvidence: readonly string[];
 }
 
 export interface PackageArtifactReport {
@@ -68,10 +86,255 @@ export interface PackageArtifactReport {
 	facts: PackageArtifactFacts;
 }
 
+/** GATE assertion carrying the staged local release manifest, when one exists. */
+export const RELEASE_MANIFEST_ASSERTION_ID = "RELEASE-MANIFEST";
+
 const RELEASE_ID_PATTERN = /^sha-[0-9a-f]{12}$/;
 const ARCHIVE_PATTERN = /^pixie(?:-assistant)?-sha-[0-9a-f]{12}-linux-(?:amd64|arm64)\.tar\.gz$/;
 const SECRET_PATTERN = /(?:secret|token|password|passwd|credential|api[-_]?key)/i;
 const INSTALL_ENTRY_PATTERN = /^(?:INSTALL|INSTALL\.md|README(?:\.install)?(?:\.md)?)$/i;
+
+/**
+ * Shared shape of the `packageArtifacts` and `releaseGate` sections in
+ * `package/contracts/reductions.json`. Each section carries its own approval
+ * block so the two reductions can be reviewed independently, and each reduction
+ * group states that a reduction removes a requirement rather than proving it.
+ */
+export interface ReductionApproval {
+	approved?: boolean;
+	approver?: string;
+	reference?: string;
+	statement?: string;
+}
+
+export interface GateReductionGroup {
+	ids: readonly string[];
+	reason: string;
+}
+
+export interface GateReductionSection {
+	approval?: ReductionApproval;
+	reductionGroups?: readonly GateReductionGroup[];
+}
+
+export interface ReductionsManifest {
+	schemaVersion?: number;
+	packageArtifacts?: GateReductionSection;
+	releaseGate?: GateReductionSection;
+}
+
+/** Explicitly approved reduction for a release-gate publication row. */
+export interface ReleaseGateReduction {
+	id: string;
+	approved: boolean;
+	approver?: string;
+	reason?: string;
+}
+
+/** Rows the staged-artifact package gate may reduce; every other row is structural. */
+const PACKAGE_REDUCIBLE_BASES = [
+	"binary.version",
+	"binary.doctor",
+	"binary.readiness",
+	"binary.lifecycle",
+	"binary.uninstall",
+	"binary.embedded-ui",
+	"facade.native-engine",
+] as const;
+
+/** Publication-only release-gate rows. Static policy/identity checks stay mandatory. */
+const RELEASE_REDUCIBLE_BASES = [
+	"tag.identity",
+	"release.identity",
+	"registry.tag",
+	"registry.provenance",
+	"registry.sbom",
+	"registry.image-index",
+	"registry.platform-digest",
+	"manifest.complete-set",
+	"latest.promotion",
+] as const;
+
+export function defaultReductionsManifestPath(): string {
+	return resolve(import.meta.dir, "../contracts/reductions.json");
+}
+
+export async function loadReductionsManifest(path: string): Promise<ReductionsManifest> {
+	let text: string;
+	try {
+		text = await readFile(path, "utf8");
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`reductions manifest is unreadable (${path}): ${message}`);
+	}
+	let value: unknown;
+	try {
+		value = JSON.parse(text);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`reductions manifest is not valid JSON (${path}): ${message}`);
+	}
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error("reductions manifest must be a JSON object");
+	}
+	return value as ReductionsManifest;
+}
+
+function expandSectionApproval(
+	section: GateReductionSection | undefined,
+	label: string,
+): { approver: string; reason: (group: GateReductionGroup) => string } {
+	const approval = section?.approval;
+	if (
+		approval?.approved !== true ||
+		approval.approver?.trim() === undefined ||
+		approval.approver.trim() === "" ||
+		approval.reference?.trim() === undefined ||
+		approval.reference.trim() === "" ||
+		approval.statement?.trim() === undefined ||
+		approval.statement.trim() === ""
+	) {
+		throw new Error(
+			`reductions manifest ${label}: approved approver, reference and statement are required`,
+		);
+	}
+	const approver = approval.approver.trim();
+	return {
+		approver,
+		reason: (group) => (group.reason?.trim() === "" ? "" : (group.reason ?? "").trim()),
+	};
+}
+
+function findReducibleBase(id: string, bases: readonly string[]): string | null {
+	for (const base of bases) {
+		if (id === base || id.startsWith(`${base}/`)) return base;
+	}
+	return null;
+}
+
+function validBinaryTarget(target: string): boolean {
+	if (target === "*") return true;
+	const [variant, architecture, ...rest] = target.split("/");
+	return (
+		rest.length === 0 &&
+		(variant === "assistant" || variant === "host") &&
+		(architecture === "*" || architecture === "amd64" || architecture === "arm64")
+	);
+}
+
+function validateReductionRow(id: string, base: string, label: string): string | null {
+	const target = id === base ? "" : id.slice(base.length + 1);
+	if (base === "facade.native-engine") {
+		return target === "" ? null : `${label}: ${id} does not accept a target`;
+	}
+	if (base.startsWith("binary.")) {
+		return validBinaryTarget(target) ? null : `${label}: invalid binary target in ${id}`;
+	}
+	if (base === "registry.platform-digest") {
+		return target === "*" || target === "amd64" || target === "arm64"
+			? null
+			: `${label}: invalid platform target in ${id}`;
+	}
+	return null;
+}
+
+function expandReductionSection(
+	section: GateReductionSection | undefined,
+	bases: readonly string[],
+	label: string,
+): { id: string; approved: true; approver: string; reason: string }[] {
+	const expanded = expandSectionApproval(section, label);
+	const rows: { id: string; approved: true; approver: string; reason: string }[] = [];
+	const seen = new Set<string>();
+	for (const group of section?.reductionGroups ?? []) {
+		const reason = expanded.reason(group);
+		if (reason === "") {
+			throw new Error(`reductions manifest ${label}: every reduction group needs a reason`);
+		}
+		for (const id of group.ids ?? []) {
+			const base = findReducibleBase(id, bases);
+			if (base === null) {
+				throw new Error(`reductions manifest ${label}: ${id} is not a reducible row`);
+			}
+			const issue = validateReductionRow(id, base, label);
+			if (issue !== null) throw new Error(`reductions manifest ${issue}`);
+			if (seen.has(id)) continue;
+			seen.add(id);
+			rows.push({ id, approved: true, approver: expanded.approver, reason });
+		}
+	}
+	return rows;
+}
+
+/** Expand and validate the `packageArtifacts` reduction group against its full row space. */
+export function expandPackageArtifactReductions(
+	manifest: ReductionsManifest,
+): PackageArtifactReduction[] {
+	return expandReductionSection(
+		manifest.packageArtifacts,
+		PACKAGE_REDUCIBLE_BASES,
+		"packageArtifacts",
+	);
+}
+
+/** Expand and validate the `releaseGate` reduction group against its full row space. */
+export function expandReleaseGateReductions(manifest: ReductionsManifest): ReleaseGateReduction[] {
+	return expandReductionSection(manifest.releaseGate, RELEASE_REDUCIBLE_BASES, "releaseGate");
+}
+
+/**
+ * Apply an approved reduction set to a list of candidate live rows. Approved
+ * rows are returned as reduced; every other row stays blocking. An unknown or
+ * unapproved reduction is reported as a violation instead of silently applying.
+ */
+export function splitReducibleRows<T extends { id: string; message: string }>(
+	rows: readonly T[],
+	reductions: readonly { id: string; approved: boolean; approver?: string; reason?: string }[],
+	bases: readonly string[],
+	label: string,
+	validate: (id: string, base: string) => string | null,
+): { missing: string[]; reduced: string[]; violations: string[] } {
+	const violations: string[] = [];
+	const approved: string[] = [];
+	for (const reduction of reductions) {
+		const base = findReducibleBase(reduction.id, bases);
+		if (base === null) {
+			violations.push(`${label} reduction ${reduction.id}: row is not reducible`);
+			continue;
+		}
+		if (!reduction.approved || !reduction.reason?.trim() || !reduction.approver?.trim()) {
+			violations.push(
+				`${label} reduction ${reduction.id}: explicit approval, approver and reason are required`,
+			);
+			continue;
+		}
+		const issue = validate(reduction.id, base);
+		if (issue !== null) {
+			violations.push(`${label} reduction ${issue}`);
+			continue;
+		}
+		approved.push(reduction.id);
+	}
+	const missing: string[] = [];
+	const reduced: string[] = [];
+	for (const row of rows) {
+		const matches = approved.some((id) => reductionMatches(row.id, id));
+		if (matches) reduced.push(row.message);
+		else missing.push(row.message);
+	}
+	return { missing, reduced, violations };
+}
+
+/** A trailing `/*` in a reduction id matches every remaining target segment. */
+export function reductionMatches(rowId: string, reductionId: string): boolean {
+	const row = rowId.split("/");
+	const reduction = reductionId.split("/");
+	for (const [index, segment] of reduction.entries()) {
+		if (segment === "*") return index === reduction.length - 1;
+		if (segment !== row[index]) return false;
+	}
+	return reduction.length === row.length;
+}
 
 function stripComments(source: string): string {
 	return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
@@ -170,10 +433,15 @@ function checkConfig(
 	staticChecks.push(`${name}: non-secret JSON configuration`);
 }
 
+interface LiveEvidenceRow {
+	id: string;
+	message: string;
+}
+
 function checkArchives(
 	input: PackageArtifactInput,
 	violations: string[],
-	missingLiveEvidence: string[],
+	liveRows: LiveEvidenceRow[],
 ): { expected: string[]; observed: string[] } {
 	const expected: string[] = [];
 	const archives = input.archives ?? [];
@@ -246,12 +514,14 @@ function checkArchives(
 		}
 	}
 	if (expected.length === 0) {
-		missingLiveEvidence.push(
-			"four commit-named host archives (assistant and full-host, linux amd64 and arm64)",
-		);
+		liveRows.push({
+			id: "archive.complete-set",
+			message: "four commit-named host archives (assistant and full-host, linux amd64 and arm64)",
+		});
 	} else {
 		for (const name of expected) {
-			if (!byName.has(name)) missingLiveEvidence.push(`release archive ${name}`);
+			if (!byName.has(name))
+				liveRows.push({ id: "archive.present", message: `release archive ${name}` });
 		}
 	}
 	return { expected, observed: archives.map(({ name }) => name).sort() };
@@ -293,7 +563,7 @@ function checkStaticCommands(
 function checkBinaries(
 	binaries: readonly PackageBinaryEvidence[] | undefined,
 	input: PackageArtifactInput,
-	missingLiveEvidence: string[],
+	liveRows: LiveEvidenceRow[],
 ): void {
 	const inferredReleaseId =
 		input.releaseId ?? input.archives?.[0]?.name.match(/-sha-([0-9a-f]{12})-linux-/)?.[1];
@@ -306,32 +576,53 @@ function checkBinaries(
 	const observed = new Map<string, PackageBinaryEvidence>();
 	for (const binary of binaries ?? []) {
 		const key = `${binary.variant}/${binary.architecture}`;
-		if (observed.has(key)) missingLiveEvidence.push(`duplicate live binary evidence ${key}`);
+		if (observed.has(key))
+			liveRows.push({
+				id: `binary.present/${key}`,
+				message: `duplicate live binary evidence ${key}`,
+			});
 		observed.set(key, binary);
 		if (!new RegExp(`(?:^|/)${expectedBinaryName(binary.variant)}$`).test(binary.path ?? "")) {
-			missingLiveEvidence.push(`${key} binary path is not the expected executable`);
+			liveRows.push({
+				id: `binary.path/${key}`,
+				message: `${key} binary path is not the expected executable`,
+			});
 		}
-		if (!binary.version) missingLiveEvidence.push(`${key} --version output`);
+		if (!binary.version)
+			liveRows.push({ id: `binary.version/${key}`, message: `${key} --version output` });
 		if (expectedReleaseId !== undefined && binary.version !== expectedReleaseId) {
-			missingLiveEvidence.push(`${key} --version output matches ${expectedReleaseId}`);
+			liveRows.push({
+				id: `binary.version/${key}`,
+				message: `${key} --version output matches ${expectedReleaseId}`,
+			});
 		}
-		if (!binary.doctor) missingLiveEvidence.push(`${key} doctor check`);
-		if (!binary.readiness) missingLiveEvidence.push(`${key} readiness check`);
-		if (!binary.lifecycle) missingLiveEvidence.push(`${key} start/stop/restart check`);
-		if (!binary.uninstall) missingLiveEvidence.push(`${key} uninstall check`);
+		if (!binary.doctor)
+			liveRows.push({ id: `binary.doctor/${key}`, message: `${key} doctor check` });
+		if (!binary.readiness)
+			liveRows.push({ id: `binary.readiness/${key}`, message: `${key} readiness check` });
+		if (!binary.lifecycle)
+			liveRows.push({ id: `binary.lifecycle/${key}`, message: `${key} start/stop/restart check` });
+		if (!binary.uninstall)
+			liveRows.push({ id: `binary.uninstall/${key}`, message: `${key} uninstall check` });
 		if (binary.variant === "host" && !binary.uiEmbedded)
-			missingLiveEvidence.push(`${key} real embedded UI check`);
+			liveRows.push({
+				id: `binary.embedded-ui/${key}`,
+				message: `${key} real embedded UI check`,
+			});
 	}
 	for (const variant of PACKAGE_VARIANTS) {
 		for (const architecture of PACKAGE_ARCHITECTURES) {
 			const key = `${variant}/${architecture}`;
-			if (!observed.has(key)) missingLiveEvidence.push(`built executable ${key}`);
+			if (!observed.has(key))
+				liveRows.push({ id: `binary.present/${key}`, message: `built executable ${key}` });
 		}
 	}
 	if (binaries === undefined || binaries.length === 0) {
-		missingLiveEvidence.push(
-			"live version/doctor/readiness/lifecycle checks for both binaries on both architectures",
-		);
+		liveRows.push({
+			id: "binary.live-matrix",
+			message:
+				"live version/doctor/readiness/lifecycle checks for both binaries on both architectures",
+		});
 	}
 	if (
 		input.facadeSources !== undefined &&
@@ -341,28 +632,35 @@ function checkBinaries(
 			),
 		)
 	) {
-		missingLiveEvidence.push(
-			"full-host binary starts a working native assistant engine through the facade",
-		);
+		liveRows.push({
+			id: "facade.native-engine",
+			message: "full-host binary starts a working native assistant engine through the facade",
+		});
 	}
 	if (
 		input.webuiSources !== undefined &&
 		!Object.values(input.webuiSources).some((source) => /go:embed\s+all:dist/.test(source))
 	) {
-		missingLiveEvidence.push("full-host binary embeds the UI through package/webui");
+		liveRows.push({
+			id: "webui.embed",
+			message: "full-host binary embeds the UI through package/webui",
+		});
 	}
 	if (
 		input.embeddedUiFiles !== undefined &&
 		!input.embeddedUiFiles.some((path) => /(?:^|\/)dist\/index\.html$/.test(path))
 	) {
-		missingLiveEvidence.push("full-host binary contains a real dist/index.html bundle");
+		liveRows.push({
+			id: "webui.dist",
+			message: "full-host binary contains a real dist/index.html bundle",
+		});
 	}
 }
 
 export function inspectPackageArtifacts(input: PackageArtifactInput): PackageArtifactReport {
 	const violations: string[] = [...(input.evidenceViolations ?? [])];
 	const staticChecks: string[] = [];
-	const missingLiveEvidence: string[] = [];
+	const liveRows: LiveEvidenceRow[] = [];
 	for (const [name, source] of Object.entries(input.units ?? {}))
 		checkUnit(basename(name), source, violations, staticChecks);
 	const units = Object.keys(input.units ?? {}).map((name) => basename(name).toLowerCase());
@@ -382,8 +680,19 @@ export function inspectPackageArtifacts(input: PackageArtifactInput): PackageArt
 		staticChecks,
 	);
 	checkStaticCommands(input, violations, staticChecks);
-	const archives = checkArchives(input, violations, missingLiveEvidence);
-	checkBinaries(input.binaries, input, missingLiveEvidence);
+	const archives = checkArchives(input, violations, liveRows);
+	checkBinaries(input.binaries, input, liveRows);
+
+	const split = splitReducibleRows(
+		liveRows,
+		input.reductions ?? [],
+		PACKAGE_REDUCIBLE_BASES,
+		"packageArtifacts",
+		(id, base) => validateReductionRow(id, base, "packageArtifacts"),
+	);
+	violations.push(...split.violations);
+	const missingLiveEvidence = split.missing;
+	const reducedLiveEvidence = split.reduced;
 
 	const staticOk = violations.length === 0;
 	const complete = missingLiveEvidence.length === 0;
@@ -402,6 +711,7 @@ export function inspectPackageArtifacts(input: PackageArtifactInput): PackageArt
 				.sort(),
 			staticChecks,
 			missingLiveEvidence,
+			reducedLiveEvidence,
 		},
 	};
 }
@@ -480,13 +790,40 @@ export interface PackageEvidenceMapping {
 	violations: readonly string[];
 }
 
+function variantFromBinaryPath(path: string): PackageVariant | null {
+	const name = basename(path);
+	if (name === "pixie-assistant") return "assistant";
+	if (name === "pixie") return "host";
+	return null;
+}
+
+interface BinaryProbeFacts {
+	version?: string;
+	doctor?: boolean;
+	readiness?: boolean;
+}
+
+function decodeProbeDetail(detail: string): { path: string; stdout: string } | null {
+	let value: unknown;
+	try {
+		value = JSON.parse(detail);
+	} catch {
+		return null;
+	}
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+	const record = value as Record<string, unknown>;
+	if (typeof record.path !== "string" || record.path.trim() === "") return null;
+	return { path: record.path, stdout: typeof record.stdout === "string" ? record.stdout : "" };
+}
+
 /**
  * Translate a validated evidence bundle into the archive side of the package
  * input. Only `pass` archive assertions carry a machine-readable detail; any
  * blocked/failed/malformed assertion becomes a precise violation. Binary
- * presence is taken from the inspected archive members, but behavioral checks
- * are intentionally not synthesized: the collector does not execute packaged
- * binaries, so those inputs stay fail-closed.
+ * presence is taken from the inspected archive members, and the version,
+ * doctor and readiness rows are filled only from `pass` probes the collector
+ * actually executed. Lifecycle, uninstall and embedded-UI facts are never
+ * synthesized: those rows stay absent and fail closed unless reduced.
  */
 export function packageArtifactInputFromEvidence(
 	evidence: EvidenceBundle,
@@ -495,6 +832,35 @@ export function packageArtifactInputFromEvidence(
 	const violations: string[] = [];
 	const archives: PackageArchiveEvidence[] = [];
 	const binaries: PackageBinaryEvidence[] = [];
+	const probes = new Map<string, BinaryProbeFacts>();
+	const nativeArchitecture = evidence.platform.arch;
+	for (const assertion of evidence.assertions) {
+		if (assertion.kind !== "GATE") continue;
+		if (!assertion.id.startsWith(PACKAGED_BINARY_ASSERTION_PREFIX)) continue;
+		if (assertion.status !== "pass") continue;
+		const probe = assertion.id.endsWith("-version")
+			? "version"
+			: assertion.id.endsWith("-doctor")
+				? "doctor"
+				: assertion.id.endsWith("-readiness")
+					? "readiness"
+					: null;
+		if (probe === null) continue;
+		const detail = decodeProbeDetail(assertion.detail);
+		if (detail === null) continue;
+		const variant = variantFromBinaryPath(detail.path);
+		if (variant === null) continue;
+		const facts = probes.get(variant) ?? {};
+		if (probe === "version") {
+			const observed = detail.stdout.match(/sha-[0-9a-f]{12}/)?.[0];
+			if (observed !== undefined) facts.version = observed;
+		} else if (probe === "doctor") {
+			facts.doctor = true;
+		} else {
+			facts.readiness = true;
+		}
+		probes.set(variant, facts);
+	}
 	for (const assertion of evidence.assertions) {
 		if (assertion.kind !== "GATE") continue;
 		if (!assertion.id.startsWith(PACKAGE_ARCHIVE_ASSERTION_PREFIX)) continue;
@@ -538,6 +904,16 @@ export function packageArtifactInputFromEvidence(
 			path: detail.binary,
 		});
 	}
+	// Only the native architecture can have been executed by the collector, so
+	// probe facts never leak onto a non-native architecture row.
+	for (const binary of binaries) {
+		if (binary.architecture !== nativeArchitecture) continue;
+		const facts = probes.get(binary.variant);
+		if (facts === undefined) continue;
+		if (facts.version !== undefined) binary.version = facts.version;
+		if (facts.doctor === true) binary.doctor = true;
+		if (facts.readiness === true) binary.readiness = true;
+	}
 	return {
 		input: {
 			...base,
@@ -552,29 +928,34 @@ export function packageArtifactInputFromEvidence(
 
 export const PACKAGE_ARTIFACTS_USAGE = [
 	"usage: bun scripts/check-package-artifacts.ts [--evidence <bundle.json>]",
+	"         [--reductions <reductions.json>]",
 	"",
 	"Without --evidence this command keeps its fail-closed behavior: it inspects",
 	"the checked-in sources and reports every absent live archive and binary",
 	"input.",
 	"",
 	"With --evidence it consumes a schema-versioned bundle produced by",
-	"collect-evidence.ts for archive contents and digests. A missing, malformed or",
-	"non-passing archive assertion fails closed.",
+	"collect-evidence.ts for archive contents, digests and executed native",
+	"version/doctor/readiness probes. A missing, malformed or non-passing archive",
+	"assertion fails closed.",
 	"",
-	"Known gap: packaged binaries are not executed or emulated here, so",
-	"--version/doctor/readiness/lifecycle/uninstall evidence stays fail-closed.",
-	"Coverage and performance producers are owned by their own gates and are not",
-	"wired through this bundle.",
+	"--reductions (or PIXIE_REDUCTIONS_MANIFEST, defaulting to the committed",
+	"package/contracts/reductions.json) exempts exactly the operator-approved",
+	"rows. A reduced row is reported as reduced, never as passing; every row not",
+	"listed still fails closed.",
 ].join("\n");
 
 interface PackageArtifactCliOptions {
 	repositoryRoot: string;
 	evidencePath?: string;
+	reductionsPath: string;
 }
 
 function parsePackageArtifactArgs(args: readonly string[]): PackageArtifactCliOptions {
 	const repositoryRoot = resolve(import.meta.dir, "../..");
 	let evidencePath: string | undefined;
+	let reductionsPath =
+		process.env.PIXIE_REDUCTIONS_MANIFEST?.trim() || defaultReductionsManifestPath();
 	for (let index = 0; index < args.length; index += 1) {
 		const argument = args[index];
 		if (argument === "--help" || argument === "-h") {
@@ -595,29 +976,66 @@ function parsePackageArtifactArgs(args: readonly string[]): PackageArtifactCliOp
 			evidencePath = value;
 			continue;
 		}
+		if (argument === "--reductions") {
+			const value = args[index + 1];
+			if (value === undefined || value.trim() === "")
+				throw new Error("--reductions requires a manifest path");
+			reductionsPath = value;
+			index += 1;
+			continue;
+		}
+		if (argument?.startsWith("--reductions=")) {
+			const value = argument.slice("--reductions=".length).trim();
+			if (value === "") throw new Error("--reductions requires a manifest path");
+			reductionsPath = value;
+			continue;
+		}
 		throw new Error(`unknown argument ${argument}`);
 	}
-	return evidencePath === undefined ? { repositoryRoot } : { repositoryRoot, evidencePath };
+	return {
+		repositoryRoot,
+		reductionsPath,
+		...(evidencePath === undefined ? {} : { evidencePath }),
+	};
 }
 
 export function formatPackageArtifactReport(report: PackageArtifactReport): string {
 	if (report.ok) {
 		return (
 			`check-package-artifacts: OK (${report.facts.observedArchives.length} archives, ` +
-			`${report.facts.unitFiles.length} units, ${report.facts.staticChecks.length} static checks)`
+			`${report.facts.unitFiles.length} units, ${report.facts.staticChecks.length} static checks, ` +
+			`${report.facts.reducedLiveEvidence.length} reduced live rows)`
 		);
 	}
 	return [
 		"check-package-artifacts: FAILED",
 		...report.violations.map((violation) => `  - ${violation}`),
 		...report.missingLiveEvidence.map((item) => `  - missing live artifact evidence: ${item}`),
+		...report.facts.reducedLiveEvidence.map(
+			(item) => `  - reduced live artifact evidence: ${item}`,
+		),
 	].join("\n");
+}
+
+export async function loadPackageArtifactReductions(
+	reductionsPath: string,
+): Promise<PackageArtifactReduction[]> {
+	return expandPackageArtifactReductions(await loadReductionsManifest(reductionsPath));
 }
 
 export async function runPackageArtifactCheck(
 	repositoryRoot = resolve(import.meta.dir, "../.."),
 	evidencePath?: string,
+	reductionsPath = defaultReductionsManifestPath(),
 ): Promise<number> {
+	let reductions: PackageArtifactReduction[];
+	try {
+		reductions = await loadPackageArtifactReductions(reductionsPath);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`check-package-artifacts: FAILED\n  - reductions: ${message}`);
+		return 1;
+	}
 	const base = await collectPackageArtifactInput(repositoryRoot);
 	let input = base;
 	if (evidencePath !== undefined) {
@@ -631,7 +1049,7 @@ export async function runPackageArtifactCheck(
 		}
 		input = packageArtifactInputFromEvidence(evidence, base).input;
 	}
-	const report = inspectPackageArtifacts(input);
+	const report = inspectPackageArtifacts({ ...input, reductions });
 	const output = formatPackageArtifactReport(report);
 	if (report.ok) console.log(output);
 	else console.error(output);
@@ -641,7 +1059,13 @@ export async function runPackageArtifactCheck(
 if (import.meta.main) {
 	try {
 		const options = parsePackageArtifactArgs(Bun.argv.slice(2));
-		process.exit(await runPackageArtifactCheck(options.repositoryRoot, options.evidencePath));
+		process.exit(
+			await runPackageArtifactCheck(
+				options.repositoryRoot,
+				options.evidencePath,
+				options.reductionsPath,
+			),
+		);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(`check-package-artifacts: ${message}`);

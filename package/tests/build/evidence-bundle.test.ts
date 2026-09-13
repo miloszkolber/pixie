@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,7 +7,6 @@ import {
 	runPackageArtifactCheck,
 } from "../../scripts/check-package-artifacts.ts";
 import { collectEvidence } from "../../scripts/collect-evidence.ts";
-import { writeDeterministicTarGz } from "../../scripts/deterministic-tar.ts";
 import {
 	buildEvidenceBundle,
 	CONTROLLER_IMAGE_ASSERTION_ID,
@@ -21,22 +19,23 @@ import {
 	readEvidenceBundle,
 } from "../../scripts/evidence-bundle.ts";
 import { identityInputFromEvidence, runReleaseGate } from "../../scripts/release-gate.ts";
+import {
+	FIXTURE_ARCHITECTURES,
+	FIXTURE_VARIANTS,
+	fixtureBinaryName,
+	stageArtifacts,
+	writeDockerSaveTar,
+	writeOciTar,
+} from "./staged-evidence-fixture.ts";
 
 const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
 const releaseId = `sha-${sourceCommit.slice(0, 12)}`;
 const generatedAt = "2026-01-02T03:04:05.000Z";
 const hash = "a".repeat(64);
 
-const VARIANTS = ["assistant", "host"] as const;
-const ARCHITECTURES = ["amd64", "arm64"] as const;
-
-function sha256(value: Uint8Array): string {
-	return createHash("sha256").update(value).digest("hex");
-}
-
-function binaryName(variant: (typeof VARIANTS)[number]): string {
-	return variant === "assistant" ? "pixie-assistant" : "pixie";
-}
+const VARIANTS = FIXTURE_VARIANTS;
+const ARCHITECTURES = FIXTURE_ARCHITECTURES;
+const binaryName = fixtureBinaryName;
 
 function validBundle(): Record<string, unknown> {
 	return {
@@ -57,171 +56,6 @@ function validBundle(): Record<string, unknown> {
 			},
 		],
 	};
-}
-
-function tarHeader(name: string, size: number, mode: number): Buffer {
-	const header = Buffer.alloc(512);
-	header.write(name, 0, "utf8");
-	const writeOctal = (offset: number, width: number, value: number): void => {
-		const text = value.toString(8).padStart(width - 1, "0");
-		header.write(text, offset, width - 1, "utf8");
-		header[offset + width - 1] = 0;
-	};
-	writeOctal(100, 8, mode);
-	writeOctal(108, 8, 0);
-	writeOctal(116, 8, 0);
-	writeOctal(124, 12, size);
-	writeOctal(136, 12, 0);
-	header.write("        ", 148, 8, "utf8");
-	header[156] = "0".charCodeAt(0);
-	header.write("ustar", 257, "utf8");
-	let checksum = 0;
-	for (const byte of header) checksum += byte;
-	header.write(checksum.toString(8).padStart(6, "0"), 148, 6, "utf8");
-	header[154] = 0;
-	header[155] = 0x20;
-	return header;
-}
-
-function writeTar(entries: readonly { name: string; content: Buffer }[]): Buffer {
-	const blocks: Buffer[] = [];
-	for (const entry of entries) {
-		blocks.push(tarHeader(entry.name, entry.content.byteLength, 0o644), entry.content);
-		const padding = (512 - (entry.content.byteLength % 512)) % 512;
-		if (padding !== 0) blocks.push(Buffer.alloc(padding));
-	}
-	blocks.push(Buffer.alloc(1024));
-	return Buffer.concat(blocks);
-}
-
-interface StagedFixture {
-	artifactsDir: string;
-	imageTar: string;
-	archiveSha256: ReadonlyMap<string, string>;
-	binarySha256: ReadonlyMap<string, string>;
-}
-
-async function stageArtifacts(root: string, includeAll: boolean): Promise<StagedFixture> {
-	const artifactsDir = join(root, "artifacts");
-	const staging = join(root, "staging");
-	await mkdir(artifactsDir, { recursive: true });
-	await mkdir(staging, { recursive: true });
-	const archiveSha256 = new Map<string, string>();
-	const binarySha256 = new Map<string, string>();
-	for (const variant of VARIANTS) {
-		for (const architecture of ARCHITECTURES) {
-			if (!includeAll && !(variant === "assistant" && architecture === "amd64")) continue;
-			const binary = binaryName(variant);
-			const unit = `${binary}.service`;
-			const config = variant === "assistant" ? "assistant.json" : "pixie.json";
-			const directory = join(staging, `${variant}-${architecture}`);
-			await mkdir(directory, { recursive: true });
-			const files = [
-				{ name: binary, content: `binary-${variant}-${architecture}`, mode: 0o755 },
-				{ name: unit, content: "[Unit]\n", mode: 0o644 },
-				{ name: config, content: "{}\n", mode: 0o644 },
-				{ name: "INSTALL.md", content: "install\n", mode: 0o644 },
-				{ name: "LICENSE", content: "license\n", mode: 0o644 },
-				{ name: "NOTICE.md", content: "notice\n", mode: 0o644 },
-			];
-			for (const file of files) await writeFile(join(directory, file.name), file.content);
-			const archiveName = `${binary}-${releaseId}-linux-${architecture}.tar.gz`;
-			const archivePath = join(artifactsDir, archiveName);
-			await writeDeterministicTarGz(
-				archivePath,
-				files.map((file) => ({
-					name: file.name,
-					path: join(directory, file.name),
-					mode: file.mode,
-				})),
-				1_700_000_000,
-			);
-			archiveSha256.set(archiveName, sha256(await readFile(archivePath)));
-			binarySha256.set(archiveName, sha256(Buffer.from(`binary-${variant}-${architecture}`)));
-		}
-	}
-	return { artifactsDir, imageTar: join(root, "controller.tar"), archiveSha256, binarySha256 };
-}
-
-async function writeDockerSaveTar(path: string): Promise<void> {
-	const config = Buffer.from(
-		JSON.stringify({
-			architecture: "amd64",
-			os: "linux",
-			config: {
-				Labels: {
-					"org.opencontainers.image.version": releaseId,
-					"org.opencontainers.image.revision": sourceCommit,
-				},
-			},
-		}),
-	);
-	const configDigest = sha256(config);
-	const manifest = Buffer.from(
-		JSON.stringify([
-			{ Config: `${configDigest}.json`, RepoTags: [`pixie:${releaseId}`], Layers: [] },
-		]),
-	);
-	await writeFile(
-		path,
-		writeTar([
-			{ name: "manifest.json", content: manifest },
-			{ name: `${configDigest}.json`, content: config },
-		]),
-	);
-}
-
-async function writeOciTar(path: string): Promise<{ indexDigest: string; manifestDigest: string }> {
-	const config = Buffer.from(
-		JSON.stringify({
-			architecture: "amd64",
-			os: "linux",
-			config: {
-				Labels: {
-					"org.opencontainers.image.version": releaseId,
-					"org.opencontainers.image.revision": sourceCommit,
-				},
-			},
-		}),
-	);
-	const configDigest = sha256(config);
-	const manifest = Buffer.from(
-		JSON.stringify({
-			schemaVersion: 2,
-			mediaType: "application/vnd.oci.image.manifest.v1+json",
-			config: {
-				mediaType: "application/vnd.oci.image.config.v1+json",
-				digest: `sha256:${configDigest}`,
-				size: config.byteLength,
-			},
-			layers: [],
-		}),
-	);
-	const manifestDigest = sha256(manifest);
-	const index = Buffer.from(
-		JSON.stringify({
-			schemaVersion: 2,
-			manifests: [
-				{
-					mediaType: "application/vnd.oci.image.manifest.v1+json",
-					digest: `sha256:${manifestDigest}`,
-					size: manifest.byteLength,
-					platform: { architecture: "amd64", os: "linux" },
-					annotations: { "org.opencontainers.image.ref.name": `pixie:${releaseId}` },
-				},
-			],
-		}),
-	);
-	await writeFile(
-		path,
-		writeTar([
-			{ name: "oci-layout", content: Buffer.from('{"imageLayoutVersion":"1.0.0"}') },
-			{ name: "index.json", content: index },
-			{ name: `blobs/sha256/${manifestDigest}`, content: manifest },
-			{ name: `blobs/sha256/${configDigest}`, content: config },
-		]),
-	);
-	return { indexDigest: `sha256:${sha256(index)}`, manifestDigest: `sha256:${manifestDigest}` };
 }
 
 async function withSilencedConsoleError<T>(callback: () => Promise<T>): Promise<T> {
@@ -308,8 +142,8 @@ test("schema validation rejects every malformed bundle class", () => {
 test("collect-evidence inspects staged archives and a docker-save image", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pixie-evidence-"));
 	try {
-		const fixture = await stageArtifacts(root, true);
-		await writeDockerSaveTar(fixture.imageTar);
+		const fixture = await stageArtifacts(root, true, sourceCommit, releaseId);
+		await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
 		const bundle = await collectEvidence({
 			artifactsDir: fixture.artifactsDir,
 			imagePath: fixture.imageTar,
@@ -321,7 +155,7 @@ test("collect-evidence inspects staged archives and a docker-save image", async 
 		expect(bundle.schemaVersion).toBe(1);
 		expect(bundle.profile).toBe("full-host");
 		expect(bundle.platform).toEqual({ os: "linux", arch: "amd64" });
-		expect(bundle.assertions).toHaveLength(8);
+		expect(bundle.assertions).toHaveLength(9);
 
 		for (const variant of VARIANTS) {
 			for (const architecture of ARCHITECTURES) {
@@ -361,9 +195,9 @@ test("collect-evidence inspects staged archives and a docker-save image", async 
 test("collect-evidence reads a multi-platform OCI layout tar", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pixie-evidence-oci-"));
 	try {
-		const fixture = await stageArtifacts(root, true);
+		const fixture = await stageArtifacts(root, true, sourceCommit, releaseId);
 		const ociTar = join(root, "controller.oci");
-		const expected = await writeOciTar(ociTar);
+		const expected = await writeOciTar(ociTar, sourceCommit, releaseId);
 		const bundle = await collectEvidence({
 			artifactsDir: fixture.artifactsDir,
 			imagePath: ociTar,
@@ -389,8 +223,8 @@ test("collect-evidence reads a multi-platform OCI layout tar", async () => {
 test("collect-evidence marks missing archives blocked instead of pass", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pixie-evidence-missing-"));
 	try {
-		const fixture = await stageArtifacts(root, false);
-		await writeDockerSaveTar(fixture.imageTar);
+		const fixture = await stageArtifacts(root, false, sourceCommit, releaseId);
+		await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
 		const bundle = await collectEvidence({
 			artifactsDir: fixture.artifactsDir,
 			imagePath: fixture.imageTar,
@@ -412,8 +246,8 @@ test("collect-evidence marks missing archives blocked instead of pass", async ()
 test("gates derive real archive, binary and image evidence from a bundle", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pixie-evidence-gates-"));
 	try {
-		const fixture = await stageArtifacts(root, true);
-		await writeDockerSaveTar(fixture.imageTar);
+		const fixture = await stageArtifacts(root, true, sourceCommit, releaseId);
+		await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
 		const bundle = await collectEvidence({
 			artifactsDir: fixture.artifactsDir,
 			imagePath: fixture.imageTar,

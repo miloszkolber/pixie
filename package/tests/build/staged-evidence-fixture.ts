@@ -1,0 +1,249 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { writeDeterministicTarGz } from "../../scripts/deterministic-tar.ts";
+
+/**
+ * Shared synthetic exact-commit staging fixtures for the release evidence
+ * gates. They create the four commit-named archives, the staged local manifest
+ * and either a docker-save or OCI controller image tar. No registry, tag or
+ * lifecycle value is synthesized.
+ */
+
+export const FIXTURE_VARIANTS = ["assistant", "host"] as const;
+export const FIXTURE_ARCHITECTURES = ["amd64", "arm64"] as const;
+
+export function fixtureSha256(value: Uint8Array): string {
+	return createHash("sha256").update(value).digest("hex");
+}
+
+export function fixtureBinaryName(variant: (typeof FIXTURE_VARIANTS)[number]): string {
+	return variant === "assistant" ? "pixie-assistant" : "pixie";
+}
+
+export interface StagedFixture {
+	artifactsDir: string;
+	imageTar: string;
+	archiveSha256: ReadonlyMap<string, string>;
+	binarySha256: ReadonlyMap<string, string>;
+}
+
+function tarHeader(name: string, size: number, mode: number): Buffer {
+	const header = Buffer.alloc(512);
+	header.write(name, 0, "utf8");
+	const writeOctal = (offset: number, width: number, value: number): void => {
+		const text = value.toString(8).padStart(width - 1, "0");
+		header.write(text, offset, width - 1, "utf8");
+		header[offset + width - 1] = 0;
+	};
+	writeOctal(100, 8, mode);
+	writeOctal(108, 8, 0);
+	writeOctal(116, 8, 0);
+	writeOctal(124, 12, size);
+	writeOctal(136, 12, 0);
+	header.write("        ", 148, 8, "utf8");
+	header[156] = "0".charCodeAt(0);
+	header.write("ustar", 257, "utf8");
+	let checksum = 0;
+	for (const byte of header) checksum += byte;
+	header.write(checksum.toString(8).padStart(6, "0"), 148, 6, "utf8");
+	header[154] = 0;
+	header[155] = 0x20;
+	return header;
+}
+
+export function writeFixtureTar(entries: readonly { name: string; content: Buffer }[]): Buffer {
+	const blocks: Buffer[] = [];
+	for (const entry of entries) {
+		blocks.push(tarHeader(entry.name, entry.content.byteLength, 0o644), entry.content);
+		const padding = (512 - (entry.content.byteLength % 512)) % 512;
+		if (padding !== 0) blocks.push(Buffer.alloc(padding));
+	}
+	blocks.push(Buffer.alloc(1024));
+	return Buffer.concat(blocks);
+}
+
+/**
+ * Stage the four commit-named archives plus the staged local manifest. The
+ * manifest carries real archive hashes; publication fields (complete set, SBOM,
+ * provenance, image digests) are explicitly false/absent.
+ */
+export async function stageArtifacts(
+	root: string,
+	includeAll: boolean,
+	sourceCommit: string,
+	releaseId: string,
+): Promise<StagedFixture> {
+	const artifactsDir = join(root, "artifacts");
+	const staging = join(root, "staging");
+	await mkdir(artifactsDir, { recursive: true });
+	await mkdir(staging, { recursive: true });
+	const archiveSha256 = new Map<string, string>();
+	const binarySha256 = new Map<string, string>();
+	for (const variant of FIXTURE_VARIANTS) {
+		for (const architecture of FIXTURE_ARCHITECTURES) {
+			if (!includeAll && !(variant === "assistant" && architecture === "amd64")) continue;
+			const binary = fixtureBinaryName(variant);
+			const unit = `${binary}.service`;
+			const config = variant === "assistant" ? "assistant.json" : "pixie.json";
+			const directory = join(staging, `${variant}-${architecture}`);
+			await mkdir(directory, { recursive: true });
+			const files = [
+				{ name: binary, content: `binary-${variant}-${architecture}`, mode: 0o755 },
+				{ name: unit, content: "[Unit]\n", mode: 0o644 },
+				{ name: config, content: "{}\n", mode: 0o644 },
+				{ name: "INSTALL.md", content: "install\n", mode: 0o644 },
+				{ name: "LICENSE", content: "license\n", mode: 0o644 },
+				{ name: "NOTICE.md", content: "notice\n", mode: 0o644 },
+			];
+			for (const file of files) await writeFile(join(directory, file.name), file.content);
+			const archiveName = `${binary}-${releaseId}-linux-${architecture}.tar.gz`;
+			const archivePath = join(artifactsDir, archiveName);
+			await writeDeterministicTarGz(
+				archivePath,
+				files.map((file) => ({
+					name: file.name,
+					path: join(directory, file.name),
+					mode: file.mode,
+				})),
+				1_700_000_000,
+			);
+			archiveSha256.set(archiveName, fixtureSha256(await readFile(archivePath)));
+			binarySha256.set(
+				archiveName,
+				fixtureSha256(Buffer.from(`binary-${variant}-${architecture}`)),
+			);
+		}
+	}
+	await writeFile(
+		join(artifactsDir, "release-manifest.json"),
+		`${JSON.stringify(
+			{
+				schemaVersion: 1,
+				releaseId,
+				sourceCommit,
+				cleanSourceTree: true,
+				completeSet: false,
+				archiveHashes: Object.fromEntries(archiveSha256),
+				checksumsPresent: true,
+				sbomPresent: false,
+				provenancePresent: false,
+			},
+			null,
+			2,
+		)}\n`,
+	);
+	return { artifactsDir, imageTar: join(root, "controller.tar"), archiveSha256, binarySha256 };
+}
+
+export async function writeDockerSaveTar(
+	path: string,
+	sourceCommit: string,
+	releaseId: string,
+): Promise<void> {
+	const config = Buffer.from(
+		JSON.stringify({
+			architecture: "amd64",
+			os: "linux",
+			config: {
+				Labels: {
+					"org.opencontainers.image.version": releaseId,
+					"org.opencontainers.image.revision": sourceCommit,
+				},
+			},
+		}),
+	);
+	const configDigest = fixtureSha256(config);
+	const manifest = Buffer.from(
+		JSON.stringify([
+			{ Config: `${configDigest}.json`, RepoTags: [`pixie:${releaseId}`], Layers: [] },
+		]),
+	);
+	await writeFile(
+		path,
+		writeFixtureTar([
+			{ name: "manifest.json", content: manifest },
+			{ name: `${configDigest}.json`, content: config },
+		]),
+	);
+}
+
+export async function writeOciTar(
+	path: string,
+	sourceCommit: string,
+	releaseId: string,
+): Promise<{ indexDigest: string; manifestDigest: string }> {
+	const config = Buffer.from(
+		JSON.stringify({
+			architecture: "amd64",
+			os: "linux",
+			config: {
+				Labels: {
+					"org.opencontainers.image.version": releaseId,
+					"org.opencontainers.image.revision": sourceCommit,
+				},
+			},
+		}),
+	);
+	const configDigest = fixtureSha256(config);
+	const manifest = Buffer.from(
+		JSON.stringify({
+			schemaVersion: 2,
+			mediaType: "application/vnd.oci.image.manifest.v1+json",
+			config: {
+				mediaType: "application/vnd.oci.image.config.v1+json",
+				digest: `sha256:${configDigest}`,
+				size: config.byteLength,
+			},
+			layers: [],
+		}),
+	);
+	const manifestDigest = fixtureSha256(manifest);
+	const index = Buffer.from(
+		JSON.stringify({
+			schemaVersion: 2,
+			manifests: [
+				{
+					mediaType: "application/vnd.oci.image.manifest.v1+json",
+					digest: `sha256:${manifestDigest}`,
+					size: manifest.byteLength,
+					platform: { architecture: "amd64", os: "linux" },
+					annotations: { "org.opencontainers.image.ref.name": `pixie:${releaseId}` },
+				},
+			],
+		}),
+	);
+	await writeFile(
+		path,
+		writeFixtureTar([
+			{ name: "oci-layout", content: Buffer.from('{"imageLayoutVersion":"1.0.0"}') },
+			{ name: "index.json", content: index },
+			{ name: `blobs/sha256/${manifestDigest}`, content: manifest },
+			{ name: `blobs/sha256/${configDigest}`, content: config },
+		]),
+	);
+	return {
+		indexDigest: `sha256:${fixtureSha256(index)}`,
+		manifestDigest: `sha256:${manifestDigest}`,
+	};
+}
+
+export interface ProbeBinaryOptions {
+	name: "pixie-assistant" | "pixie";
+	releaseId: string;
+	sourceCommit: string;
+	doctor?: boolean;
+}
+
+/** Write an executable probe binary that answers --version/doctor for the native target. */
+export async function writeProbeBinary(path: string, options: ProbeBinaryOptions): Promise<void> {
+	const doctor = options.doctor === false ? 2 : 0;
+	const script = `#!/bin/sh
+case "$1" in
+  --version) echo "${options.name} ${options.releaseId} (revision ${options.sourceCommit})"; exit 0 ;;
+  doctor) echo "pixie doctor: configuration is readable ()"; exit ${doctor} ;;
+  *) echo "unknown command \\"$1\\"; use serve" >&2; exit 2 ;;
+esac
+`;
+	await writeFile(path, script, { mode: 0o755 });
+}

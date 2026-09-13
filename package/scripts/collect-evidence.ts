@@ -9,6 +9,7 @@ import {
 	expectedArchiveName,
 	type PackageArchitecture,
 	type PackageVariant,
+	RELEASE_MANIFEST_ASSERTION_ID,
 } from "./check-package-artifacts.ts";
 import {
 	formatPerformanceReport,
@@ -134,6 +135,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 async function readOptional(path: string): Promise<string | null> {
 	return readFile(path, "utf8").catch(() => null);
+}
+
+/**
+ * Read the staged local release manifest verbatim. Absent or malformed input is
+ * returned as null so the collector records a blocked row; the manifest's
+ * publication fields are never invented.
+ */
+async function readStagedManifest(artifactsDir: string): Promise<Record<string, unknown> | null> {
+	const text = await readOptional(join(artifactsDir, "release-manifest.json"));
+	if (text === null) return null;
+	try {
+		const value = JSON.parse(text) as unknown;
+		return isRecord(value) ? value : null;
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -870,6 +887,22 @@ export async function collectEvidence(options: CollectEvidenceOptions): Promise<
 	}
 	const image = await inspectImage(options.imagePath);
 	assertions.push(image.assertion);
+	const manifest = await readStagedManifest(artifactsDir);
+	assertions.push(
+		manifest === null
+			? gateAssertion(
+					RELEASE_MANIFEST_ASSERTION_ID,
+					"blocked",
+					"test -f release-manifest.json",
+					"staged release-manifest.json was not found or is not a JSON object",
+				)
+			: gateAssertion(
+					RELEASE_MANIFEST_ASSERTION_ID,
+					"pass",
+					"cat release-manifest.json",
+					JSON.stringify(manifest),
+				),
+	);
 	assertions.push(await inspectCoverageEvidence(options.coveragePath));
 	assertions.push(await inspectPerformanceEvidence(options.performancePath));
 	assertions.push(...(await inspectBinaryProbes(options.binaryPaths ?? [], options.baseUrl)));

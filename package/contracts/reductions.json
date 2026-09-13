@@ -1,5 +1,5 @@
 {
-	"$comment": "Committed reductions for the legacy live-evidence matrix. The evidence producer (package/scripts/produce-evidence-inputs.ts) merges these into the coverage/performance inputs it emits; nothing here is inferred at runtime. A reduction removes a legacy live-matrix requirement, it is not evidence that the retained behavior passes.",
+	"$comment": "Committed reductions for the legacy live-evidence matrix and the staged-artifact gates. The evidence producer (package/scripts/produce-evidence-inputs.ts) merges the coverage/gates/performance groups into the inputs it emits, and check-package-artifacts/release-gate load the packageArtifacts/releaseGate groups directly (default path or --reductions/PIXIE_REDUCTIONS_MANIFEST); nothing here is inferred at runtime. A reduction removes a live-matrix or publication requirement, it is not evidence that the retained behavior passes, and it is never reported as a pass.",
 	"schemaVersion": 1,
 	"approval": {
 		"approved": true,
@@ -108,6 +108,55 @@
 			{
 				"targets": ["assistant/arm64", "full-host/arm64"],
 				"reason": "The evidence job runs on linux/amd64 and does not emulate arm64. arm64 startup targets cannot be executed honestly in this job, so they are recorded as explicit reductions; arm64 performance remains unproven and is called out in the release checklist."
+			}
+		]
+	},
+	"packageArtifacts": {
+		"approval": {
+			"approved": true,
+			"approver": "operator",
+			"reference": "roadmap/README.md#legacy-removal, docs/release-checklist.md#live-evidence-production",
+			"statement": "The operator approved reducing the staged-binary live-execution and full-host rows that the exact-commit evidence job cannot produce without a running host. This exempts only the listed rows; every structural archive, systemd, configuration and static command check stays mandatory, and no reduced row is recorded as passing."
+		},
+		"reductionGroups": [
+			{
+				"ids": [
+					"binary.version/assistant/arm64",
+					"binary.version/host/arm64",
+					"binary.doctor/assistant/arm64",
+					"binary.doctor/host/arm64",
+					"binary.readiness/*",
+					"binary.lifecycle/*",
+					"binary.uninstall/*",
+					"binary.embedded-ui/host/*",
+					"facade.native-engine"
+				],
+				"reason": "The amd64 evidence job executes only native staged binaries; the arm64 version/doctor rows cannot run without an arm64 host. Readiness needs a running host or operator-supplied base URL, and lifecycle, uninstall and embedded-UI execution plus the full-host native-engine facade need a running service. Archive contents, entry structure and the native version/doctor rows stay mandatory; the native probes are consumed from the collector's BIN-PROBE assertions when present."
+			}
+		]
+	},
+	"releaseGate": {
+		"approval": {
+			"approved": true,
+			"approver": "operator",
+			"reference": "roadmap/README.md#legacy-removal, docs/release-checklist.md#live-evidence-production",
+			"statement": "The operator approved reducing the release-gate inputs that require an actual publication or registry. This exempts only the listed rows; the static workflow publication-policy checks, source reachability from main, archive/binary identity and checksum consistency, and the controller-image evidence mapping stay mandatory, and no reduced row is recorded as passing."
+		},
+		"reductionGroups": [
+			{
+				"ids": [
+					"tag.identity",
+					"release.identity",
+					"registry.tag",
+					"registry.provenance",
+					"registry.sbom",
+					"registry.image-index",
+					"registry.platform-digest/amd64",
+					"registry.platform-digest/arm64",
+					"manifest.complete-set",
+					"latest.promotion"
+				],
+				"reason": "Git tag and GitHub Release state, the published ghcr.io tag, registry provenance and SBOM attestations, registry image/platform digests and latest-promotion ancestry cannot exist until a real publication and registry are present. The staged manifest's local release ID, source commit, clean-tree flag, archive hashes and checksums remain mandatory; publication-only manifest fields and the non-native arm64 platform digest are reduced rather than invented."
 			}
 		]
 	},
