@@ -287,6 +287,34 @@ function labelsFrom(config: Record<string, unknown>): Record<string, string> {
 	return result;
 }
 
+// imageConfigDigest resolves the OCI config blob for one platform manifest. An
+// OCI index/layout entry names the manifest blob, whose `config.digest` names
+// the config; a Docker-save record may carry `config` directly.
+function imageConfigDigest(
+	entries: ReadonlyMap<string, TarEntry>,
+	record: OciManifestRecord,
+): string | undefined {
+	if (isRecord(record.config) && typeof record.config.digest === "string") {
+		return record.config.digest;
+	}
+	if (typeof record.digest !== "string") return undefined;
+	const manifestEntry = entries.get(blobPath(record.digest));
+	if (manifestEntry === undefined) return undefined;
+	try {
+		const manifest = JSON.parse(manifestEntry.content.toString("utf8")) as unknown;
+		if (
+			isRecord(manifest) &&
+			isRecord(manifest.config) &&
+			typeof manifest.config.digest === "string"
+		) {
+			return manifest.config.digest;
+		}
+	} catch {
+		// A non-JSON blob is not a manifest.
+	}
+	return undefined;
+}
+
 function inspectDockerSave(entries: ReadonlyMap<string, TarEntry>): ControllerImageDetail | null {
 	const manifestEntry = entries.get("manifest.json");
 	if (manifestEntry === undefined) return null;
@@ -418,8 +446,9 @@ function inspectOci(entries: ReadonlyMap<string, TarEntry>): ControllerImageDeta
 	const resolvedArchitecture: EvidencePlatformArchitecture = hasAmd64 ? "amd64" : "arm64";
 	if (platformDigests[resolvedArchitecture] === undefined) return null;
 	let labels: Record<string, string> = {};
-	if (chosen !== undefined && isRecord(chosen.config) && typeof chosen.config.digest === "string") {
-		const configEntry = entries.get(blobPath(chosen.config.digest));
+	const configDigest = chosen === undefined ? undefined : imageConfigDigest(entries, chosen);
+	if (configDigest !== undefined) {
+		const configEntry = entries.get(blobPath(configDigest));
 		if (configEntry !== undefined) {
 			try {
 				const config = JSON.parse(configEntry.content.toString("utf8")) as unknown;

@@ -212,6 +212,8 @@ test("collect-evidence reads a multi-platform OCI layout tar", async () => {
 		const imageDetail = decodeControllerImageDetail(image?.detail ?? "");
 		expect(imageDetail?.architecture).toBe("amd64");
 		expect(imageDetail?.tag).toBe(`pixie:${releaseId}`);
+		expect(imageDetail?.labels["org.opencontainers.image.version"]).toBe(releaseId);
+		expect(imageDetail?.labels["org.opencontainers.image.revision"]).toBe(sourceCommit);
 		expect(imageDetail?.indexDigest).toBe(expected.indexDigest);
 		expect(imageDetail?.platformDigests.amd64).toBe(expected.manifestDigest);
 		expect(bundle.platform.arch).toBe("amd64");
