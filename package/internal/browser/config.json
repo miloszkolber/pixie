@@ -1,5 +1,5 @@
 {
-	"args": "--no-sandbox",
+	"args": "--no-sandbox,--deny-permission-prompts,--disable-notifications",
 	"contentBoundaries": true,
 	"debug": false,
 	"executablePath": "/usr/bin/chromium",

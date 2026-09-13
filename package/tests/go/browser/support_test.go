@@ -60,7 +60,7 @@ esac
 	if err := os.WriteFile(agentBrowser, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(configFile, []byte("{}"), 0o600); err != nil {
+	if err := os.WriteFile(configFile, []byte(`{"args":"--deny-permission-prompts"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	configuration := browser.Config{

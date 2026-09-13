@@ -2,11 +2,52 @@ package browser
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 )
+
+// insecureLaunchArgs weaken the boundary and must never appear in the worker's
+// browser config: they disable transport verification or let a page read local
+// files.
+var insecureLaunchArgs = []string{
+	"--ignore-https-errors",
+	"--ignore-certificate-errors",
+	"--allow-file-access",
+	"--allow-file-access-from-files",
+	"--disable-web-security",
+}
+
+// validateBrowserLaunchConfig fails closed when the browser config would weaken
+// the worker: it must deny permission prompts and must not carry any insecure
+// launch argument.
+func validateBrowserLaunchConfig(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("browser config path is required")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read browser config: %w", err)
+	}
+	var document struct {
+		Args string `json:"args"`
+	}
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return fmt.Errorf("parse browser config: %w", err)
+	}
+	for _, forbidden := range insecureLaunchArgs {
+		if strings.Contains(document.Args, forbidden) {
+			return fmt.Errorf("browser config must not set %s", forbidden)
+		}
+	}
+	if !strings.Contains(document.Args, "--deny-permission-prompts") {
+		return fmt.Errorf("browser config must deny permission prompts")
+	}
+	return nil
+}
 
 // Worker is the loopback HTTP boundary around the untrusted browser service.
 // It exposes only a fact report and the bounded browser operation surface; it
@@ -27,6 +68,9 @@ type Worker struct {
 func NewWorker(service *Service, version, token string) (*Worker, error) {
 	if service == nil {
 		return nil, fmt.Errorf("browser worker requires an initialized service")
+	}
+	if err := validateBrowserLaunchConfig(service.app.config.BrowserConfig); err != nil {
+		return nil, fmt.Errorf("browser worker refuses an unsafe browser config: %w", err)
 	}
 	return &Worker{
 		service: service,
