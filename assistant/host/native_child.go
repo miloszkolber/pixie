@@ -150,6 +150,9 @@ type nativeChild struct {
 	pending        map[uint64]nativePending
 	pendingBytes   int
 	controlPending int
+	// pendingDialogs maps an outstanding extension_ui_request string id to
+	// its blocking method until the controller answers or the child exits.
+	pendingDialogs map[string]string
 	sessionID      string // Set once after exact state verification.
 	sessionPath    string // Set once after exact state verification.
 	activeRun      *nativeRun
@@ -383,7 +386,8 @@ func (s *nativeSupervisor) launch(ctx context.Context, cwd string) (*nativeChild
 		owner: s, config: s.config, cwd: clean, cmd: cmd, stdin: stdin, stdout: stdout,
 		writes: make(chan nativeWrite, nativePendingMax), childExited: make(chan struct{}),
 		done: make(chan struct{}), errors: make(chan error, 1), pending: make(map[uint64]nativePending),
-		writeTimeout: nativeWriteTimeout, acceptTimeout: nativePromptAccept, launchReserved: true,
+		pendingDialogs: make(map[string]string),
+		writeTimeout:   nativeWriteTimeout, acceptTimeout: nativePromptAccept, launchReserved: true,
 	}
 	go drainNativeStderr(stderr)
 	go child.writerLoop()
@@ -553,6 +557,11 @@ func (c *nativeChild) readLoop() {
 		if json.Unmarshal(line, &event) != nil {
 			c.failNative(errors.New("invalid Pi event"))
 			return
+		}
+		if frameType == "extension_ui_request" {
+			// Track before publishing so a fast controller answer cannot race
+			// ahead of the dialog becoming pending on this child.
+			c.trackUiRequest(event)
 		}
 		c.mu.Lock()
 		sessionID := c.sessionID
@@ -790,6 +799,21 @@ func (c *nativeChild) writeRecord(ctx context.Context, record []byte) error {
 	}
 }
 
+// writeRaw writes one unsolicited JSONL frame to the child stdin. The frame
+// owns its own identity (for example the string id of an
+// extension_ui_response); unlike callPi it never allocates or waits on a
+// numeric request id.
+func (c *nativeChild) writeRaw(ctx context.Context, frame map[string]any) error {
+	record, err := json.Marshal(frame)
+	if err != nil {
+		return fmt.Errorf("marshal Pi raw frame: %w", err)
+	}
+	if len(record) > nativeRecordMaxBytes {
+		return fmt.Errorf("Pi raw frame exceeds %d bytes", nativeRecordMaxBytes)
+	}
+	return c.writeRecord(ctx, append(record, '\n'))
+}
+
 func nativeErrorMessage(raw json.RawMessage) string {
 	var object struct {
 		Message string `json:"message"`
@@ -988,6 +1012,10 @@ func (s *nativeSupervisor) callHost(ctx context.Context, method string, params m
 			return nil, err
 		}
 		return child.cancel(ctx, id)
+	case "session.uiResponse":
+		return s.respondUi(ctx, params, false)
+	case "session.uiCancel":
+		return s.respondUi(ctx, params, true)
 	case "session.configure":
 		return s.configure(ctx, params)
 	case "session.fork":
@@ -1494,7 +1522,7 @@ func nativeOperationSet() map[string]bool {
 	} {
 		result[operation] = false
 	}
-	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch"} {
+	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.uiResponse", "session.uiCancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch"} {
 		result[operation] = true
 	}
 	return result
@@ -1559,6 +1587,7 @@ func (c *nativeChild) failNative(err error) {
 	c.pending = make(map[uint64]nativePending)
 	c.pendingBytes = 0
 	c.controlPending = 0
+	c.pendingDialogs = make(map[string]string)
 	for _, item := range pending {
 		close(item.result)
 	}

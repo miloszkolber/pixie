@@ -115,6 +115,7 @@ func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
 	wantEnabled := map[string]bool{
 		"session.list": true, "session.create": true, "session.load": true,
 		"session.prompt": true, "session.cancel": true, "session.prompt.image": true,
+		"session.uiResponse": true, "session.uiCancel": true,
 		"session.release": true, "runtime.release": true,
 		"session.configure": true, "session.fork": true, "session.clone": true,
 		"session.getMessages": true, "session.stats": true, "session.compact": true,

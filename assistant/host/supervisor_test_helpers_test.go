@@ -47,6 +47,18 @@ func (s *nativeSupervisor) testSubscriberCount() int {
 	return len(s.subscribers)
 }
 
+// testPendingDialogs returns a copy of one child's outstanding extension UI
+// dialogs so a test read is synchronized with the child read loop.
+func (c *nativeChild) testPendingDialogs() map[string]string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snapshot := make(map[string]string, len(c.pendingDialogs))
+	for id, method := range c.pendingDialogs {
+		snapshot[id] = method
+	}
+	return snapshot
+}
+
 // testResidents reports the resident child count and the launching reservation
 // count.
 func (s *nativeSupervisor) testResidents() (int, int) {

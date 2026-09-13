@@ -196,11 +196,17 @@ func runHostOperation(handle *Handle, ctx context.Context, method string, params
 func hostOperationErrorDetail(err error) *piwire.HostV2ErrorDetail {
 	var rejected *promptRejectedError
 	var uncertain *promptUncertainError
+	var staleUi *staleUiRequestError
+	var missingUiChild *missingUiChildError
 	switch {
 	case errors.As(err, &rejected):
 		return piwire.NewHostV2Error(piwire.HostV2CodeCapabilityUnavailable, piwire.HostV2ReasonCapabilityUnavailable, err.Error())
 	case errors.As(err, &uncertain):
 		return piwire.NewHostV2Error(piwire.HostV2CodeResourceConflict, piwire.HostV2ReasonResourceConflict, err.Error())
+	case errors.As(err, &staleUi):
+		return piwire.NewHostV2Error(piwire.HostV2CodeResourceConflict, piwire.HostV2ReasonResourceConflict, err.Error())
+	case errors.As(err, &missingUiChild):
+		return piwire.NewHostV2Error(piwire.HostV2CodeUnknownSession, piwire.HostV2ReasonUnknownSession, err.Error())
 	default:
 		return piwire.NewHostV2Error(piwire.HostV2CodeInternal, piwire.HostV2ReasonInternal, err.Error())
 	}

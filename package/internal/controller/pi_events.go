@@ -226,6 +226,70 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 	case piwire.UiRequestEvent, piwire.UiNotifyEvent, piwire.UiCancelEvent,
 		piwire.UiStatusEvent, piwire.UiWidgetEvent, piwire.UiTitleEvent, piwire.UiWorkingEvent:
 		return projectUiEvent(event, emit, extension)
+	case nativeUiRequestEvent:
+		// Pi 0.85.1 RPC emits raw extension_ui_request frames rather than the
+		// legacy host's pixie:ui:* events. Map the method-specific fields onto
+		// the same projection so the browser contract is unchanged.
+		return projectNativeUiEvent(event, emit, extension)
+	}
+	return nil
+}
+
+// nativeUiRequestEvent is the raw Pi RPC extension UI request frame type.
+const nativeUiRequestEvent = "extension_ui_request"
+
+// projectNativeUiEvent translates one raw Pi extension_ui_request frame into
+// the controller's UI update shapes. Blocking dialogs become ui_request;
+// passive notify/status/widget/title/working methods fan out without pending
+// state. Unknown methods and the terminal-only set_editor_text are dropped.
+func projectNativeUiEvent(
+	event map[string]any,
+	emit func(kind string, update map[string]any) error,
+	extension func(kind string, update map[string]any) error,
+) error {
+	requestID := textValue(event["id"])
+	if requestID == "" {
+		return nil
+	}
+	switch textValue(event["method"]) {
+	case piwire.UiPrimitiveSelect, piwire.UiPrimitiveConfirm, piwire.UiPrimitiveInput, piwire.UiPrimitiveEditor:
+		mapped := map[string]any{
+			"type":      piwire.UiRequestEvent,
+			"requestId": requestID,
+			"primitive": textValue(event["method"]),
+			"title":     event["title"],
+		}
+		for _, key := range []string{"message", "options", "placeholder", "prefill", "timeout"} {
+			if value, exists := event[key]; exists {
+				mapped[key] = value
+			}
+		}
+		return projectUiEvent(mapped, emit, extension)
+	case "notify":
+		return projectUiEvent(map[string]any{
+			"type":    piwire.UiNotifyEvent,
+			"message": event["message"],
+			"level":   event["notifyType"],
+		}, emit, extension)
+	case "setStatus":
+		return projectUiEvent(map[string]any{
+			"type": piwire.UiStatusEvent,
+			"key":  event["statusKey"],
+			"text": event["statusText"],
+		}, emit, extension)
+	case "setWidget":
+		mapped := map[string]any{"type": piwire.UiWidgetEvent, "key": event["widgetKey"]}
+		if lines, exists := event["widgetLines"]; exists {
+			mapped["lines"] = lines
+		}
+		if placement := textValue(event["widgetPlacement"]); placement != "" {
+			mapped["placement"] = placement
+		}
+		return projectUiEvent(mapped, emit, extension)
+	case "setTitle":
+		return projectUiEvent(map[string]any{"type": piwire.UiTitleEvent, "title": event["title"]}, emit, extension)
+	case "setWorkingMessage":
+		return projectUiEvent(map[string]any{"type": piwire.UiWorkingEvent, "message": event["message"]}, emit, extension)
 	}
 	return nil
 }
