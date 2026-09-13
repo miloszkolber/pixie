@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -186,6 +187,12 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	}, build, nil)
 	if err != nil {
 		return nil, err
+	}
+	// An untrusted Browser stays unavailable unless an external worker proves
+	// real containment. When PIXIE_BROWSER_WORKER_URL is set, probe it now;
+	// every failure keeps the registry boundary false and logs the reason.
+	if err := mcpRegistry.VerifyWorkerBoundaryFromEnvironment(context.Background(), config.Getenv, os.Geteuid()); err != nil {
+		slog.Warn("browser worker boundary not verified; Browser stays unavailable", "error", err)
 	}
 	browserPanels, err := NewPersistentBrowserPanels(authConfig, nil, store, mcpRegistry.BrowserLegacyHandler())
 	if err != nil {

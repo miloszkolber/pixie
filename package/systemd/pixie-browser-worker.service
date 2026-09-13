@@ -1,0 +1,50 @@
+[Unit]
+Description=Pixie browser worker (untrusted containment boundary)
+Documentation=file:/usr/share/doc/pixie/security.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=pixie-browser
+Group=pixie-browser
+EnvironmentFile=/etc/pixie/browser-worker.env
+ExecStart=/usr/local/bin/pixie-browser-worker
+StateDirectory=pixie-browser
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+# Arbitrary egress is denied. Browsing traffic must leave through an
+# operator-approved proxy; add exactly that destination below and point the
+# worker at it with PIXIE_BROWSER_WORKER_PROXY in the environment file.
+IPAddressDeny=any
+IPAddressAllow=127.0.0.0/8
+IPAddressAllow=::1/128
+# IPAddressAllow=<proxy-ip>/32
+MemoryMax=1G
+CPUQuota=200%
+TasksMax=256
+TimeoutStopSec=20
+KillMode=mixed
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
