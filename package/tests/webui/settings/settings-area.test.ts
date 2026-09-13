@@ -75,10 +75,7 @@ test("both settings surfaces mark the active section and share one user-facing s
 	const [standalone, workArea] = await Promise.all([
 		source("settings-area.svelte"),
 		Bun.file(
-			new URL(
-				"../../../webui/src/workspace/views/project-work-area.svelte",
-				import.meta.url,
-			),
+			new URL("../../../webui/src/workspace/views/project-work-area.svelte", import.meta.url),
 		).text(),
 	]);
 	const sentence = "Choose a section to review or change this Pi's configuration.";

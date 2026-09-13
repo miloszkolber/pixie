@@ -23,11 +23,6 @@
 	"type": "module",
 	"devDependencies": {
 		"@biomejs/biome": "2.5.0",
-		"@juicesharp/rpiv-ask-user-question": "2.9.0",
-		"@juicesharp/rpiv-todo": "2.9.0",
-		"@juicesharp/rpiv-web-tools": "2.9.0",
-		"@mjakl/pi-subagent": "3.0.1",
-		"pi-mcp-adapter": "2.32.1",
 		"typescript": "catalog:"
 	},
 	"trustedDependencies": [
@@ -46,16 +41,11 @@
 		"check:docs": "bun run --cwd package check:docs",
 		"generate:contracts": "bun run --cwd package generate:contracts",
 		"check:contracts": "bun run --cwd package check:contracts",
-		"check:parity": "bun run --cwd package check:parity",
 		"dev:web": "bun run --cwd package dev:web",
 		"format": "bun run --cwd package format",
 		"lint": "bun run --cwd package lint",
 		"mewa:check": "bun run --cwd package mewa:check",
 		"test": "bun run --cwd package test",
 		"typecheck": "bun run --cwd package typecheck"
-	},
-	"patchedDependencies": {
-		"@earendil-works/pi-coding-agent@0.85.1": "assistant/patches/pi-coding-agent-0.85.1-extensions-export.patch",
-		"@mjakl/pi-subagent@3.0.1": "patches/@mjakl%2Fpi-subagent@3.0.1.patch"
 	}
 }

@@ -36,7 +36,7 @@ function passingCutover(): CutoverInput {
 			profile: "amd64-and-arm64",
 		})),
 		removalRequested: true,
-		legacyPaths: ["assistant/src", "package/webui/src"],
+		legacyPaths: ["package/webui/src"],
 	};
 }
 

@@ -72,7 +72,7 @@ test("Docker composition rejects assistant/Pi startup and a non-reaping final co
 	const report = inspectComposition(
 		composition(`
 FROM runtime AS pixie
-COPY assistant/src/ /app/assistant
+COPY assistant/bridge/ /app/assistant
 RUN go build ./cmd
 ENTRYPOINT ["/app/pixie", "serve", "--mode", "full-host", "pi serve"]
 `),

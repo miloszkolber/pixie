@@ -5,8 +5,8 @@ package host
 // pi.agent-mentions.list). They are not Pi RPC: the contract is the same native
 // Markdown files the selected Pi reads itself, at
 // <agentDir>/agents/*.md (global) and <project>/.pi/agents/*.md (project).
-// The behavior mirrors the legacy Bun implementation in assistant/src/agents.ts
-// so the web agent editor keeps working without duplicating any execution
+// The behavior preserves the agent-authoring contract the controller depends
+// on so the web agent editor keeps working without duplicating any execution
 // engine. All mutations are bounded, validated, atomic and revision-checked;
 // unknown records are preserved and unrelated files are never touched.
 

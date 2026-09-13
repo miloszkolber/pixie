@@ -24,7 +24,7 @@ Chromium runs with `--no-sandbox` (`package/internal/browser/config.json:2`, ver
 
 | Boundary | Credential |
 | --- | --- |
-| Host SDK service | `PIXIE_PI_SECRET_KEY` shared with the application |
+| Host assistant service | `PIXIE_PI_SECRET_KEY` shared with the application |
 | Web UI | Optional `PIXIE_AUTH_ENABLED=true` and `PIXIE_TOKEN` |
 | Browser MCP, HTTP and artifacts | `PIXIE_MCP_TOKEN` |
 | Goals, questions and schedules MCP | Session-specific bearer token |
@@ -51,7 +51,7 @@ Existing fixtures: `package/tests/performance/main.go` is a controller compariso
 | Merged `pixie` image, x86-64, Browser module enabled, measured live 2026-09-07 against `https://example.com` (agent-browser 0.34.0 per `package/Dockerfile`, Chromium bundled in image) | open 859 ms, snapshot 19 ms, close 263 ms (single round trip, wall clock, bearer-authenticated loopback) |
 | Merged `pixie` image, arm64, Browser module enabled | UNVERIFIED |
 
-Assistant service on the same host (2026-09-07, `pixie-assistant.service`, Pi SDK 0.85.1, `--llama`): `livez` 200 in ~13 ms loopback, authenticated `readyz` capability snapshot 200 in ~15 ms, resident set ~73 MB (peak 99 MB shortly after start).
+The retired Bun assistant measurement is not evidence for the Go `pixie-assistant`: no Go process-tree RSS or readiness measurement is recorded in this checkout, and `check-performance` fails closed until live evidence is supplied for both binaries and architectures.
 
 Fixture commands (run on the live deployment host, then record machine, CPU/RAM, image digest, `agent-browser` version, Chromium version, and controller revision alongside each number):
 

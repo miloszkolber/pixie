@@ -50,7 +50,7 @@ test("composition rejects a missing facade, controller-internal imports and nonl
 		...input,
 		assistantSources: {
 			...input.assistantSources,
-			"assistant/src/bad.ts": 'import "../../package/internal/controller/runtime";\n',
+			"assistant/bridge/bad.ts": 'import "../../package/internal/controller/runtime";\n',
 			"assistant/internal/bad.go":
 				'package bad\n\nimport "example.test/pixie/internal/controller"\n',
 		},
@@ -61,7 +61,7 @@ test("composition rejects a missing facade, controller-internal imports and nonl
 			...input.productionSources,
 			"package/internal/supervisor/supervisor.go":
 				"package supervisor\n\ntype Supervisor struct{}\n",
-			"assistant/src/server.ts": "Bun.serve({});\n",
+			"assistant/bridge/server.ts": "Bun.serve({});\n",
 			"package/internal/server.ts": "Bun.serve({});\n",
 		},
 		packageGoModText: "module example.test/pixie\n\nrequire example.test/assistant v0.0.0\n",

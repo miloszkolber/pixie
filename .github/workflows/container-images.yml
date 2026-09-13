@@ -16,7 +16,6 @@ on:
       - "NOTICE.md"
       - ".pixie.example"
       - "package/**"
-      - "patches/**"
       - "assistant/**"
       - "package.json"
       - "bun.lock"

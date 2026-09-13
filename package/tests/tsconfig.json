@@ -7,6 +7,5 @@
 			"@/*": ["../webui/src/*"]
 		}
 	},
-	"include": ["**/*.ts"],
-	"exclude": ["pixie-assistant", "pi-native-parity"]
+	"include": ["**/*.ts"]
 }

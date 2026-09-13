@@ -177,11 +177,7 @@ function finalDockerStage(dockerfile: string): string {
 function hasAssistantRuntimeCopy(dockerfile: string): boolean {
 	for (const match of dockerfile.matchAll(/^\s*COPY\s+(?:--from=\S+\s+)?(\S+)/gm)) {
 		const source = match[1];
-		if (
-			source?.startsWith("assistant/") &&
-			source !== "assistant/package.json" &&
-			source !== "assistant/patches/"
-		) {
+		if (source?.startsWith("assistant/") && source !== "assistant/package.json") {
 			return true;
 		}
 	}
@@ -589,6 +585,12 @@ export async function collectCompositionInput(
 		resolve(repositoryRoot, "package/Dockerfile"),
 		"utf8",
 	).catch(() => undefined);
+	// The legacy Bun assistant tree is removed. Production-source checks (single
+	// Bun.serve, single supervisor owner) apply to the retained Go assistant and
+	// the controller/UI sources; the deleted TypeScript tree is not collected.
+	const assistantProductionSources = Object.fromEntries(
+		Object.entries(assistantSources).filter(([path]) => path.endsWith(".go")),
+	);
 	const optional: Pick<
 		CompositionInput,
 		"assistantGoModText" | "packageGoModText" | "dockerfileText"
@@ -600,7 +602,7 @@ export async function collectCompositionInput(
 		assistantSources,
 		packageCommandSources,
 		productionSources: {
-			...assistantSources,
+			...assistantProductionSources,
 			...packageCommandSources,
 			...packageInternalSources,
 			...packageWebuiSources,

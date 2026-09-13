@@ -33,7 +33,7 @@ const schema = loadProtocolCatalog(join(packageDir, SCHEMA_RELATIVE_PATH));
  */
 function extractNativeOperationSet(source: string): string[] {
 	const block = source.match(
-		/func nativeOperationSet\(\) map\[string\]bool \{[\s\S]*?for _, operation := range \[\]string\{([\s\S]*?)\} \{/,
+		/func nativeOperationSet\([^)]*\) map\[string\]bool \{[\s\S]*?for _, operation := range \[\]string\{([\s\S]*?)\} \{/,
 	);
 	if (block === null) throw new Error("nativeOperationSet literal not found");
 	return [...(block[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? "");

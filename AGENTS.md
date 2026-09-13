@@ -10,13 +10,13 @@ The canonical implementation plan and review evidence live only under roadmap/. 
 
 ## Target and retained behavior
 
-The release target is a shared Go engine supervising selected host Pi through native RPC, used by assistant-only and full-host builds. The legacy Bun service remains only as a fallback and compatibility-test oracle until the Go gaps in roadmap/README.md close; do not present it as the release assistant or add another npm distribution path. Core chat needs no native extension. The optional administration bridge must use the selected installation's public APIs and stay explicitly opt-in, not another SDK/agent daemon.
+The release target is a shared Go engine supervising selected host Pi through native RPC, used by assistant-only and full-host builds. The Go `pixie-assistant` binary is the only assistant runtime; the legacy Bun service is removed. Core chat needs no native extension. The optional administration bridge must use the selected installation's public APIs and stay explicitly opt-in, not another SDK/agent daemon.
 
 Every release includes pixie-assistant and the complete pixie host binary on amd64/arm64, plus the matching Docker controller image. One source commit produces one sha-<12> identity across Git tag, GitHub Release, archive names, binary metadata and Docker tag; full SHA/digests stay in the manifest. Follow roadmap/README.md. Do not create semantic-version or workflow-counter naming alongside it.
 
 The full-host build contains assistant/controller/UI in one executable/service. Docker explicitly runs controller-only mode and never starts local Pi. Both share implementation, authority and state contracts, not duplicated supervisors.
 
-Pi owns execution, transcripts, native credentials/models/settings/tools/extensions and trust. Do not intercept tools, replace prompts, auto-trust projects, install native packages silently or implement another model/MCP policy. Retained web features need tested coverage; a TUI-only fallback is not parity. Keep legacy selection until coverage gates or explicitly approved reductions permit removal.
+Pi owns execution, transcripts, native credentials/models/settings/tools/extensions and trust. Do not intercept tools, replace prompts, auto-trust projects, install native packages silently or implement another model/MCP policy. Retained web features need tested coverage; a TUI-only fallback is not parity.
 
 Sharing an installation does not attach to an arbitrary running TUI. Use separate sessions or explicit idle handoff with the managed owner terminated. Preserve independent native IDs/branches, unknown source records, ambiguous dispatch and deletion authority.
 

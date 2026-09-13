@@ -598,13 +598,13 @@ describe("bridge FC21 extension enablement", () => {
 		expect(saved).toEqual({ saved: true, loaded: false, reload: "deferred", warning: null });
 		const after = (await bridge.dispatch("pi.extensions.list", {})) as any;
 		expect(after.resources[0].enabled).toBe(false);
-		const savedAgain = await bridge.dispatch("pi.extensions.configure", {
+		const savedAgain = (await bridge.dispatch("pi.extensions.configure", {
 			scope: "user",
 			resourceKey: after.resources[0].resourceKey,
 			expectedRevision: after.configurationRevisions.user,
 			enabled: true,
 			confirmed: true,
-		});
+		})) as any;
 		expect(savedAgain.saved).toBe(true);
 		const reenabled = (await bridge.dispatch("pi.extensions.list", {})) as any;
 		expect(reenabled.resources[0].enabled).toBe(true);

@@ -4,9 +4,9 @@ This is the canonical implementation status, investigation backlog, and forward 
 
 ## Current verdict
 
-**No-go for Go-assistant cutover, release, or untrusted Browser work.** A third repair pass landed the P0 execution-integrity fixes at source and unit-test level: one native child per logical session with a durable path/cwd registry, immutable event/run ownership, separate acceptance and settlement states, exhaustive fail-closed operation negotiation, non-blocking deletion recovery bound to a stable persisted host identity, and a full-host lifecycle that fails closed. The remaining blockers are legacy-only native parity, the uncontained Browser boundary, the unwired host-v2/pairing/migration path, and missing live release evidence. No P0 repair has been exercised against a real pinned Pi distribution in this checkout.
+**No-go for Go-assistant cutover, release, or untrusted Browser work.** A third repair pass landed the P0 execution-integrity fixes at source and unit-test level: one native child per logical session with a durable path/cwd registry, immutable event/run ownership, separate acceptance and settlement states, exhaustive fail-closed operation negotiation, non-blocking deletion recovery bound to a stable persisted host identity, and a full-host lifecycle that fails closed. The operator approved removal of the legacy Bun service; its retained behaviors are now either implemented in Go, delegated to the opt-in bridge, or explicitly reduced. The remaining blockers are the unported native parity and administration surface, the uncontained Browser boundary, the unwired host-v2/pairing/migration path, and missing live release evidence. No P0 repair has been exercised against a real pinned Pi distribution in this checkout.
 
-The authorized local amd64 deployment uses controller image `pixie-local:8c3d4e75` from checkout `8c3d4e75a268b61bf02854cb6e4d2f59b37e0b40`. The controller is healthy, loopback-bound, authenticated, non-root, read-only, capability-dropped, and resource-limited. The production host assistant still runs the legacy Bun source service. The Go repairs have also been deployed to a non-production Go full-host test instance on the host (systemd unit `pixie-e2e`, port 7412, copied agent directory) where `/readyz` reports `applicationReady`/`configured`/`reachable` with the embedded UI, clean stop and restart, and real Pi 0.85.1 selection. This is local amd64 evidence against a source build, not a final artifact or Go cutover.
+The authorized local amd64 deployment uses controller image `pixie-local:8c3d4e75` from checkout `8c3d4e75a268b61bf02854cb6e4d2f59b37e0b40`. The controller is healthy, loopback-bound, authenticated, non-root, read-only, capability-dropped, and resource-limited. The repository no longer contains the legacy Bun service; a previously deployed Bun instance remains the live host until the Go cutover is authorized. The Go repairs have also been deployed to a non-production Go full-host test instance on the host (systemd unit `pixie-e2e`, port 7412, copied agent directory) where `/readyz` reports `applicationReady`/`configured`/`reachable` with the embedded UI, clean stop and restart, and real Pi 0.85.1 selection. This is local amd64 evidence against a source build, not a final artifact or Go cutover.
 
 Current fail-closed gates agree with that verdict:
 
@@ -14,8 +14,8 @@ Current fail-closed gates agree with that verdict:
 - `check-package-artifacts` lacks four archives, four executables, lifecycle checks, and a working full-host evidence record.
 - `check-performance` has 0 of 4 required process targets.
 - `release-gate` lacks release identity, archives, binaries, OCI platform digests, checksums, SBOM/provenance, source reachability, and publication authorization. CI now produces archives and the OCI tar before the evidence gates, but the gate collectors still cannot ingest them and no evidence bundle producer exists.
-- Repository lint is not green: the latest run reported 119 errors, 182 warnings, and 16 informational diagnostics, mainly in retained legacy TypeScript. The new Go and contract edits are formatted and type-clean.
-- `bun test tests` is fully green at 807 pass / 0 fail under the pinned Bun 1.4.0 in the container and the host's Bun 1.4.2. The earlier two retained-parity failures were a Bun <1.4 `webidl.util.markAsUncloneable` incompatibility, not code.
+- Repository lint is green after the legacy removal: `bun run lint` reports 0 errors, 58 warnings and 5 informational diagnostics, all warnings in the retained bridge and test/source tree.
+- `bun test tests` is green at 524 pass / 0 fail under the pinned Bun 1.4.0; `bun test assistant/bridge` is green at 34 pass / 0 fail. The removed parity suites account for the earlier larger count.
 - Both Go modules pass `go test -race` on the host with Go 1.27.0, including a fixed test-side supervisor map race. The opt-in `assistant/host/native_real_test.go` harness passes against the host's official Pi 0.85.1 for session ownership and, with a live provider, a real prompt that settles with a terminal stop reason and records the assistant message. Real-Pi testing found and fixed a host bug that fatally misclassified official `extension_ui_request` events as the removed compatibility protocol.
 
 ## Authorized execution plan
@@ -31,8 +31,8 @@ The operator authorized live host testing and settled the open decisions. Execut
 - **D6 evidence: producers implemented.** A versioned bundle, a local archive/OCI collector, coverage/performance producers and packaged-binary `--version`/`doctor`/readiness probes exist and feed the gates; real coverage/performance inputs, registry provenance/SBOM and arm64 digests remain blocked and fail closed.
 - **D7 evidence bundle schema:** accepted; the versioned schema records source commit, release id, platform, profile, exact command, artifact digest, timestamp and result per assertion.
 - **D8 Settings: done.** The modal is removed; the primary-area Settings view remains reachable in every connection state, and the deletion-recovery section is added.
-- **arm64: partially evidenced.** A Mac arm64 pass (`roadmap/arm64-test-pr23.md`) ran the workspace and assistant Go tests, `TestApplicationThroughNativePiHost` (vanilla/optional/project profiles), a serialized `-race` suite, both release archives with matching checksums, and the packaged full-host `/readyz`/`/health`/`/livez` on a Linux arm64 VM, all green. Open: the OCI image build (Apple Container mishandles the percent-encoded patch filename and the `.dockerignore` left `package/webui` empty; verify with Linux BuildKit or a GitHub arm64 runner), fresh-artifact systemd lifecycle, and macOS cannot compile the Go tests directly because the source uses Linux-only `unix.O_PATH`.
-- **Live target:** the host's legacy `pixie-assistant.service` remains the working instance. A Go full-host/controller test instance uses separate ports, data dir, and a copied agent directory; the operator authorized deploying and testing there. `PIXIE_PI_SECRET_KEY` was exposed in local tool output and should be rotated before any public sharing.
+- **arm64: partially evidenced.** A Mac arm64 pass (`roadmap/arm64-test-pr23.md`) ran the workspace and assistant Go tests, a serialized `-race` suite, both release archives with matching checksums, and the packaged full-host `/readyz`/`/health`/`/livez` on a Linux arm64 VM, all green. The pass predates the legacy removal, so its Bun-host parity and percent-encoded-patch findings no longer apply. Open: the OCI image build (verify with Linux BuildKit or a GitHub arm64 runner), fresh-artifact systemd lifecycle, and macOS cannot compile the Go tests directly because the source uses Linux-only `unix.O_PATH`.
+- **Live target:** a previously deployed legacy `pixie-assistant.service` remains the working host instance until cutover. A Go full-host/controller test instance uses separate ports, data dir, and a copied agent directory; the operator authorized deploying and testing there. `PIXIE_PI_SECRET_KEY` was exposed in local tool output and should be rotated before any public sharing.
 
 ## Confirmed implemented baseline
 
@@ -46,8 +46,8 @@ The operator authorized live host testing and settled the open decisions. Execut
 - Bounded native JSONL parsing, aggregate admission, control reserve, pending limits, timeouts, and process-group teardown have focused tests.
 - Controller Host/Origin policy, loopback Pi restrictions, reserved module routes, non-executing Git inspection, bounded controller child termination, typed persistence outcomes, and storage bounds have focused implementation tests. Settings now reconciles a durability-uncertain config publish against the visible primary instead of leaving the cache stale. `session_state.go`, `browser_panel_ownership.go` and `project-root-migration.go` still call `persist.Write`, but they re-read the primary and do not cache a divergent value.
 - The six-slot workspace, responsive Settings behavior, rail keyboard navigation, read-only Files/Git views, Mewa foundations, Browser leases/artifacts, and packaged Chromium shell have source or fixture acceptance.
-- The local controller and legacy assistant are live and healthy. Both Go modules pass `CGO_ENABLED=0 go test -count=1 ./...` and `CGO_ENABLED=0 go vet ./...`; this verifies isolated Go code, not full integration.
-- npm assistant publication has been removed. The private Bun workspace remains only as a fallback and parity oracle until Go cutover.
+- The local controller is live and healthy; the legacy assistant source is removed from the repository, and any deployed instance remains until cutover. Both Go modules pass `CGO_ENABLED=0 go test -count=1 ./...` and `CGO_ENABLED=0 go vet ./...`; this verifies isolated Go code, not full integration.
+- npm assistant publication has been removed. The assistant workspace now contains only the opt-in Bun administration bridge and its typecheck; it is not a fallback assistant or a release artifact.
 
 ## Confirmed defects and integration risks
 
@@ -65,7 +65,7 @@ The operator authorized live host testing and settled the open decisions. Execut
 
 5. **Full-host packaging and supervision — BUILD-03/BUILD-05/PKG-01–PKG-03, FC22. Substantially repaired at source.** Full-host startup now requires an absolute agent directory and a resolvable Pi executable, `serveFullHost` joins `assistant.Errors()` and the controller error channel, assistant readiness degrades while a lost session awaits reload, `runtime.restart` is explicit opt-in and exits status 75, packaged `pixie.json` selects Pi, and generated install instructions include the private environment file and selection. Still missing: fresh-archive systemd install/start/stop/restart/upgrade/rollback/uninstall evidence on both architectures.
 
-6. **Native administration and parity remain legacy-only — BRIDGE-01–BRIDGE-03/GO-06/GO-08/GO-09/EXT-01/EXT-04, FC13–FC28.** Provider/auth/settings/extensions/MCP/native-UI tests primarily execute `assistant/src` under Bun. They do not prove the Go binary or independent npm/standalone Pi profiles. Required fix: integrate only supported selected-Pi public APIs, preserve explicit unsupported states, and run each operation through the Go binary against both distributions. FC15 stays a cutover gate: the retained public API cannot provide request-specific dialog cancellation or non-empty editor text, so exact working hints and UI cancellation are known-reduced and must not be presented as parity. The assistant bridge package named by the original plan does not exist.
+6. **Native administration and parity remain incomplete — BRIDGE-01–BRIDGE-03/GO-06/GO-08/GO-09/EXT-01/EXT-04, FC13–FC28.** The legacy Bun tree and its parity tests are removed by explicit operator approval. The opt-in administration bridge carries the supported selected-Pi public-API surface, and unsupported operations stay absent and fail closed; it does not prove the Go binary or independent npm/standalone Pi profiles. Required fix: integrate only supported selected-Pi public APIs, preserve explicit unsupported states, and run each operation through the Go binary against both distributions. FC15 stays a cutover gate: the retained public API cannot provide request-specific dialog cancellation or non-empty editor text, so exact working hints and UI cancellation are known-reduced and must not be presented as parity.
 
 ### P1 — architecture and delivery
 
@@ -98,14 +98,14 @@ The operator authorized live host testing and settled the open decisions. Execut
 | Original work | State | Audit conclusion |
 | --- | --- | --- |
 | FIX-01 | Partial | Go `runtime.restart` is opt-in and exits status 75 with lifecycle tests; real systemd restart evidence is absent. |
-| FIX-02–FIX-04, FIX-06–FIX-13 | Partial | Focused regressions exist, but several prove controller or legacy behavior rather than target Go/final artifacts. |
+| FIX-02–FIX-04, FIX-06–FIX-13 | Partial | Focused regressions exist, but several prove controller behavior rather than target Go/final artifacts. |
 | FIX-05/API-02/API-03/MIG-01 | Not done end-to-end | Versioned transport, durable authority, and staged topology recovery are disconnected helpers. |
 | API-01 | Partial | Browser/controller methods are bound both ways and Go advertises an exhaustive, fail-closed operation set before dispatch. The Go host catalog is hand-maintained with no non-test binding to controller call sites. |
 | STATE-01/MODULE-01/ROUTE-01/LIMIT-01 | Done at source level | Workspace state, module routing, and bound helpers are integrated with focused tests. |
 | LIFE-01 | Partial | Controller Stop/idle-release exists and release now verifies native quiescence before dropping residence; full real-Pi lifecycle evidence is absent. |
 | GO-01/GO-02 | Partial | Go module, facade, bounded transport, and teardown exist; production contract is incomplete. |
 | GO-03–GO-07 | Partial | Session targeting, cwd, settlement, and event ownership are repaired at source with regressions; history/fork and real-Pi evidence remain. |
-| BRIDGE-01–BRIDGE-03/GO-08/GO-09 | Not done for Go | Evidence remains legacy-only; independent selected-Pi profiles are absent. |
+| BRIDGE-01–BRIDGE-03/GO-08/GO-09 | Not done for Go | The Go/bridge surface exists; independent selected-Pi profiles are absent. |
 | BUILD-01/BUILD-02 | Partial | Binaries build, but the assistant does not provide the required retained behavior. |
 | BUILD-03 | Partial | Full-host composition now fails closed on missing Pi and joins assistant lifecycle; systemd evidence is absent. |
 | BUILD-04 | Done at source/local-controller level | Docker is controller-only; evidence is local amd64 source, not a release. |
@@ -113,7 +113,7 @@ The operator authorized live host testing and settled the open decisions. Execut
 | REL-01–REL-04 | Partial | Commit identity and workflow sequencing exist; complete artifacts, collectors and authorized release evidence do not. |
 | UI-01–UI-06/MEWA-01–MEWA-03 | Partial | Workspace and foundation acceptance is credible within its tested boundary, but residual UI-04 scope is open: ungrouped sessions are hardcoded empty with no host metadata over `session.list`, there is no shared visibility-aware poller (four independent 5 s loops), Settings is both a primary area and a modal, and zoom/layout checks are source/CSS substring assertions rather than rendered acceptance. |
 | UI-07 | Partial | Recovery code exists; real old-client/new-server artifact evidence is absent. |
-| EXT-01/EXT-04 | Not done for Go | Native UI/MCP integration remains legacy-only. |
+| EXT-01/EXT-04 | Not done for Go | Native UI/MCP integration is incomplete on the Go/bridge path. |
 | EXT-02 | Done at source level | Registry desired/readiness separation and local failure handling have focused tests. |
 | EXT-03/SEC-01 | Partial | Browser and security controls exist without required containment/default posture. |
 | SEC-02/PERF-01 | Not done | Worker isolation and four live performance profiles are absent. |
@@ -138,16 +138,16 @@ The prior 17-file plan was re-audited against the current tree using `git show 8
 
 ## Dependency-ordered next steps
 
-1. **Keep unsafe transitions frozen:** retain the legacy assistant; block Go cutover and publication; do not enable untrusted Browser work. The Go operation set is exhaustive and fail-closed.
+1. **Keep unsafe transitions frozen:** block Go cutover and publication; do not enable untrusted Browser work. The Go operation set is exhaustive and fail-closed.
 2. **Prove core execution authority against real Pi:** run the new per-session ownership, cwd, settlement, abort, reconnect, and event-order tests against the pinned standalone and npm Pi distributions, including A/B/A, concurrent chat, and schedule-versus-chat. Cover executable discovery with symlinks, spaces, custom prefixes and systemd's non-login PATH.
 3. **Align the shared contracts (remaining):** generate one typed model/thinking/resource schema for Go and TypeScript, project authoritative provider/model catalog snapshots, and reconcile partial create failures.
 4. **D5 destructive recovery (priority):** the verified Pi 0.85.1 RPC surface has no delete command, so Go `session.delete` stays unsupported and never dispatches. Deliver the WebUI confirm/retain reconciliation view, migrate/quarantine pre-v2 records, and allow retry-same-authority only for operator-confirmed records. Never clear tombstones blindly.
 5. **Prove full-host lifecycle (remaining):** verify fresh archive install/start/stop/restart/upgrade/rollback/uninstall under real systemd on both architectures.
-6. **Port retained native integrations:** landed — the vanilla RPC slice; FC13/FC14 native UI dialogs via raw `extension_ui_request`/`extension_ui_response` frames; FC23 filesystem `pi.sources.*`/`pi.agent-mentions.list`; and the opt-in administration bridge foundation with FC17 providers and FC19 defaults/preferences and FC20 extension inventory, verified against the installed Pi 0.85.1. Remaining: FC18 provider login (streaming auth interactions), FC21 extension enablement, FC26 MCP adapter inventory/registration, the named reductions (FC15, FC16 read path, `pi.tools.call`, `session.prompt.resource`, compaction reserve), a non-test binding that fails when a controller-sent method is absent or false in `nativeOperationSet`, and shipping `assistant/bridge/serve.ts` plus a Bun runtime in the full-host archives/image. Keep the Bun oracle until exact parity or explicit named reductions are approved.
+6. **Port retained native integrations:** landed — the vanilla RPC slice; FC13/FC14 native UI dialogs via raw `extension_ui_request`/`extension_ui_response` frames; FC23 filesystem `pi.sources.*`/`pi.agent-mentions.list`; and the opt-in administration bridge foundation with FC17 providers and FC19 defaults/preferences and FC20 extension inventory, verified against the installed Pi 0.85.1. Remaining: FC18 provider login (streaming auth interactions), FC21 extension enablement, FC26 MCP adapter inventory/registration, the named reductions (FC15, FC16 read path, `pi.tools.call`, `session.prompt.resource`, compaction reserve), a non-test binding that fails when a controller-sent method is absent or false in `nativeOperationSet`, and shipping `assistant/bridge/serve.ts` plus a Bun runtime in the full-host archives/image. The deleted legacy scenarios are classified as ported, bridge-backed, or named reductions rather than a standing oracle.
 7. **Enforce Browser separation:** provide a separate worker UID/filesystem/network design and deployment profile; default Browser unavailable when enforcement cannot be verified.
 8. **Wire transport and migration:** integrate host v2, durable pairing, stable authority, snapshots, staged conversion, topology switching, rollback, and no-ledger-rewind behavior with real services.
 9. **Finish the CI evidence pipeline:** add artifact/OCI collectors and a coverage/performance evidence-bundle producer so the new post-artifact gates can pass on real candidate inputs, then run authorized publication rehearsals.
-10. **Close final gates:** run both architectures and both host compositions, performance, upgrade compatibility, OCI/SBOM/provenance, and only then retire legacy code and its optional Bun patches.
+10. **Close final gates:** run both architectures and both host compositions, performance, upgrade compatibility, OCI/SBOM/provenance, then authorize the Go cutover. The legacy source and its Bun patches are already removed by explicit operator decision.
 
 ## Investigation backlog
 
@@ -159,7 +159,7 @@ The prior 17-file plan was re-audited against the current tree using `git show 8
 - Deletion quarantine and reconciliation API now exists (`session.deletionRecovery`, `session.confirmExternalDeletion`, readiness/welcome surfacing) and retains tombstones. Remaining: WebUI view and retry-same-authority execution.
 - Verify whether public Pi RPC can carry bounded text resources with the intended semantics; if not, prepare a precise upstream request or named feature-reduction decision.
 - Establish how full-host config selects Pi safely on first install and how child failure reaches systemd without losing controller shutdown evidence.
-- Re-run all legacy parity scenarios through Go and classify each as native RPC, supported public bridge, unavailable, or intentionally reduced.
+- Classify each retained FC/X behavior as native RPC, supported public bridge, unavailable, or intentionally reduced; the deleted legacy Bun scenarios are no longer the oracle.
 - Define an evidence-bundle schema tying command, artifact digest, platform, profile, source commit, timestamps, and result to every FC/X/gate assertion.
 - Threat-model the external Browser worker against same-host attacks: loopback access, DNS rebinding, sibling sessions, artifact paths, process signaling, sockets, egress, and crash cleanup.
 - Audit controller persistence for crash consistency across all multi-file mutations, not only the already-tested publication helpers; include disk-full, permission, rename, fsync, and stale-backup cases.
@@ -188,12 +188,16 @@ The prior 17-file plan was re-audited against the current tree using `git show 8
 
 A 19-state visual and interaction review (desktop/mobile, light/dark, every primary area and settings section, overlay and recovery states) was run against the real UI in the acceptance container. Fixed and verified: Settings sections now use container queries so provider copy, System badges and model rows keep their actions at narrow pane widths; every navigation group shows a persistent selected state (settings rows use the session selected pattern, mobile panes/areas use `role=tablist`+`aria-selected`, rails style `aria-current`); mobile panes fill the viewport with user-facing labels; the session-plan popover is clamped inside the chat pane; internal settings rationale was replaced, schedule empty states de-duplicated, and the secondary Restore scoped. Residual: mobile pane `role=tab` groups lack roving tabindex/`aria-controls`, and the dark-mode attachment chip should be re-confirmed on a real image.
 
-## Legacy removal readiness
+## Legacy removal
 
-The production entrypoints no longer import the `assistant/src` tree; the legacy service is reachable only from tests and fixtures, so removal is blocked by parity and evidence, not by a production edge. The audit found a real controller/host gap now fixed (canonical `session.steer`/`session.rename`), and the remaining `pi.session.*`/admin names still fail closed on Go.
+The operator approved a breaking removal of the legacy Bun assistant service and every artifact that existed only to serve it. The repository now contains the Go assistant (`assistant/cmd/pixie-assistant`, `assistant/host`), the controller/UI (`package/`), and the opt-in Bun administration bridge (`assistant/bridge/`). The legacy assistant TypeScript tree, its compiled output, both patch directories, the Bun parity suites, the native-SDK controller test, the root `patchedDependencies` declaration and the `check:parity` script are deleted.
 
-- **Delete now (no parity gate):** dead modules with no live caller — `assistant/src/bridge`, `compatibility/**`, `discovery-compat.ts`, `discovery.ts`, `doctor.ts`, `facade.ts`, the `history/index.ts` and `session/index.ts` barrels, `history/continuity.ts`, `module-boundary.ts`, `admin-profiles/evaluate.ts` and `bridge/feasibility.ts` — plus their legacy-only tests. These are also the only implementation of the FC06 discovery/doctor and MIG-01 compatibility behaviors, so delete only with the matching reduction or port decision.
-- **Gate before deleting the rest:** FC13/FC14 raw UI frames, FC17–FC21/FC26 bridge, FC23 `pi.sources.*`, FC22 lifecycle, the reductions above, then `check:coverage` all 28 FC + 14 X + Gates 1–5 with `legacyPaths` and live evidence. Test assets to port rather than retire: `protocol-conformance`, `transport-jsonl`, `serialize`, and the `pi-native-parity` scenario suites.
+This removal is an explicit operator reduction, not evidence that the corresponding FC/X rows pass. The production entrypoints already used only Go; the audit-found controller/host gap (canonical `session.steer`/`session.rename`) remains fixed. Remaining `pi.session.*`/admin names still fail closed on Go.
+
+- **Ported or bridge-backed:** FC13/FC14 raw UI frames, FC17 providers, FC19 defaults/preferences, FC20 extension inventory, FC23 `pi.sources.*`, and the FC22 lifecycle pieces listed above.
+- **Named reductions accepted with the removal:** FC15 working hints and cancellation fidelity, FC16 editor read path, `pi.tools.call`, and `session.prompt.resource`.
+- **Still to port before cutover:** FC18 provider login, FC21 extension enablement, FC26 MCP adapter inventory/registration, and shipping `assistant/bridge/serve.ts` plus a Bun runtime in the full-host archives/image.
+- **Retired test assets:** the legacy protocol, transport, serialize, and native-parity suites were removed with the tree. Their retained assertions are carried by the Go host/controller tests and the bridge suite; anything not carried is an accepted reduction above.
 
 ## Deviations from the original plan
 
@@ -207,7 +211,8 @@ The production entrypoints no longer import the `assistant/src` tree; the legacy
 - Initial host Compose exposed an unauthenticated wildcard listener and mounted `/home/core`; the rollout corrected it to authenticated loopback, removed that mount, and added restrictions.
 - Browser was smoke-tested for UI liveness without claiming containment; its architecture still deviates from the enforced-worker requirement.
 - Temporary rollback archives and the preceding image were removed by the later explicit cleanup request. Create a fresh snapshot before any future upgrade.
-- Historical npm assistant publication was removed by explicit direction. The private Bun workspace remains only until Go correctness/parity permits legacy retirement.
+- Historical npm assistant publication was removed by explicit direction. The assistant workspace now holds only the opt-in Bun administration bridge and its typecheck.
+- The legacy Bun service, its patches and its parity suites were removed by explicit operator direction without the FC/X/gate evidence the prior rule required. The affected rows are tracked as ported, bridge-backed, or named reductions in the Legacy removal section; the removal is not evidence that they pass.
 - The former 17-file roadmap and later two-file summary were consolidated into this single investigation center. Detailed historical records remain in Git history.
 
 ## Retained feature index
@@ -275,4 +280,4 @@ Gate applicability is conditional: X09 belongs to Design and Gate 7, and X12–X
 
 Record source commit, command, fixture, platform, profile, result, artifact digest, authority impact, and remaining limitation for every completed claim. Static inspection, unit tests, mocks, legacy fixtures, live Pi, final binaries, systemd, OCI, and publication are distinct evidence classes.
 
-Publication, remote mutation, release-policy enablement, and live/native-state changes require explicit authorization. Do not retire legacy behavior until applicable FC/X/gates pass against final artifacts or the user approves the precise reduction.
+Publication, remote mutation, release-policy enablement, and live/native-state changes require explicit authorization. Do not treat an approved legacy removal as evidence that the applicable FC/X/gates pass against final artifacts.

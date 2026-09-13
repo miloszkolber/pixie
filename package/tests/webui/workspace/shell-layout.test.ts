@@ -524,11 +524,7 @@ function navBlock(source: string, testId: string): string {
 test("mobile pane and area switchers expose one persistent selected item per group", async () => {
 	const workArea = await source("workspace/views/project-work-area.svelte");
 	expect(workArea).toContain("const MOBILE_PANE_LABELS");
-	for (const label of [
-		'projects: "Navigation"',
-		'primary: "Workspace"',
-		'secondary: "Panel"',
-	]) {
+	for (const label of ['projects: "Navigation"', 'primary: "Workspace"', 'secondary: "Panel"']) {
 		expect(workArea).toContain(label);
 	}
 
@@ -536,9 +532,9 @@ test("mobile pane and area switchers expose one persistent selected item per gro
 	expect(workArea).toContain('aria-label="Mobile panes"');
 	expect(paneNav).toContain('role="tablist"');
 	expect(paneNav).toContain('role="tab"');
-	expect(paneNav).toContain("aria-selected={mobilePane === \"projects\"}");
-	expect(paneNav).toContain("aria-selected={mobilePane === \"primary\"}");
-	expect(paneNav).toContain("aria-selected={mobilePane === \"secondary\"}");
+	expect(paneNav).toContain('aria-selected={mobilePane === "projects"}');
+	expect(paneNav).toContain('aria-selected={mobilePane === "primary"}');
+	expect(paneNav).toContain('aria-selected={mobilePane === "secondary"}');
 	expect(paneNav).toContain("{MOBILE_PANE_LABELS.projects}");
 	expect(paneNav).not.toContain("aria-pressed");
 	expect(paneNav).not.toContain(">Projects<");

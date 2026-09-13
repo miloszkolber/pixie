@@ -16,8 +16,6 @@ COPY package/package.json ./
 COPY package/webui/package.json webui/package.json
 COPY package/contracts/package.json contracts/package.json
 COPY assistant/package.json /work/assistant/package.json
-COPY assistant/patches/ /work/assistant/patches/
-COPY patches/ /work/patches/
 RUN --mount=type=cache,id=bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
     bun install --frozen-lockfile
 COPY package/webui/ webui/

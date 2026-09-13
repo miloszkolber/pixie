@@ -23,7 +23,6 @@
 		"check:contracts": "bun scripts/check-contracts.ts",
 		"lint": "bun run check:filenames && biome check . ../assistant ../package.json ../biome.json",
 		"format": "biome check --write . ../assistant ../package.json ../biome.json",
-		"check:deps": "bun scripts/check-catalog.ts",
-		"check:parity": "bun test tests/pi-native-parity"
+		"check:deps": "bun scripts/check-catalog.ts"
 	}
 }

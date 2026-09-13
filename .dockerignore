@@ -20,11 +20,6 @@
 !package/tests/ui/**
 !assistant/
 !assistant/package.json
-!assistant/patches/
-!assistant/patches/*.mjs
-!assistant/patches/*.patch
-!patches/
-!patches/*.patch
 !package/contracts/
 !package/contracts/**
 !package/webui/
@@ -41,6 +36,3 @@ package/webui/dist/*
 **/*.tsbuildinfo
 **/*.log
 **/.env*
-
-!patches/
-!patches/*.patch

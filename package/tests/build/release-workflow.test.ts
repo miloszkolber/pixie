@@ -31,7 +31,7 @@ test("commit release workflow has one source identity derivation and validate-on
 	expect(workflow).not.toContain("pixie-assistant-v");
 });
 
-test("legacy assistant has no npm publication surface", async () => {
+test("assistant workspace has no npm publication surface", async () => {
 	const npmWorkflowExists = await readFile(npmWorkflowPath, "utf8").then(
 		() => true,
 		() => false,

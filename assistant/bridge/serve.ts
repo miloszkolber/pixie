@@ -28,20 +28,9 @@
  */
 
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import {
-	closeSync,
-	fsyncSync,
-	mkdirSync,
-	openSync,
-	readFileSync,
-	renameSync,
-	rmdirSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
@@ -58,7 +47,6 @@ const MODEL_INFO_CURRENCY = "USD";
 const MCP_STATE_MAX_BYTES = 4 * 1024 * 1024;
 const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
 const INVENTORY_LIMIT = 500;
-const CONTRIBUTION_BUDGET = 5000;
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /** Methods this bridge implements. Everything else fails closed. */
@@ -360,6 +348,10 @@ interface SettingsManagerLike {
 	getCompactionReserveTokens(): number;
 	getLastChangelogVersion(): string | undefined;
 	setLastChangelogVersion(version: string | undefined): void;
+	setPackages(packages: unknown[]): void;
+	setProjectPackages(packages: unknown[]): void;
+	setExtensionPaths(paths: unknown[]): void;
+	setProjectExtensionPaths(paths: unknown[]): void;
 }
 
 interface SettingsManagerApi {
@@ -1346,7 +1338,7 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 		}
 		// Evaluate native filters without loading code or installing packages.
 		const previewSettings = sdk.SettingsManager.fromStorage({
-			withLock: (target, fn) => {
+			withLock: (target: "global" | "project", fn: (content: string) => void) => {
 				fn(JSON.stringify(target === settingsScope ? next : snapshots[target]));
 			},
 		});

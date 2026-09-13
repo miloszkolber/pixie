@@ -1,6 +1,6 @@
 name: CI
 
-# Source, service-isolation and official Pi compatibility gates.
+# Source, service-isolation and Go workspace gates.
 on:
   workflow_call:
     inputs:
@@ -82,6 +82,8 @@ jobs:
         env:
           CGO_ENABLED: "0"
         working-directory: assistant
+      - name: Test administration bridge
+        run: bun test assistant/bridge
   ui:
     name: Browser acceptance
     runs-on: ubuntu-latest
@@ -123,8 +125,8 @@ jobs:
           path: artifacts/ui
           if-no-files-found: warn
           retention-days: 14
-  pi:
-    name: Legacy Pi parity (${{ matrix.arch }})
+  go-workspace:
+    name: Go workspace filesystem parity (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
@@ -148,14 +150,4 @@ jobs:
         working-directory: package
       - name: Verify native workspace filesystem behavior
         run: CGO_ENABLED=0 go test -count=1 ./tests/go/workspace
-        working-directory: package
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-      - run: bun install --frozen-lockfile
-        working-directory: package
-      - run: bun test tests/pixie-assistant
-        working-directory: package
-      - name: Verify application against legacy native Pi host
-        run: go test -count=1 ./tests/go/controller -run TestApplicationThroughNativePiHost
         working-directory: package

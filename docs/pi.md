@@ -2,11 +2,11 @@
 
 The release assistant is the Go `pixie-assistant` binary. It starts the selected public `pi` executable in RPC mode and does not embed an SDK or require Bun at runtime. Pi owns provider credentials, models, settings and native JSONL sessions under the selected agent directory, normally `~/.pi/agent`.
 
-The legacy source service and parity fixtures still use `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai` pinned to `0.85.1`, including a small SDK export patch for the built-in extension barrel. They remain a fallback and compatibility oracle until the Go adapter's audited gaps close; they are not an npm release path.
+The opt-in administration bridge in `assistant/bridge/` runs under Bun when an operator selects it, resolves exactly one installed Pi SDK, and serves a bounded sidecar protocol to the Go host. The Go assistant does not embed an SDK or require Bun at runtime.
 
 ## Feature ownership
 
-The table records the intended owner, not proof that the Go adapter currently exposes every operation. The active legacy service retains the richer projections while the Go gaps in the [roadmap](../roadmap/README.md#confirmed-defects-and-integration-risks) remain open.
+The table records the intended owner, not proof that the Go adapter currently exposes every operation. Unimplemented operations stay absent or false and fail closed; the Go gaps in the [roadmap](../roadmap/README.md#confirmed-defects-and-integration-risks) remain open.
 
 | Feature | Implementation |
 | --- | --- |
@@ -64,9 +64,9 @@ Unknown methods return an error frame. Features are gated by capability versions
 
 **Versioning.** `protocolVersion` changes only for breaking wire changes. Within a version the protocol is additive: new methods, fields and capability groups join without a bump, and optional features stay behind capability versions. The controller negotiates at `runtime.hello` and refuses incompatible hosts.
 
-**Projection and lifecycle.** The legacy host projects transcript, tool, usage, run, lifecycle, UI, history, dialog, and attachment state. The Go adapter owns one immutable child per logical session in the admitted cwd, verifies exact identity before every operation, blocks prompt until settlement, and advertises only negotiated capabilities. Its transcript projection remains narrower than the legacy host; do not infer full parity from these repairs or from legacy snapshot tests.
+**Projection and lifecycle.** The Go host projects transcript, tool, usage, run, lifecycle, UI, history, dialog, and attachment state where implemented. It owns one immutable child per logical session in the admitted cwd, verifies exact identity before every operation, blocks prompt until settlement, and advertises only negotiated capabilities. Its transcript projection remains narrower than the full retained feature set; do not infer complete parity from source repairs.
 
-The legacy host has residency, replay, and bounded-shutdown behavior that the Go replacement must retain. The Go host keeps a durable session registry, reloads an exact session file on demand, and degrades readiness while a lost session awaits reload. Production integration remains subject to the roadmap audit.
+The Go host keeps a durable session registry, reloads an exact session file on demand, and degrades readiness while a lost session awaits reload. Production integration remains subject to the roadmap audit.
 
 | Native event or entry | Pixie presentation |
 | --- | --- |
@@ -90,19 +90,19 @@ Extension registration adds services and tools; it does not replace prompts, int
 
 **Inventory and configuration.** Settings → Extensions distinguishes configured resources from extensions loaded in a resident session. Missing sources stay visible; inspection does not install packages, import extension code or create/reload a session. Non-resident sessions have no live loaded inventory. Loaded versions/interface support remain unknown when native metadata does not supply them.
 
-Browser `pi.nativeExtensions` maps to host `pi.extensions.list`; `pi.nativeExtensionConfigure` maps to `pi.extensions.configure`. The current configuration writer uses native resolver/settings APIs, a scoped resource key and expected revision. Confirmed changes preserve unrelated settings and resource filters. Unsupported changes, malformed targets and stale revisions are rejected. Static CLI resources such as `--llama` are not editable here. Native extension inventory is separate from MCP connection administration; the similarly named `pi.config.extensions.*` and `pi.session.extensions.*` methods concern MCP connections, not this resource inventory.
+Browser `pi.nativeExtensions` maps to host `pi.extensions.list`; `pi.nativeExtensionConfigure` maps to `pi.extensions.configure`. The administration bridge uses native resolver/settings APIs, a scoped resource key and expected revision. Confirmed changes preserve unrelated settings and resource filters. Unsupported changes, malformed targets and stale revisions are rejected. Static CLI resources such as `--llama` are not editable here. Native extension inventory is separate from MCP connection administration; the similarly named `pi.config.extensions.*` and `pi.session.extensions.*` methods concern MCP connections, not this resource inventory.
 
 A successful save reports `saved=true`, `loaded=false` and `reload=deferred`. Refresh inventory before retrying an uncertain save. A subsequent load failure is reported separately and does not silently roll back the saved configuration. Reopen the session or restart the configured host service to apply changes. Per-session hot reload is not exposed. The [roadmap](../roadmap/README.md) covers the replacement runtime and compatibility rules.
 
-**Web UI bridge.** The SDK host maps `select`, `confirm`, `input`, `editor` and `notify`, plus text status/widgets, transient title and working-message hints. Blocking requests are scoped to session and request ID, settle once, and expire within 30 minutes. Select returns an offered string, confirm a boolean and text dialogs preserve text; dismissal returns the native cancellation value.
+**Web UI bridge.** The host maps `select`, `confirm`, `input`, `editor` and `notify`, plus text status/widgets, transient title and working-message hints. Blocking requests are scoped to session and request ID, settle once, and expire within 30 minutes. Select returns an offered string, confirm a boolean and text dialogs preserve text; dismissal returns the native cancellation value.
 
 Pending requests replay on session load. Browser replies use `session.uiReply`/`session.uiCancel`; the controller calls host `session.uiResponse`/`session.uiCancel`. All clients dismiss a settled request. History questionnaire cards are read-only tool-result recaps. Without a reliable tool-call association, active requests stay session-level rather than being attached by guessed timing or tool name.
 
 Each session permits 16 pending dialogs. Passive status/widget collections each permit 16 keys; widgets accept string arrays, not component factories. Text is escaped, ordinary passive updates are bounded, and clears remain deliverable. Passive state currently clears on connection/context loss and is not replayed. A transient extension title does not rename the saved conversation.
 
-Terminal input, custom TUI factories, footers/headers, autocomplete and composer get/set/paste APIs are unsupported by the current SDK bridge. The multiline editor dialog has its own draft. Stop and session teardown cancel pending interactions. Generic extension liveness can keep background work resident without redefining native run settlement.
+Terminal input, custom TUI factories, footers/headers, autocomplete and composer get/set/paste APIs are unsupported. The multiline editor dialog has its own draft. Stop and session teardown cancel pending interactions. Generic extension liveness can keep background work resident without redefining native run settlement.
 
-The planned native-RPC bridge differs from this implementation; the [retained feature index](../roadmap/README.md#retained-feature-index) records required behavior and the [integration findings](../roadmap/README.md#confirmed-defects-and-integration-risks) record unresolved fidelity work. Do not assume RPC provides every SDK bridge method.
+The Go host implements the blocking dialogs through raw native `extension_ui_request`/`extension_ui_response` frames; the [retained feature index](../roadmap/README.md#retained-feature-index) records required behavior and the [integration findings](../roadmap/README.md#confirmed-defects-and-integration-risks) record unresolved fidelity work. Do not assume every bridge method is available.
 
 **Agent definitions.** Definitions live in `<agentDir>/agents/*.md` and `<project>/.pi/agents/*.md`. Pixie's `pi.sources.*` API provides Markdown CRUD and `@agent` discovery without registering model tools or implementing delegation.
 
@@ -110,9 +110,9 @@ Frontmatter includes `name`, `description` and optional `model`; unspecified fie
 
 ## MCP
 
-**Native Pi MCP client.** The operator-installed native adapter is the only Pi MCP runtime. The current assistant's thin administration bridge discovers the public runtime-snapshot interface and registers session connections through runtime-register APIs, tested against adapter 2.32.1. Native tools remain the model-facing interface. The Pi MCP client uses the pinned upstream `pi-mcp-adapter` runtime unchanged, with no custom transport.
+**Native Pi MCP client.** The operator-installed native adapter is the only Pi MCP runtime. The opt-in administration bridge discovers the public runtime-snapshot interface and registers session connections through runtime-register APIs. Native tools remain the model-facing interface. The Pi MCP client uses the pinned upstream `pi-mcp-adapter` runtime unchanged, with no custom transport.
 
-Identical attachments are idempotent; conflicting definitions fail. Global saved connections and session membership are distinct. Native `{mcpServers: ...}` configuration is not rewritten by legacy Pixie connection administration. Without a compatible adapter, MCP administration stays unavailable and baseline sessions remain usable.
+Identical attachments are idempotent; conflicting definitions fail. Global saved connections and session membership are distinct. Native `{mcpServers: ...}` configuration is not rewritten by the bridge's connection administration. Without a compatible adapter, MCP administration stays unavailable and baseline sessions remain usable.
 
 **Pixie MCP publisher.** The Browser module for trusted MCP clients is published by the main Pixie process on the application listener. It is separate from the universal MCP client.
 
@@ -138,7 +138,7 @@ Browser is the only module. Signet, Web, Todo, Questions, and Subagents are neve
 
 ## Local models and memory
 
-`--llama` loads Pi's built-in llama.cpp provider through the current SDK export patch. The operator supplies `LLAMA_BASE_URL` and optional native credentials/`LLAMA_API_KEY`. Model selection, refresh and inference work headlessly; `/llama` management requires terminal UI. A requested profile fails explicitly when its required factory is unavailable.
+Local llama.cpp is an optional native Pi feature. The operator selects it through the installed Pi distribution and supplies `LLAMA_BASE_URL` and optional native credentials/`LLAMA_API_KEY`; the supervised child receives those native names. Model selection, refresh and inference run through Pi; `/llama` management requires terminal UI. A requested profile fails explicitly when its required provider is unavailable.
 
 Signet is operator-owned and loads through Pi's normal file-extension discovery. Its daemon, configuration and enablement are not managed by Pixie and are not a Pixie MCP connection. Other unfamiliar native extensions follow the same native loading and supported UI boundaries.
 

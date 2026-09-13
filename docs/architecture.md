@@ -2,7 +2,7 @@
 
 | Process | Location | Owns |
 | --- | --- | --- |
-| Pi assistant service, `:3284` | Host user | Selected Pi process, native sessions, providers, credentials, models and extensions; Go is the release target and the current local deployment retains the legacy service pending cutover |
+| Pi assistant service, `:3284` | Host user | Selected Pi process, native sessions, providers, credentials, models and extensions; the Go `pixie-assistant` binary is the release target |
 | Pixie, `:7312` | Application container | Web UI, projects, files, Git, goals, questions, queues, schedules, Browser MCP publisher, Chromium and artifacts |
 
 Host networking lets the container reach host services over loopback. The application receives project mounts, read-only and at the same absolute paths used by Pi. In-process Browser children receive scoped working directories and environment values, but they share the controller UID, mount namespace, host network, and writable application data; those conventions are not isolation. Browser state lives under `browser/{artifacts,state}` inside the controller data directory.
@@ -13,13 +13,12 @@ Paths below are relative to `pixie/`, which holds the shared Bun workspace and l
 
 | Directory | Responsibility |
 | --- | --- |
-| `assistant/` | Go assistant facade/native Pi supervisor plus retained legacy parity implementation and fixtures |
+| `assistant/` | Go assistant facade and native Pi supervisor, plus the opt-in Bun administration bridge sidecar |
 | `package/cmd`, `package/internal/controller` | Application HTTP/WebSocket/MCP, MCP publisher, native Pi projection and lifecycle |
 | `package/internal/mcpserver`, `package/internal/browser` | In-process Browser module publication and browser runtime |
 | `package/internal/workspace`, `package/internal/persist` | Bounded project access and durable state |
 | `package/webui`, `package/contracts` | Svelte 5 interface and shared wire contracts |
 | `package/tests` | Unit, integration, deployment and browser checks |
-| `patches/` | Workspace `patchedDependencies` with the pinned upstreamable subagent patch used by workspace tests |
 
 Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets, Git and the Browser runtime. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
 

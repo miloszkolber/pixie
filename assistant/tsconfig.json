@@ -13,9 +13,5 @@
 		"types": ["bun"],
 		"lib": ["ESNext"]
 	},
-	"include": [
-		"src/**/*.ts",
-		"../package/tests/pixie-assistant/**/*.ts",
-		"../package/tests/pi-native-parity/**/*.ts"
-	]
+	"include": ["bridge/**/*.ts"]
 }
