@@ -357,8 +357,6 @@ type ScopedRegistrationRequest = NativeMCPRegistrationRequest
 type ScopedAuthorization = NativeMCPAuthorization
 type ScopedRegistrationStore = NativeMCPRegistry
 
-func NewScopedRegistrationStore() *ScopedRegistrationStore { return NewNativeMCPRegistry() }
-
 func validateNativeMCPServerID(serverID string) error {
 	if len(serverID) == 0 || len(serverID) > maxNativeMCPServerIDLength || strings.TrimSpace(serverID) != serverID {
 		return fmt.Errorf("invalid native MCP server id %q", serverID)

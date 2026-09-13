@@ -462,11 +462,6 @@ type toolOutput struct {
 	SubagentActivityTruncated bool
 }
 
-func projectToolOutput(entry *sessionEntry, id string, update map[string]any, finished bool) any {
-	result, _ := projectToolOutputAndActivity(entry, id, update, finished, true)
-	return result
-}
-
 const (
 	maxSubagentActivityEvents          = 32
 	maxSubagentActivityIdentifierBytes = 256

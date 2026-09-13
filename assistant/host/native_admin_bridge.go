@@ -236,14 +236,6 @@ func (b *nativeAdminBridge) available() bool {
 
 // applyOperationSet enables exactly the proxied FC17 operations when the
 // bridge is enabled and verified.
-func (b *nativeAdminBridge) applyOperationSet(result map[string]bool) {
-	if !b.available() {
-		return
-	}
-	for _, operation := range nativeAdminBridgeOperations {
-		result[operation] = true
-	}
-}
 
 func isNativeAdminBridgeOperation(method string) bool {
 	for _, operation := range nativeAdminBridgeOperations {

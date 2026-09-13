@@ -1579,11 +1579,3 @@ func numeric(value any) (int64, bool) {
 	}
 	return 0, false
 }
-
-func nonempty(value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" || strings.ContainsRune(value, 0) {
-		return "", fmt.Errorf("value cannot be empty")
-	}
-	return value, nil
-}

@@ -237,14 +237,6 @@ func IsRegisteredManagementRoute(route string) bool {
 
 // ModuleDefinitionByID resolves one registered definition without exposing a
 // mutable registry-owned slice.
-func ModuleDefinitionByID(id string) (ModuleDefinition, bool) {
-	for _, definition := range DefaultModuleDefinitions() {
-		if definition.ID == id {
-			return definition, true
-		}
-	}
-	return ModuleDefinition{}, false
-}
 
 // IsRegisteredRoute reports either MCP or management ownership.
 func IsRegisteredRoute(route string) bool {

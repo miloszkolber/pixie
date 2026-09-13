@@ -76,12 +76,6 @@ func (r *Registry) recordFailure(id string, err error) {
 	r.mu.Unlock()
 }
 
-func (r *Registry) clearFailure(id string) {
-	r.mu.Lock()
-	delete(r.failures, id)
-	r.mu.Unlock()
-}
-
 func (r *Registry) installRuntime(id string, runtime *moduleRuntime) *moduleRuntime {
 	r.mu.Lock()
 	previous := r.modules[id]
@@ -409,14 +403,6 @@ func (r *Registry) RegisterTestModule(definition ModuleDefinition, handler http.
 		readinessDetail: detailFunc,
 	})
 	return nil
-}
-
-func moduleIsMCPRoute(route string) bool {
-	return IsRegisteredMCPRoute(route)
-}
-
-func moduleIsManagementRoute(route string) bool {
-	return IsRegisteredManagementRoute(route)
 }
 
 func (r *Registry) moduleRequest(id, route string, request *http.Request) *http.Request {

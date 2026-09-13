@@ -23,7 +23,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1678,15 +1677,6 @@ func copyBytes(content []byte) []byte { return append([]byte(nil), content...) }
 func hashBytes(content []byte) string {
 	digest := sha256.Sum256(content)
 	return hex.EncodeToString(digest[:])
-}
-
-func sortedCanvasIDs(values map[string]*canvasState) []string {
-	ids := make([]string, 0, len(values))
-	for id := range values {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
 }
 
 func isRegularNoSymlink(path string) (fs.FileInfo, error) {

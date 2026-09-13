@@ -166,17 +166,6 @@ func (p *ProviderLogins) Snapshot(clientKey string) any {
 	return nil
 }
 
-func (p *ProviderLogins) frame(login *providerLogin, frame map[string]any) {
-	p.mu.Lock()
-	if p.pending[login.id] != login || login.cancelled {
-		p.mu.Unlock()
-		return
-	}
-	push := p.cacheLocked(login, frame)
-	p.mu.Unlock()
-	p.send(login.clientKey, push)
-}
-
 func (p *ProviderLogins) finish(login *providerLogin, err error) {
 	p.mu.Lock()
 	if p.pending[login.id] != login {
@@ -271,12 +260,4 @@ func (p *ProviderLogins) Close() {
 		snapshot.timer.Stop()
 		delete(p.snapshots, key)
 	}
-}
-
-func providerFieldFrame(field piProviderConfigKey) map[string]any {
-	result := map[string]any{"kind": "prompt", "message": "Enter " + field.Name, "secret": field.Secret}
-	if field.Default != "" {
-		result["placeholder"], result["allowEmpty"] = field.Default, true
-	}
-	return result
 }

@@ -9,8 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -518,50 +516,4 @@ func (s *Service) persistSlot(next slotState) error {
 	s.slot = cloneSlot(next)
 	s.mu.Unlock()
 	return nil
-}
-
-func copyFileAtomic(ctx context.Context, source, target string, max int64) error {
-	if err := rejectSymlinkParents(source); err != nil {
-		return err
-	}
-	if err := rejectSymlinkParents(target); err != nil {
-		return err
-	}
-	info, err := os.Lstat(source)
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() > max {
-		return designError("corrupt", ErrCorrupt)
-	}
-	in, err := os.OpenFile(source, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
-	if err != nil {
-		return err
-	}
-	remove := true
-	defer func() {
-		_ = out.Close()
-		if remove {
-			_ = os.Remove(target)
-		}
-	}()
-	if _, err := io.Copy(out, io.LimitReader(in, max+1)); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := out.Sync(); err != nil {
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	remove = false
-	return os.Chmod(target, 0o444)
 }

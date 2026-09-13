@@ -770,16 +770,6 @@ func hashGitBlobBytes(value []byte) (string, string) {
 	return sha1OID, sha256OID
 }
 
-func rawSnapshotMatches(entry gitTreeEntry, snapshot rawWorktreeSnapshot) bool {
-	if !snapshot.exists || !snapshot.accessible || snapshot.indeterminate {
-		return false
-	}
-	if entry.mode != snapshot.mode {
-		return false
-	}
-	return rawBlobSnapshotMatches(entry, snapshot)
-}
-
 func rawBlobSnapshotMatches(entry gitTreeEntry, snapshot rawWorktreeSnapshot) bool {
 	if !snapshot.exists || !snapshot.accessible || snapshot.indeterminate {
 		return false
