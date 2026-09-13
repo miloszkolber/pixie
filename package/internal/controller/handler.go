@@ -27,7 +27,6 @@ type CoreHandler struct {
 	Watches       *workspace.ProjectWatches
 	Requests      *diagnostics.RequestCounter
 	RuntimeStatus func(context.Context) runtimeStatusReport
-	BrowserPanels *BrowserPanels
 	MCPRegistry   *mcpserver.Registry
 }
 
@@ -43,34 +42,6 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, fmt.Errorf("schedule service unavailable or invalid request")
 		}
 		return h.Schedules.Handle(ctx, method, request)
-	case "browser.panelOpen":
-		projectID, valid := decodeBrowserPanelOpen(raw)
-		if h.BrowserPanels == nil || !valid {
-			return nil, fmt.Errorf("malformed browser panel request")
-		}
-		if h.Projects != nil {
-			project, projectErr := h.Projects.Get(projectID)
-			if projectErr != nil || project.Closed {
-				return nil, fmt.Errorf("browser panel project is unavailable")
-			}
-		}
-		panelID, err := h.BrowserPanels.Open(clientKey, projectID)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]string{"id": panelID}, nil
-	case "browser.panelCommand":
-		panelID, action, valid := decodeBrowserPanelCommand(raw)
-		if h.BrowserPanels == nil || !valid {
-			return nil, fmt.Errorf("malformed browser panel request")
-		}
-		return h.BrowserPanels.command(ctx, clientKey, panelID, action)
-	case "browser.panelClose":
-		panelID, valid := decodeBrowserPanelClose(raw)
-		if h.BrowserPanels == nil || !valid {
-			return nil, fmt.Errorf("malformed browser panel request")
-		}
-		return ack(h.BrowserPanels.Close(ctx, clientKey, panelID))
 	case "runtime.status":
 		if h.RuntimeStatus == nil {
 			return nil, fmt.Errorf("runtime status is not configured")
@@ -106,6 +77,37 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		return h.MCPRegistry.Catalog(), nil
 	case "mcpAdapter.status":
 		return h.Admin.AdapterStatus(ctx), nil
+	case "browserMcp.status":
+		if h.Admin == nil {
+			return nil, fmt.Errorf("Pi administration is not configured")
+		}
+		var request struct {
+			ProjectDir string `json:"projectDir"`
+		}
+		if decodeParams(raw, &request) != nil {
+			return nil, fmt.Errorf("malformed browser MCP request")
+		}
+		return h.Admin.BrowserMCPStatus(ctx, request.ProjectDir)
+	case "browserMcp.configure":
+		if h.Admin == nil {
+			return nil, fmt.Errorf("Pi administration is not configured")
+		}
+		var request map[string]any
+		if decodeParams(raw, &request) != nil {
+			return nil, fmt.Errorf("malformed browser MCP request")
+		}
+		return h.Admin.ConfigureBrowserMCP(ctx, request)
+	case "browserMcp.remove":
+		if h.Admin == nil {
+			return nil, fmt.Errorf("Pi administration is not configured")
+		}
+		var request struct {
+			ProjectDir string `json:"projectDir"`
+		}
+		if decodeParams(raw, &request) != nil {
+			return nil, fmt.Errorf("malformed browser MCP request")
+		}
+		return h.Admin.RemoveBrowserMCP(ctx, request.ProjectDir)
 	case "history.search":
 		var request map[string]any
 		if h.Sessions == nil || decodeParams(raw, &request) != nil {
@@ -147,9 +149,6 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		}
 		if h.Sessions != nil {
 			h.Sessions.ReleaseProject(request.ID)
-		}
-		if h.BrowserPanels != nil {
-			h.BrowserPanels.ReleaseProject(ctx, request.ID)
 		}
 		return map[string]bool{"ok": true}, nil
 	case "project.watchReady":

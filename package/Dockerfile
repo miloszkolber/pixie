@@ -130,8 +130,7 @@ RUN --mount=type=cache,id=browser-runtime-apt,target=/var/cache/apt,sharing=lock
         git \
         tini \
     && install -d /app/legal /home/pixie \
-        /var/lib/pixie/browser/artifacts /var/lib/pixie/browser/state \
-    && chown -R 1000:1000 /app /home/pixie /var/lib/pixie/browser
+    && chown -R 1000:1000 /app /home/pixie
 COPY LICENSE NOTICE.md /app/legal/
 ENV HOME=/home/pixie
 WORKDIR /app
@@ -172,14 +171,27 @@ RUN chmod 0755 /app/run-ui-acceptance \
 USER 1000:1000
 CMD ["/app/run-ui-acceptance"]
 
-# The merged image ships a small Debian userland (git, chromium helpers) so a
-# POSIX shell is present; the sandbox posture comes from the runtime flags
-# (read-only rootfs, non-root, capability drop, no-new-privileges) rather than
-# from the absence of a shell.
+# The published controller image is the only application image. Browser
+# automation is an external MCP server the selected Pi calls directly, so the
+# controller ships no Chromium or agent-browser runtime; the browser-automation
+# and ui-acceptance stages above remain only for the UI acceptance target.
 # Keep the application last: a build without --target produces only Pixie.
-# The application image is the only published Browser-capable image. It embeds
-# the in-process Browser module and serves the MCP publisher on :7312.
-FROM browser-automation AS pixie
+FROM ${DEBIAN_IMAGE} AS controller-runtime
+RUN --mount=type=cache,id=controller-runtime-apt,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=controller-runtime-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+        ca-certificates \
+        git \
+        tini \
+    && install -d /app/legal /home/pixie \
+    && chown -R 1000:1000 /app /home/pixie
+COPY LICENSE NOTICE.md /app/legal/
+ENV HOME=/home/pixie
+WORKDIR /app
+ENTRYPOINT ["/usr/bin/tini", "-s", "--"]
+
+FROM controller-runtime AS pixie
 ARG VERSION
 ARG REVISION
 ARG SOURCE_URL
@@ -199,19 +211,13 @@ COPY --from=go-build /out/pixie /app/pixie
 COPY --from=go-build /out/licenses/pixie /app/licenses
 COPY --from=web-build /work/package/webui/dist /app/web
 COPY --from=web-build /out/licenses /app/licenses
-COPY package/internal/browser/config.json /app/config.json
 RUN test -x /app/pixie \
-    && test -f /app/config.json \
-    && test -x /usr/local/bin/agent-browser \
-    && command -v chromium \
-    && command -v git \
-    && test -d /var/lib/pixie/browser/artifacts \
-    && test -d /var/lib/pixie/browser/state
+    && command -v git
 USER 1000:1000
 EXPOSE 7312
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["/app/pixie", "healthcheck"]
-# Run under tini so PID 1 reaps orphaned managed-group descendants (Git and
-# Browser helpers) instead of leaving zombies. The intermediate
-# browser-packages stage already uses tini; the final stage must keep it.
+# Run under tini so PID 1 reaps orphaned managed-group descendants (Git
+# helpers) instead of leaving zombies. The intermediate stages already use
+# tini; the final stage must keep it.
 ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie", "serve", "--mode", "controller"]

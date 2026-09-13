@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/miloszkolber/pixie/internal/controller"
+	"github.com/miloszkolber/pixie/internal/design"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/persist"
@@ -23,24 +24,13 @@ import (
 func newTestInProcessRegistry(t *testing.T) *mcpserver.Registry {
 	t.Helper()
 	root := t.TempDir()
-	agentBrowser, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(root, "config.json")
-	if err := os.WriteFile(configPath, []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	dataDir := filepath.Join(root, "data")
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	registry, err := mcpserver.NewRegistry(mcpserver.Config{
 		Host: "127.0.0.1", Port: 17873, DataDir: dataDir,
-		Binaries: &mcpserver.BinaryConfig{
-			AgentBrowser: agentBrowser, BrowserConfig: configPath,
-			ArtifactRoot: filepath.Join(root, "artifacts"), StateRoot: filepath.Join(root, "state"),
-		},
+		DesignConfig: &design.Config{DataDir: dataDir, Parser: design.NewDeterministicParser()},
 	}, diagnostics.NormalizeBuild("test", "test"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -49,14 +39,13 @@ func newTestInProcessRegistry(t *testing.T) *mcpserver.Registry {
 	return registry
 }
 
-// testInProcessRegistry marks the external worker boundary verified and enables
-// Browser, for tests whose subject is not the fail-closed default.
+// testInProcessRegistry enables Design for tests whose subject is not the
+// disabled-by-default optional module state.
 func testInProcessRegistry(t *testing.T) *mcpserver.Registry {
 	t.Helper()
 	registry := newTestInProcessRegistry(t)
-	registry.SetWorkerBoundaryVerified(true)
-	if err := registry.SetEnabled("browser", true); err != nil {
-		t.Fatalf("enable browser with verified worker boundary: %v", err)
+	if err := registry.SetEnabled("design", true); err != nil {
+		t.Fatalf("enable design: %v", err)
 	}
 	return registry
 }
@@ -75,19 +64,23 @@ func handleJSON(t *testing.T, handler controller.CoreHandler, method, params str
 func TestMCPRegistryHandlerTogglesPersistedEnablement(t *testing.T) {
 	handler := controller.CoreHandler{MCPRegistry: testInProcessRegistry(t)}
 	catalog := handleJSON(t, handler, "mcpRegistry.catalog", "{}").(mcpserver.Catalog)
-	if len(catalog.Modules) != 3 || !catalog.Modules[0].Enabled || catalog.Modules[0].Endpoint == "" {
+	if len(catalog.Modules) != 2 {
 		t.Fatalf("registry catalog = %#v", catalog)
 	}
-	disabled := handleJSON(t, handler, "mcpRegistry.moduleSetEnabled", `{"moduleId":"browser","enabled":false}`).(mcpserver.Catalog)
-	if disabled.Modules[0].Enabled || disabled.Modules[0].State != "unavailable" {
+	designModule := catalogModule(t, catalog, "design")
+	if !designModule.Enabled || designModule.Endpoint == "" {
+		t.Fatalf("registry catalog = %#v", catalog)
+	}
+	disabled := handleJSON(t, handler, "mcpRegistry.moduleSetEnabled", `{"moduleId":"design","enabled":false}`).(mcpserver.Catalog)
+	if catalogModule(t, disabled, "design").Enabled {
 		t.Fatalf("disabled catalog = %#v", disabled)
 	}
-	enabled := handleJSON(t, handler, "mcpRegistry.moduleSetEnabled", `{"moduleId":"browser","enabled":true}`).(mcpserver.Catalog)
-	if !enabled.Modules[0].Enabled {
+	enabled := handleJSON(t, handler, "mcpRegistry.moduleSetEnabled", `{"moduleId":"design","enabled":true}`).(mcpserver.Catalog)
+	if !catalogModule(t, enabled, "design").Enabled {
 		t.Fatalf("re-enabled catalog = %#v", enabled)
 	}
-	restarted := handleJSON(t, handler, "mcpRegistry.moduleRestart", `{"moduleId":"browser"}`).(mcpserver.Catalog)
-	if !restarted.Modules[0].Enabled || restarted.Modules[0].State != "ready" {
+	restarted := handleJSON(t, handler, "mcpRegistry.moduleRestart", `{"moduleId":"design"}`).(mcpserver.Catalog)
+	if !catalogModule(t, restarted, "design").Enabled || catalogModule(t, restarted, "design").State != "ready" {
 		t.Fatalf("restarted catalog = %#v", restarted)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -95,7 +88,7 @@ func TestMCPRegistryHandlerTogglesPersistedEnablement(t *testing.T) {
 	if _, err := handler.Handle(ctx, "mcpRegistry.moduleSetEnabled", json.RawMessage(`{"moduleId":"signet","enabled":true}`), "test-client"); err == nil {
 		t.Fatal("unknown module was accepted")
 	}
-	if _, err := handler.Handle(ctx, "mcpRegistry.moduleSetEnabled", json.RawMessage(`{"moduleId":"browser"}`), "test-client"); err == nil {
+	if _, err := handler.Handle(ctx, "mcpRegistry.moduleSetEnabled", json.RawMessage(`{"moduleId":"design"}`), "test-client"); err == nil {
 		t.Fatal("malformed module request was accepted")
 	}
 	empty := controller.CoreHandler{}
@@ -105,24 +98,15 @@ func TestMCPRegistryHandlerTogglesPersistedEnablement(t *testing.T) {
 	}
 }
 
-func TestMCPRegistryRefusesBrowserEnableWithoutVerifiedWorkerBoundary(t *testing.T) {
-	registry := newTestInProcessRegistry(t)
-	handler := controller.CoreHandler{MCPRegistry: registry}
-	catalog := handleJSON(t, handler, "mcpRegistry.catalog", "{}").(mcpserver.Catalog)
-	if catalog.Modules[0].Enabled || catalog.Modules[0].State != "unavailable" {
-		t.Fatalf("browser default = %#v", catalog.Modules[0])
+func catalogModule(t *testing.T, catalog mcpserver.Catalog, id string) mcpserver.Module {
+	t.Helper()
+	for _, module := range catalog.Modules {
+		if module.ID == id {
+			return module
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := handler.Handle(ctx, "mcpRegistry.moduleSetEnabled", json.RawMessage(`{"moduleId":"browser","enabled":true}`), "test-client"); err == nil {
-		t.Fatal("browser enable without a verified worker boundary was accepted")
-	} else if !strings.Contains(err.Error(), "verified external worker boundary") {
-		t.Fatalf("browser enable error = %v", err)
-	}
-	after := handleJSON(t, handler, "mcpRegistry.catalog", "{}").(mcpserver.Catalog)
-	if after.Modules[0].Enabled || after.Modules[0].State != "unavailable" {
-		t.Fatalf("refused enable changed catalog = %#v", after.Modules[0])
-	}
+	t.Fatalf("catalog is missing module %q: %#v", id, catalog.Modules)
+	return mcpserver.Module{}
 }
 
 func TestMCPAdapterStatusProjectsBridgeAndStaysFailOpen(t *testing.T) {

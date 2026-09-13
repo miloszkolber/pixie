@@ -38,3 +38,34 @@ services:
             - /tmp:size=128m,mode=1777,uid=1000,gid=1000
             - /run:size=16m,mode=700,uid=1000,gid=1000
             - /dev/shm:size=256m,mode=1777,uid=1000,gid=1000
+
+    # External browser MCP endpoint. Pi connects to it directly at the
+    # published host-loopback port; Pixie stores and registers the setting but
+    # never starts, proxies or hardens this service. Optional: `pixie` does not
+    # depend on it, and `docker compose up pixie` never starts it. The image
+    # binds its MCP HTTP transport with no authentication, so it publishes only
+    # on 127.0.0.1 and joins its own network, isolated from the controller.
+    pixie-browser:
+        image: "h4ckf0r0day/obscura:latest"
+        container_name: pixie-browser
+        restart: unless-stopped
+        command: ["mcp", "--http", "--host", "0.0.0.0", "--port", "3000"]
+        user: "65532:65532"
+        read_only: true
+        networks:
+            - pixie-browser
+        ports:
+            - "127.0.0.1:3000:3000"
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        pids_limit: 256
+        mem_limit: 2g
+        cpus: 1.0
+        tmpfs:
+            - /tmp:size=256m,mode=1777,uid=65532,gid=65532
+
+networks:
+    pixie-browser:
+        driver: bridge

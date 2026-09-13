@@ -18,7 +18,7 @@ The table records the intended owner, not proof that the Go adapter currently ex
 | Project grouping, file attachments, history search, durable follow-ups | Pixie records and transcript projection |
 | Defined agents and delegation | Pixie authoring API for native Markdown definitions, optional native subagent extension for execution |
 | Plans | Upstream `todo` tool via the `rpiv-todo` extension |
-| MCP tools, Browser | Operator-installed upstream MCP adapter; Pixie supplies service connections |
+| MCP tools, Browser MCP | Operator-installed upstream MCP adapter; Pixie registers the chosen browser endpoint and Pi dials it directly |
 | Signet | Operator-owned external service with a Pi-native file extension; no Pixie MCP connection |
 | Goals, tasks and questions | Pixie session-scoped MCP |
 | Schedules | Pixie storage and runner; ordinary Pi sessions, no Pi scheduling extension |
@@ -114,27 +114,19 @@ Frontmatter includes `name`, `description` and optional `model`; unspecified fie
 
 Identical attachments are idempotent; conflicting definitions fail. Global saved connections and session membership are distinct. Native `{mcpServers: ...}` configuration is not rewritten by the bridge's connection administration. Without a compatible adapter, MCP administration stays unavailable and baseline sessions remain usable.
 
-**Pixie MCP publisher.** The Browser module for trusted MCP clients is published by the main Pixie process on the application listener. It is separate from the universal MCP client.
+**Pixie MCP publisher.** The main Pixie process publishes its workspace modules to trusted MCP clients on the application listener. It is separate from the Pi MCP client and from the external browser endpoint.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `/mcp/browser` | Browser Streamable HTTP MCP, same tools and resources as the former separate host |
+| `/mcp/canvas`, `/mcp/design` | Workspace-module Streamable HTTP MCP surfaces |
 | `/api/mcp/modules` | Authenticated module catalog, schema version `1`, engine `in-process` |
 | `/api/mcp/status` | Authenticated build and catalog status |
 | `/health`, `/livez` | Process liveness (application listener) |
 | `/readyz` | Application readiness, `200` or `503` |
 
-Requests use `Authorization: Bearer <PIXIE_MCP_TOKEN>`. The catalog contains module IDs, names, paths, transport, state and an opaque revision. Browser uses ID `browser`, connection name `pixie-browser` and path `/mcp/browser`.
+Requests use `Authorization: Bearer <PIXIE_MCP_TOKEN>`. The catalog contains module IDs, names, paths, transport, state and an opaque revision. Canvas and Design are the registered modules and both default to disabled. `PIXIE_MCP_MODULES` and `PIXIE_MCP_DISABLED_MODULES` are retired and ignored; setting either logs a startup warning pointing at the Tools UI. Publication enablement lives in the Pixie persist store (`mcp-modules.json`) and in the Tools UI in-process section (Enabled, Status, Endpoint), exposed as `mcpRegistry.catalog` / `mcpRegistry.moduleSetEnabled`. The `mcpAdapter.status` projection surfaces the Pi-side adapter state (connected, cached, failed, needs-auth, not-connected, disabled) and stays fail-open when the adapter is not loaded.
 
-`PIXIE_MCP_MODULES` and `PIXIE_MCP_DISABLED_MODULES` are retired and ignored; setting either logs a startup warning pointing at the Tools UI. Publication enablement lives in the Pixie persist store (`mcp-modules.json`) and in the Tools UI in-process section (Enabled, Status, Endpoint), exposed as `mcpRegistry.catalog` / `mcpRegistry.moduleSetEnabled`; the Browser module defaults to enabled.
-
-Browser provides `browser_command`, `browser_guidance` and `pixie://browser/guide`. It limits sessions to 16, artifacts to 64 MiB per session and 256 MiB total, and commands to 120 seconds. Controller-owned panels have five-minute leases, renewed every minute; abandoned panels are cleaned up. Ordinary MCP client sessions remain the caller's responsibility. Keep browser session IDs short: at most 28 characters with the default storage roots. Chromium's singleton socket inherits the state path length, and longer IDs exceed its limit at launch.
-
-A ready publisher has not necessarily launched Chromium. Verify browsing by opening a disposable panel, navigating, taking a screenshot and closing it. For failures check the application address, token, state ownership, container logs and catalog status. Keep tokens out of command-line arguments and never forward them through redirects.
-
-Browser is the only module. Signet, Web, Todo, Questions, and Subagents are never published through Pixie MCP. Browser storage stays isolated under the controller data directory (`browser/`). The model-facing Browser API (`pixie-browser`, same tools and resource surface) has no engine variants. The `mcpAdapter.status` projection surfaces the Pi-side adapter state (connected, cached, failed, needs-auth, not-connected, disabled) and stays fail-open when the adapter is not loaded.
-
-**Browser engine.** Chromium is the only backend. Verification runs agent-browser `0.34.0` against headless Chromium through the same executor the MCP tools share (`package/tests/go/browser/chromium_parity_test.go` with `PIXIE_BROWSER_LIVE=1`): connect, navigate, snapshot with refs, click, fill, type, press, scroll, wait, form login, large DOM, infinite scroll, iframe, JS-heavy pages, screenshots with artifacts, close with storage removal, and policy rejection of `eval`/`pdf`/`download`. Typical latencies are ~600 ms for a cold open (new Chromium), 10–30 ms for snapshot and actions, ~60 ms for screenshots, and ~110 ms for close. Reopening within seconds of close can fail while the previous daemon winds down; retry once. The `0.36.0` release exists but its per-architecture hashes are unverified, so the image stays pinned to `0.34.0`.
+**Browser MCP endpoint.** Pixie hosts no browser. Pi is the MCP client and connects directly to an operator-chosen external browser MCP endpoint. Pixie stores one setting in `config.json`, registers it in Pi's effective `mcpServers` configuration and reports a bounded probe; the Settings → Browser section exposes name, URL, an enabled toggle, register/update and remove. The endpoint may be unauthenticated, and hardening, network isolation and egress belong to the deployment; Pixie never proxies MCP traffic and fails closed when the setting is disabled or Pi administration is unavailable. See [security](security.md) for the trust boundary.
 
 ## Local models and memory
 

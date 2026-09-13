@@ -194,9 +194,8 @@ func TestNativeMCPExpiryAndInvalidRegistrationFailClosed(t *testing.T) {
 
 func TestRegistryOwnsNativeMCPRegistrationsAcrossModuleAndShutdownLifecycle(t *testing.T) {
 	registry := testRegistry(t, nil)
-	registry.SetWorkerBoundaryVerified(true)
 	registration, err := registry.Register(mcpserver.NativeMCPRegistrationRequest{
-		ModuleID: "browser", ServerID: "server-a", SessionID: "session-live",
+		ModuleID: "design", ServerID: "server-a", SessionID: "session-live",
 		Generation: 1, TTL: time.Hour,
 	})
 	if err != nil {
@@ -205,18 +204,18 @@ func TestRegistryOwnsNativeMCPRegistrationsAcrossModuleAndShutdownLifecycle(t *t
 	if err := authorizeRegistryFixture(registry, registration); err != nil {
 		t.Fatalf("live Registry registration rejected: %v", err)
 	}
-	if err := registry.SetEnabled("browser", false); err != nil {
+	if err := registry.SetEnabled("design", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := authorizeRegistryFixture(registry, registration); err == nil {
 		t.Fatal("module disable left a native MCP registration usable")
 	}
 
-	if err := registry.SetEnabled("browser", true); err != nil {
+	if err := registry.SetEnabled("design", true); err != nil {
 		t.Fatal(err)
 	}
 	replacement, err := registry.Register(mcpserver.NativeMCPRegistrationRequest{
-		ModuleID: "browser", ServerID: "server-a", SessionID: "session-live",
+		ModuleID: "design", ServerID: "server-a", SessionID: "session-live",
 		Generation: 2, TTL: time.Hour,
 	})
 	if err != nil {

@@ -2,11 +2,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"time"
 
 	"github.com/miloszkolber/pixie/internal/diagnostics"
@@ -14,10 +9,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
 
-const (
-	runtimeStatusTimeout = 2 * time.Second
-	maxRuntimeStatusBody = 64 * 1024
-)
+const runtimeStatusTimeout = 2 * time.Second
 
 type runtimeServiceStatus struct {
 	State    string                       `json:"state"`
@@ -37,40 +29,21 @@ type runtimeAgentStatus struct {
 type runtimeStatusReport struct {
 	Application runtimeServiceStatus `json:"application"`
 	Agent       runtimeAgentStatus   `json:"agent"`
-	Browser     runtimeServiceStatus `json:"browser"`
 	Canvas      runtimeServiceStatus `json:"canvas"`
 	Design      runtimeServiceStatus `json:"design"`
 }
 
-type browserReadiness struct {
-	Ready  bool `json:"ready"`
-	Checks struct {
-		Executable      bool `json:"executable"`
-		Config          bool `json:"config"`
-		ArtifactStorage bool `json:"artifactStorage"`
-		StateStorage    bool `json:"stateStorage"`
-	} `json:"checks"`
-}
-
-type browserRuntimeStatus struct {
-	Build     diagnostics.BuildInfo       `json:"build"`
-	Process   diagnostics.ProcessSnapshot `json:"process"`
-	Readiness browserReadiness            `json:"readiness"`
-	Requests  diagnostics.RequestSnapshot `json:"requests"`
-}
-
 type runtimeStatusProvider struct {
-	schedules     *Schedules
-	build         diagnostics.BuildInfo
-	started       time.Time
-	requests      *diagnostics.RequestCounter
-	projects      *workspace.Projects
-	settings      *Settings
-	static        staticFiles
-	agent         *PiClient
-	auth          AuthConfig
-	registry      *mcpserver.Registry
-	browserClient *http.Client
+	schedules *Schedules
+	build     diagnostics.BuildInfo
+	started   time.Time
+	requests  *diagnostics.RequestCounter
+	projects  *workspace.Projects
+	settings  *Settings
+	static    staticFiles
+	agent     *PiClient
+	auth      AuthConfig
+	registry  *mcpserver.Registry
 }
 
 func newRuntimeStatusProvider(build diagnostics.BuildInfo, requests *diagnostics.RequestCounter, projects *workspace.Projects, settings *Settings, staticDir string, agent *PiClient, auth AuthConfig, registries ...*mcpserver.Registry) *runtimeStatusProvider {
@@ -78,17 +51,9 @@ func newRuntimeStatusProvider(build diagnostics.BuildInfo, requests *diagnostics
 	if len(registries) > 0 {
 		registry = registries[0]
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
 	return &runtimeStatusProvider{
 		build: build, started: time.Now(), requests: requests, projects: projects, settings: settings,
 		static: resolveStaticFiles(staticDir), agent: agent, auth: auth, registry: registry,
-		browserClient: &http.Client{
-			Transport: transport,
-			Timeout:   runtimeStatusTimeout,
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
 	}
 }
 
@@ -96,27 +61,16 @@ func (s *runtimeStatusProvider) snapshot(ctx context.Context) runtimeStatusRepor
 	bounded, cancel := context.WithTimeout(ctx, runtimeStatusTimeout)
 	defer cancel()
 	agentResult := make(chan runtimeAgentStatus, 1)
-	browserResult := make(chan runtimeServiceStatus, 1)
 	go func() { agentResult <- projectAgentStatus(runtimePiStatus(bounded, s.agent)) }()
-	go func() { browserResult <- s.browserStatus(bounded) }()
 	report := runtimeStatusReport{
 		Application: s.applicationStatus(),
 		Agent:       runtimeAgentStatus{State: "unavailable", Detail: "Agent service is unavailable."},
-		Browser:     unavailableBrowser("Browser service is unavailable."),
 		Canvas:      s.moduleStatus("canvas", "Canvas"),
 		Design:      s.moduleStatus("design", "Design"),
 	}
-	for pending := 2; pending > 0; {
-		select {
-		case report.Agent = <-agentResult:
-			agentResult = nil
-			pending--
-		case report.Browser = <-browserResult:
-			browserResult = nil
-			pending--
-		case <-bounded.Done():
-			return report
-		}
+	select {
+	case report.Agent = <-agentResult:
+	case <-bounded.Done():
 	}
 	return report
 }
@@ -184,93 +138,4 @@ func projectAgentStatus(status map[string]any) runtimeAgentStatus {
 		result.Detail = "Agent is missing required capabilities."
 	}
 	return result
-}
-
-func (s *runtimeStatusProvider) browserStatus(ctx context.Context) runtimeServiceStatus {
-	if s.registry != nil && s.auth.BrowserURL == "" {
-		return s.browserPublisherStatus(ctx)
-	}
-	if s.auth.BrowserURL == "" {
-		return unavailableBrowser("Browser service is unavailable.")
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, s.auth.BrowserURL+"/status", nil)
-	if err != nil {
-		return unavailableBrowser("Browser status is unavailable.")
-	}
-	if browserAuth, browserToken := s.auth.BrowserServiceAuth(); browserAuth {
-		request.Header.Set("Authorization", "Bearer "+browserToken)
-	}
-	response, err := s.browserClient.Do(request)
-	if err != nil {
-		return unavailableBrowser("Browser service is unavailable.")
-	}
-	return s.browserStatusResponse(response)
-}
-
-// browserPublisherStatus reads the Browser status endpoint directly through
-// the merged publisher. The in-process Browser has no external URL or
-// listener of its own, so routing this probe through the registry keeps
-// runtime.status truthful without a loopback HTTP round trip.
-func (s *runtimeStatusProvider) browserPublisherStatus(ctx context.Context) runtimeServiceStatus {
-	endpoint := s.registry.Endpoint()
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Host == "" {
-		return unavailableBrowser("Browser status is unavailable.")
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/status", nil)
-	if err != nil {
-		return unavailableBrowser("Browser status is unavailable.")
-	}
-	// Registry.ServeHTTP receives an in-process request rather than a client
-	// request, so populate the server-side fields that the Browser handler
-	// validates for origin-form requests.
-	request.Host = parsed.Host
-	request.RequestURI = request.URL.RequestURI()
-	if s.auth.MCPToken != "" {
-		request.Header.Set("Authorization", "Bearer "+s.auth.MCPToken)
-	}
-	response := httptest.NewRecorder()
-	s.registry.ServeHTTP(response, request)
-	return s.browserStatusResponse(response.Result())
-}
-
-func (s *runtimeStatusProvider) browserStatusResponse(response *http.Response) runtimeServiceStatus {
-	if response == nil {
-		return unavailableBrowser("Browser status is unavailable.")
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-		return unavailableBrowser("Browser authentication failed.")
-	}
-	if response.StatusCode != http.StatusOK {
-		return unavailableBrowser("Browser service is unavailable.")
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxRuntimeStatusBody+1))
-	if err != nil || len(body) > maxRuntimeStatusBody {
-		return unavailableBrowser("Browser status is unavailable.")
-	}
-	var status browserRuntimeStatus
-	if json.Unmarshal(body, &status) != nil || status.Build.Version == "" || status.Build.Revision == "" {
-		return unavailableBrowser("Browser status is unavailable.")
-	}
-	build := diagnostics.NormalizeBuild(status.Build.Version, status.Build.Revision)
-	state, detail := "ready", ""
-	if s.schedules != nil {
-		if issue := s.schedules.Health(); issue != "" {
-			state, detail = "degraded", issue
-		}
-	}
-	checks := status.Readiness.Checks
-	if !status.Readiness.Ready || !checks.Executable || !checks.Config || !checks.ArtifactStorage || !checks.StateStorage {
-		state, detail = "degraded", "Browser service is not ready."
-	}
-	return runtimeServiceStatus{State: state, Build: &build, Requests: &status.Requests, Process: &status.Process, Detail: detail}
-}
-
-func unavailableBrowser(detail string) runtimeServiceStatus {
-	return runtimeServiceStatus{State: "unavailable", Detail: detail}
-}
-
-func (s *runtimeStatusProvider) close() {
-	s.browserClient.CloseIdleConnections()
 }

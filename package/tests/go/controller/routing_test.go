@@ -138,7 +138,7 @@ func TestAssembledReservedRoutesWithRegistryNeverServeSPA(t *testing.T) {
 
 func TestAssembledOptionalModuleRoutesStayOwnedByRegistry(t *testing.T) {
 	handler := newStaticHandler(t)
-	handler.MCPRegistry = testInProcessRegistry(t)
+	handler.MCPRegistry = newTestInProcessRegistry(t)
 	const token = "mcp-token-0123456789abcdef0123456789"
 	handler.Auth.MCPToken = token
 

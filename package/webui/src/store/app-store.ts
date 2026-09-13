@@ -18,8 +18,6 @@ export {
 	type SessionRuntime,
 } from "../chat/runtime/session-runtime";
 export {
-	type BrowserPanelViewState,
-	type BrowserTab,
 	CANVAS_RESOURCE_ID,
 	type CanvasTab,
 	type ChatLocationRequest,
@@ -37,7 +35,6 @@ export {
 	designTabId,
 	type FileTab,
 	INSTANCE_CONTENT_TAB_AREA_ID,
-	newBrowserPanelViewState,
 	type ProjectArea,
 	type ProjectAreaActivity,
 	projectArea,

@@ -71,6 +71,10 @@
 			"adapter.session.forget",
 			"pi.llama",
 			"pi.native-extensions",
+			"pi.mcp.servers.read",
+			"pi.mcp.servers.upsert",
+			"pi.mcp.servers.remove",
+			"pi.mcp.servers.probe",
 			"session.clone",
 			"session.compact",
 			"session.commands",
@@ -164,9 +168,9 @@
 			"mcpRegistry.moduleSetEnabled",
 			"mcpRegistry.moduleRestart",
 			"mcpAdapter.status",
-			"browser.panelOpen",
-			"browser.panelCommand",
-			"browser.panelClose",
+			"browserMcp.status",
+			"browserMcp.configure",
+			"browserMcp.remove",
 			"pi.extensionList",
 			"pi.nativeExtensions",
 			"pi.nativeExtensionConfigure",
@@ -181,8 +185,20 @@
 			"session.toolList"
 		]
 	},
-	"thinkingLevels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-	"promptContentBlockTypes": ["text", "image", "resource"],
+	"thinkingLevels": [
+		"off",
+		"minimal",
+		"low",
+		"medium",
+		"high",
+		"xhigh",
+		"max"
+	],
+	"promptContentBlockTypes": [
+		"text",
+		"image",
+		"resource"
+	],
 	"adminErrorCodes": [
 		{
 			"code": -32000,

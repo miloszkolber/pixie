@@ -157,13 +157,7 @@ func TestPostureNoAuthLANFileOriginEnforcement(t *testing.T) {
 	}
 }
 
-func TestPostureAuthenticatedFileAndArtifactAuthGating(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		response.Header().Set("Content-Type", "image/png")
-		response.Header().Set("Content-Length", "3")
-		_, _ = response.Write([]byte("png"))
-	}))
-	defer upstream.Close()
+func TestPostureAuthenticatedFileAuthGating(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "hello.png"), []byte("hello-image"), 0o600); err != nil {
 		t.Fatal(err)
@@ -178,7 +172,6 @@ func TestPostureAuthenticatedFileAndArtifactAuthGating(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := postureAuthenticatedConfig()
-	config.BrowserURL = upstream.URL
 	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, projects, workspace.NewFiles(projects, policy), config, "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -210,41 +203,6 @@ func TestPostureAuthenticatedFileAndArtifactAuthGating(t *testing.T) {
 	}
 	if response := doFile(true, "http://evil.example", "cross-site"); response.Code != http.StatusUnauthorized {
 		t.Fatalf("cross-origin credentialed file read returned %d, want %d", response.Code, http.StatusUnauthorized)
-	}
-	artifactTarget := "http://127.0.0.1:7312/v1/artifacts/panel/screen.png"
-	doArtifact := func(withCookie bool, origin, fetchSite string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(http.MethodGet, artifactTarget, nil)
-		request.Host = "127.0.0.1:7312"
-		if origin != "" {
-			request.Header.Set("Origin", origin)
-		}
-		if fetchSite != "" {
-			request.Header.Set("Sec-Fetch-Site", fetchSite)
-		}
-		if withCookie {
-			request.AddCookie(cookie)
-		}
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		return response
-	}
-	if response := doArtifact(false, "", "same-origin"); response.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated artifact read returned %d, want %d", response.Code, http.StatusUnauthorized)
-	}
-	if response := doArtifact(true, "", "same-origin"); response.Code != http.StatusOK {
-		t.Fatalf("authenticated artifact read returned %d: %s", response.Code, response.Body.String())
-	}
-	if response := doArtifact(true, "http://evil.example", "cross-site"); response.Code != http.StatusUnauthorized {
-		t.Fatalf("cross-origin credentialed artifact read returned %d, want %d", response.Code, http.StatusUnauthorized)
-	}
-	badName := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7312/v1/artifacts/panel/evil.txt", nil)
-	badName.Host = "127.0.0.1:7312"
-	badName.Header.Set("Sec-Fetch-Site", "same-origin")
-	badName.AddCookie(cookie)
-	badResponse := httptest.NewRecorder()
-	handler.ServeHTTP(badResponse, badName)
-	if badResponse.Code != http.StatusNotFound {
-		t.Fatalf("invalid artifact name returned %d, want %d", badResponse.Code, http.StatusNotFound)
 	}
 }
 
@@ -327,65 +285,5 @@ func TestPostureTraversalContainmentInFileReads(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestPostureBrowserUnavailableFailClosed(t *testing.T) {
-	config := postureAuthenticatedConfig()
-	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, nil, nil, config, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const origin = "http://127.0.0.1:7312"
-	cookie := postureLoginCookie(t, handler, origin)
-	artifactTarget := "http://127.0.0.1:7312/v1/artifacts/panel/screen.png"
-	doArtifact := func(withCookie bool, fetchSite string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(http.MethodGet, artifactTarget, nil)
-		request.Host = "127.0.0.1:7312"
-		if fetchSite != "" {
-			request.Header.Set("Sec-Fetch-Site", fetchSite)
-		}
-		if withCookie {
-			request.AddCookie(cookie)
-		}
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		return response
-	}
-	if response := doArtifact(true, "same-origin"); response.Code != http.StatusBadGateway {
-		t.Fatalf("unavailable Browser with credentials returned %d, want %d", response.Code, http.StatusBadGateway)
-	}
-	if response := doArtifact(false, "same-origin"); response.Code != http.StatusUnauthorized {
-		t.Fatalf("unavailable Browser without credentials returned %d, want %d", response.Code, http.StatusUnauthorized)
-	}
-	if response := doArtifact(true, "cross-site"); response.Code != http.StatusUnauthorized {
-		t.Fatalf("cross-site unavailable Browser returned %d, want %d", response.Code, http.StatusUnauthorized)
-	}
-	health := httptest.NewRequest(http.MethodGet, "http://evil.example/health", nil)
-	health.Host = "evil.example"
-	healthResponse := httptest.NewRecorder()
-	handler.ServeHTTP(healthResponse, health)
-	if healthResponse.Code != http.StatusOK {
-		t.Fatalf("health during Browser outage returned %d, want %d", healthResponse.Code, http.StatusOK)
-	}
-	closedUpstream, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, nil, nil, controller.AuthConfig{
-		Enabled:         true,
-		ControllerToken: postureControllerToken,
-		MCPToken:        postureMCPToken,
-		ControllerPort:  7312,
-		PublicOrigin:    "http://127.0.0.1:7312",
-		BrowserURL:      "http://127.0.0.1:1",
-	}, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	unreachable := httptest.NewRequest(http.MethodGet, artifactTarget, nil)
-	unreachable.Host = "127.0.0.1:7312"
-	unreachable.Header.Set("Sec-Fetch-Site", "same-origin")
-	unreachable.AddCookie(cookie)
-	unreachableResponse := httptest.NewRecorder()
-	closedUpstream.ServeHTTP(unreachableResponse, unreachable)
-	if unreachableResponse.Code != http.StatusBadGateway {
-		t.Fatalf("unreachable Browser returned %d, want %d", unreachableResponse.Code, http.StatusBadGateway)
 	}
 }

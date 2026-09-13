@@ -3,8 +3,7 @@
 # docker-compose.yaml take precedence over values set here.
 
 # Existing host directory holding Pixie application state, owned by UID/GID 1000.
-# The container mounts it whole at /var/lib/pixie, with browser/{artifacts,state}/
-# directly inside.
+# The container mounts it whole at /var/lib/pixie.
 PIXIE_DATA_PATH=/absolute/path/to/pixie-data
 
 # Shared with the Pi host service. Pi always runs on loopback on the host,
@@ -14,7 +13,7 @@ PIXIE_PI_PORT=3284
 PIXIE_PI_SECRET_KEY=replace-with-a-random-pi-secret
 
 # Required: a strong private token authenticating the in-process MCP publisher
-# (catalog, Browser module, artifact proxy). The controller refuses to start
+# (module catalog and built-in MCP servers). The controller refuses to start
 # without it, and it must differ from PIXIE_TOKEN.
 PIXIE_MCP_TOKEN=replace-with-a-random-mcp-token
 
@@ -40,18 +39,10 @@ PIXIE_AUTH_ENABLED=false
 # Retired and ignored (warning at startup): PIXIE_MCP_MODULES,
 # PIXIE_MCP_DISABLED_MODULES. Toggle modules in Tools instead.
 
-# Optional external Browser service: with PIXIE_BROWSER_URL unset (default),
-# panels and artifacts use the in-process Browser module. Point it at a
-# separately deployed Browser HTTP surface to isolate browser work outside
-# this container; a non-loopback URL requires browser authentication below.
-# PIXIE_BROWSER_URL=http://127.0.0.1:8787
-# PIXIE_BROWSER_TOKEN=replace-with-a-random-browser-token
-# PIXIE_BROWSER_AUTH=true
-# Advanced operator overrides for the Browser HTTP surface (normally derived
-# from the controller settings above):
-# PIXIE_BROWSER_HOST=127.0.0.1
-# PIXIE_BROWSER_PORT=8787
-# PIXIE_BROWSER_PUBLIC_ORIGIN=https://browser.example.com
+# Browser is not configured through the environment. Pixie stores one setting
+# under Settings -> Browser and registers it in Pi's MCP configuration; Pi
+# reaches the operator-chosen endpoint directly. The optional `pixie-browser`
+# Compose service is a separate deployment, not a `pixie` dependency.
 
 # Non-Docker runs only: the Compose service pins PIXIE_DATA_DIR to the
 # container layout below; plain binaries default to $XDG_DATA_HOME/pixie.

@@ -48,17 +48,10 @@ test("diff previews carry review scope alongside read-only content", async () =>
 	expect(pane).toContain('data-testid="diff-raw-notice"');
 });
 
-test("file and browser previews stay read-only with stable hooks", async () => {
+test("file previews stay read-only with stable hooks", async () => {
 	const filePane = await source("files/tabs/file-pane.svelte");
 	expect(filePane).toContain('data-testid="file-pane"');
 	expect(filePane).toContain('data-testid="file-binary-notice"');
 	expect(filePane).toContain('data-testid="file-image"');
 	expect(filePane).toContain("Read-only");
-
-	const browser = await source("workspace/browser/browser-panel.svelte");
-	expect(browser).toContain('data-testid="browser-address"');
-	expect(browser).toContain('data-testid="browser-snapshot"');
-	expect(browser).toContain('data-testid="browser-screenshot"');
-	expect(browser).toContain("safeBrowserURL");
-	expect(browser).toContain("readonly");
 });

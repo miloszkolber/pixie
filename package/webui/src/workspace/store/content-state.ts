@@ -4,7 +4,6 @@ import type { StateCreator } from "@/store/external-store";
 import { omitKey } from "@/store/record";
 import {
 	availableContentTabId,
-	type BrowserPanelViewState,
 	type ContentOpenOptions,
 	type ContentTab,
 	contentSessionId,
@@ -36,7 +35,6 @@ export interface ContentWorkspaceState {
 		path: string;
 		navTick: number;
 	} | null;
-	browserPanelStateById: Record<string, BrowserPanelViewState>;
 	changesView: "list" | "tree";
 	diffScopeByProjectArea: Record<string, GitDiffScope>;
 	fsChangesByProjectArea: Record<
@@ -72,14 +70,6 @@ export interface ContentWorkspaceState {
 	requestToolView: (projectAreaId: string, tool: "files" | "changes") => void;
 	requestChangesView: (projectAreaId: string, path: string) => void;
 	clearChangesRequest: () => void;
-	setBrowserPanelState: (panelId: string, patch: Partial<BrowserPanelViewState>) => void;
-	beginBrowserPanelRequest: (panelId: string) => number;
-	completeBrowserPanelRequest: (
-		panelId: string,
-		generation: number,
-		patch: Partial<BrowserPanelViewState>,
-	) => boolean;
-	removeBrowserPanelState: (panelId: string) => void;
 }
 
 function isSessionDeleted(
@@ -144,25 +134,14 @@ function selectionActionForTab(tab: ContentTab) {
 			"module:canvas",
 		);
 	}
-	if (tab.kind === "design") {
-		return selectSecondary(
-			{
-				kind: "module",
-				moduleId: "design",
-				resourceId: contentTabResourceId(tab),
-				context: { scope: "instance", instanceId: INSTANCE_CONTENT_TAB_AREA_ID },
-			},
-			"module:design",
-		);
-	}
 	return selectSecondary(
 		{
 			kind: "module",
-			moduleId: "browser",
-			resourceId: tab.panelId,
-			context: { scope: "project", projectId: tab.projectAreaId },
+			moduleId: "design",
+			resourceId: contentTabResourceId(tab),
+			context: { scope: "instance", instanceId: INSTANCE_CONTENT_TAB_AREA_ID },
 		},
-		"module:browser",
+		"module:design",
 	);
 }
 
@@ -203,17 +182,10 @@ function selectionMatchesTab(
 			? "secondary"
 			: null;
 	}
-	if (tab.kind === "design") {
-		return selection.secondarySelection?.kind === "module" &&
-			selection.secondarySelection.moduleId === "design" &&
-			selection.secondarySelection.resourceId === contentTabResourceId(tab) &&
-			selection.secondarySelection.context.scope === "instance"
-			? "secondary"
-			: null;
-	}
 	return selection.secondarySelection?.kind === "module" &&
-		selection.secondarySelection.moduleId === "browser" &&
-		selection.secondarySelection.resourceId === tab.panelId
+		selection.secondarySelection.moduleId === "design" &&
+		selection.secondarySelection.resourceId === contentTabResourceId(tab) &&
+		selection.secondarySelection.context.scope === "instance"
 		? "secondary"
 		: null;
 }
@@ -298,7 +270,6 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 	navTickByProjectArea: {},
 	activeActivityByProjectArea: {},
 	changesRequest: null,
-	browserPanelStateById: {},
 	changesView: "list",
 	diffScopeByProjectArea: {},
 	fsChangesByProjectArea: {},
@@ -379,7 +350,6 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 						)?.[0]);
 			if (!currentProjectAreaId || state.removedProjectAreaIds[currentProjectAreaId]) return {};
 			const currentTabs = state.tabsByProjectArea[currentProjectAreaId] ?? [];
-			const closedBrowser = currentTabs.find((tab) => tab.id === id && tab.kind === "browser");
 			const closedTab = currentTabs.find((tab) => tab.id === id);
 			if (!closedTab) return {};
 			const tabs = currentTabs.filter((tab) => tab.id !== id);
@@ -405,9 +375,6 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 					? {
 							previewTabByProjectArea: omitKey(state.previewTabByProjectArea, currentProjectAreaId),
 						}
-					: {}),
-				...(closedBrowser?.kind === "browser"
-					? { browserPanelStateById: omitKey(state.browserPanelStateById, closedBrowser.panelId) }
 					: {}),
 			};
 		}),
@@ -589,11 +556,7 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 		}),
 	clearProjectAreaTabs: (projectAreaId) =>
 		set((state) => {
-			const browserPanelStateById = { ...state.browserPanelStateById };
 			const tabs = state.tabsByProjectArea[projectAreaId] ?? [];
-			for (const tab of tabs) {
-				if (tab.kind === "browser") delete browserPanelStateById[tab.panelId];
-			}
 			const sessions = { ...state.sessions };
 			const skillsSyncedTickBySession = { ...state.skillsSyncedTickBySession };
 			for (const sessionId of selectProjectAreaSessionIds(state, projectAreaId)) {
@@ -649,7 +612,6 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 				),
 				activeActivityByProjectArea: omitKey(state.activeActivityByProjectArea, projectAreaId),
 				...clearProjectAreaContentSelection(state, projectAreaId, tabs),
-				browserPanelStateById,
 				sessions,
 				skillsSyncedTickBySession,
 			};
@@ -708,65 +670,4 @@ export const createContentWorkspaceState: StateCreator<AppState, [], [], Content
 			};
 		}),
 	clearChangesRequest: () => set({ changesRequest: null }),
-	setBrowserPanelState: (panelId, patch) =>
-		set((state) => {
-			const current = state.browserPanelStateById[panelId] ?? {
-				address: "",
-				snapshot: "",
-				screenshot: null,
-				reference: "",
-				fillText: "",
-				viewport: { width: 1280, height: 800 },
-				error: null,
-				loading: false,
-				requestGeneration: 0,
-			};
-			return {
-				browserPanelStateById: {
-					...state.browserPanelStateById,
-					[panelId]: { ...current, ...patch },
-				},
-			};
-		}),
-	beginBrowserPanelRequest: (panelId) => {
-		let generation = 0;
-		set((state) => {
-			const current = state.browserPanelStateById[panelId] ?? {
-				address: "",
-				snapshot: "",
-				screenshot: null,
-				reference: "",
-				fillText: "",
-				viewport: { width: 1280, height: 800 },
-				error: null,
-				loading: false,
-				requestGeneration: 0,
-			};
-			generation = current.requestGeneration + 1;
-			return {
-				browserPanelStateById: {
-					...state.browserPanelStateById,
-					[panelId]: { ...current, requestGeneration: generation, loading: true, error: null },
-				},
-			};
-		});
-		return generation;
-	},
-	completeBrowserPanelRequest: (panelId, generation, patch) => {
-		let completed = false;
-		set((state) => {
-			const current = state.browserPanelStateById[panelId];
-			if (!current || current.requestGeneration !== generation) return {};
-			completed = true;
-			return {
-				browserPanelStateById: {
-					...state.browserPanelStateById,
-					[panelId]: { ...current, ...patch, loading: false },
-				},
-			};
-		});
-		return completed;
-	},
-	removeBrowserPanelState: (panelId) =>
-		set((state) => ({ browserPanelStateById: omitKey(state.browserPanelStateById, panelId) })),
 });

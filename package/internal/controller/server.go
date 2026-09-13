@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/workspace"
@@ -33,17 +32,16 @@ var (
 )
 
 type HTTPHandler struct {
-	WebSocket     *WebSocketServer
-	Objective     ObjectiveHandler
-	Projects      *workspace.Projects
-	Files         *workspace.Files
-	Auth          AuthConfig
-	auth          *Auth
-	StaticDir     string
-	static        staticFiles
-	Ready         http.HandlerFunc
-	MCPRegistry   http.Handler
-	browserClient *http.Client
+	WebSocket   *WebSocketServer
+	Objective   ObjectiveHandler
+	Projects    *workspace.Projects
+	Files       *workspace.Files
+	Auth        AuthConfig
+	auth        *Auth
+	StaticDir   string
+	static      staticFiles
+	Ready       http.HandlerFunc
+	MCPRegistry http.Handler
 	// MODULE-01 module/scope wiring: scope authority plus trusted
 	// descriptors gate module resource requests before any module service
 	// delegation. Host/Origin/proxy handling stays untouched.
@@ -56,19 +54,8 @@ type HTTPHandler struct {
 	SessionRecords *SessionRecords
 }
 
-// inProcessBrowserHandler exposes the merged publisher's Browser REST surface
-// for panel and artifact traffic when no external PIXIE_BROWSER_URL is set.
-func (h *HTTPHandler) inProcessBrowserHandler() http.Handler {
-	if legacy, ok := h.MCPRegistry.(interface{ BrowserLegacyHandler() func() http.Handler }); ok {
-		if handler := legacy.BrowserLegacyHandler(); handler != nil {
-			return handler()
-		}
-	}
-	return nil
-}
-
 func NewHTTPHandler(webSocket *WebSocketServer, objective ObjectiveHandler, projects *workspace.Projects, files *workspace.Files, authConfig AuthConfig, staticDir string, ready http.HandlerFunc) (*HTTPHandler, error) {
-	result := &HTTPHandler{WebSocket: webSocket, Objective: objective, Projects: projects, Files: files, Auth: authConfig, StaticDir: staticDir, static: resolveStaticFiles(staticDir), Ready: ready, browserClient: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	result := &HTTPHandler{WebSocket: webSocket, Objective: objective, Projects: projects, Files: files, Auth: authConfig, StaticDir: staticDir, static: resolveStaticFiles(staticDir), Ready: ready}
 	// MODULE-01 module/scope wiring: default to the committed descriptor
 	// fixtures with a fresh in-memory scope authority.
 	result.ModuleScopes = mcpserver.NewScopeAuthority()
@@ -193,7 +180,9 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 	case strings.HasPrefix(route, "/files/"):
 		h.serveProjectImage(response, request)
 	case strings.HasPrefix(route, "/v1/artifacts/"):
-		h.serveBrowserArtifact(response, request)
+		// The browser artifact namespace stays reserved from modules but is no
+		// longer served in-process; it never falls through to the SPA.
+		writeAuthJSON(response, http.StatusNotFound, map[string]string{"error": "not found"})
 	case mcpserver.IsModuleResourceRoute(route):
 		h.serveModuleResource(response, request)
 	case reservedAPIMCPRoute(route):
@@ -763,13 +752,6 @@ func acceptsContentEncoding(header, wanted string) bool {
 
 func (h *HTTPHandler) setStaticSecurityHeaders(response http.ResponseWriter, request *http.Request, scriptHashes []string) {
 	frameSources := "'self'"
-	frameOrigin := h.Auth.BrowserPublicOrigin
-	if frameOrigin == "" {
-		frameOrigin = h.Auth.BrowserURL
-	}
-	if normalized, err := normalizeOrigin(frameOrigin); err == nil {
-		frameSources += " " + normalized
-	}
 	connectSources := "'self'"
 	if origin, err := h.Auth.ExpectedOrigin(request); err == nil {
 		if parsed, parseErr := url.Parse(origin); parseErr == nil {

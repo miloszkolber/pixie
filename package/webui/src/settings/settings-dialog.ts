@@ -12,6 +12,7 @@ const ADMIN_TABS: readonly SettingsTabDescriptor[] = [
 	{ section: SettingsSection.Models, label: "Models" },
 	{ section: SettingsSection.Tools, label: "Tools" },
 	{ section: SettingsSection.Extensions, label: "Extensions" },
+	{ section: SettingsSection.Browser, label: "Browser" },
 	{ section: SettingsSection.Schedules, label: "Schedules" },
 	{ section: SettingsSection.System, label: "System" },
 ];

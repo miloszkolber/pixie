@@ -53,7 +53,7 @@ type nativeMCPDeletionCleaner interface {
 type nativeCanvasMCPAttacher interface {
 	nativeMCPRevoker
 	AttachCanvas(string, ...uint64) (canvas.Authority, error)
-	Endpoint() string
+	CanvasEndpoint() string
 }
 
 type sessionEntry struct {
@@ -1411,7 +1411,7 @@ func (m *SessionManager) attachNativeCanvas(ctx context.Context, profile AgentPr
 	if err != nil || authority.Token == "" {
 		return false
 	}
-	endpoint := canvasMCPEndpoint(attacher.Endpoint())
+	endpoint := canvasMCPEndpoint(attacher.CanvasEndpoint())
 	if endpoint == "" {
 		m.revokeNativeMCPSession(sessionID)
 		return false
@@ -1431,16 +1431,15 @@ func (m *SessionManager) attachNativeCanvas(ctx context.Context, profile AgentPr
 	return true
 }
 
-// canvasMCPEndpoint converts the registry's canonical Browser endpoint to the
-// sibling Canvas route. Registry owns the listener origin; this helper only
-// changes the registered route and rejects credentials/query data so a token
-// can never be broadened into a URL.
+// canvasMCPEndpoint validates the registry's canonical Canvas endpoint. The
+// registry owns the listener origin; this helper rejects credentials/query
+// data and any route other than the Canvas MCP path so a token can never be
+// broadened into a URL.
 func canvasMCPEndpoint(endpoint string) string {
 	parsed, err := url.Parse(endpoint)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != mcpserver.BrowserRoute {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != mcpserver.CanvasRoute {
 		return ""
 	}
-	parsed.Path = mcpserver.CanvasRoute
 	parsed.RawPath = ""
 	return parsed.String()
 }

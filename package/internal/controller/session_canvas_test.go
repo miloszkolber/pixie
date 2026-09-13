@@ -38,20 +38,20 @@ func TestCanvasMCPAttachRejectedFailsClosedExceptKnownObjectivePartialFailure(t 
 	}
 }
 
-func TestCanvasMCPEndpointRejectsCredentialBearingOrNonBrowserURLs(t *testing.T) {
+func TestCanvasMCPEndpointRejectsCredentialBearingOrNonCanvasURLs(t *testing.T) {
 	tests := []struct {
 		name     string
 		endpoint string
 		want     string
 	}{
-		{name: "canonical", endpoint: "http://127.0.0.1:7312/mcp/browser", want: "http://127.0.0.1:7312/mcp/canvas"},
-		{name: "https", endpoint: "https://localhost/mcp/browser", want: "https://localhost/mcp/canvas"},
-		{name: "relative", endpoint: "/mcp/browser"},
-		{name: "wrong path", endpoint: "http://127.0.0.1:7312/mcp/canvas"},
-		{name: "query", endpoint: "http://127.0.0.1:7312/mcp/browser?token=secret"},
-		{name: "fragment", endpoint: "http://127.0.0.1:7312/mcp/browser#secret"},
-		{name: "user info", endpoint: "http://user:password@127.0.0.1:7312/mcp/browser"},
-		{name: "unsupported scheme", endpoint: "ws://127.0.0.1:7312/mcp/browser"},
+		{name: "canonical", endpoint: "http://127.0.0.1:7312/mcp/canvas", want: "http://127.0.0.1:7312/mcp/canvas"},
+		{name: "https", endpoint: "https://localhost/mcp/canvas", want: "https://localhost/mcp/canvas"},
+		{name: "relative", endpoint: "/mcp/canvas"},
+		{name: "wrong path", endpoint: "http://127.0.0.1:7312/mcp/browser"},
+		{name: "query", endpoint: "http://127.0.0.1:7312/mcp/canvas?token=secret"},
+		{name: "fragment", endpoint: "http://127.0.0.1:7312/mcp/canvas#secret"},
+		{name: "user info", endpoint: "http://user:password@127.0.0.1:7312/mcp/canvas"},
+		{name: "unsupported scheme", endpoint: "ws://127.0.0.1:7312/mcp/canvas"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

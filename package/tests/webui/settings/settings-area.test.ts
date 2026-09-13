@@ -55,6 +55,7 @@ test("the standalone surface reuses the shared lazy settings section loaders", a
 		"pi-tools-settings.svelte",
 		"models-settings.svelte",
 		"extensions-settings.svelte",
+		"browser-mcp-settings.svelte",
 		"schedules-section.svelte",
 	]) {
 		expect(loaders).toContain(`./sections/${component}`);

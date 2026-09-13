@@ -59,12 +59,6 @@ import {
 	selectSecondaryArea as selectSecondaryAreaAction,
 	setLayout as setWorkspaceLayout,
 } from "../store/selection-state";
-import {
-	captureNavigationOwner,
-	navigationOwnerIsCurrent,
-	navigationOwnerProjectIsCurrent,
-} from "../navigation/ownership";
-import BrowserPanel from "../browser/browser-panel.svelte";
 import { focusFirstVisible, panelHasFocusableContent } from "../focus-control";
 import {
 	hydrateChatResource,
@@ -80,9 +74,6 @@ import ProjectTree from "../projects/project-tree.svelte";
 import { enterDefaultProjectArea } from "../navigation/default-project-area";
 import ShellRail from "../shell-rail.svelte";
 import {
-	browserPanelAvailable,
-	browserRestartTargetOpen,
-	claimBrowserRestart,
 	canvasModuleAvailable,
 	designModuleAvailable,
 	selectPrimaryContentTab,
@@ -215,8 +206,6 @@ let designPreviewLoadError = $state(false);
 let canvasPreviewReloadAttempts = $state(0);
 let designPreviewReloadAttempts = $state(0);
 let moduleRefreshOwner = $state<string | null>(null);
-let previousTabs: ContentTab[] = [];
-const browserRestartsInFlight = new Set<string>();
 
 interface ProjectOpener {
 	openProject: (path: string) => Promise<void>;
@@ -330,7 +319,6 @@ let activeDesignTab = $derived(secondaryTab?.kind === "design" ? secondaryTab : 
 let sessionStreaming = $derived(selectTabSessionStreaming($appStore, projectAreaId));
 let connected = $derived($appStore.status === "connected");
 let connectionGeneration = $derived($appStore.connectionGeneration);
-let removed = $derived($appStore.removedProjectAreaIds[projectAreaId] === true);
 let hasSecondarySelection = $derived(secondarySelection !== null);
 let canvasReady = $derived(canvasModuleAvailable(browserStatus));
 let designReady = $derived(designModuleAvailable(browserStatus));
@@ -731,19 +719,6 @@ $effect(() => {
 	if (activeDesignTab) loadDesignPreview();
 });
 
-$effect(() => {
-	const tabs = contentTabs;
-	if (removed) {
-		for (const tab of previousTabs) {
-			if (tab.kind !== "browser") continue;
-			void getTransport()
-				.request("browser.panelClose", { panelId: tab.panelId }, { timeoutMs: 10_000 })
-				.catch(() => undefined);
-		}
-	}
-	previousTabs = tabs;
-});
-
 function dispatchLayout(patch: Parameters<typeof setWorkspaceLayout>[0]): void {
 	appStoreApi.getState().dispatchWorkspaceSelection(setWorkspaceLayout(patch));
 }
@@ -827,69 +802,6 @@ function startChat(): void {
 	void startChatSession(projectAreaId);
 }
 
-async function openBrowserTab(replacing?: Extract<ContentTab, { kind: "browser" }>): Promise<void> {
-	const restartTabId = replacing?.id;
-	const initial = appStoreApi.getState();
-	const navigation = captureNavigationOwner(
-		initial,
-		projectAreaId,
-		selectProjectAreaById(initial, projectAreaId)?.projectId ?? projectAreaId,
-	);
-	if (replacing) {
-		if (!browserRestartTargetOpen(initial.tabsByProjectArea[projectAreaId], replacing)) return;
-		if (!claimBrowserRestart(browserRestartsInFlight, replacing.id)) return;
-	}
-	try {
-		if (replacing) {
-			await getTransport()
-				.request("browser.panelClose", { panelId: replacing.panelId }, { timeoutMs: 10_000 })
-				.catch(() => undefined);
-		}
-		const panel = await getTransport().request("browser.panelOpen", {
-			projectId: projectArea?.projectId ?? projectAreaId,
-		});
-		const state = appStoreApi.getState();
-		const targetStillOpen =
-			!replacing || browserRestartTargetOpen(state.tabsByProjectArea[projectAreaId], replacing);
-		if (
-			!navigationOwnerProjectIsCurrent(state, navigation) ||
-			!navigationOwnerIsCurrent(state, navigation, "secondary") ||
-			!targetStillOpen
-		) {
-			if (replacing && targetStillOpen) state.closeTab(replacing.id, false, projectAreaId);
-			void getTransport()
-				.request("browser.panelClose", { panelId: panel.id }, { timeoutMs: 10_000 })
-				.catch(() => undefined);
-			return;
-		}
-		if (replacing) state.closeTab(replacing.id, false, projectAreaId);
-		state.setBrowserPanelState(panel.id, {});
-		state.openTab(
-			{
-				kind: "browser",
-				id: `browser-${panel.id}`,
-				projectAreaId,
-				name: "Browser",
-				panelId: panel.id,
-			},
-			"keep",
-		);
-		showSecondarySurface();
-	} catch (cause) {
-		if (navigationOwnerIsCurrent(appStoreApi.getState(), navigation, "secondary"))
-			toast.error(
-				errorText(cause),
-				replacing ? "Couldn't restart the browser" : "Couldn't open the browser",
-			);
-	} finally {
-		if (restartTabId) browserRestartsInFlight.delete(restartTabId);
-	}
-}
-
-function startBrowser(): void {
-	void openBrowserTab();
-}
-
 function openCanvasTab(sessionId: string | null = activeSessionId): void {
 	if (!canvasReady || !sessionId) {
 		if (!sessionId) toast.info("Select a chat before opening Canvas", "Canvas");
@@ -929,14 +841,6 @@ function openDesignTab(): void {
 function closeTab(tab: ContentTab): void {
 	if (tab.kind === "chat") {
 		appStoreApi.getState().closeChatToHistory(tab.sessionId, projectAreaId, true);
-	} else if (tab.kind === "browser") {
-		void getTransport()
-			.request("browser.panelClose", { panelId: tab.panelId }, { timeoutMs: 10_000 })
-			.then(() => {
-				appStoreApi.getState().removeBrowserPanelState(tab.panelId);
-				appStoreApi.getState().closeTab(tab.id, true, projectAreaId);
-			})
-			.catch((cause) => toast.error(errorText(cause), "Couldn't close the browser"));
 	} else appStoreApi.getState().closeTab(tab.id, true, tab.projectAreaId);
 }
 
@@ -1040,10 +944,8 @@ function signOut(): void {
 	{/if}
 {/snippet}
 
-{#snippet previewPane(tab: Extract<ContentTab, { kind: "file" | "diff" | "browser" | "canvas" | "design" }>)}
-	{#if tab.kind === "browser"}
-		{#key tab.panelId}<ErrorBoundary label="browser"><BrowserPanel panelId={tab.panelId} onRestart={() => openBrowserTab(tab)} /></ErrorBoundary>{/key}
-	{:else if tab.kind === "file"}
+{#snippet previewPane(tab: Extract<ContentTab, { kind: "file" | "diff" | "canvas" | "design" }>)}
+	{#if tab.kind === "file"}
 		{#key tab.id}<ErrorBoundary label="preview"><FilePane {tab} /></ErrorBoundary>{/key}
 	{:else if tab.kind === "diff"}
 		{#key tab.id}<ErrorBoundary label="preview"><DiffPane {tab} /></ErrorBoundary>{/key}
@@ -1538,7 +1440,6 @@ function signOut(): void {
 					<Button variant="ghost" size="icon-sm" data-testid="rail-details" aria-label="Details" title="Details" aria-current={secondaryArea === "details" ? "page" : undefined} onclick={() => selectSecondaryRail("details")}><Icon name="info" size={16} /></Button>
 					<Button variant="ghost" size="icon-sm" data-testid="rail-files" aria-label="Files" title="Files" aria-current={secondaryArea === "files" ? "page" : undefined} onclick={() => selectSecondaryRail("files")}><Icon name="folder" size={16} /></Button>
 					<Button variant="ghost" size="icon-sm" data-testid="rail-changes" aria-label="Git" title="Git" aria-current={secondaryArea === "git" ? "page" : undefined} onclick={() => selectSecondaryRail("git")}><Icon name="git-branch" size={16} /></Button>
-					<Button variant="ghost" size="icon-sm" data-testid="rail-browser" aria-label="Browser" title="Browser" aria-current={secondaryArea === "module:browser" ? "page" : undefined} disabled={!browserPanelAvailable(browserStatus)} onclick={() => { revealSecondaryArea("module:browser"); if (hasSecondarySelection) showSecondarySurface(); else showSecondarySidebar(); }}><Icon name="globe" size={16} /></Button>
 					{#if canvasReady && activeSessionId}
 						<Button variant="ghost" size="icon-sm" data-testid="rail-canvas" aria-label={CANVAS_CONTRIBUTION.railLabel} title={CANVAS_CONTRIBUTION.railLabel} aria-current={secondaryArea === "module:canvas" ? "page" : undefined} onclick={() => openCanvasTab(activeSessionId)}><Icon name="image" size={16} /></Button>
 					{/if}
@@ -1549,7 +1450,6 @@ function signOut(): void {
 				{#snippet bottom()}
 					<Button variant="ghost" size="icon-sm" data-testid="toggle-right-panel" aria-label={layout.rightCollapsed ? "Open secondary sidebar" : "Close secondary sidebar"} title={layout.rightCollapsed ? "Open secondary sidebar" : "Close secondary sidebar"} aria-pressed={!layout.rightCollapsed} onclick={toggleRightPanel}><Icon name={layout.rightCollapsed ? "chevron-left" : "chevron-right"} size={16} /></Button>
 					{#if layout.rightCollapsed}<Button variant="ghost" size="icon-sm" data-testid="expand-right-panel" aria-label="Restore secondary sidebar" title="Restore secondary sidebar" onclick={restoreRight}><Icon name="archive-restore" size={16} /></Button>{/if}
-					{#if browserPanelAvailable(browserStatus)}<Button variant="ghost" size="icon-sm" data-testid="open-browser" aria-label="Open browser" title="Open browser" onclick={startBrowser}><Icon name="globe" size={16} /></Button>{/if}
 					{#if canvasReady && activeSessionId}<Button variant="ghost" size="icon-sm" data-testid="open-canvas" aria-label={`Open ${CANVAS_CONTRIBUTION.railLabel}`} title={`Open ${CANVAS_CONTRIBUTION.railLabel}`} onclick={() => openCanvasTab(activeSessionId)}><Icon name="image" size={16} /></Button>{/if}
 					{#if designReady}<Button variant="ghost" size="icon-sm" data-testid="open-design" aria-label={`Open ${DESIGN_CONTRIBUTION.railLabel}`} title={`Open ${DESIGN_CONTRIBUTION.railLabel}`} onclick={openDesignTab}><Icon name="layers" size={16} /></Button>{/if}
 				{/snippet}

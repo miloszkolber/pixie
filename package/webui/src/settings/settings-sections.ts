@@ -12,6 +12,7 @@ export const SETTINGS_SECTION_LOADERS: Partial<
 	pi: () => import("./sections/pi-settings.svelte"),
 	tools: () => import("./sections/pi-tools-settings.svelte"),
 	extensions: () => import("./sections/extensions-settings.svelte"),
+	browser: () => import("./sections/browser-mcp-settings.svelte"),
 	models: () => import("./sections/models-settings.svelte"),
 	providers: () => import("./sections/providers-settings.svelte"),
 	system: () => import("./sections/system-settings.svelte"),

@@ -620,8 +620,7 @@ func TestMCPPublisherRoutesFailClosedWithoutItsToken(t *testing.T) {
 	}
 }
 
-func TestRemoteAndBrowserConfigurationFailsClosed(t *testing.T) {
-	token := "browser-token-0123456789abcdef0123456789"
+func TestRemoteConfigurationFailsClosed(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		values map[string]string
@@ -641,14 +640,6 @@ func TestRemoteAndBrowserConfigurationFailsClosed(t *testing.T) {
 		{name: "unauthenticated remote controller with explicit policy", values: map[string]string{
 			"PIXIE_CONTROLLER_HOST": "0.0.0.0", "PIXIE_ALLOW_UNAUTHENTICATED_REMOTE": "true", "PIXIE_MCP_TOKEN": "mcp-token-0123456789abcdef0123456789", "PIXIE_PUBLIC_ORIGIN": "http://pixie.example",
 		}, valid: true},
-		{name: "unauthenticated remote browser", values: map[string]string{"PIXIE_BROWSER_URL": "http://browser:8787"}},
-		{name: "browser URL with credentials", values: map[string]string{
-			"PIXIE_BROWSER_AUTH": "true", "PIXIE_BROWSER_TOKEN": token, "PIXIE_BROWSER_URL": "http://user:secret@browser:8787",
-		}},
-		{name: "same application and sandbox origin", values: map[string]string{
-			"PIXIE_BROWSER_AUTH": "true", "PIXIE_BROWSER_TOKEN": token,
-			"PIXIE_PUBLIC_ORIGIN": "https://same.example", "PIXIE_BROWSER_PUBLIC_ORIGIN": "https://same.example",
-		}},
 		{name: "public origin with query delimiter", values: map[string]string{
 			"PIXIE_PUBLIC_ORIGIN": "https://pixie.example?",
 		}},
@@ -678,12 +669,8 @@ func TestRemoteAndBrowserConfigurationFailsClosed(t *testing.T) {
 			"PIXIE_CONTROLLER_HOST": "0.0.0.0", "PIXIE_AUTH_ENABLED": "true", "PIXIE_TOKEN": "controller-token-0123456789abcdef0123456789", "PIXIE_MCP_TOKEN": "mcp-token-0123456789abcdef0123456789", "PIXIE_PUBLIC_ORIGIN": "https://pixie.example",
 			"PIXIE_TRUSTED_PROXY_CIDRS": "192.0.2.0/24",
 		}, valid: true},
-		{name: "isolated authenticated sandbox", values: map[string]string{
-			"PIXIE_BROWSER_AUTH": "true", "PIXIE_BROWSER_TOKEN": token,
-			"PIXIE_PUBLIC_ORIGIN": "https://pixie.example:443", "PIXIE_BROWSER_PUBLIC_ORIGIN": "https://sandbox.example:443",
-		}, valid: true},
 		{name: "same controller and MCP token", values: map[string]string{
-			"PIXIE_AUTH_ENABLED": "true", "PIXIE_TOKEN": token, "PIXIE_MCP_TOKEN": token,
+			"PIXIE_AUTH_ENABLED": "true", "PIXIE_TOKEN": "same-token-0123456789abcdef0123456789", "PIXIE_MCP_TOKEN": "same-token-0123456789abcdef0123456789",
 		}},
 		{name: "weak MCP token", values: map[string]string{"PIXIE_MCP_TOKEN": "short"}},
 		{name: "distinct MCP token", values: map[string]string{
@@ -695,9 +682,6 @@ func TestRemoteAndBrowserConfigurationFailsClosed(t *testing.T) {
 			config, err := controller.ReadAuthConfig(func(key string) string { return test.values[key] })
 			if (err == nil) != test.valid {
 				t.Fatalf("configuration %#v: %v", config, err)
-			}
-			if test.valid && strings.HasSuffix(config.BrowserURL, "/") {
-				t.Fatalf("browser origin was not normalized: %q", config.BrowserURL)
 			}
 		})
 	}

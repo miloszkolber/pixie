@@ -29,24 +29,12 @@ func readyCanvasRegistry(t *testing.T, worker bool) *mcpserver.Registry {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	agentBrowser, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(root, "config.json")
-	if err := os.WriteFile(configPath, []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	canvasConfig := canvas.DefaultConfig(dataDir)
 	if worker {
 		canvasConfig.WorkerLauncher = canvas.NewDeterministicWorkerLauncher()
 	}
 	registry, err := mcpserver.NewRegistry(mcpserver.Config{
 		Host: "127.0.0.1", Port: testCanvasPort, DataDir: dataDir,
-		Binaries: &mcpserver.BinaryConfig{
-			AgentBrowser: agentBrowser, BrowserConfig: configPath,
-			ArtifactRoot: filepath.Join(root, "artifacts"), StateRoot: filepath.Join(root, "state"),
-		},
 		CanvasConfig: &canvasConfig,
 	}, diagnostics.NormalizeBuild("test", "test"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {

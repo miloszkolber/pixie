@@ -1,16 +1,9 @@
 package mcpserver
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
-
-// ErrUnverifiedWorkerBoundary is returned when an untrusted module is enabled
-// without a verified external worker boundary. Containment cannot be
-// self-asserted from operator configuration; the boundary must be verified by
-// the owning worker implementation before the module becomes enableable.
-var ErrUnverifiedWorkerBoundary = errors.New("untrusted Browser requires a verified external worker boundary")
 
 // ModuleDefinition is the trusted, compile-time declaration for one Pixie
 // workspace module. Runtime enablement and readiness are deliberately kept out
@@ -23,26 +16,23 @@ var ErrUnverifiedWorkerBoundary = errors.New("untrusted Browser requires a verif
 // management; RetainWhileDisabled keeps durable status/removal available while
 // disabled; StripMCPrefix maps the external MCP prefix to a service-internal
 // root for modules whose handler predates the shared prefix scheme;
-// DegradesGatewayWhenDisabled preserves the legacy Browser Tools-UI contract
-// where a disabled Browser still degrades the gateway while disabled optional
-// modules do not. RequiresVerifiedWorkerBoundary keeps an untrusted module
-// unavailable until a real external worker containment boundary has been
-// verified; it is never satisfied by operator configuration.
+// DegradesGatewayWhenDisabled preserves a Tools-UI contract where a disabled
+// module still degrades the gateway while other disabled optional modules do
+// not.
 type ModuleDefinition struct {
-	ID                             string
-	ExtensionName                  string
-	DisplayName                    string
-	Description                    string
-	Path                           string
-	Transport                      string
-	DefaultEnabled                 bool
-	RequiresVerifiedWorkerBoundary bool
-	SessionScoped                  bool
-	RetainWhileDisabled            bool
-	StripMCPrefix                  bool
-	DegradesGatewayWhenDisabled    bool
-	ManagementPaths                []string
-	Frontend                       FrontendDescriptor
+	ID                          string
+	ExtensionName               string
+	DisplayName                 string
+	Description                 string
+	Path                        string
+	Transport                   string
+	DefaultEnabled              bool
+	SessionScoped               bool
+	RetainWhileDisabled         bool
+	StripMCPrefix               bool
+	DegradesGatewayWhenDisabled bool
+	ManagementPaths             []string
+	Frontend                    FrontendDescriptor
 }
 
 // DefaultModuleDefinitions returns the registered workspace modules in their
@@ -50,13 +40,6 @@ type ModuleDefinition struct {
 // module services are composed by the in-process registry.
 func DefaultModuleDefinitions() []ModuleDefinition {
 	return []ModuleDefinition{
-		{
-			ID: "browser", ExtensionName: "pixie-browser", DisplayName: "Pixie Browser",
-			Description: "Bounded browser automation and browser guidance.", Path: BrowserRoute,
-			Transport: transports, DefaultEnabled: false, RequiresVerifiedWorkerBoundary: true,
-			Frontend:      BrowserDescriptorFixture(),
-			StripMCPrefix: true, DegradesGatewayWhenDisabled: true,
-		},
 		{
 			ID: "canvas", ExtensionName: "pixie-canvas", DisplayName: "Pixie Canvas",
 			Description: "Session-scoped HTML drafts with bounded offline previews.", Path: CanvasRoute,

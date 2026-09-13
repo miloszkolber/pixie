@@ -84,17 +84,6 @@ func (d FrontendDescriptor) Slots() []int {
 	return slots
 }
 
-// BrowserDescriptorFixture is the combined sidebar+viewer contribution for the
-// Browser module. It mirrors the registered Browser identity without
-// importing the Browser service, so descriptor validation stays decoupled
-// from module runtime.
-func BrowserDescriptorFixture() FrontendDescriptor {
-	return FrontendDescriptor{
-		ModuleID: "browser", Version: "1.0.0", Label: "Browser", Icon: "browser",
-		Sidebar: true, Viewer: true, ContextScope: "session", ResourceNamespace: "browser",
-	}
-}
-
 // CanvasDescriptorFixture is the trusted combined Canvas contribution. Canvas
 // is session-scoped: its panel and selected document must not outlive the
 // authenticated native session context.

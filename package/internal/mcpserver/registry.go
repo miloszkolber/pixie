@@ -10,14 +10,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/miloszkolber/pixie/internal/browser"
 	"github.com/miloszkolber/pixie/internal/canvas"
 	"github.com/miloszkolber/pixie/internal/design"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
@@ -25,9 +22,6 @@ import (
 )
 
 const (
-	// BrowserRoute is the Browser module path on the controller listener; the
-	// publisher now lives in the main Pixie process (Stage F merge).
-	BrowserRoute = "/mcp/browser"
 	// CanvasRoute is the Canvas module path on the controller listener.
 	CanvasRoute = "/mcp/canvas"
 	// DesignRoute is the Design module path on the controller listener.
@@ -43,20 +37,13 @@ const (
 	StatusPath  = "/api/mcp/status"
 
 	storeFile  = "mcp-modules.json"
-	browserID  = "browser"
 	transports = "streamable_http"
 )
 
-// Chromium is the only Browser backend. The model-facing API (extension
-// name, tools, and resources) never varies by backend because there is only
-// one.
-
 // Retired environment selection: PIXIE_MCP_MODULES and
 // PIXIE_MCP_DISABLED_MODULES are ignored. Module enablement is owned by the
-// Pixie persist store (mcp-modules.json) and toggled from the Tools UI; the
-// untrusted Browser module defaults to disabled and stays unavailable until a
-// verified external worker boundary exists. A startup warning names the
-// migration path when either variable is still set.
+// Pixie persist store (mcp-modules.json) and toggled from the Tools UI; a
+// startup warning names the migration path when either variable is still set.
 const (
 	envModules  = "PIXIE_MCP_MODULES"
 	envDisabled = "PIXIE_MCP_DISABLED_MODULES"
@@ -126,9 +113,7 @@ func (r *Registry) healthLocked(id string) (bool, string) {
 	return true, ""
 }
 
-// Config describes the in-process publisher. Browser storage roots are always
-// derived from the controller data directory so Browser state never mixes
-// with application data.
+// Config describes the in-process publisher.
 type Config struct {
 	Host         string
 	Port         int
@@ -136,24 +121,12 @@ type Config struct {
 	PublicOrigin string
 	DataDir      string
 	Getenv       func(string) (string, bool)
-	// Binaries optionally overrides the Browser executable, config file, and
-	// storage roots. Network and authentication stay publisher-owned.
-	// Production leaves this nil; tests point it at fixtures.
-	Binaries *BinaryConfig
 	// CanvasConfig and DesignConfig are explicit optional worker/parser
 	// compositions. The registry never discovers or substitutes a launcher or
 	// parser from PATH; nil dependencies leave only their owning module
 	// unavailable.
 	CanvasConfig *canvas.Config
 	DesignConfig *design.Config
-}
-
-// BinaryConfig overrides Browser process and storage paths for tests.
-type BinaryConfig struct {
-	AgentBrowser  string
-	BrowserConfig string
-	ArtifactRoot  string
-	StateRoot     string
 }
 
 type persistedState struct {
@@ -164,9 +137,9 @@ type persistedModule struct {
 	Enabled bool `json:"enabled"`
 }
 
-// Registry is the in-process Pixie MCP publisher. Browser, Canvas and Design
-// share one persisted module map and one route/lifecycle boundary while each
-// service keeps its own authority, storage and worker policy.
+// Registry is the in-process Pixie MCP publisher. Canvas and Design share one
+// persisted module map and one route/lifecycle boundary while each service
+// keeps its own authority, storage and worker policy.
 type Registry struct {
 	config  Config
 	build   diagnostics.BuildInfo
@@ -176,7 +149,6 @@ type Registry struct {
 
 	mu          sync.RWMutex
 	mutationMu  sync.Mutex
-	browser     *browser.Service
 	canvas      *canvas.Service
 	design      *design.Service
 	modules     map[string]*moduleRuntime
@@ -184,16 +156,11 @@ type Registry struct {
 	definitions []ModuleDefinition
 	persisted   persistedState
 	enabled     map[string]bool
-	// workerBoundaryVerified records whether a real external worker
-	// containment boundary has been verified. It is false by default, so
-	// untrusted modules stay unavailable until the owning worker implementation
-	// confirms containment; it is never derived from operator configuration.
-	workerBoundaryVerified bool
-	nativeMCP              *NativeMCPRegistry
+	nativeMCP   *NativeMCPRegistry
 }
 
-// moduleRuntime is the small lifecycle adapter shared by Browser, Canvas and
-// Design. Slow construction happens before it is installed in Registry.modules;
+// moduleRuntime is the small lifecycle adapter shared by Canvas and Design.
+// Slow construction happens before it is installed in Registry.modules;
 // callers never hold Registry.mu while a service starts or stops.
 type moduleRuntime struct {
 	handler         http.Handler
@@ -202,7 +169,6 @@ type moduleRuntime struct {
 	disable         func()
 	ready           func() bool
 	readinessDetail func() string
-	browser         *browser.Service
 	canvas          *canvas.Service
 	design          *design.Service
 }
@@ -242,10 +208,6 @@ func NewRegistry(config Config, build diagnostics.BuildInfo, logger *slog.Logger
 	if err := registry.loadEnabled(); err != nil {
 		return nil, err
 	}
-	// Remove the retired engine-preference file from deployments that
-	// wrote it; enablement lives in mcp-modules.json and Chromium is the
-	// only backend, so the file carries no information.
-	_ = os.Remove(filepath.Join(config.DataDir, "browser.json"))
 	registry.startInitial()
 	return registry, nil
 }
@@ -418,71 +380,16 @@ func validateState(value persistedState) error {
 	return validateCompleteState(value)
 }
 
-// SetWorkerBoundaryVerified records whether a verified external worker
-// containment boundary exists. It defaults to false and is a narrow seam for
-// tests and for the future worker implementation to call only after real
-// containment verification; it is never a self-asserted production setting.
-// Losing verification fails closed: already-running boundary-gated runtimes are
-// stopped while their persisted desired state is preserved.
-func (r *Registry) SetWorkerBoundaryVerified(verified bool) {
-	if r == nil {
-		return
-	}
-	r.mutationMu.Lock()
-	defer r.mutationMu.Unlock()
-	r.mu.Lock()
-	r.workerBoundaryVerified = verified
-	r.mu.Unlock()
-	for _, definition := range r.definitionsSnapshot() {
-		if !definition.RequiresVerifiedWorkerBoundary {
-			continue
-		}
-		if !verified {
-			// Revoke and stop the runtime without touching persisted desired
-			// state; the desired/readiness split keeps user intent visible.
-			r.RevokeModule(definition.ID)
-			_ = r.reconcileModule(definition.ID, false)
-			continue
-		}
-		if r.DesiredEnabled(definition.ID) {
-			_ = r.reconcileModule(definition.ID, true)
-		}
-	}
-}
-
-// workerBoundaryAllowsLocked reports whether a definition may run under the
-// current boundary-verification state. Non-boundary modules are always allowed.
-// Callers must hold r.mu.
-func (r *Registry) workerBoundaryAllowsLocked(definition ModuleDefinition) bool {
-	return !definition.RequiresVerifiedWorkerBoundary || r.workerBoundaryVerified
-}
-
-func (r *Registry) definitionsSnapshot() []ModuleDefinition {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return append([]ModuleDefinition(nil), r.definitions...)
-}
-
 // SetEnabled persists module enablement in the Pixie app state and reconciles
-// the owning service. Unknown modules fail closed, and an untrusted module is
-// refused while no verified external worker boundary exists. Persisted desired
-// state is published before a service is enabled, while slow construction
-// happens outside the registry request lock.
+// the owning service. Unknown modules fail closed. Persisted desired state is
+// published before a service is enabled, while slow construction happens
+// outside the registry request lock.
 func (r *Registry) SetEnabled(id string, enabled bool) error {
-	definition, ok := r.ModuleDefinition(id)
-	if !ok {
+	if _, ok := r.ModuleDefinition(id); !ok {
 		return fmt.Errorf("unknown in-process MCP module %q", id)
 	}
 	r.mutationMu.Lock()
 	defer r.mutationMu.Unlock()
-	if enabled {
-		r.mu.RLock()
-		allowed := r.workerBoundaryAllowsLocked(definition)
-		r.mu.RUnlock()
-		if !allowed {
-			return ErrUnverifiedWorkerBoundary
-		}
-	}
 	r.mu.RLock()
 	unchanged := r.enabled[id] == enabled
 	current := clonePersistedState(r.persisted)
@@ -531,7 +438,7 @@ func (r *Registry) SetEnabled(id string, enabled bool) error {
 
 // Restart reconstructs an enabled module without changing its persisted
 // desired state. It is intentionally separate from SetEnabled so a retry of an
-// unchanged enablement cannot interrupt a healthy Browser service.
+// unchanged enablement cannot interrupt a healthy running service.
 func (r *Registry) Restart(id string) error {
 	definition, ok := r.ModuleDefinition(id)
 	if !ok {
@@ -580,10 +487,9 @@ func (r *Registry) catalogLocked() Catalog {
 		state := "ready"
 		if !ready {
 			state = "unavailable"
-			// Disabled optional modules do not make the gateway degraded. The
-			// legacy Browser disabled state remains degraded for compatibility
-			// with the existing Tools UI and readiness semantics. Flag-driven,
-			// never a module-name comparison.
+			// Disabled optional modules do not make the gateway degraded
+			// unless their definition opts in. Flag-driven, never a
+			// module-name comparison.
 			if r.enabled[definition.ID] || definition.DegradesGatewayWhenDisabled {
 				degraded = true
 			}
@@ -623,10 +529,6 @@ func (r *Registry) revisionLocked() string {
 	return hex.EncodeToString(digest[:])[:16]
 }
 
-func (r *Registry) endpointLocked() string {
-	return r.endpointForLocked(BrowserRoute)
-}
-
 func (r *Registry) endpointForLocked(route string) string {
 	if r.config.Port <= 0 {
 		return route
@@ -638,12 +540,12 @@ func (r *Registry) endpointForLocked(route string) string {
 	return "http://" + net.JoinHostPort(host, strconv.Itoa(r.config.Port)) + route
 }
 
-// Endpoint returns the controller-local URL Pi clients use for the Browser
-// module through this publisher.
-func (r *Registry) Endpoint() string {
+// CanvasEndpoint returns the controller-local URL Pi clients use for the
+// Canvas module through this publisher.
+func (r *Registry) CanvasEndpoint() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.endpointLocked()
+	return r.endpointForLocked(CanvasRoute)
 }
 
 // Shutdown stops the published modules. The persist store keeps enablement
@@ -658,7 +560,6 @@ func (r *Registry) Shutdown() {
 		runtimes = append(runtimes, runtime)
 		delete(r.modules, id)
 	}
-	r.browser = nil
 	r.canvas = nil
 	r.design = nil
 	r.mu.Unlock()
@@ -667,37 +568,6 @@ func (r *Registry) Shutdown() {
 			runtime.shutdown()
 		}
 	}
-}
-
-// BrowserLegacyHandler serves the Browser service's own REST surface
-// (/v1/browser, /v1/browser/leases, /v1/artifacts/*) from the in-process
-// module, preserving the former separate host's panel and artifact
-// compatibility routes. The handler re-checks module enablement on every call
-// and returns nil while the module is disabled or degraded; callers fall back
-// to their external BrowserURL proxy in that case.
-func (r *Registry) BrowserLegacyHandler() func() http.Handler {
-	return func() http.Handler {
-		r.mu.RLock()
-		service := r.browser
-		enabled := r.enabled[browserID]
-		r.mu.RUnlock()
-		if !enabled || service == nil {
-			return nil
-		}
-		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-			// The Browser service keeps its own bearer, host, and origin checks;
-			// it stays the trust boundary for panel and artifact traffic.
-			clone := request.Clone(request.Context())
-			service.ServeHTTP(response, clone)
-		})
-	}
-}
-
-func portOrDefault(port int) int {
-	if port > 0 {
-		return port
-	}
-	return 7312
 }
 
 func (r *Registry) ServeHTTP(response http.ResponseWriter, request *http.Request) {

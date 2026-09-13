@@ -159,7 +159,7 @@ test("old-tab upgrade prefers active entries and ignores invalid tabs", () => {
 	expect(empty.secondarySelection).toBeNull();
 });
 
-test("old-tab upgrade maps diff review and browser panel without draft loss", () => {
+test("old-tab upgrade maps diff review without draft loss", () => {
 	appStoreApi.setState({ activeProjectAreaId: "area-1" });
 	appStoreApi.getState().openChatSession("area-1", "s-1", null, "medium");
 	appStoreApi.getState().setChatDraft("s-1", "upgrade draft");
@@ -178,13 +178,6 @@ test("old-tab upgrade maps diff review and browser panel without draft loss", ()
 			original: "a",
 			modified: "b",
 		},
-		{
-			kind: "browser",
-			id: "browser-1",
-			projectAreaId: "area-1",
-			name: "Browser",
-			panelId: "panel-1",
-		},
 	];
 	const migrated = migrateLegacyTabsToSelections(tabs, "area-1", "diff-1", "diff-1");
 	expect(migrated.secondarySelection).toEqual({
@@ -192,15 +185,6 @@ test("old-tab upgrade maps diff review and browser panel without draft loss", ()
 		projectId: "area-1",
 		resourceId: "diff-1",
 		reviewId: "abc..def",
-	});
-	expect(appStoreApi.getState().sessions["s-1"]?.draft).toBe("upgrade draft");
-
-	const browser = migrateLegacyTabsToSelections(tabs, "area-1", "browser-1", "browser-1");
-	expect(browser.secondarySelection).toEqual({
-		kind: "module",
-		moduleId: "browser",
-		resourceId: "panel-1",
-		context: { scope: "project", projectId: "area-1" },
 	});
 	expect(appStoreApi.getState().sessions["s-1"]?.draft).toBe("upgrade draft");
 });

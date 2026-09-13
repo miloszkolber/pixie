@@ -1061,6 +1061,14 @@ func (s *nativeSupervisor) callHost(ctx context.Context, method string, params m
 		return s.deleteAgentSource(params)
 	case "pi.agent-mentions.list":
 		return s.agentMentionsOperation(params)
+	case "pi.mcp.servers.read":
+		return s.readMCPServersOperation(params)
+	case "pi.mcp.servers.upsert":
+		return s.upsertMCPServerOperation(params)
+	case "pi.mcp.servers.remove":
+		return s.removeMCPServerOperation(params)
+	case "pi.mcp.servers.probe":
+		return s.probeMCPServerOperation(ctx, params)
 	case "pi.providers.list", "pi.providers.readiness.check", "pi.providers.inventory.refresh", "pi.providers.canonical-model-info",
 		"pi.defaults.read", "pi.defaults.save", "pi.defaults.clear",
 		"pi.preferences.read", "pi.preferences.save", "pi.preferences.reset",
@@ -1538,6 +1546,10 @@ func nativeOperationSet(adminEnabled bool) map[string]bool {
 	for _, operation := range []string{
 		"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.configure", "session.delete", "session.fork", "session.steer", "session.rename", "session.archive", "session.release", "runtime.release", "runtime.releaseToTui",
 		"session.prompt.image", "session.prompt.resource", "session.uiResponse", "session.uiCancel", "pi.session.info", "pi.session.rename", "pi.session.archive", "pi.session.unarchive", "pi.session.steer", "pi.tools.list", "pi.tools.call", "runtime.capabilities", "runtime.restart", "pi.reload", "pi.slash-commands.list", "pi.providers.list", "pi.providers.canonical-model-info", "pi.providers.inventory.refresh", "pi.providers.readiness.check", "provider.loginStart", "provider.loginBegin", "provider.loginReply", "provider.loginCancel", "pi.providers.config.read", "pi.providers.config.delete", "pi.defaults.read", "pi.defaults.save", "pi.defaults.clear", "pi.preferences.read", "pi.preferences.save", "pi.preferences.reset", "pi.extensions.list", "pi.extensions.configure", "pi.sources.list", "pi.sources.create", "pi.sources.update", "pi.sources.delete", "pi.agent-mentions.list", "pi.subagent.execute", "pi.todo.plan", "pixie.goals.questions", "mcp.attach", "pi.config.extensions.list", "pi.config.extensions.add", "pi.config.extensions.set-enabled", "pi.config.extensions.remove", "pi.session.extensions.list", "pi.session.extensions.add", "pi.session.extensions.remove", "adapter.status", "adapter.registerBrowser", "adapter.session.forget", "pi.llama", "pi.native-extensions",
+		// Pi-native MCP server configuration layers written and probed in
+		// native_mcp_servers.go. They are host filesystem/config operations,
+		// not Pi RPC commands.
+		"pi.mcp.servers.read", "pi.mcp.servers.upsert", "pi.mcp.servers.remove", "pi.mcp.servers.probe",
 		// Vanilla Pi RPC operations implemented in native_operations.go. They
 		// are listed here so callHost admits them; package/contracts still owns
 		// adding them to the generated protocol catalog.
@@ -1545,7 +1557,7 @@ func nativeOperationSet(adminEnabled bool) map[string]bool {
 	} {
 		result[operation] = false
 	}
-	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.uiResponse", "session.uiCancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch", "pi.sources.list", "pi.sources.create", "pi.sources.update", "pi.sources.delete", "pi.agent-mentions.list"} {
+	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.uiResponse", "session.uiCancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch", "pi.sources.list", "pi.sources.create", "pi.sources.update", "pi.sources.delete", "pi.agent-mentions.list", "pi.mcp.servers.read", "pi.mcp.servers.upsert", "pi.mcp.servers.remove", "pi.mcp.servers.probe"} {
 		result[operation] = true
 	}
 	// The FC17/FC19/FC20 administration operations are owned by the opt-in

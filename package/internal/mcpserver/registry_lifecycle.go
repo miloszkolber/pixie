@@ -2,10 +2,7 @@ package mcpserver
 
 import (
 	"fmt"
-	"path/filepath"
-	"strconv"
 
-	"github.com/miloszkolber/pixie/internal/browser"
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
@@ -105,7 +102,7 @@ func DecideModuleStart(outcome persist.PublishOutcome) (bool, string) {
 }
 
 // SnapshotStartupConfig copies publisher configuration and desired state
-// under a read lock so slow browser construction happens without holding the
+// under a read lock so slow module construction happens without holding the
 // request lock through startup.
 func (r *Registry) SnapshotStartupConfig() (Config, map[string]bool) {
 	r.mu.RLock()
@@ -115,59 +112,4 @@ func (r *Registry) SnapshotStartupConfig() (Config, map[string]bool) {
 		desired[key] = value
 	}
 	return r.config, desired
-}
-
-// StrictBrowserConfig builds the browser service configuration without the
-// permissive fallback. Mixed invalid or restrictive operator configuration
-// fails locally with an error; the caller must leave the owning module
-// unavailable instead of substituting permissive defaults.
-func StrictBrowserConfig(snapshot Config) (browser.Config, error) {
-	lookup := snapshot.Getenv
-	if lookup == nil {
-		lookup = func(string) (string, bool) { return "", false }
-	}
-	config, err := browser.ConfigFromEnvironment(func(key string) (string, bool) {
-		switch key {
-		case "PIXIE_BROWSER_HOST":
-			return snapshot.Host, true
-		case "PIXIE_BROWSER_PORT":
-			return strconv.Itoa(portOrDefault(snapshot.Port)), true
-		case "PIXIE_BROWSER_AUTH":
-			return strconv.FormatBool(snapshot.Token != ""), true
-		case "PIXIE_BROWSER_TOKEN":
-			return snapshot.Token, snapshot.Token != ""
-		case "PIXIE_BROWSER_PUBLIC_ORIGIN":
-			return snapshot.PublicOrigin, snapshot.PublicOrigin != ""
-		}
-		return lookup(key)
-	})
-	if err != nil {
-		return browser.Config{}, fmt.Errorf("invalid browser operator configuration: %w", err)
-	}
-	if config.Host == "" {
-		config.Host = snapshot.Host
-	}
-	if config.Port == 0 {
-		config.Port = portOrDefault(snapshot.Port)
-	}
-	config.Authentication = snapshot.Token != ""
-	config.Token = snapshot.Token
-	config.PublicOrigin = snapshot.PublicOrigin
-	config.ArtifactRoot = filepath.Join(snapshot.DataDir, "browser", "artifacts")
-	config.StateRoot = filepath.Join(snapshot.DataDir, "browser", "state")
-	if binaries := snapshot.Binaries; binaries != nil {
-		if binaries.AgentBrowser != "" {
-			config.AgentBrowser = binaries.AgentBrowser
-		}
-		if binaries.BrowserConfig != "" {
-			config.BrowserConfig = binaries.BrowserConfig
-		}
-		if binaries.ArtifactRoot != "" {
-			config.ArtifactRoot = binaries.ArtifactRoot
-		}
-		if binaries.StateRoot != "" {
-			config.StateRoot = binaries.StateRoot
-		}
-	}
-	return config, nil
 }

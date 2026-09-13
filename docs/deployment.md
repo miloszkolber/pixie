@@ -6,7 +6,7 @@ The deployment target is Linux x86-64 or arm64 with the Go `pixie-assistant` bin
 
 Install `pixie-assistant` from the matching commit-named binary archive, or build it from source as described in the [assistant README](../assistant/README.md). Install and configure optional extensions through Pi's native mechanisms.
 
-Generate separate random values for `PIXIE_PI_SECRET_KEY`, `PIXIE_MCP_TOKEN`, and controller `PIXIE_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file. The optional Browser connection expands its token from the host environment.
+Generate separate random values for `PIXIE_PI_SECRET_KEY`, `PIXIE_MCP_TOKEN`, and controller `PIXIE_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file.
 
 ```sh
 PIXIE_PI_SECRET_KEY=<at-least-32-characters> \
@@ -29,7 +29,7 @@ cp .pixie.example .pixie
 chmod 600 .pixie
 ```
 
-Set `PIXIE_DATA_PATH`, `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. The [example](../.pixie.example) lists optional addresses, authentication and resource limits. Create `browser/artifacts` and `browser/state` inside the data directory. They must be writable by container UID/GID `1000:1000`. The data directory mounts into the Pixie container at `/var/lib/pixie`, so Browser state lives at `/var/lib/pixie/browser`.
+Set `PIXIE_DATA_PATH`, `PIXIE_PI_SECRET_KEY` and `PIXIE_MCP_TOKEN`. The [example](../.pixie.example) lists optional addresses, authentication and resource limits. The data directory must be writable by container UID/GID `1000:1000` and mounts into the Pixie container at `/var/lib/pixie`.
 
 Add project roots to the `pixie` service's mounts, preserving host absolute paths:
 
@@ -50,7 +50,9 @@ Open <http://127.0.0.1:7312>. Containers use host networking; bridged-container 
 
 ## MCP and Signet
 
-The Browser MCP publisher lives inside the main Pixie process on `PIXIE_CONTROLLER_PORT` (default `7312`); enable Browser in Settings → Tools with a compatible MCP extension loaded. See [Pi integration](pi.md#mcp) for endpoints, tokens and Browser limits. The universal MCP adapter also accepts unrelated stdio, HTTP and SSE servers.
+The Pixie MCP publisher lives inside the main process on `PIXIE_CONTROLLER_PORT` (default `7312`) and serves the Canvas and Design workspace modules; enable them in Settings → Tools with a compatible MCP extension loaded. See [Pi integration](pi.md#mcp) for endpoints and tokens. The universal MCP adapter also accepts unrelated stdio, HTTP and SSE servers.
+
+Browser is an external MCP endpoint, not a Pixie module. The optional `pixie-browser` Compose service runs Obscura's MCP HTTP transport on its own network, published only on host loopback (`127.0.0.1:3000`), with a non-root user, a read-only root filesystem and resource limits; it is not a `pixie` dependency. Point Pi at it, or any other endpoint, from Settings → Browser. The endpoint may be unauthenticated, and its hardening, isolation and egress are the deployment's responsibility.
 
 Optional Signet memory is an operator-owned external service, not a Pixie-managed MCP connection. Pi loads a managed file extension through native `<agentDir>/extensions` discovery with fail-open lifecycle hooks and hidden auto-recall. Pixie never reads or writes `SIGNET_DAEMON_URL` (default `http://127.0.0.1:3850`), `signet.json` or per-session `SIGNET_ENABLED`.
 

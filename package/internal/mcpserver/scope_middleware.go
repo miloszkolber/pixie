@@ -49,12 +49,11 @@ type ModuleScopeRequest struct {
 }
 
 // DefaultModuleDescriptors returns the committed fixture descriptors keyed by
-// module ID: the combined Browser contribution plus sidebar-only and
+// module ID: the combined Canvas and Design contributions plus sidebar-only and
 // viewer-only fixtures that prove generality without shell edits.
 func DefaultModuleDescriptors() map[string]FrontendDescriptor {
-	descriptors := make(map[string]FrontendDescriptor, 5)
+	descriptors := make(map[string]FrontendDescriptor, 4)
 	for _, descriptor := range []FrontendDescriptor{
-		BrowserDescriptorFixture(),
 		CanvasDescriptorFixture(),
 		DesignDescriptorFixture(),
 		SidebarOnlyFixture(),

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,8 +16,18 @@ type ModelReference struct {
 	ID       string `json:"id"`
 }
 
+// BrowserMCPConfig is the persisted browser-MCP registration intent. Pixie
+// registers Name in Pi's own configuration and reports the endpoint state; it
+// never proxies MCP traffic.
+type BrowserMCPConfig struct {
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Enabled bool   `json:"enabled"`
+}
+
 type AppConfig struct {
 	HiddenModels []ModelReference `json:"hiddenModels"`
+	BrowserMCP   BrowserMCPConfig `json:"browserMCP"`
 }
 
 // Persisted settings accept partial objects and normalize individual fields,
@@ -36,6 +47,12 @@ func (c *AppConfig) UnmarshalJSON(data []byte) error {
 		var reference ModelReference
 		if json.Unmarshal(model, &reference) == nil {
 			value.HiddenModels = append(value.HiddenModels, reference)
+		}
+	}
+	if stored, present := raw["browserMCP"]; present {
+		var browser BrowserMCPConfig
+		if json.Unmarshal(stored, &browser) == nil {
+			value.BrowserMCP = browser
 		}
 	}
 	*c = normalizeConfig(value)
@@ -149,11 +166,53 @@ func (s *Settings) mutate(update func(*AppConfig)) (AppConfig, error) {
 }
 
 func defaultConfig() AppConfig {
-	return AppConfig{HiddenModels: []ModelReference{}}
+	return AppConfig{HiddenModels: []ModelReference{}, BrowserMCP: defaultBrowserMCP()}
+}
+
+func defaultBrowserMCP() BrowserMCPConfig {
+	return BrowserMCPConfig{Name: "pixie-browser", URL: "http://127.0.0.1:3000/mcp", Enabled: false}
 }
 
 func normalizeConfig(value AppConfig) AppConfig {
-	return AppConfig{HiddenModels: normalizeModelReferences(value.HiddenModels)}
+	return AppConfig{
+		HiddenModels: normalizeModelReferences(value.HiddenModels),
+		BrowserMCP:   normalizeBrowserMCP(value.BrowserMCP),
+	}
+}
+
+// normalizeBrowserMCP restores missing defaults and rejects NUL-bearing values
+// without rejecting the whole settings document.
+func normalizeBrowserMCP(value BrowserMCPConfig) BrowserMCPConfig {
+	defaults := defaultBrowserMCP()
+	value.Name = strings.TrimSpace(value.Name)
+	if value.Name == "" || containsNUL(value.Name) {
+		value.Name = defaults.Name
+	}
+	value.URL = strings.TrimSpace(value.URL)
+	if value.URL == "" || containsNUL(value.URL) {
+		value.URL = defaults.URL
+	}
+	return value
+}
+
+// BrowserMCP returns the persisted browser-MCP registration setting.
+func (s *Settings) BrowserMCP() (BrowserMCPConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, err := s.getLocked()
+	if err != nil {
+		return BrowserMCPConfig{}, err
+	}
+	return current.BrowserMCP, nil
+}
+
+// SetBrowserMCP persists the browser-MCP registration setting.
+func (s *Settings) SetBrowserMCP(value BrowserMCPConfig) (BrowserMCPConfig, error) {
+	updated, err := s.mutate(func(next *AppConfig) { next.BrowserMCP = value })
+	if err != nil {
+		return BrowserMCPConfig{}, err
+	}
+	return updated.BrowserMCP, nil
 }
 
 func normalizeModelReferences(values []ModelReference) []ModelReference {

@@ -3,9 +3,10 @@
 | Process | Location | Owns |
 | --- | --- | --- |
 | Pi assistant service, `:3284` | Host user | Selected Pi process, native sessions, providers, credentials, models and extensions; the Go `pixie-assistant` binary is the release target |
-| Pixie, `:7312` | Application container | Web UI, projects, files, Git, goals, questions, queues, schedules, Browser MCP publisher, Chromium and artifacts |
+| Pixie, `:7312` | Application container | Web UI, projects, files, Git, goals, questions, queues, schedules and browser-MCP registration |
+| External browser MCP, operator-chosen | Deployment | Browser runtime and MCP transport; Pi is the client and Pixie stores only the registration setting |
 
-Host networking lets the container reach host services over loopback. The application receives project mounts, read-only and at the same absolute paths used by Pi. In-process Browser children receive scoped working directories and environment values, but they share the controller UID, mount namespace, host network, and writable application data; those conventions are not isolation. Browser state lives under `browser/{artifacts,state}` inside the controller data directory.
+Host networking lets the container reach host services over loopback. The application receives project mounts, read-only and at the same absolute paths used by Pi. Pixie hosts no browser and never proxies MCP traffic: Pi dials the operator-chosen browser MCP endpoint directly, while Pixie writes the registration into Pi's MCP configuration and reports a bounded probe.
 
 ## Source
 
@@ -14,13 +15,13 @@ Paths below are relative to `pixie/`, which holds the shared Bun workspace and l
 | Directory | Responsibility |
 | --- | --- |
 | `assistant/` | Go assistant facade and native Pi supervisor, plus the opt-in Bun administration bridge sidecar |
-| `package/cmd`, `package/internal/controller` | Application HTTP/WebSocket/MCP, MCP publisher, native Pi projection and lifecycle |
-| `package/internal/mcpserver`, `package/internal/browser` | In-process Browser module publication and browser runtime |
+| `package/cmd`, `package/internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection, lifecycle and browser-MCP registration (`mcp_browser.go`) |
+| `package/internal/mcpserver` | Module catalog and MCP publication |
 | `package/internal/workspace`, `package/internal/persist` | Bounded project access and durable state |
 | `package/webui`, `package/contracts` | Svelte 5 interface and shared wire contracts |
-| `package/tests` | Unit, integration, deployment and browser checks |
+| `package/tests` | Unit, integration and deployment checks |
 
-Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets, Git and the Browser runtime. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
+Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets and Git. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
 
 ## Configuration ownership
 
@@ -28,16 +29,16 @@ Each setting has one owner. Pixie never reads or writes another owner's state.
 
 | Owner | Settings | Examples |
 | --- | --- | --- |
-| Pi (host service) | Providers, models, thinking, credentials, extensions, subagents, agents, transcripts, run settlement | `~/.pi/agent`, Pi settings APIs |
+| Pi (host service) | Providers, models, thinking, credentials, extensions, subagents, agents, transcripts, run settlement, effective MCP servers | `~/.pi/agent`, Pi settings APIs |
 | Extension (guest capabilities) | Dialog answers, status/widget/title/working hints, background work signals | `ctx.ui` bridge, per-session liveness |
-| Pixie (application state) | Projects, sessions, MCP enablement, Browser engine, schedules, goals, settings, dialog and event projection | Controller data directory (`config.json`, `mcp-modules.json`, `browser.json`) |
-| External (operator-owned) | Memory daemon, search backend and credentials | `SIGNET_DAEMON_URL`, `~/.config/rpiv-web-tools/config.json`, provider `*_API_KEY` |
+| Pixie (application state) | Projects, sessions, MCP enablement, browser-MCP registration, schedules, goals, settings, dialog and event projection | Controller data directory (`config.json`, `mcp-modules.json`) |
+| External (operator-owned) | Browser MCP endpoint, memory daemon, search backend and credentials | Compose `pixie-browser`, `SIGNET_DAEMON_URL`, `~/.config/rpiv-web-tools/config.json`, provider `*_API_KEY` |
 
-See [Pi integration](pi.md) for Pi-owned settings, the extension bridge and MCP publication, and [deployment](deployment.md) for external services.
+Pi owns the effective MCP configuration. Pixie writes only its own browser entry through Pi's `pi.mcp.servers.*` operations. See [Pi integration](pi.md) for Pi-owned settings, the extension bridge and MCP publication, and [deployment](deployment.md) for external services.
 
 ## State and lifecycle
 
-Pi stores native JSONL transcripts. Pixie stores project/session associations, goals, settings, durable queues, schedules and browser-panel ownership. Application JSON publishes through validate-first staging with typed outcomes: only installed commits update dispatch state, durability-uncertain results retain the mutation identity and reconcile the validated primary without backup restore or replay, and deletions stay fail-closed. The host and MCP extension use locked atomic host-side JSON writes.
+Pi stores native JSONL transcripts. Pixie stores project/session associations, goals, settings, durable queues, schedules and the browser-MCP registration. Application JSON publishes through validate-first staging with typed outcomes: only installed commits update dispatch state, durability-uncertain results retain the mutation identity and reconcile the validated primary without backup restore or replay, and deletions stay fail-closed. The host and MCP extension use locked atomic host-side JSON writes.
 
 Schedule occurrences are recorded before dispatch. Runs create native sessions in an admitted project and retain status and session IDs. An ambiguous running entry after restart is marked interrupted and paused. Failed writes retain the execution claim. Missed cron occurrences coalesce into one run; schedules do not overlap. Pixie must remain running for dispatch. Schedules are available through the workspace list/detail/run views and the Settings schedules section, which reuse the ledger semantics and render recovery for a missing selection, as well as through project-scoped API methods and the `schedule_manage` tool.
 
@@ -47,6 +48,4 @@ Workspace navigation uses v2 hash routes (`#/v2/...`) with v1 compatibility. The
 
 Git inspection is read-only: staged index entries are compared against the base tree, raw worktree bytes are hashed within a 4 MiB per-file and 64 MiB aggregate budget with conservative reporting, previews note that clean/process and LFS conversion are not applied, and limits surface in per-repository warnings. The assembled HTTP handler reserves `/api/*` and `/mcp/*` for JSON errors and never falls back to the SPA document.
 
-The browser receives the newest transcript page first. Older pages carry projection identities. Snapshots also carry pending tools and pending extension dialogs, so a reload mid-run, mid-tool, or mid-dialog reconciles against server state. Late message events from older runs never resurrect completed streaming state, and one prompt's several `agent_end` events never settle it early: only prompt settlement does. Inactive projections have count and memory budgets; active work, pending dialogs, registered liveness, and durable queues prevent eviction. Reconnect generations, session ownership and deletion markers reject stale work.
-
-Browser panels have persisted ownership and renewable leases. Startup retries cleanup of recorded panels.
+The Web UI receives the newest transcript page first. Older pages carry projection identities. Snapshots also carry pending tools and pending extension dialogs, so a reload mid-run, mid-tool, or mid-dialog reconciles against server state. Late message events from older runs never resurrect completed streaming state, and one prompt's several `agent_end` events never settle it early: only prompt settlement does. Inactive projections have count and memory budgets; active work, pending dialogs, registered liveness, and durable queues prevent eviction. Reconnect generations, session ownership and deletion markers reject stale work.

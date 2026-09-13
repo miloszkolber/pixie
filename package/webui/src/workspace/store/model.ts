@@ -52,14 +52,6 @@ export interface DiffTab extends GitDiffFile {
 	ignoreWhitespace?: boolean;
 	loadedTick?: number;
 }
-export interface BrowserTab {
-	kind: "browser";
-	id: string;
-	projectAreaId: string;
-	name: string;
-	panelId: string;
-}
-
 /** The reserved tab bucket for resources whose lifetime is the Pixie instance. */
 export const INSTANCE_CONTENT_TAB_AREA_ID = "__pixie_instance__";
 
@@ -90,32 +82,7 @@ export interface DesignTab {
 	documentId?: string | null;
 }
 
-export interface BrowserPanelViewState {
-	address: string;
-	snapshot: string;
-	screenshot: string | null;
-	reference: string;
-	fillText: string;
-	viewport: { width: number; height: number };
-	error: string | null;
-	loading: boolean;
-	requestGeneration: number;
-}
-
-export function newBrowserPanelViewState(): BrowserPanelViewState {
-	return {
-		address: "",
-		snapshot: "",
-		screenshot: null,
-		reference: "",
-		fillText: "",
-		viewport: { width: 1280, height: 800 },
-		error: null,
-		loading: false,
-		requestGeneration: 0,
-	};
-}
-export type ContentTab = FileTab | ChatTab | DiffTab | BrowserTab | CanvasTab | DesignTab;
+export type ContentTab = FileTab | ChatTab | DiffTab | CanvasTab | DesignTab;
 export type ProjectAreaActivity = "files" | "changes";
 
 export function chatTabId(projectAreaId: string, sessionId: string): string {
@@ -134,7 +101,6 @@ export function designTabId(): string {
 export function contentTabResourceId(tab: ContentTab): string {
 	if (tab.kind === "canvas") return tab.resourceId ?? tab.canvasId ?? tab.id;
 	if (tab.kind === "design") return tab.resourceId ?? tab.documentId ?? tab.id;
-	if (tab.kind === "browser") return tab.panelId;
 	return tab.id;
 }
 
@@ -160,8 +126,6 @@ export function contentResourceIdentity(tab: ContentTab): string {
 	}
 	if (tab.kind === "chat")
 		return tupleKey("content-resource", tab.projectAreaId, "chat", tab.sessionId);
-	if (tab.kind === "browser")
-		return tupleKey("content-resource", tab.projectAreaId, "browser", tab.panelId);
 	if (tab.kind === "canvas")
 		return tupleKey(
 			"content-resource",

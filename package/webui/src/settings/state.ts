@@ -33,6 +33,7 @@ export const SettingsSection = {
 	Models: "models",
 	Tools: "tools",
 	Extensions: "extensions",
+	Browser: "browser",
 	Schedules: "schedules",
 	System: "system",
 } as const;

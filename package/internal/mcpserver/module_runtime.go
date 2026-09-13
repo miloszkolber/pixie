@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/miloszkolber/pixie/internal/browser"
 	"github.com/miloszkolber/pixie/internal/canvas"
 	"github.com/miloszkolber/pixie/internal/design"
 )
@@ -82,12 +81,6 @@ func (r *Registry) installRuntime(id string, runtime *moduleRuntime) *moduleRunt
 	r.modules[id] = runtime
 	delete(r.failures, id)
 	switch id {
-	case browserID:
-		if runtime == nil {
-			r.browser = nil
-		} else {
-			r.browser = runtime.browser
-		}
 	case "canvas":
 		if runtime == nil {
 			r.canvas = nil
@@ -110,8 +103,6 @@ func (r *Registry) removeRuntime(id string) *moduleRuntime {
 	previous := r.modules[id]
 	delete(r.modules, id)
 	switch id {
-	case browserID:
-		r.browser = nil
 	case "canvas":
 		r.canvas = nil
 	case "design":
@@ -181,37 +172,9 @@ func (r *Registry) removeOrDisable(id string) *moduleRuntime {
 func (r *Registry) constructModule(id string, enabled bool) (*moduleRuntime, error) {
 	r.mu.RLock()
 	config := r.config
-	build := r.build
 	logger := r.logger
-	definition, haveDefinition := r.definitionLocked(id)
-	boundaryAllowed := !haveDefinition || r.workerBoundaryAllowsLocked(definition)
 	r.mu.RUnlock()
-	// An untrusted module never starts merely because it was enabled in
-	// persisted state; the verified boundary must exist at construction time.
-	// Existing desired state stays true and the failure is recorded locally so
-	// readiness reports the missing boundary.
-	if enabled && !boundaryAllowed {
-		return nil, ErrUnverifiedWorkerBoundary
-	}
 	switch id {
-	case browserID:
-		browserConfig, err := StrictBrowserConfig(config)
-		if err != nil {
-			return nil, err
-		}
-		service, err := browser.NewService(browserConfig, build, logger)
-		if err != nil {
-			return nil, err
-		}
-		return &moduleRuntime{
-			handler:  service,
-			browser:  service,
-			shutdown: service.Shutdown,
-			ready:    service.Ready,
-			readinessDetail: func() string {
-				return "The Browser module is not ready."
-			},
-		}, nil
 	case "canvas":
 		canvasConfig := canvas.Config{DataDir: config.DataDir, Enabled: enabled, Logger: logger}
 		if config.CanvasConfig != nil {
@@ -283,7 +246,7 @@ func (r *Registry) serviceForRoute(route string) (string, *moduleRuntime, bool) 
 	// One ownership rule for every module: exact-or-child match over the
 	// registry's own definitions, never the compiled defaults and never a
 	// per-module switch. Test-registered fixtures resolve through the same
-	// path as Browser/Canvas/Design.
+	// path as Canvas/Design.
 	if definition, ok := DefinitionForMCPRoute(definitions, route); ok {
 		r.mu.RLock()
 		runtime := r.modules[definition.ID]

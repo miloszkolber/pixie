@@ -20,7 +20,7 @@ bun run build
 
 `bun run test` runs the WebUI/contract suites plus the Go suite. To run the Go suite directly, use `go test -race -count=1 ./...` and `go vet ./...` from `package/`.
 
-Go tests use temporary native state and authenticated WebSockets. They cover the assistant facade and application persistence, queues, schedules, nullable project grouping, reserved routing, project ownership and Browser boundaries. The `assistant/bridge` Bun suite uses temporary package fixtures and can smoke-test a real installed Pi SDK when present. No real provider credentials are required.
+Go tests use temporary native state and authenticated WebSockets. They cover the assistant facade and application persistence, queues, schedules, nullable project grouping, reserved routing, project ownership and browser-MCP registration. The `assistant/bridge` Bun suite uses temporary package fixtures and can smoke-test a real installed Pi SDK when present. No real provider credentials are required.
 
 Container and acceptance checks, also from `pixie/`:
 
@@ -31,7 +31,7 @@ docker run --rm --network none --shm-size 256m pixie-ui-acceptance
 docker build -f package/Dockerfile --target pixie -t pixie .
 ```
 
-Mount `/artifacts` to retain browser evidence. The container-image workflow runs one shared validation graph before publishing the image. Acceptance covers short viewport composer access, file/Git views, attachments, streaming/reconnect, provider setup, keyboard focus and both themes at narrow and wide sizes. Apple Container validates Linux processes and images; it does not establish Docker Compose host-network behavior.
+Mount `/artifacts` to retain the acceptance run's generated artifacts. The container-image workflow runs one shared validation graph before publishing the image. Acceptance covers short viewport composer access, file/Git views, attachments, streaming/reconnect, provider setup, keyboard focus and both themes at narrow and wide sizes. Apple Container validates Linux processes and images; it does not establish Docker Compose host-network behavior.
 
 `bun run dev:web` uses the same frontend entry and Linux Go fixture. Builds verify vendored Mewa assets and enforce the initial JavaScript budget. Keep WebUI and contract tests under `package/tests/`; new Go unit tests may be colocated; use regression cases for observable behavior and realistic failure modes.
 

@@ -81,14 +81,10 @@ func ExpiredSessionCookie(secure bool) string {
 }
 
 type AuthConfig struct {
-	Enabled             bool
-	BrowserEnabled      bool
-	ControllerToken     string
-	BrowserToken        string
-	BrowserURL          string
-	BrowserPublicOrigin string
-	MCPToken            string
-	ControllerHost      string
+	Enabled         bool
+	ControllerToken string
+	MCPToken        string
+	ControllerHost  string
 	// ControllerPort is the port on which the application listener accepts
 	// requests. ReadAuthConfig supplies the documented default and Runtime
 	// overwrites it with the effective configured port. A zero value does not
@@ -104,36 +100,14 @@ type AuthConfig struct {
 	AllowRemoteWithout bool
 }
 
-// BrowserServiceAuth selects the credential for controller-owned requests to
-// the Browser HTTP surface. Browser-specific fields remain supported for
-// compatibility with older deployments; without them the in-process module's
-// publisher credential (PIXIE_MCP_TOKEN) applies.
-func (c AuthConfig) BrowserServiceAuth() (bool, string) {
-	if c.BrowserEnabled || c.BrowserToken != "" {
-		return c.BrowserEnabled, c.BrowserToken
-	}
-	return c.MCPToken != "", c.MCPToken
-}
-
 func ReadAuthConfig(getenv func(string) string) (AuthConfig, error) {
 	enabled, err := strictBool(getenv("PIXIE_AUTH_ENABLED"), false, "PIXIE_AUTH_ENABLED")
 	if err != nil {
 		return AuthConfig{}, err
 	}
-	browserEnabled, err := strictBool(getenv("PIXIE_BROWSER_AUTH"), false, "PIXIE_BROWSER_AUTH")
-	if err != nil {
-		return AuthConfig{}, err
-	}
 	controllerToken := strings.TrimSpace(getenv("PIXIE_TOKEN"))
-	browserToken := strings.TrimSpace(getenv("PIXIE_BROWSER_TOKEN"))
 	if enabled && !strongToken(controllerToken) {
 		return AuthConfig{}, fmt.Errorf("PIXIE_TOKEN must be a strong printable random token")
-	}
-	if browserEnabled && !strongToken(browserToken) {
-		return AuthConfig{}, fmt.Errorf("PIXIE_BROWSER_TOKEN must be a strong printable random token")
-	}
-	if enabled && browserEnabled && constantTimeStringEqual(controllerToken, browserToken) {
-		return AuthConfig{}, fmt.Errorf("PIXIE_TOKEN and PIXIE_BROWSER_TOKEN must be different")
 	}
 	host := strings.TrimSpace(getenv("PIXIE_CONTROLLER_HOST"))
 	if host == "" {
@@ -180,41 +154,7 @@ func ReadAuthConfig(getenv func(string) string) (AuthConfig, error) {
 	if enabled && mcpToken != "" && constantTimeStringEqual(controllerToken, mcpToken) {
 		return AuthConfig{}, fmt.Errorf("PIXIE_TOKEN and PIXIE_MCP_TOKEN must be different")
 	}
-	// Empty PIXIE_BROWSER_URL means the controller's in-process Browser
-	// module (merged publisher); an explicit URL keeps proxying to an
-	// external, isolated Browser service for panel and artifact viewing.
-	browserURL := strings.TrimSpace(getenv("PIXIE_BROWSER_URL"))
-	if browserURL != "" {
-		var normalizeErr error
-		browserURL, normalizeErr = normalizeOrigin(browserURL)
-		if normalizeErr != nil {
-			return AuthConfig{}, fmt.Errorf("PIXIE_BROWSER_URL must be an absolute http(s) origin without credentials or a path")
-		}
-	}
-	if browserURL != "" {
-		parsedBrowser, _ := url.Parse(browserURL)
-		if !browserEnabled && parsedBrowser.Hostname() != "localhost" && !net.ParseIP(parsedBrowser.Hostname()).IsLoopback() {
-			return AuthConfig{}, fmt.Errorf("a non-loopback PIXIE_BROWSER_URL requires browser authentication")
-		}
-	}
-	browserPublicOrigin := strings.TrimSpace(getenv("PIXIE_BROWSER_PUBLIC_ORIGIN"))
-	publicOriginSetting := "PIXIE_BROWSER_PUBLIC_ORIGIN"
-	if browserPublicOrigin != "" {
-		if !browserEnabled {
-			return AuthConfig{}, fmt.Errorf("%s requires Browser module authentication", publicOriginSetting)
-		}
-		browserPublicOrigin, err = normalizeOrigin(browserPublicOrigin)
-		if err != nil {
-			return AuthConfig{}, fmt.Errorf("%s must be an absolute http(s) origin without credentials or a path", publicOriginSetting)
-		}
-		// Both origins are normalized above, so plain equality is exact.
-		// The Browser surface stays isolated from the application origin
-		// for panel and artifact framing.
-		if publicOrigin != "" && browserPublicOrigin == publicOrigin {
-			return AuthConfig{}, fmt.Errorf("%s must differ from PIXIE_PUBLIC_ORIGIN", publicOriginSetting)
-		}
-	}
-	return AuthConfig{Enabled: enabled, BrowserEnabled: browserEnabled, ControllerToken: controllerToken, BrowserToken: browserToken, BrowserURL: browserURL, BrowserPublicOrigin: browserPublicOrigin, MCPToken: mcpToken, ControllerHost: host, ControllerPort: DefaultControllerPort, TrustedProxyCIDRs: trustedProxyCIDRs, PublicOrigin: publicOrigin, AllowRemoteWithout: allowRemote}, nil
+	return AuthConfig{Enabled: enabled, ControllerToken: controllerToken, MCPToken: mcpToken, ControllerHost: host, ControllerPort: DefaultControllerPort, TrustedProxyCIDRs: trustedProxyCIDRs, PublicOrigin: publicOrigin, AllowRemoteWithout: allowRemote}, nil
 }
 
 func validateControllerHost(host string) error {

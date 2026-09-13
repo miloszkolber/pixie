@@ -9,12 +9,12 @@ import (
 )
 
 func TestDescriptorFixturesRegisterWithoutShellEdits(t *testing.T) {
-	combined := mcpserver.BrowserDescriptorFixture()
+	combined := mcpserver.CanvasDescriptorFixture()
 	sidebarOnly := mcpserver.SidebarOnlyFixture()
 	viewerOnly := mcpserver.ViewerOnlyFixture()
 
 	for name, descriptor := range map[string]mcpserver.FrontendDescriptor{
-		"browser": combined, "sidebar-only": sidebarOnly, "viewer-only": viewerOnly,
+		"canvas": combined, "sidebar-only": sidebarOnly, "viewer-only": viewerOnly,
 	} {
 		if err := mcpserver.ValidateDescriptor(descriptor); err != nil {
 			t.Fatalf("%s fixture invalid: %v (%#v)", name, err, descriptor)
@@ -22,7 +22,7 @@ func TestDescriptorFixturesRegisterWithoutShellEdits(t *testing.T) {
 	}
 
 	if scope, err := combined.ContributionScope(); err != nil || scope != mcpserver.DescriptorCombined {
-		t.Fatalf("browser scope = %q err = %v", scope, err)
+		t.Fatalf("canvas scope = %q err = %v", scope, err)
 	}
 	if scope, err := sidebarOnly.ContributionScope(); err != nil || scope != mcpserver.DescriptorSidebarOnly {
 		t.Fatalf("sidebar-only scope = %q err = %v", scope, err)

@@ -8,6 +8,7 @@ export const WORKSPACE_SETTINGS_SECTIONS = [
 	"models",
 	"tools",
 	"extensions",
+	"browser",
 	"schedules",
 	"system",
 ] as const;

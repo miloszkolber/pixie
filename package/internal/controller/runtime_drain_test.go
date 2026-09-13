@@ -24,9 +24,6 @@ package controller
 //     pixie stage uses ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie"]
 //     so PID 1 reaps orphaned managed-group descendants instead of leaving
 //     zombies. See package/tests/go/diagnostics/termination_test.go.
-//   - Runtime drain in this package (BrowserPanels.CloseAll) sets draining,
-//     stops retries, and closes matching panels through the caller context;
-//     Open while draining is rejected.
 //
 // Residuals left for later (explicitly out of scope here):
 //   - Process-group escalation for controller-spawned children (if any).
@@ -39,50 +36,10 @@ package controller
 // package.
 
 import (
-	"context"
 	"os"
-	"strings"
 	"testing"
 	"time"
 )
-
-// TestRuntimeDrainRejectsOpenAfterCloseAll documents that CloseAll is a
-// one-way drain: once draining starts, Open is rejected and repeated
-// CloseAll calls stay bounded.
-func TestRuntimeDrainRejectsOpenAfterCloseAll(t *testing.T) {
-	panels := NewBrowserPanels(AuthConfig{}, nil)
-	if _, err := panels.Open("client-a", "project-a"); err != nil {
-		t.Fatalf("Open before drain: %v", err)
-	}
-
-	started := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	panels.CloseAll(ctx)
-	if elapsed := time.Since(started); elapsed > 4*time.Second {
-		t.Fatalf("CloseAll was not bounded: %s", elapsed)
-	}
-
-	if _, err := panels.Open("client-b", "project-b"); err == nil {
-		t.Fatal("Open succeeded while panels were draining")
-	} else if !strings.Contains(err.Error(), "shutting down") {
-		t.Fatalf("Open during drain error = %q, want shutting-down", err)
-	}
-
-	// A second drain must not hang or panic.
-	second, secondCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer secondCancel()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		panels.CloseAll(second)
-	}()
-	select {
-	case <-done:
-	case <-time.After(4 * time.Second):
-		t.Fatal("second CloseAll was not bounded")
-	}
-}
 
 // TestRuntimeDrainPipeCloseUnblocksReader documents the pipe-drain pattern
 // relied on by bounded termination: closing the explicit read end unblocks a

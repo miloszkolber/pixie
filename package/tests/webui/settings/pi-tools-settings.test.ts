@@ -144,6 +144,7 @@ test("vanilla Pi exposes core settings and hides unavailable extension surfaces"
 		"Models",
 		"Tools",
 		"Extensions",
+		"Browser",
 		"Schedules",
 		"System",
 	]);

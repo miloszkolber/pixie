@@ -268,13 +268,11 @@ test("the work area keeps the renderer and accessibility contracts inside six st
 		'data-testid="rail-details"',
 		'data-testid="rail-files"',
 		'data-testid="rail-changes"',
-		'data-testid="rail-browser"',
 		"<PanelHeader",
 		"<ShellRail",
 		"<ChatView",
 		"<FilePane",
 		"<DiffPane",
-		"<BrowserPanel",
 		"<ErrorBoundary",
 		"selectPrimaryContentTab",
 		"selectSecondaryContentTab",
@@ -482,7 +480,6 @@ test("the shell fills the viewport with flex, never percentage heights", async (
 		["chat/chat-view.svelte", "flex min-h-0 flex-1 flex-col bg-container-project-bg"],
 		["files/tabs/file-pane.svelte", "app-content flex min-h-0 flex-1 flex-col"],
 		["files/changes/diff-pane.svelte", "app-content flex min-h-0 flex-1 flex-col"],
-		["workspace/browser/browser-panel.svelte", "app-content flex min-h-0 flex-1 flex-col"],
 	] as const) {
 		expect(await source(path)).toContain(root);
 	}

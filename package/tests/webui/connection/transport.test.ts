@@ -142,12 +142,8 @@ describe("WsTransport reconnect delivery", () => {
 		// A 75s timeout exceeds the controller's disconnected-client grace
 		// period. Either the request is replayed after a reconnect or
 		// controller cleanup wins first.
-		const closing = transport.request(
-			"browser.panelClose",
-			{ panelId: "panel-1" },
-			{ timeoutMs: 75_000 },
-		);
-		const originalFrame = first?.sent.find((frame) => parse(frame).method === "browser.panelClose");
+		const closing = transport.request("runtime.status", {}, { timeoutMs: 75_000 });
+		const originalFrame = first?.sent.find((frame) => parse(frame).method === "runtime.status");
 		if (!originalFrame) throw new Error("close frame missing");
 		const id = parse(originalFrame).id;
 		first?.close();

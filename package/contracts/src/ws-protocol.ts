@@ -18,9 +18,6 @@ import type {
 	AgentProfile,
 	AppConfig,
 	AppConfigPatch,
-	BrowserPanel,
-	BrowserPanelAction,
-	BrowserPanelResult,
 	DirectoryListing,
 	FileListing,
 	GitBranchRef,
@@ -165,9 +162,9 @@ export const WS_METHODS = {
 	mcpRegistryModuleSetEnabled: "mcpRegistry.moduleSetEnabled",
 	mcpRegistryModuleRestart: "mcpRegistry.moduleRestart",
 	mcpAdapterStatus: "mcpAdapter.status",
-	browserPanelOpen: "browser.panelOpen",
-	browserPanelCommand: "browser.panelCommand",
-	browserPanelClose: "browser.panelClose",
+	browserMcpStatus: "browserMcp.status",
+	browserMcpConfigure: "browserMcp.configure",
+	browserMcpRemove: "browserMcp.remove",
 	piExtensionList: "pi.extensionList",
 	piNativeExtensions: "pi.nativeExtensions",
 	piNativeExtensionConfigure: "pi.nativeExtensionConfigure",
@@ -210,6 +207,25 @@ export interface DeletionRecovery {
 	sessionId: string;
 	phase: string;
 	reason: string;
+}
+
+// Browser MCP registration state. Pixie stores the intent and reports Pi's
+// effective configuration layer plus a bounded endpoint probe; it never proxies
+// MCP traffic.
+export interface BrowserMCPStatus {
+	name: string;
+	url: string;
+	enabled: boolean;
+	registered: boolean;
+	layer?: string;
+	path?: string;
+	disabled: boolean;
+	definition?: Record<string, unknown>;
+	reachable: boolean;
+	serverInfo?: Record<string, unknown>;
+	protocolVersion?: string;
+	tools: string[];
+	error?: string;
 }
 
 export interface ProjectWatchReadyResult {
@@ -543,12 +559,18 @@ export interface WsMethodMap {
 		params: Record<string, never>;
 		result: McpAdapterStatus;
 	};
-	"browser.panelOpen": { params: { projectId: string }; result: BrowserPanel };
-	"browser.panelCommand": {
-		params: { panelId: string; action: BrowserPanelAction };
-		result: BrowserPanelResult;
+	"browserMcp.status": { params: { projectDir?: string }; result: BrowserMCPStatus };
+	"browserMcp.configure": {
+		params: {
+			name?: string;
+			url?: string;
+			enabled?: boolean;
+			projectDir?: string;
+			headers?: Record<string, string>;
+		};
+		result: BrowserMCPStatus;
 	};
-	"browser.panelClose": { params: { panelId: string }; result: Ack };
+	"browserMcp.remove": { params: { projectDir?: string }; result: BrowserMCPStatus };
 	"pi.extensionList": { params: Record<string, never>; result: PiExtensionCatalog };
 	"pi.nativeExtensions": { params: NativeExtensionTarget; result: NativeExtensionInventory };
 	"pi.nativeExtensionConfigure": {

@@ -330,50 +330,6 @@ func TestCSRFFileReadsRejectCrossOriginWithCredentials(t *testing.T) {
 	}
 }
 
-func TestCSRFArtifactReadsRejectCrossOriginWithCredentials(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		response.Header().Set("Content-Type", "image/png")
-		response.Header().Set("Content-Length", "3")
-		_, _ = response.Write([]byte("png"))
-	}))
-	defer upstream.Close()
-	config := csrfAuthenticatedConfig()
-	config.BrowserURL = upstream.URL
-	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, nil, nil, config, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cookie := csrfLoginCookie(t, handler)
-	target := "http://127.0.0.1:7312/v1/artifacts/panel/screen.png"
-	doArtifact := func(origin, fetchSite string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(http.MethodGet, target, nil)
-		request.Host = "127.0.0.1:7312"
-		if origin != "" {
-			request.Header.Set("Origin", origin)
-		}
-		if fetchSite != "" {
-			request.Header.Set("Sec-Fetch-Site", fetchSite)
-		}
-		request.AddCookie(cookie)
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		return response
-	}
-	const exactOrigin = "http://127.0.0.1:7312"
-	if response := doArtifact(exactOrigin, "same-origin"); response.Code != http.StatusOK {
-		t.Fatalf("exact-origin credentialed artifact read returned %d: %s", response.Code, response.Body.String())
-	}
-	if response := doArtifact("", "same-origin"); response.Code != http.StatusOK {
-		t.Fatalf("same-fetch-site credentialed artifact read returned %d: %s", response.Code, response.Body.String())
-	}
-	if response := doArtifact("http://evil.example", "cross-site"); response.Code != http.StatusUnauthorized {
-		t.Fatalf("cross-origin credentialed artifact read returned %d, want %d", response.Code, http.StatusUnauthorized)
-	}
-	if response := doArtifact("https://127.0.0.1:7312", "same-origin"); response.Code != http.StatusUnauthorized {
-		t.Fatalf("scheme-mismatched credentialed artifact read returned %d, want %d", response.Code, http.StatusUnauthorized)
-	}
-}
-
 func TestCSRFServiceBearerWithoutOriginAllowed(t *testing.T) {
 	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, nil, nil, controller.AuthConfig{
 		ControllerPort: 7312,

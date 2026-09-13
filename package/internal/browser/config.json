@@ -1,9 +1,0 @@
-{
-	"args": "--no-sandbox,--deny-permission-prompts,--disable-notifications",
-	"contentBoundaries": true,
-	"debug": false,
-	"executablePath": "/usr/bin/chromium",
-	"hideScrollbars": true,
-	"idleTimeout": "2m",
-	"maxOutput": 20000
-}

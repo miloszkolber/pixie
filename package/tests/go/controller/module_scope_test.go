@@ -268,7 +268,7 @@ func TestModuleContributionScopeEnforcedAtBoundary(t *testing.T) {
 	t.Run("ContributionCombinedAllowsBoth", func(t *testing.T) {
 		spy := &moduleScopeSpy{}
 		handler, authority := newModuleScopeHandler(t, spy)
-		fixture := mcpserver.BrowserDescriptorFixture()
+		fixture := mcpserver.CanvasDescriptorFixture()
 		for _, surface := range []string{mcpserver.ModuleSurfaceSidebar, mcpserver.ModuleSurfaceViewer} {
 			issued := issueModuleScope(t, authority, fixture.ModuleID, fixture.ResourceNamespace+":res-"+surface, "sess-1", 1, time.Hour)
 			target := moduleScopeTarget(issued.ModuleID, issued.ResourceID, issued.SessionID, issued.Generation, surface)
@@ -298,7 +298,7 @@ func TestModuleContributionScopeEnforcedAtBoundary(t *testing.T) {
 
 func TestModuleScopeDescriptorFixturesRegister(t *testing.T) {
 	descriptors := mcpserver.DefaultModuleDescriptors()
-	for _, id := range []string{"browser", "fixture-sidebar", "fixture-viewer"} {
+	for _, id := range []string{"canvas", "fixture-sidebar", "fixture-viewer"} {
 		descriptor, ok := descriptors[id]
 		if !ok {
 			t.Fatalf("default descriptors missing %q", id)
@@ -307,8 +307,8 @@ func TestModuleScopeDescriptorFixturesRegister(t *testing.T) {
 			t.Fatalf("default descriptor %q invalid: %v", id, err)
 		}
 	}
-	if scope, err := descriptors["browser"].ContributionScope(); err != nil || scope != mcpserver.DescriptorCombined {
-		t.Fatalf("browser contribution scope = %q err=%v", scope, err)
+	if scope, err := descriptors["canvas"].ContributionScope(); err != nil || scope != mcpserver.DescriptorCombined {
+		t.Fatalf("canvas contribution scope = %q err=%v", scope, err)
 	}
 	if scope, err := descriptors["fixture-sidebar"].ContributionScope(); err != nil || scope != mcpserver.DescriptorSidebarOnly {
 		t.Fatalf("sidebar contribution scope = %q err=%v", scope, err)

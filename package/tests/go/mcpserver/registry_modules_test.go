@@ -20,21 +20,12 @@ import (
 func configuredModuleRegistry(t *testing.T) *mcpserver.Registry {
 	t.Helper()
 	root := t.TempDir()
-	configPath := filepath.Join(root, "browser.json")
-	if err := os.WriteFile(configPath, []byte("{}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	dataDir := filepath.Join(root, "data")
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	agentBrowser, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
 	registry, err := mcpserver.NewRegistry(mcpserver.Config{
 		Host: "127.0.0.1", Port: 17875, DataDir: dataDir,
-		Binaries: &mcpserver.BinaryConfig{AgentBrowser: agentBrowser, BrowserConfig: configPath},
 		CanvasConfig: func() *canvas.Config {
 			config := canvas.DefaultConfig(dataDir)
 			config.WorkerLauncher = canvas.NewDeterministicWorkerLauncher()
@@ -46,7 +37,6 @@ func configuredModuleRegistry(t *testing.T) *mcpserver.Registry {
 		t.Fatal(err)
 	}
 	t.Cleanup(registry.Shutdown)
-	enableBrowser(t, registry)
 	return registry
 }
 
@@ -64,18 +54,14 @@ func moduleByID(t *testing.T, catalog mcpserver.Catalog, id string) mcpserver.Mo
 func TestRegistryComposesOptionalModulesWithIndependentDefaultsAndRoutes(t *testing.T) {
 	registry := configuredModuleRegistry(t)
 	catalog := registry.Catalog()
-	if len(catalog.Modules) != 3 {
-		t.Fatalf("registered module count = %d, want 3: %#v", len(catalog.Modules), catalog.Modules)
+	if len(catalog.Modules) != 2 {
+		t.Fatalf("registered module count = %d, want 2: %#v", len(catalog.Modules), catalog.Modules)
 	}
 	if catalog.Gateway.State != "ready" {
 		t.Fatalf("disabled optional modules degraded gateway: %#v", catalog.Gateway)
 	}
-	browser := moduleByID(t, catalog, "browser")
 	canvasModule := moduleByID(t, catalog, "canvas")
 	designModule := moduleByID(t, catalog, "design")
-	if !browser.Enabled || browser.State != "ready" {
-		t.Fatalf("browser default = %#v", browser)
-	}
 	if canvasModule.Enabled || canvasModule.State != "unavailable" || designModule.Enabled || designModule.State != "unavailable" {
 		t.Fatalf("optional defaults = %#v %#v", canvasModule, designModule)
 	}

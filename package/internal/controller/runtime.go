@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -71,7 +70,6 @@ type Runtime struct {
 	logins    *ProviderLogins
 	watches   *workspace.ProjectWatches
 	status    *runtimeStatusProvider
-	browser   *BrowserPanels
 	registry  *mcpserver.Registry
 	errors    chan error
 }
@@ -166,9 +164,9 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		}
 	}
 	store := persist.Store{Dir: config.DataDir}
-	// In-process Pixie MCP publisher: the Browser module publishes on the
-	// controller listener. A Browser module that cannot start here degrades
-	// the catalog instead of failing startup.
+	// In-process Pixie MCP publisher: Canvas and Design publish on the
+	// controller listener. A module that cannot start here degrades the
+	// catalog instead of failing startup.
 	mcpRegistry, err := mcpserver.NewRegistry(mcpserver.Config{
 		Host:         config.Host,
 		Port:         config.Port,
@@ -185,16 +183,6 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 			return value, value != ""
 		},
 	}, build, nil)
-	if err != nil {
-		return nil, err
-	}
-	// An untrusted Browser stays unavailable unless an external worker proves
-	// real containment. When PIXIE_BROWSER_WORKER_URL is set, probe it now;
-	// every failure keeps the registry boundary false and logs the reason.
-	if err := mcpRegistry.VerifyWorkerBoundaryFromEnvironment(context.Background(), config.Getenv, os.Geteuid()); err != nil {
-		slog.Warn("browser worker boundary not verified; Browser stays unavailable", "error", err)
-	}
-	browserPanels, err := NewPersistentBrowserPanels(authConfig, nil, store, mcpRegistry.BrowserLegacyHandler())
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +236,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	requests := &diagnostics.RequestCounter{}
 	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig, mcpRegistry)
 	statusProvider.schedules = schedules
-	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, BrowserPanels: browserPanels, MCPRegistry: mcpRegistry}
+	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, MCPRegistry: mcpRegistry}
 	welcome := func(ctx context.Context) (any, error) {
 		recent, err := projects.List(true)
 		if err != nil {
@@ -290,7 +278,6 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	socket.LoginSnapshot = admin.logins.Snapshot
 	socket.ClientReaped = func(clientKey string) {
 		sessions.ReleaseClient(clientKey)
-		browserPanels.ReleaseClient(clientKey)
 	}
 	ready := func(response http.ResponseWriter, request *http.Request) {
 		status := runtimePiStatus(request.Context(), client)
@@ -318,7 +305,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	}
 	httpHandler.MCPRegistry = mcpRegistry
 	httpHandler.SessionRecords = records
-	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, browser: browserPanels, registry: mcpRegistry}, nil
+	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, registry: mcpRegistry}, nil
 }
 
 func validateControllerRuntime(host string, port int, auth AuthConfig) error {
@@ -365,7 +352,6 @@ func (r *Runtime) Start() (string, error) {
 	}
 	go func() { r.errors <- r.server.Serve(listener) }()
 	r.schedules.Start()
-	r.browser.ResumeCleanup()
 	r.sessions.resumeQueues(queued)
 	return "http://" + net.JoinHostPort(r.config.Host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)), nil
 }
@@ -374,11 +360,9 @@ func (r *Runtime) Errors() <-chan error { return r.errors }
 
 func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.schedules.Close(ctx)
-	r.status.close()
 	if r.registry != nil {
 		r.registry.Shutdown()
 	}
-	r.browser.CloseAll(ctx)
 	r.logins.Close()
 	r.watches.Close()
 	r.socket.Close(ctx)
