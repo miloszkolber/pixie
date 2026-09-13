@@ -121,6 +121,8 @@ func TestNativeOperationSetIsExhaustiveAndFailClosed(t *testing.T) {
 		"session.getMessages": true, "session.stats": true, "session.compact": true,
 		"session.rename": true, "session.commands": true, "session.steer": true,
 		"session.followUp": true, "session.clearQueue": true, "session.switch": true,
+		"pi.sources.list": true, "pi.sources.create": true, "pi.sources.update": true,
+		"pi.sources.delete": true, "pi.agent-mentions.list": true,
 	}
 	for operation, enabled := range operations {
 		if enabled != wantEnabled[operation] {

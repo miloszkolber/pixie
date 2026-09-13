@@ -1048,6 +1048,14 @@ func (s *nativeSupervisor) callHost(ctx context.Context, method string, params m
 		return s.forwardPi(ctx, params, "clear_queue", nil, true)
 	case "session.switch":
 		return s.switchSession(ctx, params)
+	case "pi.sources.list":
+		return s.listAgentSourcesOperation(params)
+	case "pi.sources.create", "pi.sources.update":
+		return s.saveAgentSource(params)
+	case "pi.sources.delete":
+		return s.deleteAgentSource(params)
+	case "pi.agent-mentions.list":
+		return s.agentMentionsOperation(params)
 	case "session.release", "runtime.release":
 		id, _ := params["sessionId"].(string)
 		cwd, _ := params["cwd"].(string)
@@ -1522,7 +1530,7 @@ func nativeOperationSet() map[string]bool {
 	} {
 		result[operation] = false
 	}
-	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.uiResponse", "session.uiCancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch"} {
+	for _, operation := range []string{"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.uiResponse", "session.uiCancel", "session.prompt.image", "session.release", "runtime.release", "session.configure", "session.fork", "session.clone", "session.getMessages", "session.stats", "session.compact", "session.rename", "session.commands", "session.steer", "session.followUp", "session.clearQueue", "session.switch", "pi.sources.list", "pi.sources.create", "pi.sources.update", "pi.sources.delete", "pi.agent-mentions.list"} {
 		result[operation] = true
 	}
 	return result
