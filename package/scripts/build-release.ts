@@ -127,7 +127,9 @@ export function installInstructions(variant: Variant): string {
 		variant === "assistant"
 			? "Set an absolute agentDir (and optionally piExecutable) in assistant.json, or PI_CODING_AGENT_DIR / PIXIE_PI_EXECUTABLE."
 			: "Keep an absolute agentDir and piExecutable in pixie.json, or set PI_CODING_AGENT_DIR / PIXIE_PI_EXECUTABLE. Full-host startup fails without a resolvable Pi executable.";
-	return `# Pixie ${binary}\n\nCopy ${binary} to ~/.local/bin/${binary}, install ${unit} and ${config} under ~/.config/systemd/user/, and create the private environment file the unit loads:\n\n    install -d -m 700 ~/.config/pixie\n    umask 077\n    printf '${secrets}\\n' > ~/.config/pixie/pixie.env\n\n${selection}\n\nThen run:\n\n    systemctl --user daemon-reload\n    systemctl --user enable --now ${unit}\n\nStop and disable the unit before replacing or removing the binary. This archive does not include native Pi state or credentials.\n`;
+	const bridge =
+		"Optional: the administration bridge is bundled as bridge/serve.ts. To enable it, keep `bun` on PATH and set PIXIE_ADMIN_BRIDGE=1 with PIXIE_PI_PACKAGE pointing at the selected @earendil-works/pi-coding-agent package. It stays off unless enabled and verified.";
+	return `# Pixie ${binary}\n\nCopy ${binary} to ~/.local/bin/${binary}, install ${unit} and ${config} under ~/.config/systemd/user/, and create the private environment file the unit loads:\n\n    install -d -m 700 ~/.config/pixie\n    umask 077\n    printf '${secrets}\\n' > ~/.config/pixie/pixie.env\n\n${selection}\n\n${bridge}\n\nThen run:\n\n    systemctl --user daemon-reload\n    systemctl --user enable --now ${unit}\n\nStop and disable the unit before replacing or removing the binary. This archive does not include native Pi state or credentials.\n`;
 }
 
 async function buildBinary(
@@ -182,6 +184,10 @@ async function archiveBinary(
 	await copyFile(join(workRoot, binary), join(stage, binary));
 	await copyFile(join(repositoryRoot, "package/systemd", unit), join(stage, unit));
 	await copyFile(join(repositoryRoot, "package/systemd", config), join(stage, config));
+	// The optional administration bridge ships as source; it runs on the
+	// operator's Bun and needs no bundled runtime.
+	await mkdir(join(stage, "bridge"), { recursive: true });
+	await copyFile(join(repositoryRoot, "assistant/bridge/serve.ts"), join(stage, "bridge/serve.ts"));
 	await writeFile(join(stage, "INSTALL.md"), installInstructions(variant));
 	await copyFile(join(repositoryRoot, "LICENSE"), join(stage, "LICENSE"));
 	await copyFile(join(repositoryRoot, "NOTICE.md"), join(stage, "NOTICE.md"));
@@ -191,6 +197,7 @@ async function archiveBinary(
 			{ name: binary, path: join(stage, binary), mode: 0o755 },
 			{ name: unit, path: join(stage, unit), mode: 0o644 },
 			{ name: config, path: join(stage, config), mode: 0o644 },
+			{ name: "bridge/serve.ts", path: join(stage, "bridge/serve.ts"), mode: 0o644 },
 			{ name: "INSTALL.md", path: join(stage, "INSTALL.md"), mode: 0o644 },
 			{ name: "LICENSE", path: join(stage, "LICENSE"), mode: 0o644 },
 			{ name: "NOTICE.md", path: join(stage, "NOTICE.md"), mode: 0o644 },
