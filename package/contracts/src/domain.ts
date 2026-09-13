@@ -64,7 +64,6 @@ export interface RuntimeAgentStatus {
 export interface RuntimeStatusReport {
 	application: RuntimeServiceStatus;
 	agent: RuntimeAgentStatus;
-	browser: RuntimeServiceStatus;
 	canvas?: RuntimeServiceStatus;
 	design?: RuntimeServiceStatus;
 }

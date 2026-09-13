@@ -253,7 +253,6 @@ onDestroy(() => {
 		<div class="grid min-w-0 grid-cols-1 gap-sm @2xl:grid-cols-3">
 			{@render ServiceCard("Application", report.application)}
 			{@render AgentCard(report.agent)}
-			{@render ServiceCard("Browser", report.browser)}
 		</div>
 	{/if}
 

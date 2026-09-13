@@ -198,7 +198,7 @@ browser wait --timeout 60000 --fn "document.querySelector('[data-testid=system-c
 browser wait --timeout 60000 --text "ui-acceptance" >/dev/null
 browser wait --timeout 60000 --text "0.85.1" >/dev/null
 echo "UI acceptance: system geometry"
-assert_eval "document.querySelector('[data-testid=system-card-browser]')?.textContent?.includes('Unavailable') === true && document.documentElement.scrollWidth === document.documentElement.clientWidth"
+assert_eval "document.documentElement.scrollWidth === document.documentElement.clientWidth"
 browser screenshot /artifacts/narrow-system.png >/dev/null
 browser set viewport 1440 900 >/dev/null
 browser find testid rail-chats click >/dev/null

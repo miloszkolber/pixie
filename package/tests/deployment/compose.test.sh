@@ -25,28 +25,36 @@ grep -q -A2 "env_file:" "$repo_root/docker-compose.yaml"
 grep -q "path: .pixie" "$repo_root/docker-compose.yaml"
 grep -q "required: false" "$repo_root/docker-compose.yaml"
 jq -e --arg root "$repo_root" --arg data "$PIXIE_DATA_PATH" '
-  (.services | keys) == ["pixie"] and
-  all(.services | to_entries[]; .key as $service | .value |
+  (.services | keys) == ["pixie", "pixie-browser"] and
+  (.services.pixie |
     .user == "1000:1000" and .read_only == true and .network_mode == "host" and
-    (.volumes | length) == 1 and
-    (all(.volumes[]; .type == "bind"))
+    (.volumes | length) == 1 and (all(.volumes[]; .type == "bind")) and
+    .image == "ghcr.io/miloszkolber/pixie:latest" and
+    .volumes[0].source == $data and .volumes[0].target == "/var/lib/pixie" and
+    .environment.PIXIE_PI_SECRET_KEY == env.PIXIE_PI_SECRET_KEY and
+    .environment.PIXIE_PI_PORT == env.PIXIE_PI_PORT and
+    .environment.PIXIE_MCP_TOKEN == env.PIXIE_MCP_TOKEN and
+    (.environment.PIXIE_MCP_URL == null) and
+    (.environment.PIXIE_MCP_PUBLIC_ORIGIN == null) and
+    (.environment.PIXIE_MCP_HOST == null) and
+    (.environment.PIXIE_MCP_PORT == null) and
+    (.environment.PIXIE_MCP_AUTH == null) and
+    (.environment.PIXIE_MCP_MODULES == null) and
+    (.environment.PIXIE_BROWSER_TOKEN == null) and
+    (.environment.PIXIE_BROWSER_AUTH == null) and
+    (((.depends_on // {}) | has("pixie-browser")) | not) and
+    any(.tmpfs[]; startswith("/dev/shm:size=256m"))
   ) and
-  .services.pixie.image == "ghcr.io/miloszkolber/pixie:latest" and
-  (.services.mcp == null) and (.services.browser == null) and
-  .services.pixie.volumes[0].source == $data and
-  .services.pixie.volumes[0].target == "/var/lib/pixie" and
-  .services.pixie.environment.PIXIE_PI_SECRET_KEY == env.PIXIE_PI_SECRET_KEY and
-  .services.pixie.environment.PIXIE_PI_PORT == env.PIXIE_PI_PORT and
-  .services.pixie.environment.PIXIE_MCP_TOKEN == env.PIXIE_MCP_TOKEN and
-  (.services.pixie.environment.PIXIE_MCP_URL == null) and
-  (.services.pixie.environment.PIXIE_MCP_PUBLIC_ORIGIN == null) and
-  (.services.pixie.environment.PIXIE_MCP_HOST == null) and
-  (.services.pixie.environment.PIXIE_MCP_PORT == null) and
-  (.services.pixie.environment.PIXIE_MCP_AUTH == null) and
-  (.services.pixie.environment.PIXIE_MCP_MODULES == null) and
-  (.services.pixie.environment.PIXIE_BROWSER_TOKEN == null) and
-  (.services.pixie.environment.PIXIE_BROWSER_AUTH == null) and
-  any(.services.pixie.tmpfs[]; startswith("/dev/shm:size=256m"))
+  (.services["pixie-browser"] |
+    .user == "65532:65532" and .read_only == true and
+    (.network_mode == null) and (.volumes == null) and
+    ((.image | startswith("h4ckf0r0day/obscura"))) and
+    (.ports | length) == 1 and
+    (all(.ports[]; .host_ip == "127.0.0.1" and .target == 3000 and .published == "3000")) and
+    (.cap_drop | index("ALL") != null) and
+    (.security_opt | index("no-new-privileges:true") != null)
+  ) and
+  (.services.mcp == null) and (.services.browser == null)
 ' "$fixture/compose.json" > /dev/null || {
 	echo "Compose service isolation checks failed" >&2
 	exit 1
