@@ -180,3 +180,30 @@ test("publication depends on the passing evidence job and uses the exact source 
 	expect(workflow).not.toContain("name: pixie-image-${{ github.sha }}");
 	expect(workflow).not.toContain("name: pixie-image-evidence-${{ github.sha }}");
 });
+
+test("publication is followed by an explicit post-publish verification job", async () => {
+	const workflow = await readFile(workflowPath, "utf8");
+	const verify = jobBlock(workflow, "verify-publication");
+
+	expect(verify).toContain("needs: [identity, stage, evidence, publish-image, publish]");
+	expect(verify).toContain(
+		"if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'",
+	);
+	expect(verify).toContain("runs-on: ubuntu-latest");
+	expect(verify).toContain("contents: read");
+	expect(verify).toContain("packages: read");
+	expect(verify).toContain("refs/tags/");
+	expect(verify).toContain("releases/tags/");
+	expect(verify).toContain("pixie-image-evidence-");
+	expect(verify).toContain("docker buildx imagetools inspect --raw");
+	expect(verify).toContain("vnd.docker.reference.type");
+	expect(verify).toContain("in-toto.io/predicate-type");
+	// The verifier runs only after publication, so it cannot gate the release.
+	expect(verify).toContain("cannot block the release");
+	expect(verify).toContain("exit 1");
+
+	const publishIndex = workflow.indexOf("\n  publish:");
+	const verifyIndex = workflow.indexOf("\n  verify-publication:");
+	expect(publishIndex).toBeGreaterThan(-1);
+	expect(verifyIndex).toBeGreaterThan(publishIndex);
+});
