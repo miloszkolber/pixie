@@ -75,7 +75,8 @@ test("validation image builds are read-only and carry the source identity as bui
 test("release retries compare immutable asset hashes instead of clobbering", async () => {
 	const workflow = await readFile(workflowPath, "utf8");
 
-	expect(workflow).toContain('gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_ID"');
+	expect(workflow).toContain("--json databaseId");
+	expect(workflow).toContain('gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_NUM"');
 	expect(workflow).toContain("DOWNLOAD_URL=$(jq -r --arg name");
 	expect(workflow).toContain("LOCAL_HASH=$(sha256sum");
 	expect(workflow).toContain("REMOTE_HASH=$(sha256sum");

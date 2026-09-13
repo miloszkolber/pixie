@@ -563,7 +563,11 @@ jobs:
           gh release view "$RELEASE_ID" >/dev/null 2>&1 || gh release create "$RELEASE_ID" --draft --title "$RELEASE_ID" --target "$SOURCE_COMMIT"
           TEMP_DIR=$(mktemp -d)
           trap 'rm -rf "$TEMP_DIR"' EXIT
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_ID" > "$TEMP_DIR/release.json"
+          # A draft release has no Git tag yet, so the releases/tags endpoint
+          # 404s; resolve its numeric ID and read the release directly.
+          RELEASE_NUM=$(gh release view "$RELEASE_ID" --json databaseId --jq '.databaseId')
+          [[ -n "$RELEASE_NUM" ]] || { echo "release $RELEASE_ID was not found after creation" >&2; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_NUM" > "$TEMP_DIR/release.json"
           for asset in \
             "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" \
             "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" \
