@@ -137,6 +137,7 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 			return nil, err
 		}
 		supervisor.adminBridge = newNativeAdminBridge(config.AdminBridge, config.AgentDir)
+		supervisor.adminBridge.onEvent = supervisor.publishAdminEvent
 		if config.AdminBridge.Enabled && supervisor.adminBridge.verificationError() != nil {
 			fmt.Fprintf(os.Stderr, "pixie-assistant: administration bridge unavailable: %v\n", supervisor.adminBridge.verificationError())
 		}
@@ -488,6 +489,13 @@ func nativeEventParams(event nativeEvent) map[string]any {
 }
 
 func nativeEventFrame(event nativeEvent) map[string]any {
+	if event.method != "" {
+		params := event.event
+		if params == nil {
+			params = map[string]any{}
+		}
+		return map[string]any{"method": event.method, "params": params}
+	}
 	return map[string]any{
 		"method": "session.event",
 		"params": nativeEventParams(event),

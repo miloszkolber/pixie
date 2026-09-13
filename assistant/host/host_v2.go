@@ -214,5 +214,12 @@ func hostOperationErrorDetail(err error) *piwire.HostV2ErrorDetail {
 
 // nativeEventFrameV2 frames a native event using the v2 event envelope.
 func nativeEventFrameV2(event nativeEvent) *piwire.HostV2EventFrame {
+	if event.method != "" {
+		params := event.event
+		if params == nil {
+			params = map[string]any{}
+		}
+		return &piwire.HostV2EventFrame{Method: event.method, Params: mustJSON(params)}
+	}
 	return &piwire.HostV2EventFrame{Method: "session.event", Params: mustJSON(nativeEventParams(event))}
 }

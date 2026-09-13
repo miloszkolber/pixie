@@ -50,8 +50,16 @@ export class SettingsManager {
     manager.agentDir = agentDir;
     return manager;
   }
-  static fromStorage(storage) { const manager = new SettingsManager({}); manager.storage = storage; return manager; }
-  constructor(state = {}, storage) { this.state = state; this.storage = storage; }
+  static fromStorage(storage) {
+    let global;
+    let project;
+    storage.withLock("global", (current) => { global = current; return undefined; });
+    storage.withLock("project", (current) => { project = current; return undefined; });
+    const manager = new SettingsManager(global ? JSON.parse(global) : {}, storage);
+    manager.projectState = project ? JSON.parse(project) : {};
+    return manager;
+  }
+  constructor(state = {}, storage) { this.state = state; this.projectState = {}; this.storage = storage; }
   async reload() {}
   async flush() {
     if (this.storage) {
@@ -74,7 +82,7 @@ export class SettingsManager {
   }
   drainErrors() { return []; }
   getGlobalSettings() { return JSON.parse(JSON.stringify(this.state)); }
-  getProjectSettings() { return {}; }
+  getProjectSettings() { return JSON.parse(JSON.stringify(this.projectState)); }
   getDefaultProvider() { return this.state.defaultProvider; }
   getDefaultModel() { return this.state.defaultModel; }
   setDefaultProvider(value) { this.state.defaultProvider = value; }
@@ -84,15 +92,28 @@ export class SettingsManager {
   getCompactionReserveTokens() { return this.state.compaction?.reserveTokens ?? 16384; }
   getLastChangelogVersion() { return this.state.lastChangelogVersion; }
   setLastChangelogVersion(value) { this.state.lastChangelogVersion = value; }
+  setPackages(packages) { this.state.packages = packages; }
+  setProjectPackages(packages) { this.projectState.packages = packages; }
+  setExtensionPaths(paths) { this.state.extensions = paths; }
+  setProjectExtensionPaths(paths) { this.projectState.extensions = paths; }
 }
 export class DefaultPackageManager {
-  constructor() {}
+  constructor(options = {}) { this.settingsManager = options.settingsManager; }
   listConfiguredPackages() {
     return [{ source: "npm:demo", scope: "user", filtered: false }];
   }
   async resolve() {
+    const global = this.settingsManager ? this.settingsManager.getGlobalSettings() : {};
+    const project = this.settingsManager ? this.settingsManager.getProjectSettings() : {};
+    const patterns = [...(global.extensions ?? []), ...(project.extensions ?? [])];
+    let enabled = true;
+    for (const pattern of patterns) {
+      if (typeof pattern !== "string") continue;
+      if (pattern === "-/tmp/demo/ext.js") enabled = false;
+      if (pattern === "+/tmp/demo/ext.js") enabled = true;
+    }
     return {
-      extensions: [{ path: "/tmp/demo/ext.js", enabled: true, metadata: { source: "npm:demo", scope: "user", origin: "package" } }],
+      extensions: [{ path: "/tmp/demo/ext.js", enabled, metadata: { source: "npm:demo", scope: "user", origin: "top-level" } }],
       skills: [{ path: "/tmp/demo/skills/demo/SKILL.md", enabled: true, metadata: { source: "npm:demo", scope: "user", origin: "package" } }],
       prompts: [{ path: "/tmp/demo/prompts/review.md", enabled: true, metadata: { source: "npm:demo", scope: "user", origin: "package" } }],
       themes: [],
@@ -123,6 +144,13 @@ export class ModelRuntime {
 				return { id: model, contextWindow: 2000, maxTokens: 200, reasoning: false, cost: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 } };
 			},
 			async refresh() { return { errors: new Map([["alpha", "boom"]]) }; },
+			async login(providerId, type, interaction) {
+				interaction.notify({ type: "progress", message: "Starting " + type });
+				const value = await interaction.prompt({ type: "secret", message: "Enter the " + providerId + " key" });
+				if (value === "reject") throw new Error("rejected");
+				return { type: "api_key", key: value };
+			},
+			async logout(providerId) { return undefined; },
 		};
 	}
 }
@@ -131,12 +159,30 @@ export class ModelRuntime {
 	return dir;
 }
 
-async function stubBridge(version = "0.85.1") {
+async function stubBridge(version = "0.85.1", events: Array<{ event: string; params: any }> = []) {
 	const dir = await stubInstallation(version);
 	const installation = await resolveInstallation(dir);
 	const module = await loadPublicApi(installation);
 	const agentDir = await mkdtemp(join(tmpdir(), "pixie-agent-"));
-	return { dir, agentDir, bridge: createBridge({ installation, module, agentDir }) };
+	return {
+		dir,
+		agentDir,
+		events,
+		bridge: createBridge({
+			installation,
+			module,
+			agentDir,
+			emit: (event) => events.push(event),
+		}),
+	};
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+	const start = Date.now();
+	while (!predicate()) {
+		if (Date.now() - start > timeoutMs) throw new Error("timed out waiting for bridge event");
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
 }
 
 describe("bridge frame parsing", () => {
@@ -290,9 +336,7 @@ describe("bridge hello and FC17 mapping", () => {
 
 	test("unknown methods fail closed", async () => {
 		const { bridge } = await stubBridge();
-		await expect(bridge.dispatch("provider.loginStart", {})).rejects.toThrow(
-			"Unsupported bridge method",
-		);
+		await expect(bridge.dispatch("mcp.attach", {})).rejects.toThrow("Unsupported bridge method");
 	});
 
 	test("server frames success and method errors", async () => {
@@ -302,10 +346,10 @@ describe("bridge hello and FC17 mapping", () => {
 			id: 1,
 			ok: true,
 		});
-		expect(await server.handle('{"id":2,"method":"provider.loginStart","params":{}}')).toEqual({
+		expect(await server.handle('{"id":2,"method":"mcp.attach","params":{}}')).toEqual({
 			id: 2,
 			ok: false,
-			error: "Unsupported bridge method: provider.loginStart",
+			error: "Unsupported bridge method: mcp.attach",
 		});
 		await expect(server.handle("bogus")).rejects.toThrow();
 	});
@@ -452,14 +496,193 @@ describe("bridge FC20 inventory and MCP configuration", () => {
 		]);
 	});
 
-	test("unsupported FC18/FC21 methods still fail closed", async () => {
+	test("unsupported FC26 runtime methods still fail closed", async () => {
 		const { bridge } = await stubBridge();
-		await expect(bridge.dispatch("pi.extensions.configure", {})).rejects.toThrow(
+		await expect(bridge.dispatch("mcp.attach", {})).rejects.toThrow("Unsupported bridge method");
+		await expect(bridge.dispatch("adapter.status", {})).rejects.toThrow(
 			"Unsupported bridge method",
 		);
-		await expect(bridge.dispatch("pi.providers.config.delete", {})).rejects.toThrow(
-			"Unsupported bridge method",
-		);
+	});
+});
+
+describe("bridge FC18 provider login and logout", () => {
+	test("streams login frames and resolves a reply", async () => {
+		const { bridge, events } = await stubBridge();
+		const started = (await bridge.dispatch("provider.loginStart", {
+			providerId: "alpha",
+			type: "api_key",
+			loginId: "login-1",
+		})) as Record<string, unknown>;
+		expect(started).toEqual({
+			loginId: "login-1",
+			frame: { kind: "progress", message: "Starting Pi authentication…" },
+		});
+		expect(await bridge.dispatch("provider.loginBegin", { loginId: "login-1" })).toEqual({
+			ok: true,
+		});
+		await waitFor(() => events.some((event) => event.params.frame?.kind === "prompt"));
+		const prompt = events.find((event) => event.params.frame?.kind === "prompt")!;
+		expect(prompt.event).toBe("provider.login");
+		expect(prompt.params).toMatchObject({
+			loginId: "login-1",
+			providerId: "alpha",
+			frame: { kind: "prompt", secret: true },
+		});
+		expect(
+			await bridge.dispatch("provider.loginReply", { loginId: "login-1", value: "secret" }),
+		).toEqual({ ok: true });
+		await waitFor(() => events.some((event) => event.params.frame?.kind === "success"));
+	});
+
+	test("cancel aborts the interaction", async () => {
+		const { bridge, events } = await stubBridge();
+		await bridge.dispatch("provider.loginStart", {
+			providerId: "alpha",
+			type: "api_key",
+			loginId: "login-1",
+		});
+		await bridge.dispatch("provider.loginBegin", { loginId: "login-1" });
+		await waitFor(() => events.some((event) => event.params.frame?.kind === "prompt"));
+		await bridge.dispatch("provider.loginCancel", { loginId: "login-1" });
+		await waitFor(() => events.some((event) => event.params.frame?.kind === "error"));
+	});
+
+	test("duplicate logins and premature replies fail closed", async () => {
+		const { bridge } = await stubBridge();
+		await bridge.dispatch("provider.loginStart", {
+			providerId: "alpha",
+			type: "api_key",
+			loginId: "login-1",
+		});
+		await expect(
+			bridge.dispatch("provider.loginStart", {
+				providerId: "alpha",
+				type: "api_key",
+				loginId: "login-2",
+			}),
+		).rejects.toThrow("already in progress");
+		await expect(
+			bridge.dispatch("provider.loginReply", { loginId: "login-1", value: "x" }),
+		).rejects.toThrow("No pending authentication question");
+		await expect(
+			bridge.dispatch("provider.loginStart", {
+				providerId: "alpha",
+				type: "bogus",
+				loginId: "login-3",
+			}),
+		).rejects.toThrow("Invalid authentication method");
+	});
+
+	test("logout removes the provider credential", async () => {
+		const { bridge } = await stubBridge();
+		expect(await bridge.dispatch("provider.logout", { providerId: "alpha" })).toEqual({ ok: true });
+		expect(await bridge.dispatch("pi.providers.config.delete", { providerId: "alpha" })).toEqual({
+			ok: true,
+		});
+	});
+});
+
+describe("bridge FC21 extension enablement", () => {
+	test("configure toggles a top-level extension through SettingsManager", async () => {
+		const { bridge } = await stubBridge();
+		const inventory = (await bridge.dispatch("pi.extensions.list", {})) as any;
+		const resource = inventory.resources[0];
+		expect(resource.enabled).toBe(true);
+		const saved = await bridge.dispatch("pi.extensions.configure", {
+			scope: "user",
+			resourceKey: resource.resourceKey,
+			expectedRevision: inventory.configurationRevisions.user,
+			enabled: false,
+			confirmed: true,
+		});
+		expect(saved).toEqual({ saved: true, loaded: false, reload: "deferred", warning: null });
+		const after = (await bridge.dispatch("pi.extensions.list", {})) as any;
+		expect(after.resources[0].enabled).toBe(false);
+		const savedAgain = await bridge.dispatch("pi.extensions.configure", {
+			scope: "user",
+			resourceKey: after.resources[0].resourceKey,
+			expectedRevision: after.configurationRevisions.user,
+			enabled: true,
+			confirmed: true,
+		});
+		expect(savedAgain.saved).toBe(true);
+		const reenabled = (await bridge.dispatch("pi.extensions.list", {})) as any;
+		expect(reenabled.resources[0].enabled).toBe(true);
+	});
+
+	test("configure fails closed without confirmation or a current revision", async () => {
+		const { bridge } = await stubBridge();
+		const inventory = (await bridge.dispatch("pi.extensions.list", {})) as any;
+		const resource = inventory.resources[0];
+		await expect(
+			bridge.dispatch("pi.extensions.configure", {
+				scope: "user",
+				resourceKey: resource.resourceKey,
+				expectedRevision: inventory.configurationRevisions.user,
+				enabled: false,
+			}),
+		).rejects.toThrow("Confirm");
+		await expect(
+			bridge.dispatch("pi.extensions.configure", {
+				scope: "user",
+				resourceKey: resource.resourceKey,
+				expectedRevision: "0".repeat(64),
+				enabled: false,
+				confirmed: true,
+			}),
+		).rejects.toThrow("changed");
+	});
+});
+
+describe("bridge FC26 local MCP stores", () => {
+	test("pi.config.extensions add/set-enabled/remove round-trip", async () => {
+		const { bridge } = await stubBridge();
+		await bridge.dispatch("pi.config.extensions.add", {
+			extension: { type: "mcp", server: { name: "demo", command: "node", args: [] } },
+			enabled: true,
+		});
+		let listed = (await bridge.dispatch("pi.config.extensions.list", {})) as any;
+		expect(listed.extensions.map((entry: any) => entry.configKey)).toEqual(["demo"]);
+		expect(listed.extensions[0].enabled).toBe(true);
+		await bridge.dispatch("pi.config.extensions.set-enabled", {
+			configKey: "demo",
+			enabled: false,
+		});
+		listed = (await bridge.dispatch("pi.config.extensions.list", {})) as any;
+		expect(listed.extensions[0].enabled).toBe(false);
+		await bridge.dispatch("pi.config.extensions.remove", { configKey: "demo" });
+		listed = (await bridge.dispatch("pi.config.extensions.list", {})) as any;
+		expect(listed.extensions).toEqual([]);
+	});
+
+	test("pi.config.extensions rejects native mcpServers", async () => {
+		const { bridge, agentDir } = await stubBridge();
+		await writeFile(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {} }));
+		await expect(
+			bridge.dispatch("pi.config.extensions.add", {
+				extension: { type: "mcp", server: { name: "demo", command: "node" } },
+			}),
+		).rejects.toThrow("pi-mcp-adapter");
+	});
+
+	test("pi.session.extensions add/remove persist membership", async () => {
+		const { bridge } = await stubBridge();
+		await bridge.dispatch("pi.session.extensions.add", {
+			sessionId: "session-1",
+			extension: { type: "mcp", server: { name: "demo", command: "node" } },
+		});
+		let listed = (await bridge.dispatch("pi.session.extensions.list", {
+			sessionId: "session-1",
+		})) as any;
+		expect(listed.extensions.map((entry: any) => entry.extensionKey)).toEqual(["demo"]);
+		await bridge.dispatch("pi.session.extensions.remove", {
+			sessionId: "session-1",
+			extensionKey: "demo",
+		});
+		listed = (await bridge.dispatch("pi.session.extensions.list", {
+			sessionId: "session-1",
+		})) as any;
+		expect(listed.extensions).toEqual([]);
 	});
 });
 

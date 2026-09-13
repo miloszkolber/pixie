@@ -11,6 +11,14 @@
  *   request  {"id": <id>, "method": <string>, "params": <object>}
  *   response {"id": <id>, "ok": true,  "result": <value>}
  *            {"id": <id>, "ok": false, "error": <string>}
+ *   event    {"event": <string>, "params": <object>}
+ *
+ * The request/response direction is strictly one reply per request ID. The
+ * event direction is the only unsolicited server-to-client frame: it is
+ * emitted while a request is in flight (for example a streaming provider
+ * login) and is never correlated by ID. Frames are distinguished by the
+ * presence of `id` (response) versus `event` (event); the Go host forwards
+ * each event verbatim to the controller's method/params event path.
  *
  * Diagnostics are written to stderr only. There is no eval, no shell, and no
  * arbitrary code from the controlling side: methods come from a fixed
@@ -42,6 +50,7 @@ export const BRIDGE_MAX_FRAME_BYTES = 1024 * 1024;
 export const BRIDGE_MAX_ID_LENGTH = 128;
 export const BRIDGE_MAX_METHOD_LENGTH = 128;
 export const BRIDGE_MAX_PACKAGE_JSON_BYTES = 64 * 1024;
+export const BRIDGE_MAX_EVENT_LENGTH = 128;
 const PROVIDER_LIST_AVAILABLE_TIMEOUT_MS = 10_000;
 const PROVIDER_AUTH_TIMEOUT_MS = 5_000;
 const PROVIDER_REFRESH_TIMEOUT_MS = 25_000;
@@ -66,9 +75,21 @@ export const BRIDGE_METHODS = [
 	"pi.preferences.save",
 	"pi.preferences.reset",
 	"pi.extensions.list",
+	"pi.extensions.configure",
 	"pi.config.extensions.list",
+	"pi.config.extensions.add",
+	"pi.config.extensions.set-enabled",
+	"pi.config.extensions.remove",
 	"pi.session.extensions.list",
+	"pi.session.extensions.add",
+	"pi.session.extensions.remove",
 	"pi.slash-commands.list",
+	"provider.loginStart",
+	"provider.loginBegin",
+	"provider.loginReply",
+	"provider.loginCancel",
+	"provider.logout",
+	"pi.providers.config.delete",
 ] as const;
 export type BridgeMethod = (typeof BRIDGE_METHODS)[number];
 
@@ -161,6 +182,31 @@ export function encodeResponse(response: BridgeResponse): string {
 	const json = JSON.stringify(response);
 	if (encodedBytes(json) + 1 > BRIDGE_MAX_FRAME_BYTES)
 		throw new Error(`bridge response exceeds ${BRIDGE_MAX_FRAME_BYTES} bytes`);
+	return `${json}\n`;
+}
+
+/**
+ * One unsolicited server-to-client event frame. The event name is the
+ * controller method the Go host must forward (for example `provider.login`);
+ * params is that method's payload.
+ */
+export interface BridgeEvent {
+	readonly event: string;
+	readonly params: Record<string, unknown>;
+}
+
+/** Encode one bounded JSONL event frame. Newline is owned here. */
+export function encodeEvent(event: BridgeEvent): string {
+	if (
+		typeof event.event !== "string" ||
+		event.event.length === 0 ||
+		event.event.length > BRIDGE_MAX_EVENT_LENGTH ||
+		event.event.includes("\0")
+	)
+		throw new Error("bridge event name is invalid");
+	const json = JSON.stringify(event);
+	if (encodedBytes(json) + 1 > BRIDGE_MAX_FRAME_BYTES)
+		throw new Error(`bridge event exceeds ${BRIDGE_MAX_FRAME_BYTES} bytes`);
 	return `${json}\n`;
 }
 
@@ -375,6 +421,49 @@ function extensionRevision(scope: string, settings: SettingsShape): string {
 
 function extensionResourceKey(resource: NativeResource): string {
 	return resourceToken([resource.path, resource.metadata]);
+}
+
+interface PendingLogin {
+	id: string;
+	providerId: string;
+	abort: AbortController;
+	frame: Record<string, unknown>;
+	resolve?: (value: string) => void;
+	reject?: (error: Error) => void;
+	begin?: () => void;
+	timer: ReturnType<typeof setTimeout>;
+}
+
+const LOGIN_TIMEOUT_MS = 600_000;
+
+function filterPatterns(value: unknown): string[] {
+	if (value === undefined || value === null) return [];
+	if (!Array.isArray(value) || value.some((pattern) => typeof pattern !== "string"))
+		throw new Error("Invalid native resource filters");
+	return value as string[];
+}
+
+// Same filter override semantics as the legacy extension-configuration oracle:
+// replace any existing +/- rule for the exact path and append the requested
+// one, leaving unrelated patterns untouched.
+function overrideFilters(
+	patterns: string[],
+	path: string,
+	base: string,
+	enabled: boolean,
+): string[] {
+	if (patterns.some((pattern) => typeof pattern !== "string"))
+		throw new Error("Invalid native resource filters");
+	return [
+		...patterns.filter(
+			(pattern) =>
+				!(
+					["+", "-"].includes(pattern[0] ?? "") &&
+					resolve(base, pattern.slice(1)) === resolve(base, path)
+				),
+		),
+		`${enabled ? "+" : "-"}${path}`,
+	];
 }
 
 // Source references are display metadata, never URLs to fetch. Credentials,
@@ -687,6 +776,10 @@ export interface BridgeRuntime {
 	getModels(providerId: string): Array<Record<string, unknown>>;
 	getModel(provider: string, model: string): Record<string, unknown> | undefined;
 	refresh(options?: unknown): Promise<{ errors: Map<string, unknown> }>;
+	/** Interactive provider login; streams prompts and notifications. */
+	login(providerId: string, type: string, interaction: Record<string, unknown>): Promise<unknown>;
+	/** Remove the stored credential for one provider. */
+	logout(providerId: string, options?: unknown): Promise<unknown>;
 }
 
 export interface AdminBridge {
@@ -700,6 +793,11 @@ export interface CreateBridgeOptions {
 	readonly installation: PiInstallation;
 	readonly module: Record<string, unknown>;
 	readonly agentDir: string;
+	/**
+	 * Sink for unsolicited event frames. The process entrypoint writes these to
+	 * stdout; tests may collect them. Omitted events are dropped.
+	 */
+	readonly emit?: (event: BridgeEvent) => void;
 }
 
 /** Build a bridge over a verified installation's public `ModelRuntime`. */
@@ -713,6 +811,8 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 	if (!ModelRuntime || typeof ModelRuntime.create !== "function")
 		throw new Error("selected installation does not expose public ModelRuntime");
 	const sdk = bridgeSdk(module);
+	const emit = options.emit ?? (() => {});
+	const emitEvent = (event: string, params: Record<string, unknown>) => emit({ event, params });
 	let runtime: BridgeRuntime | undefined;
 	const runtimeFor = async (): Promise<BridgeRuntime> => {
 		if (!runtime) {
@@ -1028,6 +1128,367 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 		return { availableCommands };
 	};
 
+	// --- FC18: streaming provider login and logout (ModelRuntime.login/logout) ---
+
+	const logins = new Map<string, PendingLogin>();
+	const loginTimeout = (login: PendingLogin) => {
+		if (logins.get(login.id) === login) logins.delete(login.id);
+		login.abort.abort();
+	};
+	const publishLogin = (login: PendingLogin, frame: Record<string, unknown>) => {
+		login.frame = frame;
+		emitEvent("provider.login", {
+			loginId: login.id,
+			providerId: login.providerId,
+			frame,
+		});
+	};
+	const startLogin = (params: Record<string, unknown>): Record<string, unknown> => {
+		const providerId = requiredText(params, "providerId");
+		const type =
+			params.type === undefined || params.type === null ? "api_key" : stringValue(params.type);
+		if (type !== "api_key" && type !== "oauth") throw new Error("Invalid authentication method");
+		const loginId = requiredText(params, "loginId");
+		if ([...logins.values()].some((login) => login.providerId === providerId))
+			throw new Error("Authentication already in progress");
+		if (logins.has(loginId)) throw new Error("Duplicate login ID");
+		const abort = new AbortController();
+		const frame = { kind: "progress", message: "Starting Pi authentication…" };
+		const login: PendingLogin = {
+			id: loginId,
+			providerId,
+			abort,
+			frame,
+			timer: setTimeout(() => loginTimeout(login), LOGIN_TIMEOUT_MS),
+		};
+		logins.set(loginId, login);
+		// Begin only after the caller can associate the returned ID with its UI.
+		login.begin = () => {
+			void (async () => {
+				const active = await runtimeFor();
+				return active.login(providerId, type, {
+					signal: abort.signal,
+					prompt: (prompt: Record<string, unknown>) =>
+						new Promise<string>((resolve, reject) => {
+							const kind = stringValue(prompt.type);
+							const reply =
+								kind === "select"
+									? {
+											kind: "select",
+											message: prompt.message,
+											options: prompt.options,
+										}
+									: {
+											kind: "prompt",
+											message: prompt.message,
+											placeholder: prompt.placeholder,
+											secret: kind === "secret",
+											allowEmpty: false,
+										};
+							const promptSignal = prompt.signal as AbortSignal | undefined;
+							const signal = promptSignal
+								? AbortSignal.any([abort.signal, promptSignal])
+								: abort.signal;
+							const cancel = () => {
+								login.resolve = undefined;
+								login.reject = undefined;
+								reject(new Error("Authentication cancelled"));
+							};
+							if (signal.aborted) {
+								cancel();
+								return;
+							}
+							signal.addEventListener("abort", cancel, { once: true });
+							login.resolve = (value) => {
+								signal.removeEventListener("abort", cancel);
+								login.resolve = undefined;
+								login.reject = undefined;
+								resolve(value);
+							};
+							login.reject = reject;
+							publishLogin(login, reply);
+						}),
+					notify: (event: Record<string, unknown>) => {
+						const kind = stringValue(event.type);
+						if (kind === "auth_url")
+							publishLogin(login, {
+								kind: "authUrl",
+								url: event.url,
+								instructions: event.instructions,
+							});
+						else if (kind === "device_code")
+							publishLogin(login, {
+								kind: "deviceCode",
+								userCode: event.userCode,
+								verificationUri: event.verificationUri,
+								expiresInSeconds: event.expiresInSeconds,
+							});
+						else publishLogin(login, { kind: "progress", message: event.message });
+					},
+				});
+			})()
+				.then(
+					() => publishLogin(login, { kind: "success" }),
+					() =>
+						publishLogin(login, {
+							kind: "error",
+							message: "Pi authentication failed or was cancelled.",
+						}),
+				)
+				.finally(() => {
+					clearTimeout(login.timer);
+					if (logins.get(login.id) === login) logins.delete(login.id);
+				});
+		};
+		return { loginId, frame };
+	};
+	const beginLogin = (params: Record<string, unknown>): Record<string, unknown> => {
+		const login = logins.get(requiredText(params, "loginId"));
+		if (!login?.begin) throw new Error("Login cannot be started");
+		const begin = login.begin;
+		login.begin = undefined;
+		begin();
+		return { ok: true };
+	};
+	const replyLogin = (params: Record<string, unknown>): Record<string, unknown> => {
+		const login = logins.get(requiredText(params, "loginId"));
+		if (!login?.resolve) throw new Error("No pending authentication question");
+		login.resolve(stringValue(params.value));
+		return { ok: true };
+	};
+	const cancelLogin = (params: Record<string, unknown>): Record<string, unknown> => {
+		const login = logins.get(requiredText(params, "loginId"));
+		if (!login) throw new Error("Unknown or expired login ID");
+		login.abort.abort();
+		clearTimeout(login.timer);
+		logins.delete(login.id);
+		return { ok: true };
+	};
+	const logoutProvider = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const providerId = requiredText(params, "providerId");
+		const active = await runtimeFor();
+		await active.logout(providerId);
+		return { ok: true };
+	};
+
+	// --- FC21: scoped native extension enablement through SettingsManager ---
+
+	const configureExtension = async (
+		params: Record<string, unknown>,
+	): Promise<Record<string, unknown>> => {
+		const cwd = optionalCwd(params, agentDir);
+		const scope = requiredText(params, "scope");
+		if (scope !== "user" && scope !== "project")
+			throw new Error("Invalid native configuration scope");
+		if (params.confirmed !== true)
+			throw new Error("Confirm the scoped native configuration change");
+		if (typeof params.enabled !== "boolean")
+			throw new Error("Native configuration enabled must be boolean");
+		const enabled = params.enabled;
+		const resourceKey = requiredText(params, "resourceKey");
+		const expectedRevision = requiredText(params, "expectedRevision");
+		const source = sdk.SettingsManager.create(cwd, agentDir);
+		if (source.drainErrors().length)
+			throw new Error("Native settings are unreadable. No configuration saved.");
+		const snapshots = {
+			global: source.getGlobalSettings(),
+			project: source.getProjectSettings(),
+		};
+		const settingsScope = scope === "user" ? "global" : "project";
+		if (extensionRevision(scope, snapshots[settingsScope]) !== expectedRevision)
+			throw new Error("Native configuration changed. Refresh inventory before saving.");
+		const packages = new sdk.DefaultPackageManager({ cwd, agentDir, settingsManager: source });
+		const resources = (await packages.resolve(async () => "skip")).extensions;
+		const beforeByKey = new Map(resources.map((item) => [extensionResourceKey(item), item]));
+		const resource = beforeByKey.get(resourceKey);
+		if (!resource || resource.metadata.scope !== scope)
+			throw new Error("Native resource is no longer available. Refresh inventory.");
+		const next = structuredClone(snapshots[settingsScope]) as SettingsShape & {
+			packages?: unknown[];
+			extensions?: unknown[];
+		};
+		let field: "packages" | "extensions" = "extensions";
+		if (resource.metadata.origin === "package") {
+			field = "packages";
+			const entries = Array.isArray(next.packages) ? next.packages : [];
+			const index = entries.findIndex((entry) => {
+				const source = typeof entry === "string" ? entry : stringValue(objectValue(entry).source);
+				return source === resource.metadata.source;
+			});
+			if (index < 0 || !resource.metadata.baseDir)
+				throw new Error("Manage this resource through native Pi configuration");
+			const previous = entries[index];
+			const entry = typeof previous === "string" ? { source: previous } : objectValue(previous);
+			const rawPatterns =
+				entry.extensions === undefined ? undefined : filterPatterns(entry.extensions);
+			let patterns = rawPatterns ?? (entry.autoload === false ? [] : ["**"]);
+			if (patterns.length === 0 && entry.autoload !== false) patterns = ["!**"];
+			entries[index] = {
+				...entry,
+				extensions: overrideFilters(
+					patterns,
+					relative(resource.metadata.baseDir, resource.path).split("\\").join("/"),
+					resource.metadata.baseDir,
+					enabled,
+				),
+			};
+			next.packages = entries;
+		} else {
+			const patterns = filterPatterns(next.extensions);
+			next.extensions = overrideFilters(
+				patterns,
+				resource.path,
+				scope === "user" ? agentDir : join(cwd, ".pi"),
+				enabled,
+			);
+		}
+		// Evaluate native filters without loading code or installing packages.
+		const previewSettings = sdk.SettingsManager.fromStorage({
+			withLock: (target, fn) => {
+				fn(JSON.stringify(target === settingsScope ? next : snapshots[target]));
+			},
+		});
+		const preview = (
+			await new sdk.DefaultPackageManager({
+				cwd,
+				agentDir,
+				settingsManager: previewSettings,
+			}).resolve(async () => "skip")
+		).extensions;
+		const afterByKey = new Map(preview.map((item) => [extensionResourceKey(item), item]));
+		const changed = afterByKey.get(resourceKey);
+		if (!changed || changed.enabled !== enabled)
+			throw new Error("Native filters cannot apply this change. No configuration saved.");
+		if (
+			[...beforeByKey].some(
+				([key, before]) => key !== resourceKey && afterByKey.get(key)?.enabled !== before.enabled,
+			) ||
+			[...afterByKey.keys()].some((key) => key !== resourceKey && !beforeByKey.has(key))
+		)
+			throw new Error("This change would affect other resources. Use native Pi configuration.");
+		// Write through the selected installation's own settings storage, which
+		// owns the real cross-process lock for its settings file. Re-read and
+		// re-check the revision immediately before the locked write; the only
+		// residual window is a competing writer landing between this reload and
+		// the storage lock, which the post-write confirmation then reports.
+		await source.reload();
+		const latest = {
+			global: source.getGlobalSettings(),
+			project: source.getProjectSettings(),
+		};
+		if (extensionRevision(scope, latest[settingsScope]) !== expectedRevision)
+			throw new Error("Concurrent native configuration change");
+		if (field === "packages") {
+			if (settingsScope === "global") source.setPackages((next.packages ?? []) as never);
+			else source.setProjectPackages((next.packages ?? []) as never);
+		} else if (settingsScope === "global")
+			source.setExtensionPaths((next.extensions ?? []) as never);
+		else source.setProjectExtensionPaths((next.extensions ?? []) as never);
+		await source.flush();
+		const errors = source.drainErrors();
+		// Confirm the exact enabled state after the locked write.
+		const confirmedSettings = sdk.SettingsManager.create(cwd, agentDir);
+		const confirmed = (
+			await new sdk.DefaultPackageManager({
+				cwd,
+				agentDir,
+				settingsManager: confirmedSettings,
+			}).resolve(async () => "skip")
+		).extensions;
+		const confirmedResource = new Map(
+			confirmed.map((item) => [extensionResourceKey(item), item]),
+		).get(resourceKey);
+		if (!confirmedResource || confirmedResource.enabled !== enabled)
+			throw new Error(
+				"Native settings save was not confirmed or conflicted. Refresh inventory before retrying.",
+			);
+		return {
+			saved: true,
+			loaded: false,
+			reload: "deferred",
+			warning: errors.length ? "settings-cleanup-failed" : null,
+		};
+	};
+
+	// --- FC26: Pixie-local MCP connection stores ---
+
+	const mutateStateFile = (path: string, change: (state: Record<string, unknown>) => void) => {
+		const state = objectValue(readStateFile(path, MCP_STATE_MAX_BYTES));
+		change(state);
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+		const temporary = `${path}.${randomUUID()}.tmp`;
+		try {
+			writeFileSync(temporary, JSON.stringify(state), { mode: 0o600, flag: "wx" });
+			renameSync(temporary, path);
+		} finally {
+			rmSync(temporary, { force: true });
+		}
+	};
+	const addConfiguredMcp = (params: Record<string, unknown>): Record<string, unknown> => {
+		const connection = mcpConnection(params.extension, agentDir);
+		mutateStateFile(join(agentDir, "mcp.json"), (state) => {
+			legacyMcp(state);
+			if (Object.hasOwn(state, connection.name)) throw new Error("MCP connection already exists");
+			state[connection.name] = { ...connection.source, enabled: params.enabled !== false };
+		});
+		return { ok: true };
+	};
+	const setConfiguredMcpEnabled = (params: Record<string, unknown>): Record<string, unknown> => {
+		if (typeof params.enabled !== "boolean") throw new Error("Enabled must be boolean");
+		const configKey = requiredText(params, "configKey");
+		mutateStateFile(join(agentDir, "mcp.json"), (state) => {
+			legacyMcp(state);
+			const connection = objectValue(state[configKey]);
+			if (!Object.hasOwn(state, configKey) || !connection) throw new Error("Unknown connection");
+			connection.enabled = params.enabled;
+			state[configKey] = connection;
+		});
+		return { ok: true };
+	};
+	const removeConfiguredMcp = (params: Record<string, unknown>): Record<string, unknown> => {
+		const configKey = requiredText(params, "configKey");
+		mutateStateFile(join(agentDir, "mcp.json"), (state) => {
+			legacyMcp(state);
+			delete state[configKey];
+		});
+		return { ok: true };
+	};
+	const addSessionMcp = (params: Record<string, unknown>): Record<string, unknown> => {
+		const sessionId = requiredText(params, "sessionId");
+		const connection = mcpConnection(params.extension, agentDir);
+		mutateStateFile(join(agentDir, "mcp-sessions.json"), (state) => {
+			const membership = objectValue(state[sessionId]);
+			const add = objectValue(membership.add);
+			add[connection.name] = connection.source;
+			membership.add = add;
+			const remove = Array.isArray(membership.remove)
+				? membership.remove.filter((name): name is string => typeof name === "string")
+				: [];
+			membership.remove = remove.filter((name) => name !== connection.name);
+			state[sessionId] = membership;
+		});
+		return { ok: true };
+	};
+	const removeSessionMcp = (params: Record<string, unknown>): Record<string, unknown> => {
+		const sessionId = requiredText(params, "sessionId");
+		const extensionKey = requiredText(params, "extensionKey");
+		mutateStateFile(join(agentDir, "mcp-sessions.json"), (state) => {
+			const membership = objectValue(state[sessionId]);
+			const add = objectValue(membership.add);
+			delete add[extensionKey];
+			membership.add = add;
+			const remove = Array.isArray(membership.remove)
+				? membership.remove.filter((name): name is string => typeof name === "string")
+				: [];
+			if (!remove.includes(extensionKey)) remove.push(extensionKey);
+			membership.remove = remove;
+			state[sessionId] = membership;
+		});
+		return { ok: true };
+	};
+
 	const dispatch = async (method: string, params: Record<string, unknown>): Promise<unknown> => {
 		switch (method) {
 			case "bridge.hello":
@@ -1054,12 +1515,35 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 				return writePreferences(params, true);
 			case "pi.extensions.list":
 				return listExtensions(params);
+			case "pi.extensions.configure":
+				return configureExtension(params);
 			case "pi.config.extensions.list":
 				return listConfiguredMcp();
+			case "pi.config.extensions.add":
+				return addConfiguredMcp(params);
+			case "pi.config.extensions.set-enabled":
+				return setConfiguredMcpEnabled(params);
+			case "pi.config.extensions.remove":
+				return removeConfiguredMcp(params);
 			case "pi.session.extensions.list":
 				return listSessionMcp(params);
+			case "pi.session.extensions.add":
+				return addSessionMcp(params);
+			case "pi.session.extensions.remove":
+				return removeSessionMcp(params);
 			case "pi.slash-commands.list":
 				return listSlashCommands(params);
+			case "provider.loginStart":
+				return startLogin(params);
+			case "provider.loginBegin":
+				return beginLogin(params);
+			case "provider.loginReply":
+				return replyLogin(params);
+			case "provider.loginCancel":
+				return cancelLogin(params);
+			case "provider.logout":
+			case "pi.providers.config.delete":
+				return logoutProvider(params);
 			default:
 				throw new Error(`Unsupported bridge method: ${method}`);
 		}
@@ -1070,6 +1554,11 @@ export function createBridge(options: CreateBridgeOptions): AdminBridge {
 		hello,
 		dispatch,
 		close() {
+			for (const login of [...logins.values()]) {
+				login.abort.abort();
+				clearTimeout(login.timer);
+			}
+			logins.clear();
 			runtime = undefined;
 		},
 	};
@@ -1144,14 +1633,21 @@ async function main(): Promise<void> {
 		process.exit(2);
 	}
 	let bridge: AdminBridge;
+	let writeEvent: ((event: BridgeEvent) => void) | undefined;
 	try {
 		const installation = await resolveInstallation(packagePath);
 		const module = await loadPublicApi(installation);
-		bridge = createBridge({ installation, module, agentDir });
+		bridge = createBridge({
+			installation,
+			module,
+			agentDir,
+			emit: (event) => writeEvent?.(event),
+		});
 	} catch (error) {
 		console.error(`pixie-admin-bridge: ${errorMessage(error)}`);
 		process.exit(2);
 	}
+	writeEvent = (event) => process.stdout.write(encodeEvent(event));
 	const server = createBridgeServer(bridge, (message) => console.error(message));
 	const decoder = new TextDecoder();
 	let buffer = "";

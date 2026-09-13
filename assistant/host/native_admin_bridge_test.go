@@ -89,10 +89,50 @@ done
 	return path
 }
 
+// writeAdminEventSidecar is the stub used to prove that an unsolicited sidecar
+// event frame is forwarded even though the triggering request still needs its
+// reply.
+func writeAdminEventSidecar(t *testing.T) string {
+	t.Helper()
+	script := `#!/bin/sh
+pkg=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --package) pkg="$2"; shift 2;;
+    *) shift;;
+  esac
+done
+version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pkg/package.json" | sed -n '1p')
+entry="$pkg/dist/index.js"
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"bridge.hello"'*)
+      printf '{"id":%s,"ok":true,"result":{"protocolVersion":1,"packageName":"@earendil-works/pi-coding-agent","packageVersion":"%s","packageDir":"%s","moduleOrigin":"%s"}}\n' "$id" "$version" "$pkg" "$entry"
+      ;;
+    *'"method":"pi.providers.list"'*)
+      printf '{"event":"provider.login","params":{"loginId":"login-1","providerId":"alpha","frame":{"kind":"progress","message":"working"}}}\n'
+      printf '{"id":%s,"ok":true,"result":{"entries":[]}}\n' "$id"
+      ;;
+    *)
+      printf '{"id":%s,"ok":false,"error":"unsupported"}\n' "$id"
+      ;;
+  esac
+done
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sidecar-event.sh")
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func testAdminBridgeSupervisor(t *testing.T, config AdminBridgeConfig, agentDir string) *nativeSupervisor {
 	t.Helper()
 	supervisor := newNativeSupervisor(Config{AgentDir: agentDir, AdminBridge: config})
 	supervisor.adminBridge = newNativeAdminBridge(config, agentDir)
+	supervisor.adminBridge.onEvent = supervisor.publishAdminEvent
 	return supervisor
 }
 
@@ -181,9 +221,10 @@ func TestAdminBridgeProxiesFC17Operations(t *testing.T) {
 			t.Fatalf("bridge operation %q is not advertised after verification", operation)
 		}
 	}
-	// The sidecar's fixed allowlist rejects anything outside FC17.
-	if _, err := supervisor.adminBridge.call(context.Background(), "provider.loginStart", map[string]any{}); err == nil {
-		t.Fatal("bridge proxied a non-FC17 operation")
+	// The sidecar's fixed allowlist still rejects the FC26 runtime registration
+	// rows that need a live adapter event bus.
+	if _, err := supervisor.adminBridge.call(context.Background(), "mcp.attach", map[string]any{}); err == nil {
+		t.Fatal("bridge proxied an unimplemented FC26 operation")
 	}
 }
 
@@ -226,6 +267,51 @@ func TestAdminBridgeProxiesFC19AndFC20Operations(t *testing.T) {
 	}
 	if !supervisor.operationSet()["pi.defaults.read"] || !supervisor.operationSet()["pi.extensions.list"] {
 		t.Fatal("FC19/FC20 operations are not advertised after verification")
+	}
+}
+
+// TestAdminBridgeForwardsSidecarEvents proves the unsolicited event direction:
+// the sidecar emits provider.login while the request is in flight and the host
+// forwards it to connection subscribers without losing the reply.
+func TestAdminBridgeForwardsSidecarEvents(t *testing.T) {
+	agentDir := t.TempDir()
+	config := AdminBridgeConfig{
+		Enabled:     true,
+		Executable:  "/bin/sh",
+		Args:        []string{writeAdminEventSidecar(t)},
+		PackagePath: writeAdminStubPackage(t, "0.85.1"),
+	}
+	supervisor := testAdminBridgeSupervisor(t, config, agentDir)
+	t.Cleanup(func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = supervisor.adminBridge.close(shutdown)
+	})
+	events := make(chan nativeEvent, 4)
+	unsubscribe := supervisor.subscribe(func(event nativeEvent) error {
+		if event.method != "" {
+			events <- event
+		}
+		return nil
+	})
+	defer unsubscribe()
+	raw, err := supervisor.callHost(context.Background(), "pi.providers.list", map[string]any{})
+	if err != nil {
+		t.Fatalf("proxied pi.providers.list: %v", err)
+	}
+	if string(raw) != `{"entries":[]}` {
+		t.Fatalf("proxied pi.providers.list = %s", raw)
+	}
+	select {
+	case event := <-events:
+		if event.method != "provider.login" {
+			t.Fatalf("forwarded event method = %q", event.method)
+		}
+		if event.event["loginId"] != "login-1" || event.event["providerId"] != "alpha" {
+			t.Fatalf("forwarded event params = %#v", event.event)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("sidecar event was not forwarded to subscribers")
 	}
 }
 

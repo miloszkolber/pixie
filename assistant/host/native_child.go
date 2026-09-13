@@ -110,6 +110,10 @@ type nativeRun struct {
 type nativeEvent struct {
 	sessionID string
 	event     map[string]any
+	// method, when set, frames the event as an unsolicited method/params frame
+	// instead of a session.event frame. It is used by the administration
+	// bridge to forward streaming frames such as provider.login.
+	method string
 }
 
 // nativeSupervisor is a session-child registry, not a Pi process. A child is
@@ -1060,7 +1064,12 @@ func (s *nativeSupervisor) callHost(ctx context.Context, method string, params m
 	case "pi.providers.list", "pi.providers.readiness.check", "pi.providers.inventory.refresh", "pi.providers.canonical-model-info",
 		"pi.defaults.read", "pi.defaults.save", "pi.defaults.clear",
 		"pi.preferences.read", "pi.preferences.save", "pi.preferences.reset",
-		"pi.extensions.list", "pi.config.extensions.list", "pi.session.extensions.list", "pi.slash-commands.list":
+		"pi.extensions.list", "pi.extensions.configure",
+		"pi.config.extensions.list", "pi.config.extensions.add", "pi.config.extensions.set-enabled", "pi.config.extensions.remove",
+		"pi.session.extensions.list", "pi.session.extensions.add", "pi.session.extensions.remove",
+		"pi.slash-commands.list",
+		"provider.loginStart", "provider.loginBegin", "provider.loginReply", "provider.loginCancel",
+		"provider.logout", "pi.providers.config.delete":
 		return s.adminBridgeCall(ctx, method, params)
 	case "session.release", "runtime.release":
 		id, _ := params["sessionId"].(string)
@@ -1601,6 +1610,15 @@ func (s *nativeSupervisor) publish(event nativeEvent) error {
 		}
 	}
 	return nil
+}
+
+// publishAdminEvent forwards one unsolicited administration sidecar event to
+// the same connection subscribers that receive native session events.
+func (s *nativeSupervisor) publishAdminEvent(method string, params map[string]any) {
+	if s == nil || method == "" {
+		return
+	}
+	_ = s.publish(nativeEvent{method: method, event: params})
 }
 
 func (c *nativeChild) poison(err error) { c.failNative(err); go c.stopProcess() }

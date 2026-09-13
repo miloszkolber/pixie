@@ -4,11 +4,16 @@ package host
 // cannot load the selected Pi installation's SDK in-process, so when an
 // operator enables the bridge the host spawns a bounded sidecar lazily on the
 // first administration request and proxies exactly the allowlisted FC17,
-// FC19 and FC20 operations. Everything here fails closed: a disabled or
-// unverified bridge advertises no administration operation and refuses every
-// request. The sidecar command, selected package path and agent directory are
-// supplied by explicit configuration only; there is no global or bundled SDK
-// fallback.
+// FC18, FC19, FC20, FC21 and FC26 operations. Everything here fails closed: a
+// disabled or unverified bridge advertises no administration operation and
+// refuses every request. The sidecar command, selected package path and agent
+// directory are supplied by explicit configuration only; there is no global or
+// bundled SDK fallback.
+//
+// The sidecar protocol has two server-to-client frame directions: an `id`
+// reply for each request, and an unsolicited `event`/`params` frame that is
+// forwarded verbatim to the controller's method/params event path while the
+// responsible request is still streaming (for example `provider.login`).
 
 import (
 	"bufio"
@@ -39,8 +44,8 @@ const (
 )
 
 // nativeAdminBridgeOperations is the only administration surface this bridge
-// proxies. FC18/FC21/FC26 stay absent and therefore fail closed until later
-// work lands.
+// proxies. Rows that cannot be implemented honestly through the selected
+// installation's public exports stay absent and therefore fail closed.
 var nativeAdminBridgeOperations = []string{
 	"pi.providers.list",
 	"pi.providers.readiness.check",
@@ -53,9 +58,21 @@ var nativeAdminBridgeOperations = []string{
 	"pi.preferences.save",
 	"pi.preferences.reset",
 	"pi.extensions.list",
+	"pi.extensions.configure",
 	"pi.config.extensions.list",
+	"pi.config.extensions.add",
+	"pi.config.extensions.set-enabled",
+	"pi.config.extensions.remove",
 	"pi.session.extensions.list",
+	"pi.session.extensions.add",
+	"pi.session.extensions.remove",
 	"pi.slash-commands.list",
+	"provider.loginStart",
+	"provider.loginBegin",
+	"provider.loginReply",
+	"provider.loginCancel",
+	"provider.logout",
+	"pi.providers.config.delete",
 }
 
 var nativeAdminBridgeVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.+-]+)?$`)
@@ -96,6 +113,10 @@ type nativeAdminBridge struct {
 	packageDir     string
 
 	startMu sync.Mutex
+
+	// onEvent forwards one unsolicited sidecar event to the host event path.
+	// It is set once before the sidecar starts and may be nil in tests.
+	onEvent func(method string, params map[string]any)
 
 	mu       sync.Mutex
 	cmd      *exec.Cmd
@@ -454,6 +475,25 @@ func (b *nativeAdminBridge) readLoop(reader io.Reader) {
 			b.fail(err)
 			return
 		}
+		var frame map[string]json.RawMessage
+		if json.Unmarshal(line, &frame) != nil {
+			b.fail(errors.New("administration bridge returned an invalid frame"))
+			return
+		}
+		if _, isReply := frame["id"]; !isReply {
+			method, params, eventErr := parseAdminEventFrame(frame)
+			if eventErr != nil {
+				b.fail(eventErr)
+				return
+			}
+			b.mu.Lock()
+			callback := b.onEvent
+			b.mu.Unlock()
+			if callback != nil {
+				callback(method, params)
+			}
+			continue
+		}
 		var response nativeAdminResponse
 		if json.Unmarshal(line, &response) != nil || response.ID == 0 || response.ID > 9_007_199_254_740_991 {
 			b.fail(errors.New("administration bridge returned an invalid reply frame"))
@@ -467,6 +507,30 @@ func (b *nativeAdminBridge) readLoop(reader io.Reader) {
 			pending <- response
 		}
 	}
+}
+
+// parseAdminEventFrame validates one unsolicited server-to-client event frame.
+// The only accepted shape is {"event": <string>, "params": <object>}.
+func parseAdminEventFrame(frame map[string]json.RawMessage) (string, map[string]any, error) {
+	rawEvent, present := frame["event"]
+	if !present {
+		return "", nil, errors.New("administration bridge returned a frame without an id or event")
+	}
+	var method string
+	if json.Unmarshal(rawEvent, &method) != nil || method == "" ||
+		len(method) > 128 || strings.ContainsRune(method, 0) {
+		return "", nil, errors.New("administration bridge returned an invalid event name")
+	}
+	params := map[string]any{}
+	if rawParams, exists := frame["params"]; exists && len(rawParams) > 0 {
+		if json.Unmarshal(rawParams, &params) != nil {
+			return "", nil, errors.New("administration bridge returned invalid event parameters")
+		}
+		if params == nil {
+			params = map[string]any{}
+		}
+	}
+	return method, params, nil
 }
 
 func (b *nativeAdminBridge) waitLoop(command *exec.Cmd, exited chan struct{}) {
