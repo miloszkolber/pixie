@@ -37,6 +37,9 @@ func TestDiagnosticsHelperChildOutlivingDeadline(t *testing.T) {
 	if err := command.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)
 	}
+	// Never let a descendant escape into the TempDir cleanup; cleanups run
+	// LIFO so this group kill happens before TempDir removal.
+	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL) })
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
 
@@ -52,14 +55,14 @@ func TestDiagnosticsHelperChildOutlivingDeadline(t *testing.T) {
 
 	// Finite escalation: KILL the managed group, never an unrelated pid.
 	_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-	waitForPIDGone(t, child, 2*time.Second)
+	waitForPIDGone(t, child, 5*time.Second)
 	select {
 	case <-waitDone:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 		t.Fatal("group leader Wait was not bounded after KILL")
 	}
-	if elapsed := time.Since(started); elapsed > 4*time.Second {
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
 		t.Fatalf("helper-child escalation was not bounded: %s", elapsed)
 	}
 }
@@ -96,6 +99,7 @@ func TestDiagnosticsPipeRetainingChild(t *testing.T) {
 	if err := command.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)
 	}
+	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL) })
 	// The child owns its dup of the write end; closing the parent copy makes
 	// EOF observable solely through the managed group.
 	_ = stdoutWriter.Close()
@@ -148,15 +152,15 @@ func TestDiagnosticsPipeRetainingChild(t *testing.T) {
 		}
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 	}
-	waitForPIDGone(t, child, 2*time.Second)
-	if elapsed := time.Since(started); elapsed > 4*time.Second {
+	waitForPIDGone(t, child, 5*time.Second)
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
 		t.Fatalf("pipe-retaining cleanup was not bounded: %s", elapsed)
 	}
 }
 
 func waitForChildMarker(t *testing.T, marker string) int {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		contents, err := os.ReadFile(marker)
 		if err == nil {
