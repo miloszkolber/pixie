@@ -26,7 +26,7 @@ The Docker reference is `ghcr.io/miloszkolber/pixie:sha-<12>`. Verify one multi-
 
 ## Architecture evidence status
 
-The current host campaign exercises `linux/amd64` only. The four-archive matrix and the `linux/arm64` OCI manifest and run remain required for a real release, but arm64 execution, systemd lifecycle and image runs are deferred to a separate Mac/arm64 pass and must be recorded as an open gap rather than a pass. No amd64 result substitutes for arm64 evidence, and the static gates continue to fail closed on the missing arm64 inputs.
+The host campaign exercises `linux/amd64`; a Mac arm64 pass is recorded in [roadmap/arm64-test-pr23.md](../roadmap/arm64-test-pr23.md). That pass covers the arm64 Go tests, native-Pi host profiles, serialized race suite, both release archives with matching checksums, and the packaged full-host readiness on a Linux arm64 VM. Still open and required for a real release: the `linux/arm64` OCI image build and run (the Apple Container probe failed on the percent-encoded patch filename and an empty `package/webui` context, so verify with Linux BuildKit or a GitHub arm64 runner), a fresh-artifact systemd lifecycle, and the registry digests/SBOM/provenance. No amd64 result substitutes for arm64 evidence, and the static gates continue to fail closed on the missing arm64 inputs.
 
 ## Validation-only paths
 
