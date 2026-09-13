@@ -24,6 +24,26 @@ Each archive records its SHA-256, variant, architecture, full source SHA and con
 
 The Docker reference is `ghcr.io/miloszkolber/pixie:sha-<12>`. Verify one multi-architecture index plus runnable `linux/amd64` and `linux/arm64` manifests; attestation descriptors do not replace platform evidence.
 
+## Live evidence production
+
+From `package/`, the evidence job runs the committed producer before the bundle collector:
+
+```sh
+bun run scripts/produce-evidence-inputs.ts \
+  --artifacts <staged-archives> \
+  --output <evidence-dir> \
+  --source-commit <40-hex> \
+  --release-id sha-<12> \
+  --reduction-manifest package/contracts/reductions.json \
+  [--base-url <running-host-origin>]
+```
+
+It extracts the native-architecture staged binaries, executes only the checks it can honestly complete (`--version`, `doctor` when supported, and a readiness GET when `--base-url` is supplied), and marks those `actual: true, live: true`. A skipped, unsupported or failed check stays absent or blocked; it never becomes a pass. It then measures at least five fresh-process startup samples per native target with p50/p95 and peak process RSS and writes `coverage.json` and `performance.json`.
+
+`package/contracts/reductions.json` records the operator-approved reductions that make the legacy live matrix runnable. The coverage input reduces the mandatory FC rows the producer does not execute (FC01 is executed), the 14 X rows and Gates 1–5. The performance input reduces the legacy worker/decoded-buffer fields and the two non-native arm64 targets. A reduced row is not evidence that the behavior passes, and an unreduced row without live evidence or a measurement still fails the gate.
+
+The amd64 startup measurements are real candidate-binary measurements. arm64 performance, per-feature live coverage, packaged-binary lifecycle/embedded-UI checks, registry provenance/SBOM, tag/release state and latest-promotion ancestry remain unproduced and fail closed.
+
 ## Architecture evidence status
 
 The host campaign exercises `linux/amd64`; a Mac arm64 pass is recorded in [roadmap/arm64-test-pr23.md](../roadmap/arm64-test-pr23.md). That pass covers the arm64 Go tests, native-Pi host profiles, serialized race suite, both release archives with matching checksums, and the packaged full-host readiness on a Linux arm64 VM. Still open and required for a real release: the `linux/arm64` OCI image build and run (the Apple Container probe failed on the percent-encoded patch filename and an empty `package/webui` context, so verify with Linux BuildKit or a GitHub arm64 runner), a fresh-artifact systemd lifecycle, and the registry digests/SBOM/provenance. No amd64 result substitutes for arm64 evidence, and the static gates continue to fail closed on the missing arm64 inputs.

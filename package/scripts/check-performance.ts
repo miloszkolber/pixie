@@ -14,6 +14,23 @@ export const PERFORMANCE_VARIANTS = ["assistant", "full-host"] as const;
 export type PerformanceArchitecture = (typeof PERFORMANCE_ARCHITECTURES)[number];
 export type PerformanceVariant = (typeof PERFORMANCE_VARIANTS)[number];
 
+/** Legacy worker/decoded-buffer measurements that the lean Go engine and its
+ * fresh-process startup probe cannot produce. A row may only be skipped through
+ * an explicitly approved reduction; it is never silently defaulted. */
+export const REDUCIBLE_PERFORMANCE_FIELDS = [
+	"decodedMemoryBytes",
+	"bufferMemoryBytes",
+	"workerMemoryBytes",
+	"workerPids",
+	"workerCpuQuotaMillis",
+	"workerWallTimeMs",
+	"workerOutputBytes",
+	"scratchBytes",
+	"scratchInodes",
+	"contentFilledUI",
+] as const;
+export type ReduciblePerformanceField = (typeof REDUCIBLE_PERFORMANCE_FIELDS)[number];
+
 const MIN_SAMPLES = 5;
 const SOURCE_COMMIT = /^[0-9a-f]{40}$/;
 
@@ -42,8 +59,29 @@ export interface PerformanceMeasurement {
 	live: boolean;
 }
 
+/** One explicitly approved legacy measurement that a target does not carry.
+ * `target` is a `variant/architecture` key or `*` for every target. */
+export interface PerformanceFieldReduction {
+	target: string;
+	field: string;
+	approved: boolean;
+	reason?: string;
+	approver?: string;
+}
+
+/** One explicitly approved `variant/architecture` target that the producer
+ * cannot execute in this evidence job (for example a non-native architecture). */
+export interface PerformanceTargetReduction {
+	target: string;
+	approved: boolean;
+	reason?: string;
+	approver?: string;
+}
+
 export interface PerformanceInput {
 	measurements?: readonly PerformanceMeasurement[];
+	fieldReductions?: readonly PerformanceFieldReduction[];
+	targetReductions?: readonly PerformanceTargetReduction[];
 	staticViolations?: readonly string[];
 }
 
@@ -51,6 +89,8 @@ export interface PerformanceFacts {
 	targets: readonly string[];
 	missingTargets: readonly string[];
 	measuredTargets: readonly string[];
+	reducedTargets: readonly string[];
+	reducedFields: readonly string[];
 	missingLiveEvidence: readonly string[];
 }
 
@@ -86,6 +126,7 @@ function targetKey(measurement: Pick<PerformanceMeasurement, "architecture" | "v
 
 function checkMeasurement(
 	measurement: PerformanceMeasurement,
+	reducedFields: ReadonlySet<string>,
 	violations: string[],
 	missingLiveEvidence: string[],
 ): void {
@@ -117,23 +158,24 @@ function checkMeasurement(
 	) {
 		violations.push(`${target}: p50/p95 do not match the recorded samples`);
 	}
-	for (const [name, value] of [
-		["peak process RSS", measurement.peakProcessRssBytes],
-		["decoded memory", measurement.decodedMemoryBytes],
-		["serialized buffer memory", measurement.bufferMemoryBytes],
-		["worker memory", measurement.workerMemoryBytes],
-		["worker PID", measurement.workerPids],
-		["worker CPU quota", measurement.workerCpuQuotaMillis],
-		["worker wall time", measurement.workerWallTimeMs],
-		["worker output", measurement.workerOutputBytes],
-		["scratch bytes", measurement.scratchBytes],
-		["scratch inodes", measurement.scratchInodes],
+	for (const [field, name, value] of [
+		["peakProcessRssBytes", "peak process RSS", measurement.peakProcessRssBytes],
+		["decodedMemoryBytes", "decoded memory", measurement.decodedMemoryBytes],
+		["bufferMemoryBytes", "serialized buffer memory", measurement.bufferMemoryBytes],
+		["workerMemoryBytes", "worker memory", measurement.workerMemoryBytes],
+		["workerPids", "worker PID", measurement.workerPids],
+		["workerCpuQuotaMillis", "worker CPU quota", measurement.workerCpuQuotaMillis],
+		["workerWallTimeMs", "worker wall time", measurement.workerWallTimeMs],
+		["workerOutputBytes", "worker output", measurement.workerOutputBytes],
+		["scratchBytes", "scratch bytes", measurement.scratchBytes],
+		["scratchInodes", "scratch inodes", measurement.scratchInodes],
 	] as const) {
+		if (reducedFields.has(field)) continue;
 		if (!finitePositive(value)) violations.push(`${target}: ${name} measurement is required`);
 	}
-	if (measurement.fullProcessTree !== true)
+	if (!reducedFields.has("fullProcessTree") && measurement.fullProcessTree !== true)
 		violations.push(`${target}: measurement must include the complete process tree`);
-	if (measurement.contentFilledUI !== true)
+	if (!reducedFields.has("contentFilledUI") && measurement.contentFilledUI !== true)
 		violations.push(`${target}: measurement must use a content-filled UI fixture`);
 	if (measurement.live !== true)
 		missingLiveEvidence.push(`${target}: live deployment measurement is missing`);
@@ -149,6 +191,47 @@ export function inspectPerformance(input: PerformanceInput): PerformanceReport {
 	const expectedTargets = PERFORMANCE_VARIANTS.flatMap((variant) =>
 		PERFORMANCE_ARCHITECTURES.map((architecture) => `${variant}/${architecture}`),
 	);
+
+	// Validate the explicit reductions first. A reduction is never inferred from
+	// a missing or zero value; it must carry approval, an approver and a reason.
+	const wildcardReducedFields = new Set<string>();
+	const perTargetReducedFields = new Map<string, Set<string>>();
+	for (const reduction of input.fieldReductions ?? []) {
+		const label = `field reduction ${reduction.target}/${reduction.field}`;
+		if (!reduction.approved || !reduction.reason?.trim() || !reduction.approver?.trim()) {
+			violations.push(`${label}: explicit approval, approver and reason are required`);
+			continue;
+		}
+		if (!(REDUCIBLE_PERFORMANCE_FIELDS as readonly string[]).includes(reduction.field)) {
+			violations.push(`${label}: field is not a reducible legacy measurement`);
+			continue;
+		}
+		if (reduction.target === "*") {
+			wildcardReducedFields.add(reduction.field);
+			continue;
+		}
+		if (!expectedTargets.includes(reduction.target)) {
+			violations.push(`${label}: target is not one of ${expectedTargets.join(", ")}`);
+			continue;
+		}
+		const fields = perTargetReducedFields.get(reduction.target) ?? new Set<string>();
+		fields.add(reduction.field);
+		perTargetReducedFields.set(reduction.target, fields);
+	}
+	const reducedTargets = new Set<string>();
+	for (const reduction of input.targetReductions ?? []) {
+		const label = `target reduction ${reduction.target}`;
+		if (!reduction.approved || !reduction.reason?.trim() || !reduction.approver?.trim()) {
+			violations.push(`${label}: explicit approval, approver and reason are required`);
+			continue;
+		}
+		if (!expectedTargets.includes(reduction.target)) {
+			violations.push(`${label}: target is not one of ${expectedTargets.join(", ")}`);
+			continue;
+		}
+		reducedTargets.add(reduction.target);
+	}
+
 	const measurements = Array.isArray(input.measurements) ? input.measurements : [];
 	const byTarget = new Map<string, PerformanceMeasurement>();
 	for (const candidate of measurements) {
@@ -163,12 +246,20 @@ export function inspectPerformance(input: PerformanceInput): PerformanceReport {
 			continue;
 		}
 		byTarget.set(target, measurement);
-		checkMeasurement(measurement, violations, missingLiveEvidence);
+		const reducedFields = new Set(wildcardReducedFields);
+		for (const field of perTargetReducedFields.get(target) ?? []) reducedFields.add(field);
+		checkMeasurement(measurement, reducedFields, violations, missingLiveEvidence);
 	}
-	const missingTargets = expectedTargets.filter((target) => !byTarget.has(target));
+	const missingTargets = expectedTargets.filter(
+		(target) => !byTarget.has(target) && !reducedTargets.has(target),
+	);
 	for (const target of missingTargets)
 		missingLiveEvidence.push(`${target}: repeated full-process evidence is missing`);
 	const measuredTargets = [...byTarget.keys()].sort();
+	const declaredReducedFields = new Set(wildcardReducedFields);
+	for (const fields of perTargetReducedFields.values()) {
+		for (const field of fields) declaredReducedFields.add(field);
+	}
 	const staticOk = violations.length === 0;
 	const complete = staticOk && missingLiveEvidence.length === 0;
 	return {
@@ -181,6 +272,8 @@ export function inspectPerformance(input: PerformanceInput): PerformanceReport {
 			targets: expectedTargets,
 			missingTargets,
 			measuredTargets,
+			reducedTargets: [...reducedTargets].sort(),
+			reducedFields: [...declaredReducedFields].sort(),
 			missingLiveEvidence: [...new Set(missingLiveEvidence)],
 		},
 	};
@@ -246,7 +339,7 @@ export function performanceInputFromEvidence(evidence: EvidenceBundle): Performa
 export function formatPerformanceReport(report: PerformanceReport): string {
 	const label = report.ok ? "OK" : "FAILED";
 	return [
-		`check-performance: ${label} (${report.facts.measuredTargets.length}/${report.facts.targets.length} process targets)`,
+		`check-performance: ${label} (${report.facts.measuredTargets.length}/${report.facts.targets.length} process targets, ${report.facts.reducedTargets.length} reduced)`,
 		...report.violations.map((violation) => `  - ${violation}`),
 		...report.missingLiveEvidence.map((item) => `  - missing live evidence: ${item}`),
 	].join("\n");
@@ -286,6 +379,10 @@ export const PERFORMANCE_USAGE = [
 	"--input (or the legacy positional path) consumes the raw four-target",
 	"performance input; --evidence consumes a schema-versioned bundle produced by",
 	"collect-evidence.ts. A missing, malformed or non-passing assertion fails closed.",
+	"",
+	"A target or a legacy worker/decoded-buffer field is skipped only by an explicit",
+	"approved reduction carrying an approver and reason; absent or zero values",
+	"without a reduction stay fail-closed.",
 ].join("\n");
 
 interface PerformanceCliOptions {

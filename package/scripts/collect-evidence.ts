@@ -124,7 +124,7 @@ function parseTar(tar: Buffer): TarEntry[] {
 	return entries;
 }
 
-function parseTarGz(buffer: Buffer): TarEntry[] {
+export function parseTarGz(buffer: Buffer): TarEntry[] {
 	return parseTar(gunzipSync(buffer));
 }
 

@@ -97,6 +97,15 @@ export interface CoverageInput {
 	reductions?: readonly CoverageReduction[];
 	/** Collector diagnostics that must remain blocking rather than becoming defaults. */
 	staticViolations?: readonly string[];
+	/**
+	 * Optional cutover inputs carried alongside the coverage matrix. The producer
+	 * records explicitly approved gate reductions here; a coverage-input-only
+	 * consumer never has to infer them from prose.
+	 */
+	gates?: readonly GateEvidence[];
+	gateReductions?: readonly CoverageReduction[];
+	removalRequested?: boolean;
+	legacyPaths?: readonly string[];
 }
 
 export interface CoverageFacts {
@@ -129,6 +138,9 @@ export interface GateEvidence {
 export interface CutoverInput {
 	coverage: CoverageInput | CoverageReport;
 	gates?: readonly GateEvidence[];
+	/** Explicitly approved core-gate reductions. A reduced gate is resolved, not
+	 * silently treated as passed. */
+	gateReductions?: readonly CoverageReduction[];
 	/** A caller asking to remove the legacy runtime/UI must opt into this check. */
 	removalRequested?: boolean;
 	legacyPaths?: readonly string[];
@@ -136,7 +148,8 @@ export interface CutoverInput {
 
 export interface CutoverFacts {
 	removalAllowed: boolean;
-	gateStatus: Readonly<Record<string, "passed" | "failed" | "missing" | "not-live">>;
+	gateStatus: Readonly<Record<string, "passed" | "failed" | "missing" | "not-live" | "reduced">>;
+	reducedGates: readonly string[];
 	missingLiveEvidence: readonly string[];
 }
 
@@ -316,8 +329,26 @@ export function inspectCutover(input: CutoverInput): CutoverReport {
 		}
 		gates.set(gate.id, gate);
 	}
-	const gateStatus: Record<string, "passed" | "failed" | "missing" | "not-live"> = {};
+	const approvedGateReductions = new Set<string>();
+	for (const reduction of input.gateReductions ?? []) {
+		if (!(CORE_GATE_IDS as readonly string[]).includes(reduction.id)) {
+			violations.push(`gate reduction ${reduction.id}: unknown core gate`);
+			continue;
+		}
+		if (!reduction.approved || !reduction.reason?.trim() || !reduction.approver?.trim()) {
+			violations.push(
+				`gate reduction ${reduction.id}: explicit approval, approver and reason are required`,
+			);
+			continue;
+		}
+		approvedGateReductions.add(reduction.id);
+	}
+	const gateStatus: Record<string, "passed" | "failed" | "missing" | "not-live" | "reduced"> = {};
 	for (const gateID of CORE_GATE_IDS) {
+		if (approvedGateReductions.has(gateID)) {
+			gateStatus[gateID] = "reduced";
+			continue;
+		}
 		const gate = gates.get(gateID);
 		if (gate === undefined) {
 			gateStatus[gateID] = "missing";
@@ -353,11 +384,13 @@ export function inspectCutover(input: CutoverInput): CutoverReport {
 	for (const path of input.legacyPaths ?? []) {
 		if (!path.trim()) violations.push("cutover: legacy path entries cannot be empty");
 	}
-	const allGatesPassed = CORE_GATE_IDS.every((gateID) => gateStatus[gateID] === "passed");
-	const removalAllowed = coverage.complete && violations.length === 0 && allGatesPassed;
+	const allGatesResolved = CORE_GATE_IDS.every(
+		(gateID) => gateStatus[gateID] === "passed" || gateStatus[gateID] === "reduced",
+	);
+	const removalAllowed = coverage.complete && violations.length === 0 && allGatesResolved;
 	if (removalRequested && !removalAllowed) {
 		violations.push(
-			"cutover: legacy runtime/UI removal is refused until coverage and core Gates 1-5 pass with live evidence",
+			"cutover: legacy runtime/UI removal is refused until coverage and core Gates 1-5 pass with live evidence or an approved reduction",
 		);
 	}
 	return {
@@ -365,7 +398,12 @@ export function inspectCutover(input: CutoverInput): CutoverReport {
 		removalAllowed,
 		violations,
 		missingLiveEvidence: [...new Set(missingLiveEvidence)],
-		facts: { removalAllowed, gateStatus, missingLiveEvidence: [...new Set(missingLiveEvidence)] },
+		facts: {
+			removalAllowed,
+			gateStatus,
+			reducedGates: [...approvedGateReductions].sort(),
+			missingLiveEvidence: [...new Set(missingLiveEvidence)],
+		},
 	};
 }
 
@@ -512,7 +550,17 @@ export async function runCoverageCheck(
 		coverageInput = await collectCoverageInput(repositoryRoot);
 	}
 	const coverage = inspectCoverage(coverageInput);
-	const cutover = inspectCutover({ coverage });
+	const cutover = inspectCutover({
+		coverage,
+		...(coverageInput.gates === undefined ? {} : { gates: coverageInput.gates }),
+		...(coverageInput.gateReductions === undefined
+			? {}
+			: { gateReductions: coverageInput.gateReductions }),
+		...(coverageInput.removalRequested === undefined
+			? {}
+			: { removalRequested: coverageInput.removalRequested }),
+		...(coverageInput.legacyPaths === undefined ? {} : { legacyPaths: coverageInput.legacyPaths }),
+	});
 	const output = `${formatCoverageReport(coverage)}\n${formatCutoverReport(cutover)}`;
 	if (coverage.ok && cutover.ok) console.log(output);
 	else console.error(output);
@@ -528,6 +576,10 @@ export const COVERAGE_USAGE = [
 	"--input consumes a raw coverage input object (the same shape collect-evidence",
 	"embeds); --evidence consumes a schema-versioned bundle produced by",
 	"collect-evidence.ts. A missing, malformed or non-passing assertion fails closed.",
+	"",
+	"The input may carry `gates`/`gateReductions`/`removalRequested` for the cutover",
+	"check. A core gate is only resolved by live evidence or an explicitly approved",
+	"reduction carrying an approver and reason; a missing unreduced gate stays closed.",
 ].join("\n");
 
 interface CoverageCliOptions {

@@ -18,6 +18,7 @@
 		"test": "bun test tests && go test ./...",
 		"check:filenames": "bun scripts/check-filenames.ts",
 		"check:coverage": "bun scripts/check-coverage.ts",
+		"check:performance": "bun scripts/check-performance.ts",
 		"check:docs": "bun scripts/check-docs.ts",
 		"generate:contracts": "bun scripts/generate-contracts.ts",
 		"check:contracts": "bun scripts/check-contracts.ts",
