@@ -115,17 +115,13 @@
 		"reductionGroups": [
 			{
 				"ids": [
-					"binary.version/assistant/arm64",
-					"binary.version/host/arm64",
-					"binary.doctor/assistant/arm64",
-					"binary.doctor/host/arm64",
 					"binary.readiness/*",
 					"binary.lifecycle/*",
 					"binary.uninstall/*",
 					"binary.embedded-ui/host/*",
 					"facade.native-engine"
 				],
-				"reason": "The amd64 evidence job executes only native staged binaries; the arm64 version/doctor rows cannot run without an arm64 host. Readiness needs a running host or operator-supplied base URL, and lifecycle, uninstall and embedded-UI execution plus the full-host native-engine facade need a running service. Archive contents, entry structure and the native version/doctor rows stay mandatory; the native probes are consumed from the collector's BIN-PROBE assertions when present."
+				"reason": "The amd64 evidence job executes only native staged binaries, so the native arm64 version/doctor probes are produced by the separate arm64 evidence job and merged into the single bundle. Readiness needs a running host or operator-supplied base URL, and lifecycle, uninstall and embedded-UI execution plus the full-host native-engine facade need a running service. Archive contents, entry structure and both architectures' native version/doctor rows stay mandatory; each row is filled from the collector's BIN-PROBE assertions carrying its own architecture."
 			}
 		]
 	},

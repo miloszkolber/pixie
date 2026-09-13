@@ -133,20 +133,29 @@ test("release stages exact-commit artifacts before evidence and does not gate st
 	expect(evidence).toContain('run_gate "release-gate" bun scripts/release-gate.ts');
 });
 
-test("release produces native arm64 performance evidence before the gate and publication", async () => {
+test("release produces native arm64 performance and probe evidence before the gate and publication", async () => {
 	const workflow = await readFile(workflowPath, "utf8");
 	const arm64 = jobBlock(workflow, "evidence-arm64");
 	const evidence = jobBlock(workflow, "evidence");
 	const publishImage = jobBlock(workflow, "publish-image");
 
-	expect(arm64).toContain("needs: [validate, identity, stage]");
+	expect(arm64).toContain("needs: [validate, identity, stage, image]");
 	expect(arm64).toContain("runs-on: ubuntu-24.04-arm");
 	expect(arm64).toContain("produce-evidence-inputs.ts");
+	expect(arm64).toContain("collect-evidence.ts");
 	expect(arm64).not.toContain("--base-url");
 	expect(arm64).toContain("pixie-performance-arm64-${{ needs.identity.outputs.source_commit }}");
+	expect(arm64).toContain("pixie-probe-evidence-arm64-${{ needs.identity.outputs.source_commit }}");
+	// The arm64 job produces evidence only; the live gates run in `evidence`.
+	expect(arm64).not.toContain("check-package-artifacts.ts");
+	expect(arm64).not.toContain("release-gate.ts");
 	expect(evidence).toContain("needs: [validate, identity, stage, image, evidence-arm64]");
 	expect(evidence).toContain("merge-performance.ts");
 	expect(evidence).toContain("pixie-performance-arm64-${{ needs.identity.outputs.source_commit }}");
+	expect(evidence).toContain(
+		"pixie-probe-evidence-arm64-${{ needs.identity.outputs.source_commit }}",
+	);
+	expect(evidence).toContain("--probe-evidence");
 	expect(publishImage).toContain("needs: [validate, identity, stage, image, evidence]");
 
 	// The arm64 producer runs before the gate job, which runs before publication.

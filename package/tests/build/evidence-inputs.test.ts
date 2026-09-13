@@ -9,6 +9,10 @@ import {
 	inspectCutover,
 	MANDATORY_FEATURE_IDS,
 } from "../../scripts/check-coverage.ts";
+import {
+	expandPackageArtifactReductions,
+	loadReductionsManifest as loadPackageReductionsManifest,
+} from "../../scripts/check-package-artifacts.ts";
 import { inspectPerformance } from "../../scripts/check-performance.ts";
 import {
 	defaultReductionManifestPath,
@@ -94,6 +98,20 @@ test("producer merges every documented reduction and emits measurable inputs", a
 		// The arm64 targets are no longer reduced: a single native runner's output
 		// stays incomplete until the release workflow merges the other architecture.
 		expect(result.performance.targetReductions ?? []).toEqual([]);
+
+		// The arm64 version/doctor package rows are no longer reduced either; the
+		// arm64 evidence job supplies them to the merged bundle.
+		const packageReductions = expandPackageArtifactReductions(
+			await loadPackageReductionsManifest(defaultReductionManifestPath()),
+		).map((reduction) => reduction.id);
+		for (const id of [
+			"binary.version/assistant/arm64",
+			"binary.version/host/arm64",
+			"binary.doctor/assistant/arm64",
+			"binary.doctor/host/arm64",
+		]) {
+			expect(packageReductions).not.toContain(id);
+		}
 
 		// FC01 is the only coverage claim, and it comes from executed probes.
 		expect(result.coverage.evidence?.length).toBeGreaterThan(0);

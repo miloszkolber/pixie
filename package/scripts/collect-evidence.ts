@@ -21,6 +21,7 @@ import {
 	CONTROLLER_IMAGE_ASSERTION_ID,
 	COVERAGE_ASSERTION_ID,
 	type ControllerImageDetail,
+	decodeProbeDetail,
 	type EvidenceAssertion,
 	type EvidenceBundle,
 	type EvidencePlatformArchitecture,
@@ -29,6 +30,7 @@ import {
 	PACKAGED_BINARY_ASSERTION_PREFIX,
 	PERFORMANCE_ASSERTION_ID,
 	packageArchiveAssertionId,
+	readEvidenceBundle,
 } from "./evidence-bundle.ts";
 
 const SOURCE_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
@@ -39,15 +41,25 @@ const TAR_BLOCK_SIZE = 512;
 const VARIANTS = ["assistant", "host"] as const;
 const ARCHITECTURES = ["amd64", "arm64"] as const;
 
+/**
+ * Architecture of the host executing the probes. Probe facts are only ever
+ * recorded for the machine that actually ran the binary, and `platform.arch`
+ * always names that host rather than an architecture found inside the image.
+ */
+function hostArchitecture(): EvidencePlatformArchitecture {
+	return process.arch === "arm64" ? "arm64" : "amd64";
+}
+
 const USAGE = [
 	"usage: bun scripts/collect-evidence.ts --artifacts <dir> --image <dir-or-tar>",
 	"         --source-commit <40-hex> --release-id sha-<12> --output <evidence.json>",
 	"         [--coverage <json>] [--performance <json>] [--binary <path>]...",
-	"         [--base-url <origin>]",
+	"         [--probe-evidence <other-bundle.json>] [--base-url <origin>]",
 	"",
-	"Inputs may also come from ARTIFACT_DIR, IMAGE_DIR, SOURCE_COMMIT, RELEASE_ID and",
-	"EVIDENCE_OUTPUT. The artifact directory must hold the four commit-named",
-	"*.tar.gz archives plus checksums.txt, SHA256SUMS or release-manifest.json.",
+	"Inputs may also come from ARTIFACT_DIR, IMAGE_DIR, SOURCE_COMMIT, RELEASE_ID,",
+	"EVIDENCE_OUTPUT and PROBE_EVIDENCE. The artifact directory must hold the four",
+	"commit-named *.tar.gz archives plus checksums.txt, SHA256SUMS or",
+	"release-manifest.json.",
 	"",
 	"Archive and image inspection is local: archives are decompressed and hashed,",
 	"and the image tar is read as docker-save or OCI layout. No docker daemon,",
@@ -58,7 +70,13 @@ const USAGE = [
 	"re-running its gate; absent inputs produce blocked rows. Each --binary is",
 	"executed for --version and doctor, and a readiness GET is attempted against",
 	"--base-url when present. A probe is pass only after it ran and succeeded; a",
-	"skipped or unsupported probe is blocked and a failing probe is fail.",
+	"skipped or unsupported probe is blocked and a failing probe is fail. Every",
+	"probe detail records the executing host architecture.",
+	"",
+	"--probe-evidence merges the BIN-PROBE assertions from another validated",
+	"bundle (for example the native arm64 collector) into this bundle. The merged",
+	"ids are qualified with the fact's architecture so both architectures coexist;",
+	"platform.arch always stays the current host.",
 	"",
 	"Known gap: Git tag/GitHub Release, registry provenance/SBOM and latest",
 	"promotion evidence are not local and stay blocked.",
@@ -76,6 +94,8 @@ export interface CollectEvidenceOptions {
 	performancePath?: string;
 	/** Packaged binaries to execute. Absent produces a blocked BIN-PROBE-UNAVAILABLE row. */
 	binaryPaths?: readonly string[];
+	/** Validated bundle whose native BIN-PROBE facts are merged into this one. */
+	probeEvidencePath?: string;
 	/** Origin used for the readiness GET; absent keeps readiness blocked. */
 	baseUrl?: string;
 }
@@ -776,6 +796,7 @@ function binaryProbeDetail(
 	return JSON.stringify({
 		path,
 		probe,
+		architecture: hostArchitecture(),
 		exitCode: result.exitCode,
 		stdout: result.stdout,
 		stderr: result.stderr,
@@ -833,6 +854,7 @@ async function inspectReadinessProbe(
 			JSON.stringify({
 				path,
 				probe: "readiness",
+				architecture: hostArchitecture(),
 				url: null,
 				httpStatus: null,
 				skipped: "--base-url was not provided",
@@ -850,6 +872,7 @@ async function inspectReadinessProbe(
 		const detail = JSON.stringify({
 			path,
 			probe: "readiness",
+			architecture: hostArchitecture(),
 			url,
 			httpStatus: response.status,
 			body,
@@ -863,6 +886,7 @@ async function inspectReadinessProbe(
 			JSON.stringify({
 				path,
 				probe: "readiness",
+				architecture: hostArchitecture(),
 				url,
 				httpStatus: null,
 				error: errorMessage(error),
@@ -895,6 +919,29 @@ async function inspectBinaryProbes(
 		assertions.push(await inspectReadinessProbe(index, path, baseUrl));
 	}
 	return assertions;
+}
+
+/**
+ * Re-key the BIN-PROBE assertions of another bundle so their ids carry the
+ * architecture of the host that produced them. The local collector's own ids
+ * stay `BIN-PROBE-<index>-<probe>`; qualifying only the merged facts keeps both
+ * architectures addressable in one schema-valid bundle.
+ */
+function mergedProbeAssertions(evidence: EvidenceBundle): EvidenceAssertion[] {
+	const merged: EvidenceAssertion[] = [];
+	for (const assertion of evidence.assertions) {
+		if (assertion.kind !== "GATE") continue;
+		if (!assertion.id.startsWith(`${PACKAGED_BINARY_ASSERTION_PREFIX}-`)) continue;
+		const detail = decodeProbeDetail(assertion.detail);
+		if (detail === null) continue;
+		const architecture = detail.architecture ?? evidence.platform.arch;
+		const suffix = assertion.id.slice(PACKAGED_BINARY_ASSERTION_PREFIX.length + 1);
+		merged.push({
+			...assertion,
+			id: `${PACKAGED_BINARY_ASSERTION_PREFIX}-${architecture}-${suffix}`,
+		});
+	}
+	return merged;
 }
 
 export async function collectEvidence(options: CollectEvidenceOptions): Promise<EvidenceBundle> {
@@ -935,6 +982,10 @@ export async function collectEvidence(options: CollectEvidenceOptions): Promise<
 	assertions.push(await inspectCoverageEvidence(options.coveragePath));
 	assertions.push(await inspectPerformanceEvidence(options.performancePath));
 	assertions.push(...(await inspectBinaryProbes(options.binaryPaths ?? [], options.baseUrl)));
+	if (options.probeEvidencePath !== undefined) {
+		const probeEvidence = await readEvidenceBundle(options.probeEvidencePath);
+		assertions.push(...mergedProbeAssertions(probeEvidence));
+	}
 	assertions.sort((left, right) =>
 		left.kind === right.kind
 			? left.id.localeCompare(right.id)
@@ -946,7 +997,9 @@ export async function collectEvidence(options: CollectEvidenceOptions): Promise<
 		generatedAt: options.generatedAt,
 		platform: {
 			os: "linux",
-			arch: image.detail?.architecture ?? "amd64",
+			// The probes were executed by this host, so the bundle platform is the
+			// host architecture regardless of the architectures inside the image.
+			arch: hostArchitecture(),
 		},
 		profile: "full-host",
 		assertions,
@@ -985,6 +1038,7 @@ function parseArgs(args: readonly string[]): CollectEvidenceCliOptions {
 			argument === "--output" ||
 			argument === "--coverage" ||
 			argument === "--performance" ||
+			argument === "--probe-evidence" ||
 			argument === "--base-url"
 		) {
 			const [value, next] = read(index, argument);
@@ -1010,6 +1064,7 @@ function parseArgs(args: readonly string[]): CollectEvidenceCliOptions {
 	const output = values["output"] ?? process.env.EVIDENCE_OUTPUT;
 	const coveragePath = values["coverage"] ?? process.env.COVERAGE_INPUT;
 	const performancePath = values["performance"] ?? process.env.PERFORMANCE_INPUT;
+	const probeEvidencePath = values["probe-evidence"] ?? process.env.PROBE_EVIDENCE;
 	const baseUrl = values["base-url"] ?? process.env.READINESS_BASE_URL;
 	if (artifactsDir === undefined || artifactsDir === "")
 		throw new Error("--artifacts <dir> or ARTIFACT_DIR is required");
@@ -1036,6 +1091,7 @@ function parseArgs(args: readonly string[]): CollectEvidenceCliOptions {
 		output,
 		...(coveragePath === undefined || coveragePath === "" ? {} : { coveragePath }),
 		...(performancePath === undefined || performancePath === "" ? {} : { performancePath }),
+		...(probeEvidencePath === undefined || probeEvidencePath === "" ? {} : { probeEvidencePath }),
 		...(binaries.length === 0 ? {} : { binaryPaths: binaries }),
 		...(baseUrl === undefined || baseUrl === "" ? {} : { baseUrl }),
 	};

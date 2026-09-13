@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	decodeProbeDetail,
+	inspectPackageArtifacts,
 	packageArtifactInputFromEvidence,
 	runPackageArtifactCheck,
 } from "../../scripts/check-package-artifacts.ts";
@@ -26,6 +28,8 @@ import {
 	stageArtifacts,
 	writeDockerSaveTar,
 	writeOciTar,
+	writeProbeBinary,
+	writeProbeEvidenceBundle,
 } from "./staged-evidence-fixture.ts";
 
 const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
@@ -270,6 +274,119 @@ test("gates derive real archive, binary and image evidence from a bundle", async
 		expect(identity.identity.binaries).toHaveLength(4);
 		expect(identity.identity.docker?.indexDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(identity.identity.docker?.labels?.["org.opencontainers.image.version"]).toBe(releaseId);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("probe details carry and validate the executing architecture", () => {
+	expect(
+		decodeProbeDetail(
+			JSON.stringify({
+				path: "/release/pixie-assistant",
+				stdout: `pixie-assistant ${releaseId}`,
+				architecture: "arm64",
+			}),
+		),
+	).toEqual({
+		path: "/release/pixie-assistant",
+		stdout: `pixie-assistant ${releaseId}`,
+		architecture: "arm64",
+	});
+	// Bundles written before the field fall back to the bundle platform.
+	expect(decodeProbeDetail(JSON.stringify({ path: "/release/pixie", stdout: "" }))).toEqual({
+		path: "/release/pixie",
+		stdout: "",
+	});
+	expect(decodeProbeDetail(JSON.stringify({ path: "/release/pixie", architecture: "sparc" }))).toBe(
+		null,
+	);
+});
+
+test("collect-evidence merges a second host's probe facts per architecture", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pixie-probe-merge-"));
+	try {
+		const fixture = await stageArtifacts(root, true, sourceCommit, releaseId);
+		await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
+		const binariesDir = join(root, "binaries");
+		await mkdir(binariesDir, { recursive: true });
+		const assistant = join(binariesDir, "pixie-assistant");
+		const host = join(binariesDir, "pixie");
+		await writeProbeBinary(assistant, { name: "pixie-assistant", releaseId, sourceCommit });
+		await writeProbeBinary(host, { name: "pixie", releaseId, sourceCommit });
+		const hostArchitecture = process.arch === "arm64" ? "arm64" : "amd64";
+		const otherArchitecture = hostArchitecture === "amd64" ? "arm64" : "amd64";
+		const probeEvidencePath = join(root, `probe-evidence-${otherArchitecture}.json`);
+		await writeProbeEvidenceBundle(probeEvidencePath, {
+			architecture: otherArchitecture,
+			sourceCommit,
+			releaseId,
+			generatedAt,
+			binaries: [assistant, host],
+		});
+
+		const bundle = await collectEvidence({
+			artifactsDir: fixture.artifactsDir,
+			imagePath: fixture.imageTar,
+			sourceCommit,
+			releaseId,
+			generatedAt,
+			binaryPaths: [assistant, host],
+			probeEvidencePath,
+		});
+		expect(bundle.platform.arch).toBe(hostArchitecture);
+
+		const mapping = packageArtifactInputFromEvidence(bundle, {});
+		expect(mapping.violations).toEqual([]);
+		const binaries = mapping.input.binaries ?? [];
+		expect(binaries).toHaveLength(4);
+		for (const binary of binaries) {
+			const label = `${binary.variant}/${binary.architecture}`;
+			expect(binary.version, label).toBe(releaseId);
+			expect(binary.doctor, label).toBe(true);
+		}
+		const report = inspectPackageArtifacts({ ...mapping.input, reductions: [] });
+		const missing = report.missingLiveEvidence.join("\n");
+		expect(missing).not.toContain("--version");
+		expect(missing).not.toContain(" doctor");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("a bundle without the other architecture's probes never synthesizes those facts", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pixie-probe-native-only-"));
+	try {
+		const fixture = await stageArtifacts(root, true, sourceCommit, releaseId);
+		await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
+		const binariesDir = join(root, "binaries");
+		await mkdir(binariesDir, { recursive: true });
+		const assistant = join(binariesDir, "pixie-assistant");
+		const host = join(binariesDir, "pixie");
+		await writeProbeBinary(assistant, { name: "pixie-assistant", releaseId, sourceCommit });
+		await writeProbeBinary(host, { name: "pixie", releaseId, sourceCommit });
+		const hostArchitecture = process.arch === "arm64" ? "arm64" : "amd64";
+		const otherArchitecture = hostArchitecture === "amd64" ? "arm64" : "amd64";
+
+		const bundle = await collectEvidence({
+			artifactsDir: fixture.artifactsDir,
+			imagePath: fixture.imageTar,
+			sourceCommit,
+			releaseId,
+			generatedAt,
+			binaryPaths: [assistant, host],
+		});
+		const mapping = packageArtifactInputFromEvidence(bundle, {});
+		for (const binary of mapping.input.binaries ?? []) {
+			if (binary.architecture === hostArchitecture) {
+				expect(binary.version).toBe(releaseId);
+				expect(binary.doctor).toBe(true);
+			} else {
+				expect(binary.version).toBeUndefined();
+				expect(binary.doctor).toBeUndefined();
+			}
+		}
+		expect(otherArchitecture).not.toBe(hostArchitecture);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

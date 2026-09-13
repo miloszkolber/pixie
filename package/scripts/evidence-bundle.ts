@@ -32,7 +32,12 @@ export const CONTROLLER_IMAGE_ASSERTION_ID = "IMG-CONTROLLER";
 /** Local coverage and performance producers own these single-assertion rows. */
 export const COVERAGE_ASSERTION_ID = "COVERAGE-01";
 export const PERFORMANCE_ASSERTION_ID = "PERF-01";
-/** One `BIN-PROBE-<index>-<probe>` assertion is recorded per packaged-binary probe. */
+/**
+ * One `BIN-PROBE-<index>-<probe>` assertion is recorded per packaged-binary
+ * probe executed by the local collector. Facts merged from another collector
+ * host are re-qualified as `BIN-PROBE-<architecture>-<index>-<probe>` so both
+ * architectures can coexist in one bundle.
+ */
 export const PACKAGED_BINARY_ASSERTION_PREFIX = "BIN-PROBE";
 
 const ISO8601_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -304,6 +309,45 @@ export function findAssertion(
 	id: string,
 ): EvidenceAssertion | undefined {
 	return bundle.assertions.find((assertion) => assertion.kind === kind && assertion.id === id);
+}
+
+/**
+ * Machine-readable `detail` for one `BIN-PROBE-*` GATE assertion. The
+ * architecture is the host that executed the probe, so the package gate can
+ * attribute the fact to the exact `variant/architecture` binary it ran against.
+ * Older bundles that predate the field decode without an architecture and the
+ * caller falls back to the bundle's platform.
+ */
+export interface BinaryProbeDetail {
+	path: string;
+	stdout: string;
+	architecture?: EvidencePlatformArchitecture;
+}
+
+export function decodeProbeDetail(detail: string): BinaryProbeDetail | null {
+	let value: unknown;
+	try {
+		value = JSON.parse(detail);
+	} catch {
+		return null;
+	}
+	if (!isRecord(value)) return null;
+	if (typeof value.path !== "string" || value.path.trim() === "") return null;
+	const architecture = value.architecture;
+	if (
+		architecture !== undefined &&
+		(typeof architecture !== "string" ||
+			!(EVIDENCE_PLATFORM_ARCHITECTURES as readonly string[]).includes(architecture))
+	) {
+		return null;
+	}
+	return {
+		path: value.path,
+		stdout: typeof value.stdout === "string" ? value.stdout : "",
+		...(typeof architecture === "string"
+			? { architecture: architecture as EvidencePlatformArchitecture }
+			: {}),
+	};
 }
 
 export interface PackageArchiveAssertionKey {

@@ -19,18 +19,28 @@ import {
 	inspectReleaseGate,
 	runReleaseGate,
 } from "../../scripts/release-gate.ts";
-import { stageArtifacts, writeDockerSaveTar, writeProbeBinary } from "./staged-evidence-fixture.ts";
+import {
+	stageArtifacts,
+	writeDockerSaveTar,
+	writeProbeBinary,
+	writeProbeEvidenceBundle,
+} from "./staged-evidence-fixture.ts";
 
 const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
 const releaseId = `sha-${sourceCommit.slice(0, 12)}`;
 const generatedAt = "2026-01-02T03:04:05.000Z";
+const nativeArch = process.arch === "arm64" ? "arm64" : "amd64";
+const otherArch = nativeArch === "amd64" ? "arm64" : "amd64";
 
 interface StagedBundle {
 	root: string;
 	bundlePath: string;
 }
 
-async function buildStagedBundle(root: string): Promise<StagedBundle> {
+async function buildStagedBundle(
+	root: string,
+	options: { otherArchProbe?: boolean } = {},
+): Promise<StagedBundle> {
 	const fixture = await stageArtifacts(root, true, sourceCommit, releaseId);
 	await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
 	const binariesDir = join(root, "binaries");
@@ -40,6 +50,19 @@ async function buildStagedBundle(root: string): Promise<StagedBundle> {
 	await writeProbeBinary(assistant, { name: "pixie-assistant", releaseId, sourceCommit });
 	await writeProbeBinary(host, { name: "pixie", releaseId, sourceCommit });
 	const bundlePath = join(root, "evidence.json");
+	// A second collector host contributes the non-native probes that the single
+	// bundle must carry for the four formerly-reduced version/doctor rows.
+	let probeEvidencePath: string | undefined;
+	if (options.otherArchProbe !== false) {
+		probeEvidencePath = join(root, `probe-evidence-${otherArch}.json`);
+		await writeProbeEvidenceBundle(probeEvidencePath, {
+			architecture: otherArch,
+			sourceCommit,
+			releaseId,
+			generatedAt,
+			binaries: [assistant, host],
+		});
+	}
 	const bundle = await collectEvidence({
 		artifactsDir: fixture.artifactsDir,
 		imagePath: fixture.imageTar,
@@ -47,6 +70,7 @@ async function buildStagedBundle(root: string): Promise<StagedBundle> {
 		releaseId,
 		generatedAt,
 		binaryPaths: [assistant, host],
+		...(probeEvidencePath === undefined ? {} : { probeEvidencePath }),
 	});
 	await Bun.write(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
 	return { root, bundlePath };
@@ -84,11 +108,13 @@ test("both gates pass with the committed manifest on a synthetic exact-commit st
 		});
 		expect(packageReport.violations).toEqual([]);
 		expect(packageReport.ok).toBe(true);
-		// The native probes are real evidence, not reductions.
-		expect(packageReport.facts.reducedLiveEvidence.join("\n")).not.toContain(
-			"assistant/amd64 --version",
-		);
-		expect(packageReport.facts.reducedLiveEvidence.join("\n")).not.toContain("host/amd64 doctor");
+		// The merged native probes fill both architectures and are real evidence,
+		// not reductions.
+		const reduced = packageReport.facts.reducedLiveEvidence.join("\n");
+		expect(reduced).not.toContain("--version");
+		expect(reduced).not.toContain(" doctor");
+		expect(packageReport.missingLiveEvidence.join("\n")).not.toContain("--version");
+		expect(packageReport.missingLiveEvidence.join("\n")).not.toContain(" doctor");
 
 		const gateInput = await collectReleaseGateInput(undefined, staged.bundlePath);
 		const gateReport = inspectReleaseGate({
@@ -103,6 +129,31 @@ test("both gates pass with the committed manifest on a synthetic exact-commit st
 		expect(gateReport.violations).toEqual([]);
 		expect(gateReport.ok).toBe(true);
 		expect(gateReport.facts.reducedLiveInputs.length).toBeGreaterThan(0);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("a bundle missing the non-native architecture's probes still fails closed", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pixie-gate-other-arch-missing-"));
+	try {
+		const staged = await buildStagedBundle(root, { otherArchProbe: false });
+		const manifest = await loadReductionsManifest(defaultReductionsManifestPath());
+		const packageReductions = expandPackageArtifactReductions(manifest);
+
+		const base = await collectPackageArtifactInput();
+		const packageInput = packageArtifactInputFromEvidence(
+			await Bun.file(staged.bundlePath).json(),
+			base,
+		).input;
+		const report = inspectPackageArtifacts({ ...packageInput, reductions: packageReductions });
+		expect(report.ok).toBe(false);
+		const missing = report.missingLiveEvidence.join("\n");
+		// Only the native host ran probes; the other architecture's version and
+		// doctor rows are honestly absent and are no longer reduced.
+		expect(missing).toContain(`${otherArch} --version`);
+		expect(missing).toContain(`${otherArch} doctor`);
+		expect(report.facts.reducedLiveEvidence.join("\n")).not.toContain("--version");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -130,8 +181,11 @@ test("a reduced row is reported as reduced and never as passing", async () => {
 		expect(reduced).toContain("uninstall");
 		expect(reduced).toContain("embedded UI");
 		expect(reduced).toContain("facade");
-		expect(reduced).toContain("assistant/arm64 --version");
 		expect(reduced).toContain("readiness");
+		// The formerly-reduced arm64 version/doctor rows are now mandatory and
+		// filled from the merged non-native probe facts.
+		expect(reduced).not.toContain("--version");
+		expect(reduced).not.toContain(" doctor");
 		expect(packageReport.missingLiveEvidence).toEqual([]);
 		// A reduced row is not a static pass.
 		expect(packageReport.facts.staticChecks.join("\n")).not.toContain("start/stop/restart");

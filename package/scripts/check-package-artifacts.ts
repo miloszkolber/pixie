@@ -5,12 +5,18 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, relative, resolve } from "node:path";
 import {
 	decodePackageArchiveDetail,
+	decodeProbeDetail,
 	type EvidenceBundle,
 	PACKAGE_ARCHIVE_ASSERTION_PREFIX,
 	PACKAGED_BINARY_ASSERTION_PREFIX,
 	parsePackageArchiveAssertionId,
 	readEvidenceBundle,
 } from "./evidence-bundle.ts";
+
+export type { BinaryProbeDetail } from "./evidence-bundle.ts";
+// The probe-detail codec lives with the bundle schema; re-export it here for the
+// gate callers that previously owned the decoder.
+export { decodeProbeDetail };
 
 export const PACKAGE_VARIANTS = ["assistant", "host"] as const;
 export const PACKAGE_ARCHITECTURES = ["amd64", "arm64"] as const;
@@ -803,27 +809,15 @@ interface BinaryProbeFacts {
 	readiness?: boolean;
 }
 
-function decodeProbeDetail(detail: string): { path: string; stdout: string } | null {
-	let value: unknown;
-	try {
-		value = JSON.parse(detail);
-	} catch {
-		return null;
-	}
-	if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
-	const record = value as Record<string, unknown>;
-	if (typeof record.path !== "string" || record.path.trim() === "") return null;
-	return { path: record.path, stdout: typeof record.stdout === "string" ? record.stdout : "" };
-}
-
 /**
  * Translate a validated evidence bundle into the archive side of the package
  * input. Only `pass` archive assertions carry a machine-readable detail; any
  * blocked/failed/malformed assertion becomes a precise violation. Binary
  * presence is taken from the inspected archive members, and the version,
  * doctor and readiness rows are filled only from `pass` probes the collector
- * actually executed. Lifecycle, uninstall and embedded-UI facts are never
- * synthesized: those rows stay absent and fail closed unless reduced.
+ * actually executed on the matching architecture. Lifecycle, uninstall and
+ * embedded-UI facts are never synthesized: those rows stay absent and fail
+ * closed unless reduced.
  */
 export function packageArtifactInputFromEvidence(
 	evidence: EvidenceBundle,
@@ -832,8 +826,10 @@ export function packageArtifactInputFromEvidence(
 	const violations: string[] = [];
 	const archives: PackageArchiveEvidence[] = [];
 	const binaries: PackageBinaryEvidence[] = [];
+	// Probe facts are keyed by `variant/architecture` because one bundle now
+	// carries the native probes executed on each architecture. A detail without
+	// an architecture predates the field and belongs to the bundle's platform.
 	const probes = new Map<string, BinaryProbeFacts>();
-	const nativeArchitecture = evidence.platform.arch;
 	for (const assertion of evidence.assertions) {
 		if (assertion.kind !== "GATE") continue;
 		if (!assertion.id.startsWith(PACKAGED_BINARY_ASSERTION_PREFIX)) continue;
@@ -850,7 +846,9 @@ export function packageArtifactInputFromEvidence(
 		if (detail === null) continue;
 		const variant = variantFromBinaryPath(detail.path);
 		if (variant === null) continue;
-		const facts = probes.get(variant) ?? {};
+		const architecture = detail.architecture ?? evidence.platform.arch;
+		const key = `${variant}/${architecture}`;
+		const facts = probes.get(key) ?? {};
 		if (probe === "version") {
 			const observed = detail.stdout.match(/sha-[0-9a-f]{12}/)?.[0];
 			if (observed !== undefined) facts.version = observed;
@@ -859,7 +857,7 @@ export function packageArtifactInputFromEvidence(
 		} else {
 			facts.readiness = true;
 		}
-		probes.set(variant, facts);
+		probes.set(key, facts);
 	}
 	for (const assertion of evidence.assertions) {
 		if (assertion.kind !== "GATE") continue;
@@ -904,11 +902,10 @@ export function packageArtifactInputFromEvidence(
 			path: detail.binary,
 		});
 	}
-	// Only the native architecture can have been executed by the collector, so
-	// probe facts never leak onto a non-native architecture row.
+	// Each row is filled only from probes whose recorded architecture matches the
+	// binary's own; a missing arm64 fact stays missing and fails closed.
 	for (const binary of binaries) {
-		if (binary.architecture !== nativeArchitecture) continue;
-		const facts = probes.get(binary.variant);
+		const facts = probes.get(`${binary.variant}/${binary.architecture}`);
 		if (facts === undefined) continue;
 		if (facts.version !== undefined) binary.version = facts.version;
 		if (facts.doctor === true) binary.doctor = true;

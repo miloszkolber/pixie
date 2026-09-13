@@ -174,8 +174,8 @@ jobs:
           retention-days: 14
 
   evidence-arm64:
-    name: Produce native arm64 performance evidence
-    needs: [validate, identity, stage]
+    name: Produce native arm64 performance and probe evidence
+    needs: [validate, identity, stage, image]
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -194,6 +194,11 @@ jobs:
         with:
           name: pixie-release-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-release
+      - name: Download staged OCI image tar
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-image-${{ needs.identity.outputs.source_commit }}
+          path: ${{ runner.temp }}/pixie-image
       - name: Produce native arm64 performance evidence
         working-directory: package
         env:
@@ -213,10 +218,45 @@ jobs:
             --source-commit "$SOURCE_COMMIT" \
             --release-id "$RELEASE_ID" \
             --reduction-manifest "$GITHUB_WORKSPACE/package/contracts/reductions.json"
+      - name: Collect native arm64 probe evidence
+        working-directory: package
+        env:
+          SOURCE_COMMIT: ${{ needs.identity.outputs.source_commit }}
+          RELEASE_ID: ${{ needs.identity.outputs.release_id }}
+          ARTIFACT_DIR: ${{ runner.temp }}/pixie-release
+          IMAGE_DIR: ${{ runner.temp }}/pixie-image
+          EVIDENCE_DIR: ${{ runner.temp }}/pixie-performance-arm64
+          PROBE_DIR: ${{ runner.temp }}/pixie-probe-evidence-arm64
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROBE_DIR"
+          # Collect a native arm64 bundle and reuse the binaries the producer
+          # already extracted. This job runs no live gate; the evidence job
+          # merges exactly these BIN-PROBE facts into its single bundle.
+          EXTRA_ARGS=()
+          BIN_DIR="$EVIDENCE_DIR/binaries"
+          for candidate in "$BIN_DIR/pixie-assistant" "$BIN_DIR/pixie"; do
+            if [[ -x "$candidate" ]]; then
+              EXTRA_ARGS+=(--binary "$candidate")
+            fi
+          done
+          bun run scripts/collect-evidence.ts \
+            --artifacts "$ARTIFACT_DIR" \
+            --image "$IMAGE_DIR" \
+            --source-commit "$SOURCE_COMMIT" \
+            --release-id "$RELEASE_ID" \
+            --output "$PROBE_DIR/evidence.json" \
+            "${EXTRA_ARGS[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pixie-performance-arm64-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-performance-arm64/performance.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pixie-probe-evidence-arm64-${{ needs.identity.outputs.source_commit }}
+          path: ${{ runner.temp }}/pixie-probe-evidence-arm64/evidence.json
           if-no-files-found: error
           retention-days: 14
 
@@ -254,6 +294,11 @@ jobs:
         with:
           name: pixie-performance-arm64-${{ needs.identity.outputs.source_commit }}
           path: ${{ runner.temp }}/pixie-performance-arm64
+      - name: Download native arm64 probe evidence
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-probe-evidence-arm64-${{ needs.identity.outputs.source_commit }}
+          path: ${{ runner.temp }}/pixie-probe-evidence-arm64
       - name: Produce coverage and performance evidence inputs
         working-directory: package
         env:
@@ -272,7 +317,8 @@ jobs:
           # The producer extracts the amd64 archives that can actually run on this
           # runner, executes only the checks it can honestly complete, measures
           # fresh-process startup, and merges the committed reductions manifest.
-          # arm64 binaries are not emulated and their probes stay blocked.
+          # arm64 binaries are not emulated here; their probes come from the
+          # native arm64 evidence job and are merged below.
           bun run scripts/produce-evidence-inputs.ts \
             --artifacts "$ARTIFACT_DIR" \
             --output "$EVIDENCE_DIR" \
@@ -301,6 +347,7 @@ jobs:
           ARTIFACT_DIR: ${{ runner.temp }}/pixie-release
           IMAGE_DIR: ${{ runner.temp }}/pixie-image
           EVIDENCE_DIR: ${{ runner.temp }}/pixie-evidence
+          ARM64_PROBE_DIR: ${{ runner.temp }}/pixie-probe-evidence-arm64
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
@@ -310,8 +357,14 @@ jobs:
           # provided-but-unreadable input and fail instead of block.
           COVERAGE_FILE="$EVIDENCE_DIR/coverage.json"
           PERFORMANCE_FILE="$EVIDENCE_DIR/performance.json"
+          ARM64_PROBE_FILE="$ARM64_PROBE_DIR/evidence.json"
           READINESS_URL="${{ vars.PIXIE_READINESS_BASE_URL }}"
           EXTRA_ARGS=()
+          # The native arm64 BIN-PROBE facts are merged into this bundle so both
+          # architectures' version/doctor rows are backed by a real execution.
+          if [[ -f "$ARM64_PROBE_FILE" ]]; then
+            EXTRA_ARGS+=(--probe-evidence "$ARM64_PROBE_FILE")
+          fi
           if [[ -f "$COVERAGE_FILE" ]]; then
             EXTRA_ARGS+=(--coverage "$COVERAGE_FILE")
           fi

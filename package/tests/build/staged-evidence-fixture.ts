@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { writeDeterministicTarGz } from "../../scripts/deterministic-tar.ts";
+import {
+	buildEvidenceBundle,
+	type EvidenceAssertion,
+	PACKAGED_BINARY_ASSERTION_PREFIX,
+} from "../../scripts/evidence-bundle.ts";
 
 /**
  * Shared synthetic exact-commit staging fixtures for the release evidence
@@ -246,4 +251,83 @@ case "$1" in
 esac
 `;
 	await writeFile(path, script, { mode: 0o755 });
+}
+
+async function runProbeCommand(
+	path: string,
+	args: readonly string[],
+): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+	const child = Bun.spawn([path, ...args], { stdout: "pipe", stderr: "pipe" });
+	const [stdout, stderr] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+	]);
+	return { exitCode: await child.exited, stdout, stderr };
+}
+
+export interface ProbeEvidenceBundleOptions {
+	/** Architecture the simulated host reports on every probe fact. */
+	architecture: (typeof FIXTURE_ARCHITECTURES)[number];
+	sourceCommit: string;
+	releaseId: string;
+	generatedAt: string;
+	binaries: readonly string[];
+}
+
+/**
+ * Write a probe-only evidence bundle as a second collector host would emit it.
+ * The given binaries are really executed for `--version`/`doctor`; only the
+ * reported host architecture is selected by the caller, which lets amd64 tests
+ * exercise the merged per-architecture bundle without an arm64 runner.
+ */
+export async function writeProbeEvidenceBundle(
+	path: string,
+	options: ProbeEvidenceBundleOptions,
+): Promise<void> {
+	const unique = [
+		...new Set(options.binaries.map((binary) => binary.trim()).filter((binary) => binary !== "")),
+	].sort();
+	const assertions: EvidenceAssertion[] = [];
+	for (const [index, binary] of unique.entries()) {
+		for (const probe of ["version", "doctor"] as const) {
+			const result = await runProbeCommand(binary, [probe === "version" ? "--version" : "doctor"]);
+			assertions.push({
+				kind: "GATE",
+				id: `${PACKAGED_BINARY_ASSERTION_PREFIX}-${index}-${probe}`,
+				status: result.exitCode === 0 ? "pass" : "fail",
+				command: `${binary} ${probe === "version" ? "--version" : "doctor"}`,
+				detail: JSON.stringify({
+					path: binary,
+					probe,
+					architecture: options.architecture,
+					exitCode: result.exitCode,
+					stdout: result.stdout,
+					stderr: result.stderr,
+				}),
+			});
+		}
+		assertions.push({
+			kind: "GATE",
+			id: `${PACKAGED_BINARY_ASSERTION_PREFIX}-${index}-readiness`,
+			status: "blocked",
+			command: "test -n <base-url>",
+			detail: JSON.stringify({
+				path: binary,
+				probe: "readiness",
+				architecture: options.architecture,
+				url: null,
+				httpStatus: null,
+				skipped: "--base-url was not provided",
+			}),
+		});
+	}
+	const bundle = buildEvidenceBundle({
+		sourceCommit: options.sourceCommit,
+		releaseId: options.releaseId,
+		generatedAt: options.generatedAt,
+		platform: { os: "linux", arch: options.architecture },
+		profile: "full-host",
+		assertions,
+	});
+	await writeFile(path, `${JSON.stringify(bundle, null, 2)}\n`);
 }
