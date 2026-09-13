@@ -141,7 +141,6 @@ func TestUpsertRemoveMCPServerScopesWritesToAgentLayer(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	agentDir := t.TempDir()
-	projectDir := t.TempDir()
 	agentPath := filepath.Join(agentDir, "mcp.json")
 	userAgentsPath := filepath.Join(home, ".agents", "mcp.json")
 
@@ -156,7 +155,7 @@ func TestUpsertRemoveMCPServerScopesWritesToAgentLayer(t *testing.T) {
 		"mcpServers": map[string]any{"lower": map[string]any{"url": "http://lower"}},
 	})
 
-	if err := upsertMCPServer(agentDir, projectDir, "pixie-browser", map[string]any{"url": "http://new"}); err != nil {
+	if err := upsertMCPServer(agentDir, "pixie-browser", map[string]any{"url": "http://new"}); err != nil {
 		t.Fatal(err)
 	}
 	document := readJSONObject(t, agentPath)
@@ -172,7 +171,7 @@ func TestUpsertRemoveMCPServerScopesWritesToAgentLayer(t *testing.T) {
 		t.Fatalf("target server = %#v", updated)
 	}
 
-	if err := removeMCPServer(agentDir, projectDir, "pixie-browser"); err != nil {
+	if err := removeMCPServer(agentDir, "pixie-browser"); err != nil {
 		t.Fatal(err)
 	}
 	document = readJSONObject(t, agentPath)
@@ -187,7 +186,7 @@ func TestUpsertRemoveMCPServerScopesWritesToAgentLayer(t *testing.T) {
 		t.Fatalf("sibling server lost after remove: %#v", servers)
 	}
 	// A missing entry is a no-op, and other layers are never touched.
-	if err := removeMCPServer(agentDir, projectDir, "absent"); err != nil {
+	if err := removeMCPServer(agentDir, "absent"); err != nil {
 		t.Fatal(err)
 	}
 	lower := readJSONObject(t, userAgentsPath)
@@ -195,7 +194,7 @@ func TestUpsertRemoveMCPServerScopesWritesToAgentLayer(t *testing.T) {
 	if _, present := lowerServers["lower"]; !present {
 		t.Fatalf("lower layer was modified: %#v", lower)
 	}
-	if err := upsertMCPServer(agentDir, projectDir, "bad/name", map[string]any{"url": "http://x"}); err == nil {
+	if err := upsertMCPServer(agentDir, "bad/name", map[string]any{"url": "http://x"}); err == nil {
 		t.Fatal("unsafe server name was accepted")
 	}
 }

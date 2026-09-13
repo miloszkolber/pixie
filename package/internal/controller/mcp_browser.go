@@ -119,18 +119,11 @@ func (a *PiAdmin) ConfigureBrowserMCP(ctx context.Context, request map[string]an
 			definition["headers"] = headers
 		}
 		params := map[string]any{"name": next.Name, "definition": definition}
-		if projectDir != "" {
-			params["projectDir"] = projectDir
-		}
 		if err := a.call(ctx, "pi.mcp.servers.upsert", params, nil); err != nil {
 			return BrowserMCPStatus{}, fmt.Errorf("couldn't register browser MCP in Pi: %w", err)
 		}
 	} else {
-		params := map[string]any{"name": next.Name}
-		if projectDir != "" {
-			params["projectDir"] = projectDir
-		}
-		if err := a.call(ctx, "pi.mcp.servers.remove", params, nil); err != nil {
+		if err := a.call(ctx, "pi.mcp.servers.remove", map[string]any{"name": next.Name}, nil); err != nil {
 			return BrowserMCPStatus{}, fmt.Errorf("couldn't remove browser MCP from Pi: %w", err)
 		}
 	}
@@ -150,11 +143,7 @@ func (a *PiAdmin) RemoveBrowserMCP(ctx context.Context, projectDir string) (Brow
 	if err != nil {
 		return BrowserMCPStatus{}, err
 	}
-	params := map[string]any{"name": current.Name}
-	if projectDir != "" {
-		params["projectDir"] = projectDir
-	}
-	if err := a.call(ctx, "pi.mcp.servers.remove", params, nil); err != nil {
+	if err := a.call(ctx, "pi.mcp.servers.remove", map[string]any{"name": current.Name}, nil); err != nil {
 		return BrowserMCPStatus{}, fmt.Errorf("couldn't remove browser MCP from Pi: %w", err)
 	}
 	current.Enabled = false

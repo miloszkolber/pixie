@@ -123,26 +123,9 @@ func readMCPServers(agentDir, projectDir string) ([]mcpServerState, []string, er
 // readMCPLayer reads one `mcpServers` object. A missing file yields no servers
 // and no error.
 func readMCPLayer(path string) (map[string]map[string]any, error) {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
+	document, err := readMCPDocument(path)
 	if err != nil {
 		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("MCP configuration must be a regular non-symlink file")
-	}
-	if info.Size() > mcpConfigMaxBytes {
-		return nil, errors.New("MCP configuration exceeds the size bound")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	document := map[string]any{}
-	if err := json.Unmarshal(raw, &document); err != nil {
-		return nil, errors.New("MCP configuration is not valid JSON")
 	}
 	servers, _ := document["mcpServers"].(map[string]any)
 	result := make(map[string]map[string]any, len(servers))
@@ -181,15 +164,41 @@ func validMCPServerName(name string) bool {
 // sibling server is preserved. The mutation is serialized with the same
 // installation lock discipline used by the native registry/source writers and
 // published atomically (temp + fsync + rename).
-func upsertMCPServer(agentDir, projectDir, name string, definition map[string]any) error {
-	if agentDir == "" || !filepath.IsAbs(agentDir) {
-		return errors.New("Pi agent directory must be absolute")
-	}
+func upsertMCPServer(agentDir, name string, definition map[string]any) error {
 	if !validMCPServerName(name) {
 		return errors.New("invalid MCP server name")
 	}
 	if definition == nil {
 		return errors.New("MCP server definition is required")
+	}
+	return mutateMCPServers(agentDir, func(servers map[string]any) bool {
+		servers[name] = definition
+		return true
+	})
+}
+
+// removeMCPServer removes exactly one named entry from the Pixie-owned layer
+// and never touches another layer.
+func removeMCPServer(agentDir, name string) error {
+	if !validMCPServerName(name) {
+		return errors.New("invalid MCP server name")
+	}
+	return mutateMCPServers(agentDir, func(servers map[string]any) bool {
+		if _, present := servers[name]; !present {
+			return false
+		}
+		delete(servers, name)
+		return true
+	})
+}
+
+// mutateMCPServers applies a change to the Pixie-owned instance-wide
+// `mcpServers` object under the installation lock and publishes it atomically.
+// The callback reports whether anything changed; a no-op leaves the file
+// untouched so an absent entry cannot rewrite an unrelated document.
+func mutateMCPServers(agentDir string, apply func(servers map[string]any) bool) error {
+	if agentDir == "" || !filepath.IsAbs(agentDir) {
+		return errors.New("Pi agent directory must be absolute")
 	}
 	path := filepath.Join(agentDir, "mcp.json")
 	return withMCPServerLock(agentDir, func() error {
@@ -201,36 +210,9 @@ func upsertMCPServer(agentDir, projectDir, name string, definition map[string]an
 		if servers == nil {
 			servers = map[string]any{}
 		}
-		servers[name] = definition
-		document["mcpServers"] = servers
-		encoded, err := json.Marshal(document)
-		if err != nil {
-			return err
-		}
-		return atomicWriteAgentFile(path, encoded)
-	})
-}
-
-// removeMCPServer removes exactly one named entry from the Pixie-owned layer
-// and never touches another layer.
-func removeMCPServer(agentDir, projectDir, name string) error {
-	if agentDir == "" || !filepath.IsAbs(agentDir) {
-		return errors.New("Pi agent directory must be absolute")
-	}
-	if !validMCPServerName(name) {
-		return errors.New("invalid MCP server name")
-	}
-	path := filepath.Join(agentDir, "mcp.json")
-	return withMCPServerLock(agentDir, func() error {
-		document, err := readMCPDocument(path)
-		if err != nil {
-			return err
-		}
-		servers, _ := document["mcpServers"].(map[string]any)
-		if _, present := servers[name]; !present {
+		if !apply(servers) {
 			return nil
 		}
-		delete(servers, name)
 		document["mcpServers"] = servers
 		encoded, err := json.Marshal(document)
 		if err != nil {
@@ -598,7 +580,7 @@ func (s *nativeSupervisor) upsertMCPServerOperation(params map[string]any) (json
 	if !ok || len(definition) == 0 {
 		return nil, errors.New("MCP server definition is required")
 	}
-	if err := upsertMCPServer(s.config.AgentDir, mcpProjectDir(params), name, definition); err != nil {
+	if err := upsertMCPServer(s.config.AgentDir, name, definition); err != nil {
 		return nil, err
 	}
 	return s.readMCPServersOperation(map[string]any{"name": name, "projectDir": mcpProjectDir(params)})
@@ -607,7 +589,7 @@ func (s *nativeSupervisor) upsertMCPServerOperation(params map[string]any) (json
 // removeMCPServerOperation implements pi.mcp.servers.remove.
 func (s *nativeSupervisor) removeMCPServerOperation(params map[string]any) (json.RawMessage, error) {
 	name, _ := params["name"].(string)
-	if err := removeMCPServer(s.config.AgentDir, mcpProjectDir(params), name); err != nil {
+	if err := removeMCPServer(s.config.AgentDir, name); err != nil {
 		return nil, err
 	}
 	return json.RawMessage(`{"ok":true}`), nil
