@@ -415,7 +415,10 @@ func (s *Schedules) startLocked(id string, now time.Time) error {
 			run.Status = "failed"
 			run.Error = err.Error()
 		}
-		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+		// A runner that returned successfully completes even if shutdown canceled
+		// its context after the work finished; only a run that ended in an error
+		// can be marked interrupted.
+		if err != nil && (ctx.Err() != nil || errors.Is(err, context.Canceled)) {
 			run.Status = "interrupted"
 		}
 		s.mu.Lock()
