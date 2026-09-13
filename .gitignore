@@ -4,6 +4,7 @@ dist/
 .turbo/
 *.tsbuildinfo
 *.bun-build
+.pixie-runtime-gates-*/
 .DS_Store
 .idea/
 test-results*/
