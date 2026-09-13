@@ -98,7 +98,7 @@ export class BrowserMcpModel {
 	constructor(private readonly transport: Pick<WsTransport, "request">) {}
 
 	async load(): Promise<BrowserMCPStatus | null> {
-		return this.run("browserMcp.status", {}, { loading: true }, null);
+		return this.run(this.transport.request("browserMcp.status", {}), { loading: true }, null);
 	}
 
 	async save(draft: BrowserMcpDraft): Promise<BrowserMCPStatus | null> {
@@ -113,8 +113,11 @@ export class BrowserMcpModel {
 			return null;
 		}
 		return this.run(
-			"browserMcp.configure",
-			{ name: draft.name.trim(), url: draft.url.trim(), enabled: draft.enabled },
+			this.transport.request("browserMcp.configure", {
+				name: draft.name.trim(),
+				url: draft.url.trim(),
+				enabled: draft.enabled,
+			}),
 			{ busy: "saving" },
 			draft.enabled
 				? "Browser MCP registration saved in Pi."
@@ -124,8 +127,7 @@ export class BrowserMcpModel {
 
 	async remove(): Promise<BrowserMCPStatus | null> {
 		return this.run(
-			"browserMcp.remove",
-			{},
+			this.transport.request("browserMcp.remove", {}),
 			{ busy: "removing" },
 			"Browser MCP entry removed from Pi.",
 		);
@@ -135,15 +137,14 @@ export class BrowserMcpModel {
 	// from a superseded request can never overwrite newer state. The in-flight
 	// indicator is cleared on every terminal path.
 	private async run(
-		method: string,
-		params: Record<string, unknown>,
+		request: Promise<BrowserMCPStatus>,
 		pending: Partial<Pick<BrowserMcpState, "loading" | "busy">>,
 		notice: string | null,
 	): Promise<BrowserMCPStatus | null> {
 		const generation = ++this.generation;
 		this.state.setState({ loading: false, busy: null, ...pending, error: null, notice: null });
 		try {
-			const status = await this.transport.request(method, params);
+			const status = await request;
 			if (generation !== this.generation) return null;
 			this.state.setState({ status, loading: false, busy: null, notice });
 			return status;
