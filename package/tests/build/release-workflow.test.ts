@@ -64,7 +64,8 @@ test("validation image builds are read-only and carry the source identity as bui
 	expect(validation).toContain('--build-arg "REVISION=$SOURCE_COMMIT"');
 	expect(workflow).toContain("  publish-image:");
 	expect(workflow).toContain("id-token: write");
-	expect(workflow).toContain('has("buildx.build.provenance")');
+	expect(workflow).toContain("containerimage.digest");
+	expect(workflow).toContain("in-toto.io/predicate-type");
 	expect(workflow).toContain("SBOM_PRESENT=false");
 	expect(workflow).not.toContain("sbom: true, provenance: true");
 	expect(workflow).toContain("verify_archive()");

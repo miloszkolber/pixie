@@ -451,8 +451,6 @@ jobs:
             --label "org.opencontainers.image.revision=$SOURCE_COMMIT" \
             --sbom=true --attest type=provenance --push --metadata-file "$RUNNER_TEMP/pixie-image-metadata.json" .
           test -s "$RUNNER_TEMP/pixie-image-metadata.json"
-          jq -e 'has("buildx.build.provenance") and .["buildx.build.provenance"] != null' \
-            "$RUNNER_TEMP/pixie-image-metadata.json" >/dev/null
           # Verify both runnable platform manifests; attestations do not replace
           # platform evidence. The release tag is immutable and latest moves later.
           docker buildx imagetools inspect "$REF" | tee "$RUNNER_TEMP/pixie-image-inspect.txt"
