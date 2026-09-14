@@ -55,7 +55,7 @@ function toggle(path: string): void {
 	{:else}
 		{@const expanded = !collapsedPaths.has(node.path)}
 		<li>
-			<div class="flex min-w-0 items-center">
+			<div class="u-flex u-min-w-0 u-items-center">
 				{#snippet trailing()}
 					<DiffStatBadge added={node.added} removed={node.removed} />
 				{/snippet}
@@ -70,7 +70,7 @@ function toggle(path: string): void {
 				<span class={ROW_MENU_SLOT}></span>
 			</div>
 			{#if expanded}
-				<ul class="tree-group flex flex-col pl-md">
+				<ul class="tree-group u-flex u-flex-col changes-tree-children">
 					{#each node.children as child (child.path)}
 						{@render nodeRow(child)}
 					{/each}
@@ -80,8 +80,12 @@ function toggle(path: string): void {
 	{/if}
 {/snippet}
 
-<ul class="tree tree-group flex flex-col">
+<ul class="tree tree-group u-flex u-flex-col">
 	{#each nodes as node (node.path)}
 		{@render nodeRow(node)}
 	{/each}
 </ul>
+
+<style>
+	.changes-tree-children { padding-inline-start: var(--space-md); }
+</style>

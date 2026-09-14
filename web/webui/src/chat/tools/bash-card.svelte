@@ -10,13 +10,20 @@ let output = $derived(resultText(result, isError));
 
 <div
 	data-testid="tool-bash"
-	class="overflow-hidden rounded-[var(--radius-sm)] border border-border-default bg-container-header-bg tr-code-text"
+	class="u-rounded u-border u-border-border-default tool-bash-card tr-code-text"
 >
-	<div class="border-border-default border-b px-sm py-xs">
-		<span class="text-feedback-success">$</span>
-		<span class="ml-sm text-text-muted">{command}</span>
+	<div class="u-border-b u-border-border-default u-px-sm u-py-xs">
+		<span class="tool-success">$</span>
+		<span class="tool-bash-command u-text-text-muted">{command}</span>
 	</div>
 	<pre
-		class={`overflow-auto px-sm py-xs tr-code-text leading-relaxed ${isError ? "text-feedback-error" : "text-text-default"}`}
+		class={`u-overflow-auto u-px-sm u-py-xs tr-code-text tool-relaxed ${isError ? "u-text-feedback-error" : "u-text-text-default"}`}
 	>{output || (status === "running" ? "Running…" : "(no output)")}</pre>
 </div>
+
+<style>
+	.tool-bash-card { overflow: hidden; background: var(--container-header-bg); }
+	.tool-success { color: var(--feedback-success); }
+	.tool-bash-command { margin-inline-start: var(--space-sm); }
+	.tool-relaxed { line-height: var(--tr-line-height-relaxed); }
+</style>

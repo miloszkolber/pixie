@@ -22,7 +22,7 @@ let renderProps = $derived({
 </script>
 
 {#if getToolChrome(row.toolName) === "bare"}
-	<div class="flex flex-col items-start gap-sm tr-text-ui text-text-default">
+	<div class="u-flex u-flex-col u-items-start u-gap-sm tr-text-ui u-text-text-default">
 		<Renderer {...renderProps} />
 	</div>
 {:else}

@@ -14,7 +14,7 @@
 		"typography:validate": "bun scripts/validate-typography.ts",
 		"typography:check": "bun scripts/generate-typography.ts --check",
 		"colors:generate": "bun scripts/generate-colors.ts",
-		"colors:check": "bun scripts/generate-colors.ts --check && bun scripts/check-color-utilities.ts"
+		"colors:check": "bun scripts/generate-colors.ts --check"
 	},
 	"dependencies": {
 		"@pixie/shared": "workspace:*",
@@ -28,10 +28,8 @@
 		"zod": "4.5.4"
 	},
 	"devDependencies": {
-		"@tailwindcss/cli": "catalog:",
 		"@types/bun": "catalog:",
 		"svelte-check": "catalog:",
-		"tailwindcss": "catalog:",
 		"typescript": "catalog:"
 	}
 }

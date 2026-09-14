@@ -74,7 +74,7 @@ function fork(): void {
 }
 </script>
 
-<span class="contents" {@attach mewa(dropdownBehavior)}>
+<span class="session-actions-contents" {@attach mewa(dropdownBehavior)}>
 	<Button
 		variant="ghost"
 		size="icon-sm"
@@ -96,8 +96,8 @@ function fork(): void {
 		<button type="button" role="menuitem" class="dropdown-menu-item" disabled={!canArchive || streaming} title={archiveUnavailable ?? (streaming ? "Stop the running chat before archiving it" : undefined)} onclick={() => choose(() => (archiveOpen = true))}>
 			<Icon name="archive" size={14} /> Archive
 		</button>
-		{#each unavailableActions as reason}<p class="max-w-64 px-sm py-xs text-text-muted tr-text-metadata">{reason}</p>{/each}
-		{#if forkError}<p role="alert" class="max-w-64 px-sm py-xs text-feedback-error tr-text-metadata">{forkError}</p>{/if}
+		{#each unavailableActions as reason}<p class="session-action-message u-px-sm u-py-xs u-text-text-muted tr-text-metadata">{reason}</p>{/each}
+		{#if forkError}<p role="alert" class="session-action-message u-px-sm u-py-xs u-text-feedback-error tr-text-metadata">{forkError}</p>{/if}
 	</div>
 </span>
 <RenameSessionDialog target={target} bind:open={renameOpen} />
@@ -105,4 +105,6 @@ function fork(): void {
 
 <style>
 	.session-menu { left: auto; right: anchor(right); }
+	.session-action-message { max-width: 16rem; }
+	.session-actions-contents { display: contents; }
 </style>

@@ -93,8 +93,8 @@ async function openSession(projectId: string, sessionId: string): Promise<void> 
 }
 </script>
 
-<div class="flex flex-col gap-sm">
-	<ul data-testid="session-catalog-flat" class="tree-group flex flex-col gap-2xs">
+<div class="u-flex u-flex-col u-gap-sm">
+	<ul data-testid="session-catalog-flat" class="tree-group u-flex u-flex-col u-gap-2xs">
 		{#each catalog.flat as session (sessionHostKey(session))}
 			{@const active = activeSessionId === session.sessionId}
 			{@const projectName = projectNameBySession.get(sessionHostKey(session)) ?? "Ungrouped"}
@@ -108,32 +108,58 @@ async function openSession(projectId: string, sessionId: string): Promise<void> 
 					title={displaySessionTitle(session.title)}
 					aria-label={`${sessionRowAccessibleLabel(session)} in ${projectName}`}
 					aria-current={active || undefined}
-					class={`tree-leaf min-w-0 tr-text-metadata ${active ? "bg-control-bg-selected" : ""}`}
+					class="tree-leaf workspace-session-flat-row u-min-w-0 tr-text-metadata"
 					onclick={() => void openSession(projectKey, session.sessionId)}
 				>
 					{#if session.isStreaming}
-						<Icon name="loader-circle" size={12} class="shrink-0 animate-spin motion-reduce:animate-none" />
-						<span class="sr-only">Running</span>
+						<span class="workspace-session-flat-spinner u-inline-flex u-shrink-0"><Icon name="loader-circle" size={12} /></span>
+						<span class="u-sr-only">Running</span>
 					{:else}
-						<Icon name="message-square" size={12} class="shrink-0" />
+						<Icon name="message-square" size={12} class="u-shrink-0" />
 					{/if}
-					<span class="min-w-0 flex-1 truncate text-left">{displaySessionTitle(session.title)}</span>
-					<span class="shrink-0 text-text-muted">{projectName}</span>
-					<span class={`shrink-0 ${active ? "" : "text-text-muted"}`}>{shortSessionAge(session.updatedAt)}</span>
+					<span class="u-min-w-0 u-flex-1 u-truncate u-text-left">{displaySessionTitle(session.title)}</span>
+					<span class="u-shrink-0 u-text-text-muted">{projectName}</span>
+					<span class="workspace-session-flat-age u-shrink-0">{shortSessionAge(session.updatedAt)}</span>
 				</button>
 			</li>
 		{/each}
 	</ul>
 	{#if catalog.flat.length === 0 && !failed}
-		<p class="px-sm py-xs tr-text-metadata text-text-muted">No chats yet.</p>
+		<p class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">No chats yet.</p>
 	{/if}
 	{#if failed}
-		<p class="px-sm text-feedback-error tr-text-metadata">Couldn't load sessions</p>
+		<p class="u-px-sm u-text-feedback-error tr-text-metadata">Couldn't load sessions</p>
 	{/if}
 	{#if catalog.ungrouped.length > 0}
-		<section data-testid="ungrouped-sessions" aria-label="Ungrouped chats" class="flex flex-col gap-2xs">
+		<section data-testid="ungrouped-sessions" aria-label="Ungrouped chats" class="u-flex u-flex-col u-gap-2xs">
 			<div class="dropdown-menu-label">Ungrouped</div>
-			<p class="px-sm tr-text-metadata text-text-muted">Chats without a named project stay here; they are never moved into a hidden catch-all project.</p>
+			<p class="u-px-sm tr-text-metadata u-text-text-muted">Chats without a named project stay here; they are never moved into a hidden catch-all project.</p>
 		</section>
 	{/if}
 </div>
+
+<style>
+	.workspace-session-flat-row[data-active] {
+		background-color: var(--control-bg-selected);
+	}
+
+	.workspace-session-flat-row:not([data-active]) .workspace-session-flat-age {
+		color: var(--text-muted);
+	}
+
+	.workspace-session-flat-spinner {
+		animation: workspace-session-flat-spin 1s linear infinite;
+	}
+
+	@keyframes workspace-session-flat-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.workspace-session-flat-spinner {
+			animation: none;
+		}
+	}
+</style>

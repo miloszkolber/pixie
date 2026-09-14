@@ -215,9 +215,9 @@ function isActive(path: string): boolean {
 }
 </script>
 
-<div class="app-content flex h-full min-h-0 flex-col">
-	<div class="toolbar flex h-panel-header-row shrink-0 items-center gap-xs border-border-default border-b px-sm">
-		<div class="mr-auto flex min-w-0 items-center gap-xs tr-text-metadata text-text-muted">
+<div class="app-content u-flex u-h-full u-min-h-0 u-flex-col">
+	<div class="toolbar changes-panel-toolbar u-flex u-shrink-0 u-items-center u-gap-xs u-border-border-default u-border-b u-px-sm">
+		<div class="changes-panel-repository u-flex u-min-w-0 u-items-center u-gap-xs tr-text-metadata u-text-text-muted">
 			<Icon name="git-branch" size={14} />
 			{#if repositories.length > 1}
 				<select
@@ -228,14 +228,14 @@ function isActive(path: string): boolean {
 						selectedRepository = event.currentTarget.value;
 						appStoreApi.getState().setDiffScope(projectAreaId, UNCOMMITTED_SCOPE);
 					}}
-					class="select min-w-0 border-0 bg-transparent text-text-muted"
+					class="select changes-panel-repository-select u-min-w-0"
 				>
 					{#each repositories as candidate (candidate.id)}
 						<option value={candidate.root}>{repositoryDisplayName(candidate)}</option>
 					{/each}
 				</select>
 			{:else}
-				<span class="truncate">
+				<span class="u-truncate">
 					{repository
 						? repository.head.kind === "branch"
 							? branchName(`refs/heads/${repository.head.name}`)
@@ -269,7 +269,7 @@ function isActive(path: string): boolean {
 		/>
 	</div>
 	{#if repository}
-		<div class="shrink-0 border-border-default border-b px-xs py-xs">
+		<div class="u-shrink-0 u-border-border-default u-border-b u-px-xs u-py-xs">
 			<GitScopeMenu
 				{projectAreaId}
 				repository={repository.root}
@@ -279,27 +279,27 @@ function isActive(path: string): boolean {
 			/>
 		</div>
 	{/if}
-	<div class="min-h-0 flex-1 overflow-auto">
+	<div class="u-min-h-0 u-flex-1 u-overflow-auto">
 		{#if visibleWarnings.length > 0}
 			<p
 				role="status"
 				data-testid="git-warnings"
-				class="border-border-muted border-b px-sm py-xs tr-text-metadata text-feedback-warning"
+				class="changes-panel-warning u-border-b u-px-sm u-py-xs tr-text-metadata u-text-feedback-warning"
 			>
 				{visibleWarnings.join(" ")}
 			</p>
 		{/if}
 		{#if visibleError}
-			<div class="flex flex-col items-start gap-xs px-sm py-xs">
-				<p class="tr-text-metadata text-feedback-error">Could not read the changes: {visibleError}</p>
+			<div class="u-flex u-flex-col u-items-start u-gap-xs u-px-sm u-py-xs">
+				<p class="tr-text-metadata u-text-feedback-error">Could not read the changes: {visibleError}</p>
 				<button type="button" onclick={refresh} class="btn" data-variant="ghost" data-size="sm">Retry</button>
 			</div>
 		{:else if loadingScope || loadingRepositories}
-			<p role="status" class="px-sm py-xs tr-text-metadata text-text-muted">Loading changes…</p>
+			<p role="status" class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">Loading changes…</p>
 		{:else if status === null}
-			<p class="px-sm py-xs tr-text-metadata text-text-muted">No Git repositories found.</p>
+			<p class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">No Git repositories found.</p>
 		{:else if status.changes.length === 0}
-			<p data-testid="changes-empty" class="px-sm py-xs tr-text-metadata text-text-muted">
+			<p data-testid="changes-empty" class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">
 				{scope.kind === "uncommitted"
 					? "Working tree is clean."
 					: scope.kind === "commit"
@@ -325,11 +325,11 @@ function isActive(path: string): boolean {
 								onclick={() => openDiff(change.path, "preview")}
 								ondblclick={() => openDiff(change.path, "keep")}
 								title={change.path}
-								class="tree-leaf flex min-w-0 flex-1 items-center gap-sm px-sm py-xs text-left tr-text-ui"
+								class="tree-leaf changes-panel-row u-flex u-min-w-0 u-flex-1 u-items-center u-gap-sm u-px-sm u-py-xs u-text-left tr-text-ui"
 							>
-								<span class="flex min-w-0 flex-1 items-baseline">
-									{#if parts.dir}<span class="min-w-0 shrink truncate text-text-muted">{parts.dir}</span>{/if}
-									<span class={`max-w-full shrink-0 truncate ${statusNameClass(change.status) || "text-text-muted"}`}>
+								<span class="changes-panel-path u-flex u-min-w-0 u-flex-1">
+									{#if parts.dir}<span class="u-min-w-0 u-truncate u-text-text-muted">{parts.dir}</span>{/if}
+									<span class={`u-max-w-full u-shrink-0 u-truncate ${statusNameClass(change.status)}`}>
 										{parts.base}
 									</span>
 								</span>
@@ -348,3 +348,22 @@ function isActive(path: string): boolean {
 		{/if}
 	</div>
 </div>
+
+<style>
+	.changes-panel-toolbar { block-size: var(--panel-header-row-height); }
+	.changes-panel-repository { margin-inline-end: auto; }
+	.changes-panel-repository-select {
+		border: 0;
+		background-color: transparent;
+		color: var(--text-muted);
+	}
+	.changes-panel-warning { border-color: var(--border-muted); }
+	.changes-panel-path { align-items: baseline; }
+	.tree-row-status-added { color: var(--feedback-success); }
+	.tree-row-status-deleted {
+		color: var(--feedback-error);
+		text-decoration: line-through;
+	}
+	.tree-row-status-renamed { color: var(--feedback-info); }
+	.tree-row-status-default { color: var(--text-muted); }
+</style>

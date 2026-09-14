@@ -67,11 +67,11 @@ async function confirm(): Promise<void> {
 	{description}
 	hideClose
 	testid="confirm-dialog"
-	class="max-w-[24rem]"
+	class="dialog--compact"
 	{onClosedAutoFocus}
 	onOpenChange={setOpen}
 >
-	{#if error}<p role="alert" class="text-feedback-error tr-text-ui">{error} You can retry.</p>{/if}
+	{#if error}<p role="alert" class="u-text-feedback-error tr-text-ui">{error} You can retry.</p>{/if}
 	{#if descriptionContent}
 		<div class="dialog-description">{@render descriptionContent()}</div>
 	{/if}

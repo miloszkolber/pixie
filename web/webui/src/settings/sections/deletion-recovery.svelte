@@ -18,30 +18,30 @@ let { records, pendingKey, error, onConfirm, onRetain }: Props = $props();
 <section
 	data-testid="deletion-recovery"
 	aria-labelledby="deletion-recovery-heading"
-	class="card min-w-0 p-md"
+	class="card u-min-w-0 u-p-md"
 >
-	<div class="min-w-0">
-		<h3 id="deletion-recovery-heading" class="tr-text-ui text-text-default">Deletion recovery</h3>
-		<p class="mt-xs text-text-muted tr-text-metadata">
+	<div class="u-min-w-0">
+		<h3 id="deletion-recovery-heading" class="tr-text-ui u-text-text-default">Deletion recovery</h3>
+		<p class="u-mt-xs u-text-text-muted tr-text-metadata">
 			Retained deletion tombstones that could not be resumed. Confirm only when the deletion
 			really happened, or retain the record and leave the tombstone in place.
 		</p>
 	</div>
 
 	{#if error}
-		<p role="alert" data-testid="deletion-recovery-error" class="mt-sm text-feedback-error tr-text-metadata">
+		<p role="alert" data-testid="deletion-recovery-error" class="u-mt-sm u-text-feedback-error tr-text-metadata">
 			{error}
 		</p>
 	{/if}
 
 	{#if records.length === 0}
-		<p data-testid="deletion-recovery-empty" class="mt-sm text-text-muted tr-text-metadata">
+		<p data-testid="deletion-recovery-empty" class="u-mt-sm u-text-text-muted tr-text-metadata">
 			No retained deletion records.
 		</p>
 	{:else}
 		<ul
 			data-testid="deletion-recovery-list"
-			class="mt-sm flex flex-col divide-y divide-border-muted border-border-muted border-t"
+			class="deletion-recovery-list u-mt-sm u-flex u-flex-col u-border-border-default u-border-t"
 		>
 			{#each records as record (deletionRecoveryKey(record))}
 				{@const key = deletionRecoveryKey(record)}
@@ -50,21 +50,21 @@ let { records, pendingKey, error, onConfirm, onRetain }: Props = $props();
 					data-project-id={record.projectId}
 					data-session-id={record.sessionId}
 					data-phase={record.phase}
-					class="flex min-w-0 flex-col gap-sm py-sm md:flex-row md:items-start md:justify-between"
+					class="deletion-recovery-row u-flex u-min-w-0 u-flex-col u-gap-sm u-py-sm"
 				>
 					<dl
-						class="grid min-w-0 grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-sm gap-y-2xs tr-text-metadata"
+						class="deletion-recovery-details u-min-w-0 tr-text-metadata"
 					>
-						<dt class="text-text-muted">Project</dt>
-						<dd class="min-w-0 break-all text-text-default"><code>{record.projectId}</code></dd>
-						<dt class="text-text-muted">Session</dt>
-						<dd class="min-w-0 break-all text-text-default"><code>{record.sessionId}</code></dd>
-						<dt class="text-text-muted">Phase</dt>
-						<dd class="min-w-0 break-all text-text-default">{record.phase}</dd>
-						<dt class="text-text-muted">Reason</dt>
-						<dd class="min-w-0 break-words text-text-default">{record.reason}</dd>
+						<dt class="u-text-text-muted">Project</dt>
+						<dd class="deletion-recovery-value u-min-w-0 u-text-text-default"><code>{record.projectId}</code></dd>
+						<dt class="u-text-text-muted">Session</dt>
+						<dd class="deletion-recovery-value u-min-w-0 u-text-text-default"><code>{record.sessionId}</code></dd>
+						<dt class="u-text-text-muted">Phase</dt>
+						<dd class="deletion-recovery-value u-min-w-0 u-text-text-default">{record.phase}</dd>
+						<dt class="u-text-text-muted">Reason</dt>
+						<dd class="deletion-recovery-reason u-min-w-0 u-text-text-default">{record.reason}</dd>
 					</dl>
-					<div class="flex shrink-0 flex-wrap gap-sm">
+					<div class="u-flex u-shrink-0 u-flex-wrap u-gap-sm">
 						<Button
 							variant="outline"
 							size="sm"
@@ -90,3 +90,36 @@ let { records, pendingKey, error, onConfirm, onRetain }: Props = $props();
 		</ul>
 	{/if}
 </section>
+
+<style>
+	.deletion-recovery-list > * + * {
+		border-top: 1px solid var(--border-muted);
+	}
+
+	.deletion-recovery-list {
+		border-color: var(--border-muted);
+	}
+
+	.deletion-recovery-details {
+		display: grid;
+		grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+		column-gap: var(--space-sm);
+		row-gap: var(--space-2xs);
+	}
+
+	.deletion-recovery-value {
+		word-break: break-all;
+	}
+
+	.deletion-recovery-reason {
+		overflow-wrap: break-word;
+	}
+
+	@media (min-width: 48rem) {
+		.deletion-recovery-row {
+			flex-direction: row;
+			align-items: flex-start;
+			justify-content: space-between;
+		}
+	}
+</style>

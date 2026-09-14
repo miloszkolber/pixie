@@ -63,19 +63,19 @@ async function checkTiming(): Promise<void> {
 }
 </script>
 
-<form class="flex min-w-0 flex-col gap-md" onsubmit={(event) => { event.preventDefault(); void onSave({ prompt, cron, timezone }); }}>
+<form class="u-flex u-min-w-0 u-flex-col u-gap-md" onsubmit={(event) => { event.preventDefault(); void onSave({ prompt, cron, timezone }); }}>
 	<h3 class="tr-title-entity">{job ? "Edit schedule" : "Create schedule"}</h3>
-	<fieldset {disabled} class="flex min-w-0 flex-col gap-md">
-		<legend class="sr-only">Schedule definition</legend>
+	<fieldset {disabled} class="u-flex u-min-w-0 u-flex-col u-gap-md">
+		<legend class="u-sr-only">Schedule definition</legend>
 		<div class="field"><label for={`${id}-prompt`}>Prompt</label><textarea bind:this={promptElement} id={`${id}-prompt`} name="prompt" class="textarea" rows="5" required bind:value={prompt}></textarea></div>
 		<div class="field"><label for={`${id}-cron`}>Cron expression</label><input id={`${id}-cron`} name="cron" class="text-field-input" required bind:value={cron} aria-describedby={`${id}-timing`} /></div>
 		<div class="field"><label for={`${id}-zone`}>Timezone</label><input id={`${id}-zone`} name="timezone" class="text-field-input" bind:value={timezone} aria-describedby={`${id}-timing`} /></div>
-		<p id={`${id}-timing`} class="tr-text-metadata text-text-muted">Five fields: minute, hour, day of month, month, day of week. Use an IANA timezone such as Europe/Warsaw. An empty timezone uses UTC. Pixie validates timing and daylight-saving behavior.</p>
+		<p id={`${id}-timing`} class="tr-text-metadata u-text-text-muted">Five fields: minute, hour, day of month, month, day of week. Use an IANA timezone such as Europe/Warsaw. An empty timezone uses UTC. Pixie validates timing and daylight-saving behavior.</p>
 		<Button variant="outline" disabled={checking} onclick={() => void checkTiming()}>Check next occurrence</Button>
 		{#if checking}<p role="status">Checking timing…</p>{/if}
-		{#if error}<p role="alert" class="tr-text-ui text-feedback-error">{error}</p>{/if}
+		{#if error}<p role="alert" class="tr-text-ui u-text-feedback-error">{error}</p>{/if}
 		{#if preview}<p role="status" class="tr-text-ui">Next occurrence: {scheduleTime(preview.nextRun, preview.timezone)} ({preview.timezone}). Saving recalculates this time.</p>{/if}
-		<p class="tr-text-metadata text-text-muted">{job?.model ? `Model: ${job.model.provider}/${job.model.id}` : "Uses the native Pi default model."} {job ? "Editing keeps the current pause state and execution history." : "A saved schedule is enabled immediately."}</p>
-		<div class="flex flex-wrap gap-sm"><Button variant="outline" onclick={onCancel}>Cancel</Button><Button type="submit">Save schedule</Button></div>
+		<p class="tr-text-metadata u-text-text-muted">{job?.model ? `Model: ${job.model.provider}/${job.model.id}` : "Uses the native Pi default model."} {job ? "Editing keeps the current pause state and execution history." : "A saved schedule is enabled immediately."}</p>
+		<div class="u-flex u-flex-wrap u-gap-sm"><Button variant="outline" onclick={onCancel}>Cancel</Button><Button type="submit">Save schedule</Button></div>
 	</fieldset>
 </form>

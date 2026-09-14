@@ -160,11 +160,11 @@ async function changeThinking(level: ThinkingLevel): Promise<void> {
 <div
 	data-testid="session-model-controls"
 	aria-busy={loading || busy !== null}
-	class="flex min-w-0 flex-wrap items-center gap-xs"
+	class="u-flex u-min-w-0 u-flex-wrap u-items-center u-gap-xs"
 >
-	{#if loadError}<button type="button" class="text-feedback-warning tr-text-metadata" title={loadError} onclick={() => refresh += 1}>Retry model controls</button>{/if}
-	<label class="flex min-w-0 items-center gap-2xs">
-		<span id={providerLabelId} class="sr-only">Provider</span>
+	{#if loadError}<button type="button" class="u-text-feedback-warning tr-text-metadata" title={loadError} onclick={() => refresh += 1}>Retry model controls</button>{/if}
+	<label class="u-flex u-min-w-0 u-items-center u-gap-2xs">
+		<span id={providerLabelId} class="u-sr-only">Provider</span>
 		<select
 			data-testid="session-provider-select"
 			aria-labelledby={providerLabelId}
@@ -174,7 +174,7 @@ async function changeThinking(level: ThinkingLevel): Promise<void> {
 				const next = firstModelForProvider(models, event.currentTarget.value);
 				if (next) void changeModel(next);
 			}}
-			class="min-w-0 max-w-28 rounded-[var(--radius-sm)] border border-border-default bg-control-bg px-xs py-0.5 text-text-default tr-text-metadata outline-none hover:bg-control-bg-hovered focus-visible:ring-2 focus-visible:ring-primary disabled:text-text-muted"
+			class="u-min-w-0 session-model-select session-model-provider u-rounded u-border u-border-border-default u-bg-control-bg u-px-xs session-model-select-padding u-text-text-default tr-text-metadata"
 		>
 			{#if selectedModel && !currentProviderSelectable}
 				<option value={selectedModel.provider} disabled>{providerNames.get(selectedModel.provider) ?? selectedModel.provider} (current)</option>
@@ -185,8 +185,8 @@ async function changeThinking(level: ThinkingLevel): Promise<void> {
 			{/each}
 		</select>
 	</label>
-	<label class="flex min-w-0 items-center gap-2xs">
-		<span id={modelLabelId} class="sr-only">Model</span>
+	<label class="u-flex u-min-w-0 u-items-center u-gap-2xs">
+		<span id={modelLabelId} class="u-sr-only">Model</span>
 		<select
 			data-testid="session-model-select"
 			aria-labelledby={modelLabelId}
@@ -196,7 +196,7 @@ async function changeThinking(level: ThinkingLevel): Promise<void> {
 				const next = models.find((candidate) => modelKey(candidate) === event.currentTarget.value);
 				if (next) void changeModel(next);
 			}}
-			class="min-w-0 max-w-44 rounded-[var(--radius-sm)] border border-border-default bg-control-bg px-xs py-0.5 text-text-default tr-text-metadata outline-none hover:bg-control-bg-hovered focus-visible:ring-2 focus-visible:ring-primary disabled:text-text-muted"
+			class="u-min-w-0 session-model-select session-model-model u-rounded u-border u-border-border-default u-bg-control-bg u-px-xs session-model-select-padding u-text-text-default tr-text-metadata"
 		>
 			{#if selectedModel && !currentModelSelectable}
 				<option value={modelKey(selectedModel)} disabled>{selectedModel.name || selectedModel.id} (current)</option>
@@ -207,17 +207,28 @@ async function changeThinking(level: ThinkingLevel): Promise<void> {
 			{/each}
 		</select>
 	</label>
-	<label class="flex min-w-0 items-center gap-2xs">
-		<span id={thinkingLabelId} class="sr-only">Thinking</span>
+	<label class="u-flex u-min-w-0 u-items-center u-gap-2xs">
+		<span id={thinkingLabelId} class="u-sr-only">Thinking</span>
 		<select
 			data-testid="session-thinking-select"
 			aria-labelledby={thinkingLabelId}
 			value={thinkingLevel}
 			disabled={thinkingDisabled}
 			onchange={(event) => void changeThinking(event.currentTarget.value as ThinkingLevel)}
-			class="min-w-0 max-w-24 rounded-[var(--radius-sm)] border border-border-default bg-control-bg px-xs py-0.5 text-text-default tr-text-metadata outline-none hover:bg-control-bg-hovered focus-visible:ring-2 focus-visible:ring-primary disabled:text-text-muted"
+			class="u-min-w-0 session-model-select session-model-thinking u-rounded u-border u-border-border-default u-bg-control-bg u-px-xs session-model-select-padding u-text-text-default tr-text-metadata"
 		>
 			{#each thinkingLevels as level (level)}<option value={level}>{level}</option>{/each}
 		</select>
 	</label>
 </div>
+
+<style>
+	.session-model-provider { max-width: 7rem; }
+	.session-model-model { max-width: 11rem; }
+	.session-model-thinking { max-width: 6rem; }
+	.session-model-select { outline: none; }
+	.session-model-select-padding { padding-block: var(--space-2xs); }
+	.session-model-select:hover { background: var(--control-bg-hovered); }
+	.session-model-select:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--border-focus); }
+	.session-model-select:disabled { color: var(--text-muted); }
+</style>

@@ -40,21 +40,21 @@ let summary = $derived.by(() => {
 		data-expanded={expanded}
 		data-live={live}
 		data-steps={steps.length}
-		class="text-text-muted tr-text-metadata"
+		class="u-text-text-muted tr-text-metadata"
 	>
 		<button
 			type="button"
 			data-testid="activity-group-toggle"
 			aria-expanded={expanded}
 			onclick={() => (expanded = toggleFold(id, expanded))}
-			class="flex w-full cursor-pointer select-none items-center gap-xs rounded-[var(--radius-sm)] px-xs py-xs text-left outline-none hover:bg-control-bg-hovered focus-visible:ring-2 focus-visible:ring-primary"
+			class="u-flex u-w-full u-items-center u-gap-xs activity-toggle"
 		>
-			<Icon name="chevron-right" size={12} class={`shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
-			<Icon name={live ? "loader-circle" : "layers"} size={12} class={`shrink-0 ${live ? "animate-spin motion-reduce:animate-none" : ""}`} />
-			<span class="min-w-0 truncate" title={summary}>{summary}</span>
+			<Icon name="chevron-right" size={12} class={`u-shrink-0 activity-chevron ${expanded ? "activity-chevron-expanded" : ""}`} />
+			<Icon name={live ? "loader-circle" : "layers"} size={12} class={`u-shrink-0 ${live ? "activity-spinning" : ""}`} />
+			<span class="u-min-w-0 u-truncate" title={summary}>{summary}</span>
 		</button>
 		{#if expanded}
-			<div class="flex flex-col gap-px pl-md">
+			<div class="u-flex u-flex-col activity-steps">
 				{#each steps as step, index (step.id)}
 					<ActivityStepRow {step} isCurrent={live && index === steps.length - 1} {projectAreaRoot} />
 				{/each}
@@ -62,3 +62,15 @@ let summary = $derived.by(() => {
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.activity-toggle { cursor: pointer; user-select: none; border: 0; border-radius: var(--radius-sm); outline: none; background: transparent; padding: var(--space-xs); text-align: start; }
+	.activity-toggle:hover { background: var(--control-bg-hovered); }
+	.activity-toggle:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--border-focus); }
+	:global(.activity-chevron) { transition: transform var(--transition-fast); }
+	:global(.activity-chevron-expanded) { transform: rotate(90deg); }
+	:global(.activity-spinning) { animation: activity-spin 1s linear infinite; }
+	.activity-steps { gap: 1px; padding-inline-start: var(--space-md); }
+	@keyframes activity-spin { to { transform: rotate(360deg); } }
+	@media (prefers-reduced-motion: reduce) { :global(.activity-spinning) { animation: none; } }
+</style>

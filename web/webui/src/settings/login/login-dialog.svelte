@@ -88,17 +88,17 @@ async function dismiss(): Promise<void> {
 	{title}
 	{description}
 	testid="login-dialog"
-	class="max-h-[85vh] overflow-y-auto"
+	class="login-dialog"
 	onOpenChange={(next) => {
 		if (!next) void dismiss();
 		return false;
 	}}
 >
 	<div data-provider={loginState.providerId} data-status={loginState.status}>
-{#if terminal && submitError}<p role="alert" class="text-feedback-error tr-text-ui">{submitError}</p>{/if}
+	{#if terminal && submitError}<p role="alert" class="u-text-feedback-error tr-text-ui">{submitError}</p>{/if}
 		{#if loginState.status === "success"}
 			<p
-				class="flex items-center gap-sm text-feedback-success tr-text-ui"
+				class="login-status--success u-flex u-items-center u-gap-sm tr-text-ui"
 				data-testid="login-success"
 			>
 				<Icon name="check" size={16} />
@@ -106,23 +106,23 @@ async function dismiss(): Promise<void> {
 			</p>
 		{:else if loginState.status === "error"}
 			<p
-				class="flex items-start gap-sm text-feedback-error tr-text-ui"
+				class="u-flex u-items-start u-gap-sm u-text-feedback-error tr-text-ui"
 				data-testid="login-error"
 			>
-				<Icon name="triangle-alert" size={16} class="mt-0.5" />
-				<span class="min-w-0 break-words">{loginState.error ?? "Login failed."}</span>
+				<Icon name="triangle-alert" size={16} class="login-status__icon" />
+				<span class="u-min-w-0 login-status__message">{loginState.error ?? "Login failed."}</span>
 			</p>
 		{:else}
-			<div class="flex flex-col gap-md">
-				{#if submitError}<p role="alert" class="text-feedback-error tr-text-ui">{submitError} You can retry or cancel.</p>{/if}
+			<div class="u-flex u-flex-col u-gap-md">
+				{#if submitError}<p role="alert" class="u-text-feedback-error tr-text-ui">{submitError} You can retry or cancel.</p>{/if}
 				{#if loginState.url}
-					<div class="flex flex-col gap-xs">
+					<div class="u-flex u-flex-col u-gap-xs">
 						<Button data-testid="login-open-url" onclick={() => openUrl(loginState.url ?? "")}>
 							<Icon name="external-link" size={16} />
 							Open sign-in page
 						</Button>
 						<code
-							class="select-all break-all rounded-[var(--radius-sm)] bg-control-bg px-sm py-xs tr-code-text text-text-muted"
+							class="login-url u-rounded u-bg-control-bg u-px-sm u-py-xs tr-code-text u-text-text-muted"
 						>
 							{loginState.url}
 						</code>
@@ -131,32 +131,32 @@ async function dismiss(): Promise<void> {
 
 				{#if loginState.deviceCode}
 					<div
-						class="card flex flex-col gap-xs p-md"
+						class="card u-flex u-flex-col u-gap-xs u-p-md"
 						data-testid="login-device-code"
 					>
-						<span class="text-text-muted tr-text-metadata">
+						<span class="u-text-text-muted tr-text-metadata">
 							Enter this code at
 							<a
 								href={loginState.deviceCode.verificationUri}
 								target="_blank"
 								rel="noopener noreferrer"
 								data-testid="login-device-url"
-								class="inline-flex items-center gap-0.5 break-all text-primary underline underline-offset-2 outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-primary"
+								class="login-device-link u-inline-flex u-items-center u-gap-0.5 u-outline-none"
 							>
 								{loginState.deviceCode.verificationUri}
 								<Icon name="external-link" size={12} />
 							</a>
 						</span>
-						<code class="tr-code-otp select-all text-center text-text-default">
+						<code class="login-device-code tr-code-otp u-text-center u-text-text-default">
 							{loginState.deviceCode.userCode}
 						</code>
 					</div>
 				{/if}
 
 				{#if loginState.input?.kind === "select"}
-					<div class="flex flex-col gap-xs">
+					<div class="u-flex u-flex-col u-gap-xs">
 						{#if loginState.input.message}
-							<p class="text-text-muted tr-text-ui">{loginState.input.message}</p>
+							<p class="u-text-text-muted tr-text-ui">{loginState.input.message}</p>
 						{/if}
 						{#each loginState.input.options as option (option.id)}
 							<button
@@ -165,7 +165,7 @@ async function dismiss(): Promise<void> {
 								data-option={option.id}
 								disabled={submitting}
 								onclick={() => void reply(option.id)}
-								class="btn justify-start text-left"
+								class="btn login-option u-text-left"
 								data-variant="outline"
 							>
 								{option.label}
@@ -175,14 +175,14 @@ async function dismiss(): Promise<void> {
 				{/if}
 
 				{#if loginState.input?.kind === "prompt"}
-					<div class="flex flex-col gap-xs">
+					<div class="u-flex u-flex-col u-gap-xs">
 						{#if loginState.input.message}
-							<p class="text-text-muted tr-text-ui">{loginState.input.message}</p>
+							<p class="u-text-text-muted tr-text-ui">{loginState.input.message}</p>
 						{/if}
-						<div class="flex gap-sm">
+						<div class="u-flex u-gap-sm">
 							<input
 								bind:this={prompt}
-								class="text-field-input min-w-0 flex-1"
+								class="text-field-input u-min-w-0 u-flex-1"
 								data-testid="login-input"
 								disabled={submitting}
 								aria-label={loginState.input.message || "Provider configuration"}
@@ -201,18 +201,18 @@ async function dismiss(): Promise<void> {
 
 				{#if loginState.progress}
 					<p
-						class="flex items-center gap-sm text-text-muted tr-text-ui"
+						class="u-flex u-items-center u-gap-sm u-text-text-muted tr-text-ui"
 						data-testid="login-progress"
 					>
-						<Icon name="loader-circle" size={16} class="animate-spin motion-reduce:animate-none" />
+						<Icon name="loader-circle" size={16} class="login-spinner" />
 						{loginState.progress}
 					</p>
 				{:else if !loginState.url && !loginState.deviceCode && !loginState.input}
 					<p
-						class="flex items-center gap-sm text-text-muted tr-text-ui"
+						class="u-flex u-items-center u-gap-sm u-text-text-muted tr-text-ui"
 						data-testid="login-working"
 					>
-						<Icon name="loader-circle" size={16} class="animate-spin motion-reduce:animate-none" />
+						<Icon name="loader-circle" size={16} class="login-spinner" />
 						Working…
 					</p>
 				{/if}
@@ -228,3 +228,63 @@ async function dismiss(): Promise<void> {
 		{/if}
 	{/snippet}
 </Dialog>
+
+<style>
+	:global(.login-dialog) {
+		max-block-size: 85vh;
+		overflow-y: auto;
+	}
+
+	.login-status--success {
+		color: var(--feedback-success);
+	}
+
+	:global(.login-status__icon) {
+		margin-top: var(--space-2xs);
+	}
+
+	.login-status__message {
+		overflow-wrap: break-word;
+	}
+
+	.login-url,
+	.login-device-code {
+		user-select: all;
+	}
+
+	.login-url,
+	.login-device-link {
+		word-break: break-all;
+	}
+
+	.login-device-link {
+		color: var(--primary);
+		text-decoration-line: underline;
+		text-underline-offset: 2px;
+	}
+
+	.login-device-link:hover {
+		opacity: 0.8;
+	}
+
+	.login-device-link:focus-visible {
+		outline: var(--focus-ring-width, 2px) solid var(--border-focus);
+		outline-offset: 2px;
+	}
+
+	.login-option {
+		justify-content: flex-start;
+	}
+
+	:global(.login-spinner) {
+		animation: login-spinner-rotate 1s linear infinite;
+	}
+
+	@keyframes login-spinner-rotate {
+		to { transform: rotate(1turn); }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.login-spinner) { animation: none; }
+	}
+</style>

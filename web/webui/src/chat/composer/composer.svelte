@@ -592,7 +592,7 @@ export type {
 </script>
 
 <div
-	class="relative flex shrink-0 flex-col bg-container-project-bg"
+	class="composer-root u-flex u-shrink-0 u-flex-col"
 	data-image-prompts={supportsImages === null ? "unknown" : supportsImages}
 	data-text-resource-prompts={supportsTextResources === null ? "unknown" : supportsTextResources}
 >
@@ -601,7 +601,7 @@ export type {
 			id={mentionListboxId}
 			role="listbox"
 			data-testid="mention-menu"
-			class="absolute bottom-full left-sm z-10 mb-xs max-h-[40vh] w-[min(28rem,90%)] overflow-y-auto rounded-[var(--radius-md)] border border-border-default bg-container-elevated-bg p-xs shadow-[var(--shadow-md)]"
+			class="composer-completion-menu"
 		>
 			{#each mentionCandidates as candidate, index (candidate.kind === "agent" ? candidate.mention : candidate.path)}
 				<button
@@ -612,10 +612,10 @@ export type {
 					data-testid="mention-item"
 					aria-label={candidate.kind === "agent" ? agentMentionLabel(candidate) : undefined}
 					onclick={() => pickMention(candidate)}
-					class={`flex w-full items-center gap-sm rounded-[var(--radius-sm)] px-sm py-xs text-left tr-text-ui ${
+					class={`u-flex u-w-full u-items-center u-gap-sm u-rounded u-px-sm u-py-xs u-text-left tr-text-ui composer-completion-option ${
 						index === visibleMentionActiveIndex
-							? "bg-control-bg-selected text-text-default"
-							: "text-text-muted"
+							? "composer-completion-selected u-text-text-default"
+							: "u-text-text-muted"
 					}`}
 				>
 					{#if candidate.kind === "agent"}
@@ -626,20 +626,20 @@ export type {
 										? "puzzle"
 										: "bot"}
 							size={14}
-							class="shrink-0"
+							class="u-shrink-0"
 						/>
 					{:else}
-						<Icon name={candidate.kind === "dir" ? "folder" : "file"} size={14} class="shrink-0" />
+						<Icon name={candidate.kind === "dir" ? "folder" : "file"} size={14} class="u-shrink-0" />
 					{/if}
 					{#if candidate.kind === "agent"}
-						<span class="min-w-0">
-							<span class="block truncate">{candidate.name}</span>
-							<span class="block truncate text-text-muted tr-text-metadata">
+						<span class="u-min-w-0">
+							<span class="composer-block u-truncate">{candidate.name}</span>
+							<span class="composer-block u-truncate u-text-text-muted tr-text-metadata">
 								{agentMentionSummary(candidate)}
 							</span>
 						</span>
 					{:else}
-						<span class="truncate">{candidate.path}</span>
+						<span class="u-truncate">{candidate.path}</span>
 					{/if}
 				</button>
 			{/each}
@@ -649,13 +649,13 @@ export type {
 			commands={slashMatches}
 			activeIndex={visibleSlashActiveIndex}
 			onSelect={pickSlashCommand}
-			class="absolute bottom-full left-sm z-10 mb-xs"
+			class="composer-completion-position"
 			listboxId={slashListboxId}
 		/>
 	{/if}
 
 	{#if (imagePromptsEnabled && images.length > 0) || (textResourcesEnabled && texts.length > 0) || pendingAttachments > 0 || attachErrors.length > 0}
-		<div class="flex flex-wrap gap-xs px-sm pt-sm" data-testid="composer-attachments">
+		<div class="u-flex u-flex-wrap u-gap-xs u-px-sm composer-attachments" data-testid="composer-attachments">
 			{#each attachErrors as error (error.id)}
 				<FileChip
 					testid="composer-image-error"
@@ -740,7 +740,7 @@ export type {
 					multiple
 					tabindex="-1"
 					aria-hidden="true"
-					class="sr-only"
+			class="u-sr-only"
 					onchange={(event) => {
 						const files = Array.from(event.currentTarget.files ?? []);
 						event.currentTarget.value = "";
@@ -777,7 +777,7 @@ export type {
 					>
 						<Icon name="square" size={14} />
 					</Button>
-					<span class="contents" {@attach mewa(dropdownBehavior)}>
+					<span class="composer-contents" {@attach mewa(dropdownBehavior)}>
 						<Button
 							variant="outline"
 							size="icon-sm"
@@ -808,13 +808,13 @@ export type {
 										sendMenu?.hidePopover();
 										submitText(value, mode.behavior);
 									}}
-									class="dropdown-menu-item flex-col items-stretch gap-2xs"
+							class="dropdown-menu-item composer-send-menu-item"
 								>
-									<span class="flex w-full items-baseline justify-between gap-sm">
-										<span class="text-text-default tr-text-ui">{mode.name}</span>
-										<span class="shrink-0 text-text-muted tr-text-metadata">{mode.keys}</span>
+									<span class="u-flex u-w-full composer-items-baseline u-justify-between u-gap-sm">
+										<span class="u-text-text-default tr-text-ui">{mode.name}</span>
+										<span class="u-shrink-0 u-text-text-muted tr-text-metadata">{mode.keys}</span>
 									</span>
-									<span class="text-text-muted tr-text-metadata">{mode.meaning}</span>
+									<span class="u-text-text-muted tr-text-metadata">{mode.meaning}</span>
 								</button>
 							{/each}
 						</div>
@@ -836,6 +836,16 @@ export type {
 </div>
 
 <style>
+	.composer-root { position: relative; background: var(--container-project-bg); }
+	.composer-completion-menu { position: absolute; z-index: 10; inset-block-end: 100%; inset-inline-start: var(--space-sm); margin-block-end: var(--space-xs); max-height: 40vh; width: min(28rem, 90%); overflow-y: auto; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--container-elevated-bg); padding: var(--space-xs); box-shadow: var(--shadow-md); }
+	.composer-completion-position { position: absolute; z-index: 10; inset-block-end: 100%; inset-inline-start: var(--space-sm); margin-block-end: var(--space-xs); }
+	.composer-completion-option { border: 0; background: transparent; }
+	.composer-completion-selected { background: var(--control-bg-selected); }
+	.composer-block { display: block; }
+	.composer-attachments { padding-block-start: var(--space-sm); }
+	.composer-contents { display: contents; }
+	.composer-send-menu-item { flex-direction: column; align-items: stretch; gap: var(--space-2xs); }
+	.composer-items-baseline { align-items: baseline; }
     .composer-input { min-block-size: 108px; }
     @media (max-height: 600px) {
         .composer-shell { padding-block: 4px; gap: 4px; }

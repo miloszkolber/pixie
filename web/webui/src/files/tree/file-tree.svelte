@@ -101,12 +101,12 @@ $effect(() => {
 });
 </script>
 
-<div class="tree flex flex-col">
+<div class="tree u-flex u-flex-col">
 	{#if !root}
-		<p class="px-xs py-xs tr-text-metadata text-text-muted">No root</p>
+		<p class="u-px-xs u-py-xs tr-text-metadata u-text-text-muted">No root</p>
 	{:else if error}
-		<div class="flex flex-col items-start gap-xs px-xs py-xs">
-			<p role="alert" class="tr-text-metadata text-feedback-error">File tree unavailable.</p>
+		<div class="u-flex u-flex-col u-items-start u-gap-xs u-px-xs u-py-xs">
+			<p role="alert" class="tr-text-metadata u-text-feedback-error">File tree unavailable.</p>
 			<button
 				type="button"
 				onclick={() => (reloadRevision += 1)}
@@ -116,21 +116,21 @@ $effect(() => {
 			>Retry</button>
 		</div>
 	{:else if nodes === null}
-		<p role="status" class="px-xs py-xs tr-text-metadata text-text-muted">Loading files…</p>
+		<p role="status" class="u-px-xs u-py-xs tr-text-metadata u-text-text-muted">Loading files…</p>
 	{:else if nodes.length === 0}
-		<p class="px-xs py-xs tr-text-metadata text-text-muted">Empty</p>
+		<p class="u-px-xs u-py-xs tr-text-metadata u-text-text-muted">Empty</p>
 	{:else if visibleNodes !== null && visibleNodes.length === 0}
-		<p class="px-xs py-xs tr-text-metadata text-text-muted">No files match this filter.</p>
+		<p class="u-px-xs u-py-xs tr-text-metadata u-text-text-muted">No files match this filter.</p>
 	{:else}
 		{#if warnings.length > 0}
-			<p role="status" class="px-xs py-xs tr-text-metadata text-feedback-warning">
+			<p role="status" class="u-px-xs u-py-xs tr-text-metadata u-text-feedback-warning">
 				{warnings.join(" ")}
 			</p>
 		{/if}
 		{#if filterQuery && matchCount === 0}
-			<p class="px-xs py-xs tr-text-metadata text-text-muted">No files match this filter.</p>
+			<p class="u-px-xs u-py-xs tr-text-metadata u-text-text-muted">No files match this filter.</p>
 		{/if}
-		<ul class="tree-group flex flex-col">
+		<ul class="tree-group u-flex u-flex-col">
 			{#each visibleNodes ?? [] as node (node.path)}
 				<FileNodeRow {node} {projectAreaId} {expandedPaths} {setPathsExpanded} {onOpen} {activePath} filter={filterQuery} onMatchChange={reportMatch} />
 			{/each}

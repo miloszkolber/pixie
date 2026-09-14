@@ -15,17 +15,24 @@ let label = $derived(safeURL ? webHost(safeURL) : url || "fetch");
 let output = $derived(resultText(result, status === "error"));
 </script>
 
-<div data-testid="tool-fetch_content" class="flex flex-col gap-xs">
-	<div class="flex items-center gap-xs tr-text-metadata">
-		<Icon name="link" size={14} class="shrink-0 text-text-muted" />
+
+<div data-testid="tool-fetch_content" class="u-flex u-flex-col u-gap-xs">
+	<div class="u-flex u-items-center u-gap-xs tr-text-metadata">
+		<Icon name="link" size={14} class="u-shrink-0 u-text-text-muted" />
 		{#if safeURL}
-			<a href={safeURL} target="_blank" rel="noreferrer" class="truncate text-primary hover:underline" title={safeURL}>{label}</a>
+			<a href={safeURL} target="_blank" rel="noreferrer" class="u-truncate tool-link" title={safeURL}>{label}</a>
 		{:else}
-			<span class="truncate text-primary" title={url || undefined}>{label}</span>
+			<span class="u-truncate tool-primary" title={url || undefined}>{label}</span>
 		{/if}
 	</div>
-	{#if status === "running"}<span class="text-text-muted tr-text-metadata">Fetching…</span>
-	{:else if status === "error"}<pre class="overflow-auto px-sm py-xs text-feedback-error tr-code-text">{output}</pre>
+	{#if status === "running"}<span class="u-text-text-muted tr-text-metadata">Fetching…</span>
+	{:else if status === "error"}<pre class="u-overflow-auto u-px-sm u-py-xs u-text-feedback-error tr-code-text">{output}</pre>
 	{:else if output}<Collapsible lines={countLines(output)}><CodeBlock code={output} lang="markdown" /></Collapsible>
-	{:else}<span class="text-text-muted tr-text-metadata italic">(no content)</span>{/if}
+	{:else}<span class="u-text-text-muted tr-text-metadata tool-italic">(no content)</span>{/if}
 </div>
+
+<style>
+	.tool-primary, .tool-link { color: var(--primary); }
+	.tool-link:hover { text-decoration: underline; }
+	.tool-italic { font-style: italic; }
+</style>

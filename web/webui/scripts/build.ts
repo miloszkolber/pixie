@@ -5,38 +5,12 @@ import type { BunPlugin } from "bun";
 import { sveltePlugin } from "../vendor/mewa-svelte/bun-plugin.js";
 
 const webRoot = resolve(import.meta.dir, "..");
-const sourceCss = join(webRoot, "src", "index.css");
 const sourceMewaCss = join(webRoot, "src", "mewa.css");
 
 export interface WebBuildOptions {
 	outputRoot?: string;
 	intermediateRoot?: string;
 	development?: boolean;
-}
-
-async function compileCss(
-	intermediateRoot: string,
-	compiledCss: string,
-	development: boolean,
-): Promise<void> {
-	await mkdir(intermediateRoot, { recursive: true });
-	const tailwindCli = join(
-		dirname(Bun.resolveSync("@tailwindcss/cli/package.json", webRoot)),
-		"dist/index.mjs",
-	);
-	const compiler = Bun.spawn(
-		[
-			process.execPath,
-			tailwindCli,
-			"-i",
-			sourceCss,
-			"-o",
-			compiledCss,
-			...(development ? [] : ["--minify"]),
-		],
-		{ cwd: webRoot, stdout: "inherit", stderr: "inherit" },
-	);
-	if ((await compiler.exited) !== 0) throw new Error("Tailwind CSS compilation failed");
 }
 
 async function flattenMewaCss(path: string, visited = new Set<string>()): Promise<string> {
@@ -60,18 +34,8 @@ async function flattenMewaCss(path: string, visited = new Set<string>()): Promis
 export async function buildWeb(options: WebBuildOptions = {}): Promise<number> {
 	const outputRoot = resolve(options.outputRoot ?? join(webRoot, "dist"));
 	const intermediateRoot = resolve(options.intermediateRoot ?? join(webRoot, ".build"));
-	const compiledCss = join(intermediateRoot, "index.css");
 	const compiledMewaCss = join(intermediateRoot, "mewa.css");
 	const development = options.development ?? false;
-	const compiledCssPlugin: BunPlugin = {
-		name: "pixie-css",
-		setup(build) {
-			build.onLoad({ filter: /\/src\/index\.css$/ }, async () => ({
-				contents: await readFile(compiledCss, "utf8"),
-				loader: "css",
-			}));
-		},
-	};
 	const mewaCssPlugin: BunPlugin = {
 		name: "mewa-css",
 		setup(build) {
@@ -84,7 +48,7 @@ export async function buildWeb(options: WebBuildOptions = {}): Promise<number> {
 
 	await rm(outputRoot, { force: true, recursive: true });
 	await rm(intermediateRoot, { force: true, recursive: true });
-	await compileCss(intermediateRoot, compiledCss, development);
+	await mkdir(intermediateRoot, { recursive: true });
 	await writeFile(compiledMewaCss, await flattenMewaCss(sourceMewaCss));
 
 	const result = await Bun.build({
@@ -97,7 +61,7 @@ export async function buildWeb(options: WebBuildOptions = {}): Promise<number> {
 		minify: !development,
 		splitting: true,
 		metafile: true,
-		plugins: [sveltePlugin({ dev: development }), compiledCssPlugin, mewaCssPlugin],
+		plugins: [sveltePlugin({ dev: development }), mewaCssPlugin],
 		throw: false,
 	});
 

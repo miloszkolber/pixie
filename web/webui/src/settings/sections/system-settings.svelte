@@ -19,7 +19,6 @@ import {
 	formatCount,
 	formatMilliseconds,
 	formatUptime,
-	STATE_CLASS,
 	STATE_LABEL,
 } from "./system-settings";
 
@@ -125,15 +124,15 @@ onDestroy(() => {
 </script>
 
 {#snippet StatusBadge(state: RuntimeAvailability)}
-	<span class={`inline-flex shrink-0 items-center gap-xs whitespace-nowrap tr-text-metadata ${STATE_CLASS[state]}`}>
+	<span class={`state-badge state-badge--${state} u-inline-flex u-shrink-0 u-items-center u-gap-xs tr-text-metadata`}>
 		<span
 			aria-hidden="true"
-			class={`size-1.5 rounded-full ${
+			class={`status-dot status-dot--${
 				state === "ready"
-					? "bg-feedback-success"
+					? "ready"
 					: state === "degraded"
-						? "bg-feedback-warning"
-						: "bg-feedback-error"
+						? "degraded"
+						: "unavailable"
 			}`}
 		></span>
 		{STATE_LABEL[state]}
@@ -141,9 +140,9 @@ onDestroy(() => {
 {/snippet}
 
 {#snippet Metric(label: string, value: string)}
-	<div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-sm py-xs">
-		<dt class="text-text-muted tr-text-metadata">{label}</dt>
-		<dd class="min-w-0 break-words text-right tabular-nums text-text-default tr-text-metadata">
+	<div class="metric u-min-w-0 u-py-xs">
+		<dt class="u-text-text-muted tr-text-metadata">{label}</dt>
+		<dd class="metric__value u-min-w-0 u-text-text-default tr-text-metadata">
 			{value}
 		</dd>
 	</div>
@@ -160,23 +159,23 @@ onDestroy(() => {
 {#snippet ServiceCard(name: "Application" | "Browser", status: RuntimeServiceStatus)}
 	<section
 		data-testid={`system-card-${name.toLowerCase()}`}
-		class="card min-w-0 p-md"
+		class="card u-min-w-0 u-p-md"
 	>
-		<div class="flex flex-wrap items-center justify-between gap-x-sm gap-y-xs">
-			<h3 class="tr-text-ui text-text-default">{name}</h3>
+		<div class="u-flex u-flex-wrap u-items-center u-justify-between u-gap-sm">
+			<h3 class="tr-text-ui u-text-text-default">{name}</h3>
 			{@render StatusBadge(status.state)}
 		</div>
 		{#if status.detail}
-			<p class="mt-sm break-words text-text-muted tr-text-metadata">{status.detail}</p>
+			<p class="service-card__detail u-mt-sm u-text-text-muted tr-text-metadata">{status.detail}</p>
 		{/if}
 		{#if status.build || status.process || status.requests}
-			<dl class="mt-sm divide-y divide-border-muted border-border-muted border-t">
+			<dl class="status-metrics u-mt-sm u-border-t">
 				{#if status.build}{@render Metric("Version", status.build.version)}{/if}
 				{#if status.build?.revision}
-					<div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-sm py-xs">
-						<dt class="text-text-muted tr-text-metadata">Revision</dt>
-						<dd class="min-w-0 text-right tr-text-metadata">
-							<code class="break-all" title={status.build.revision}>
+					<div class="metric u-min-w-0 u-py-xs">
+						<dt class="u-text-text-muted tr-text-metadata">Revision</dt>
+						<dd class="metric__value u-min-w-0 tr-text-metadata">
+							<code class="metric__code" title={status.build.revision}>
 								{status.build.revision.slice(0, 12)}
 							</code>
 						</dd>
@@ -195,16 +194,16 @@ onDestroy(() => {
 {/snippet}
 
 {#snippet AgentCard(status: RuntimeAgentStatus)}
-	<section data-testid="system-card-agent" class="card min-w-0 p-md">
-		<div class="flex flex-wrap items-center justify-between gap-x-sm gap-y-xs">
-			<h3 class="tr-text-ui text-text-default">Agent</h3>
+	<section data-testid="system-card-agent" class="card u-min-w-0 u-p-md">
+		<div class="u-flex u-flex-wrap u-items-center u-justify-between u-gap-sm">
+			<h3 class="tr-text-ui u-text-text-default">Agent</h3>
 			{@render StatusBadge(status.state)}
 		</div>
 		{#if status.detail}
-			<p class="mt-sm break-words text-text-muted tr-text-metadata">{status.detail}</p>
+			<p class="service-card__detail u-mt-sm u-text-text-muted tr-text-metadata">{status.detail}</p>
 		{/if}
 		{#if status.name || status.version}
-			<dl class="mt-sm divide-y divide-border-muted border-border-muted border-t">
+			<dl class="status-metrics u-mt-sm u-border-t">
 				{#if status.name}{@render Metric("Name", status.name)}{/if}
 				{#if status.version}{@render Metric("Version", status.version)}{/if}
 			</dl>
@@ -214,12 +213,12 @@ onDestroy(() => {
 
 <div
 	data-testid="system-settings"
-	class="@container mx-auto flex w-full max-w-[56rem] flex-col gap-lg"
+	class="system-settings u-flex u-w-full u-flex-col u-gap-lg"
 >
-	<div class="flex items-start justify-between gap-sm">
-		<div class="min-w-0">
-			<h2 class="tr-title-entity text-text-default">System</h2>
-			<p class="mt-xs text-text-muted tr-text-metadata">Local services and build details.</p>
+	<div class="u-flex u-items-start u-justify-between u-gap-sm">
+		<div class="u-min-w-0">
+			<h2 class="tr-title-entity u-text-text-default">System</h2>
+			<p class="u-mt-xs u-text-text-muted tr-text-metadata">Local services and build details.</p>
 		</div>
 		<Button
 			variant="ghost"
@@ -228,13 +227,13 @@ onDestroy(() => {
 			disabled={!connected || loading}
 			onclick={() => void load()}
 		>
-			<Icon name="refresh-cw" size={14} class={loading ? "animate-spin motion-reduce:animate-none" : ""} />
+			<Icon name="refresh-cw" size={14} class={loading ? "system-refresh-icon" : ""} />
 			{loading ? "Refreshing…" : "Refresh"}
 		</Button>
 	</div>
 
 	{#if unavailable}
-		<p role="alert" class="text-feedback-error tr-text-metadata">
+		<p role="alert" class="u-text-feedback-error tr-text-metadata">
 			{!connected
 				? report
 					? "Controller disconnected. Showing the last status."
@@ -244,13 +243,13 @@ onDestroy(() => {
 					: "Couldn't read system status."}
 		</p>
 	{:else if loading}
-		<p role="status" aria-live="polite" class="text-text-muted tr-text-metadata">
+		<p role="status" aria-live="polite" class="u-text-text-muted tr-text-metadata">
 			{report ? "Refreshing system status…" : "Loading system status…"}
 		</p>
 	{/if}
 
 	{#if report}
-		<div class="grid min-w-0 grid-cols-1 gap-sm @2xl:grid-cols-3">
+		<div class="system-service-grid u-min-w-0 u-gap-sm">
 			{@render ServiceCard("Application", report.application)}
 			{@render AgentCard(report.agent)}
 		</div>
@@ -264,3 +263,79 @@ onDestroy(() => {
 		onRetain={retainDeletion}
 	/>
 </div>
+
+<style>
+	.system-settings {
+		max-inline-size: 56rem;
+		margin-inline: auto;
+		container-type: inline-size;
+	}
+
+	.state-badge {
+		white-space: nowrap;
+	}
+
+	.state-badge--ready { color: var(--feedback-success); }
+	.state-badge--degraded { color: var(--feedback-warning); }
+	.state-badge--unavailable { color: var(--feedback-error); }
+
+	.status-dot {
+		inline-size: 0.375rem;
+		block-size: 0.375rem;
+		border-radius: 50%;
+	}
+
+	.status-dot--ready { background: var(--feedback-success); }
+	.status-dot--degraded { background: var(--feedback-warning); }
+	.status-dot--unavailable { background: var(--feedback-error); }
+
+	.metric {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		align-items: baseline;
+		column-gap: var(--space-sm);
+	}
+
+	.metric__value {
+		text-align: right;
+		overflow-wrap: break-word;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.metric__code {
+		word-break: break-all;
+	}
+
+	.service-card__detail {
+		overflow-wrap: break-word;
+	}
+
+	.status-metrics {
+		border-color: var(--border-muted);
+	}
+
+	.status-metrics > * + * {
+		border-top: 1px solid var(--border-muted);
+	}
+
+	.system-service-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	:global(.system-refresh-icon) {
+		animation: system-refresh-rotate 1s linear infinite;
+	}
+
+	@keyframes system-refresh-rotate {
+		to { transform: rotate(1turn); }
+	}
+
+	@container (min-width: 42rem) {
+		.system-service-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.system-refresh-icon) { animation: none; }
+	}
+</style>

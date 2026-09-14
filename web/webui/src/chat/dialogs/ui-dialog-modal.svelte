@@ -104,7 +104,7 @@ function submit(event: SubmitEvent): void {
 		title={request.title}
 		description={request.message}
 		testid="ui-dialog"
-		class="max-w-[28rem]"
+		class="ui-dialog-wide"
 		onOpenChange={setOpen}
 	>
 		{#if error}<p role="alert" class="field-error">{error} You can retry.</p>{/if}
@@ -134,7 +134,7 @@ function submit(event: SubmitEvent): void {
 		description={request.message}
 		hideClose
 		testid="ui-dialog"
-		class="max-w-[24rem]"
+		class="ui-dialog-narrow"
 		onOpenChange={setOpen}
 	>
 		{#if error}<p role="alert" class="field-error">{error} You can retry.</p>{/if}
@@ -157,7 +157,7 @@ function submit(event: SubmitEvent): void {
 		title={request.title}
 		description={request.message}
 		testid="ui-dialog"
-		class="max-w-[28rem]"
+		class="ui-dialog-wide"
 		onOpenChange={setOpen}
 	>
 		<form id="ui-dialog-form" class="form" onsubmit={submit}>
@@ -224,4 +224,6 @@ function submit(event: SubmitEvent): void {
 	.form, .text-field { min-width: 0; max-width: 100%; }
 	.text-field-input { max-width: 100%; overflow-wrap: anywhere; }
 	.option-list :global(button) { white-space: normal; overflow-wrap: anywhere; }
+	:global(.ui-dialog-wide) { max-width: 28rem; }
+	:global(.ui-dialog-narrow) { max-width: 24rem; }
 </style>

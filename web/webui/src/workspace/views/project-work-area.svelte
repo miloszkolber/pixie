@@ -286,9 +286,9 @@ const STATUS_LABEL = {
 	disconnected: "Disconnected",
 } as const;
 const STATUS_DOT = {
-	connected: "bg-feedback-success",
-	connecting: "bg-feedback-warning",
-	disconnected: "bg-feedback-error",
+	connected: "positive",
+	connecting: "caution",
+	disconnected: "negative",
 } as const;
 
 let projectArea = $derived(selectProjectAreaById($appStore, projectAreaId));
@@ -1155,7 +1155,7 @@ function signOut(): void {
 						</Button>
 					{/if}
 					<span data-testid="connection-status" data-status={$appStore.status} role="status" aria-label={STATUS_LABEL[$appStore.status]} title={STATUS_LABEL[$appStore.status]} class="stat-status u-inline-flex u-items-center">
-						<span aria-hidden="true" class={`status-dot ${STATUS_DOT[$appStore.status]}`}></span>
+						<span aria-hidden="true" class="status-dot" data-state={STATUS_DOT[$appStore.status]}></span>
 						<span class="u-sr-only">{STATUS_LABEL[$appStore.status]}</span>
 					</span>
 				{/snippet}

@@ -112,20 +112,20 @@ function retryRefresh(): void {
 </script>
 
 {#snippet readOnlyToolbar()}
-	<div class="toolbar flex h-8 shrink-0 items-center gap-sm border-border-default border-b bg-container-header-bg px-sm">
-		<span class="min-w-0 flex-1 truncate text-text-muted tr-text-metadata" title={tab.path}>{tab.path}</span>
-		<span class="shrink-0 text-text-subtle tr-text-metadata">Read-only</span>
+	<div class="toolbar file-preview-toolbar u-flex u-shrink-0 u-items-center u-gap-sm u-border-border-default u-border-b u-px-sm">
+		<span class="u-min-w-0 u-flex-1 u-truncate u-text-text-muted tr-text-metadata" title={tab.path}>{tab.path}</span>
+		<span class="file-preview-read-only u-shrink-0 tr-text-metadata">Read-only</span>
 	</div>
 {/snippet}
 
-<div data-testid="file-pane" class="app-content flex min-h-0 flex-1 flex-col">
+<div data-testid="file-pane" class="app-content u-flex u-min-h-0 u-flex-1 u-flex-col">
 	{#if refreshError}
 		<div
 			data-testid="file-refresh-error"
 			role="alert"
-			class="flex shrink-0 items-center gap-sm border-feedback-error-muted border-b bg-feedback-error-subtle px-sm py-xs text-feedback-error tr-text-metadata"
+			class="file-preview-refresh-error u-flex u-shrink-0 u-items-center u-gap-sm u-border-b u-px-sm u-py-xs u-text-feedback-error tr-text-metadata"
 		>
-			<span class="min-w-0 flex-1 truncate" title={refreshError}>Refresh failed; the previous content may be shown. {refreshError}</span>
+			<span class="u-min-w-0 u-flex-1 u-truncate" title={refreshError}>Refresh failed; the previous content may be shown. {refreshError}</span>
 			<button
 				type="button"
 				data-testid="file-refresh-retry"
@@ -141,10 +141,10 @@ function retryRefresh(): void {
 			data-testid="markdown-view-toggle"
 			role="toolbar"
 			aria-label="Markdown view mode"
-			class="toolbar flex h-8 shrink-0 items-center gap-xs border-border-default border-b bg-container-header-bg px-sm"
+			class="toolbar file-preview-toolbar u-flex u-shrink-0 u-items-center u-gap-xs u-border-border-default u-border-b u-px-sm"
 		>
-			<span class="mr-auto min-w-0 truncate text-text-muted tr-text-metadata" title={tab.path}>{tab.path}</span>
-			<span class="shrink-0 text-text-subtle tr-text-metadata">Read-only</span>
+			<span class="file-preview-path u-min-w-0 u-truncate u-text-text-muted tr-text-metadata" title={tab.path}>{tab.path}</span>
+			<span class="file-preview-read-only u-shrink-0 tr-text-metadata">Read-only</span>
 			<ToggleSegment
 				testid="md-toggle-preview"
 				label="Preview"
@@ -158,14 +158,14 @@ function retryRefresh(): void {
 				onclick={() => appStoreApi.getState().setFileTabView(tab.id, "source")}
 			/>
 		</div>
-		<div class="min-h-0 flex-1">
+		<div class="u-min-h-0 u-flex-1">
 			{#if view === "rendered"}
 				{#await loadMarkdown()}
-					<div class="flex h-full items-center justify-center text-text-muted">Loading…</div>
+					<div class="u-flex u-h-full u-items-center u-justify-center u-text-text-muted">Loading…</div>
 				{:then module}
 					<module.default content={tab.content} projectAreaId={tab.projectAreaId} path={tab.path} />
 				{:catch}
-					<p role="alert" class="p-lg tr-text-ui text-feedback-error">Markdown preview is unavailable.</p>
+					<p role="alert" class="file-preview-message tr-text-ui u-text-feedback-error">Markdown preview is unavailable.</p>
 				{/await}
 			{:else}
 				<SourcePreview path={tab.path} content={tab.content} />
@@ -178,7 +178,7 @@ function retryRefresh(): void {
 				<div
 					role="alert"
 					data-testid="file-image-unavailable"
-					class="flex flex-col items-start gap-sm p-lg tr-text-ui text-text-muted"
+					class="file-preview-message u-flex u-flex-col u-items-start u-gap-sm tr-text-ui u-text-text-muted"
 				>
 					<p>Image preview is unavailable. The file may have changed, exceeded the preview limit, or left the project roots.</p>
 					{#if imageSource}
@@ -186,21 +186,40 @@ function retryRefresh(): void {
 					{/if}
 				</div>
 			{:else}
-				<div class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-md">
+				<div class="u-flex u-min-h-0 u-flex-1 u-items-center u-justify-center u-overflow-auto u-p-md">
 					<img
 						src={imageSource}
 						alt={tab.name}
 						data-testid="file-image"
 						onload={imageLoaded}
 						onerror={imageFailed}
-						class="image max-h-full max-w-full object-contain"
+						class="image file-preview-image"
 					/>
 				</div>
 			{/if}
 		{:else if kind === "binary"}
-			<p data-testid="file-binary-notice" role="status" class="p-lg tr-text-ui text-text-muted">{BINARY_FILE_NOTICE}</p>
+			<p data-testid="file-binary-notice" role="status" class="file-preview-message tr-text-ui u-text-text-muted">{BINARY_FILE_NOTICE}</p>
 		{:else}
-			<div class="min-h-0 flex-1"><SourcePreview path={tab.path} content={tab.content} /></div>
+			<div class="u-min-h-0 u-flex-1"><SourcePreview path={tab.path} content={tab.content} /></div>
 		{/if}
 	{/if}
 </div>
+
+<style>
+	.file-preview-toolbar {
+		block-size: calc(var(--space-base) * 32 / 13);
+		background-color: var(--container-header-bg);
+	}
+	.file-preview-path { margin-inline-end: auto; }
+	.file-preview-read-only { color: var(--text-subtle); }
+	.file-preview-refresh-error {
+		border-color: var(--feedback-error-muted);
+		background-color: var(--feedback-error-subtle);
+	}
+	.file-preview-message { padding: var(--space-lg); }
+	.file-preview-image {
+		max-block-size: 100%;
+		max-inline-size: 100%;
+		object-fit: contain;
+	}
+</style>

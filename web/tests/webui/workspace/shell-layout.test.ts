@@ -476,10 +476,12 @@ test("the shell fills the viewport with flex, never percentage heights", async (
 	// The center canvas bleeds to the grid tracks instead of Mewa's centered
 	// reading column.
 	expect(shell).toContain(".pixie-shell-grid .app-content");
+	// Each content root grows inside its grid slot rather than relying on a
+	// percentage height below the shell's minimum viewport height.
 	for (const [path, root] of [
-		["chat/chat-view.svelte", "flex min-h-0 flex-1 flex-col bg-container-project-bg"],
-		["files/tabs/file-pane.svelte", "app-content flex min-h-0 flex-1 flex-col"],
-		["files/changes/diff-pane.svelte", "app-content flex min-h-0 flex-1 flex-col"],
+		["chat/chat-view.svelte", 'class="u-flex u-min-h-0 u-flex-1 u-flex-col chat-view-root"'],
+		["files/tabs/file-pane.svelte", 'class="app-content u-flex u-min-h-0 u-flex-1 u-flex-col"'],
+		["files/changes/diff-pane.svelte", 'class="app-content u-flex u-min-h-0 u-flex-1 u-flex-col"'],
 	] as const) {
 		expect(await source(path)).toContain(root);
 	}
@@ -487,11 +489,14 @@ test("the shell fills the viewport with flex, never percentage heights", async (
 	expect(toaster).not.toContain("top: var(--space-400)");
 });
 
-test("selected sessions and files keep a highlight hook with guide borders", async () => {
+test("selected sessions and files keep scoped highlight hooks with guide borders", async () => {
 	const sessions = await source("workspace/projects/project-sessions.svelte");
 	expect(sessions).toContain('data-testid="project-session-row"');
 	expect(sessions).toContain("data-active");
-	expect(sessions).toContain("bg-control-bg-selected");
+	expect(sessions).toContain("workspace-project-session-row");
+	expect(sessions).toMatch(
+		/\.workspace-project-session-row\[data-active\]\s*{[^}]*background-color:\s*var\(--control-bg-selected\);/s,
+	);
 	expect(sessions).toContain("loader-circle");
 	expect(sessions).toContain("Expand");
 	const tree = await source("workspace/projects/project-tree.svelte");
@@ -502,6 +507,10 @@ test("selected sessions and files keep a highlight hook with guide borders", asy
 	expect(fileRow).toContain("{active}");
 	const treeRow = await source("files/tree/tree-row.svelte");
 	expect(treeRow).toContain("data-active");
+	expect(treeRow).toContain("file-tree-row--active");
+	expect(treeRow).toMatch(
+		/\.file-tree-row--active\s*{[^}]*background-color:\s*var\(--control-bg-selected\);/s,
+	);
 	const split = await source("workspace/split-view.svelte");
 	expect(split).toContain("resizable-group");
 	expect(split).toContain("resizable-panel");

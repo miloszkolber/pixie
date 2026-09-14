@@ -21,26 +21,26 @@ let project = $derived(
 
 <div
 	data-testid="welcome"
-	class="app-content flex h-full min-h-0 flex-col items-center justify-center overflow-auto px-xl py-xl text-center"
+	class="app-content u-flex u-h-full u-min-h-0 u-flex-col u-items-center u-justify-center u-overflow-auto u-px-xl u-py-xl u-text-center"
 >
-	<h1 data-testid="welcome-title" class="tr-brand-hero max-w-[640px] break-words text-primary">
+	<h1 data-testid="welcome-title" class="tr-brand-hero welcome-panel__title">
 		{project ? project.name : PRODUCT_NAME}
 	</h1>
 
-	<div class="mt-xl flex flex-wrap justify-center gap-md">
+	<div class="welcome-panel__actions">
 		{#if project}
 			<button
 				type="button"
 				data-testid="welcome-cta"
-				class="card relative flex h-[150px] w-[220px] flex-col items-start justify-between border-primary-muted bg-primary-subtle p-lg text-left hover:bg-primary-soft"
+				class="card welcome-panel__cta"
 				onclick={() => void enterDefaultProjectArea(project.id)}
 			>
-				<span class="flex size-9 items-center justify-center bg-primary text-text-on-primary">
+				<span class="welcome-panel__cta-icon u-flex u-items-center u-justify-center">
 					<Icon name="house" size={16} />
 				</span>
-				<span class="w-full">
-					<span class="card-title block">Continue project</span>
-					<span class="card-description mt-0.5 block">
+				<span class="u-w-full">
+					<span class="card-title welcome-panel__cta-title">Continue project</span>
+					<span class="card-description welcome-panel__cta-description">
 						Open the project directory and its persistent agent sessions.
 					</span>
 				</span>
@@ -54,14 +54,14 @@ let project = $derived(
 					aria-controls={menuId}
 					aria-expanded="false"
 					data-testid="welcome-cta"
-					class="card relative flex h-[150px] w-[220px] flex-col items-start justify-between border-primary-muted bg-primary-subtle p-lg text-left hover:bg-primary-soft"
+					class="card welcome-panel__cta"
 				>
-					<span class="flex size-9 items-center justify-center bg-primary text-text-on-primary">
+					<span class="welcome-panel__cta-icon u-flex u-items-center u-justify-center">
 						<Icon name="folder-open" size={16} />
 					</span>
-					<span class="w-full">
-						<span class="card-title block">Open project</span>
-						<span class="card-description mt-0.5 block">
+					<span class="u-w-full">
+						<span class="card-title welcome-panel__cta-title">Open project</span>
+						<span class="card-description welcome-panel__cta-description">
 							Choose an admitted directory. It may contain one or several repositories.
 						</span>
 					</span>
@@ -82,3 +82,53 @@ let project = $derived(
 	bind:this={opener}
 	onOpened={(opened) => appStoreApi.getState().selectProject(opened.id, { reveal: true })}
 />
+
+<style>
+	.welcome-panel__title {
+		max-width: 640px;
+		color: var(--primary);
+		overflow-wrap: break-word;
+	}
+
+	.welcome-panel__actions {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: var(--space-md);
+		margin-top: var(--space-xl);
+	}
+
+	.welcome-panel__cta {
+		display: flex;
+		position: relative;
+		width: 220px;
+		height: 150px;
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: space-between;
+		padding: var(--space-lg);
+		border-color: var(--primary-muted);
+		background-color: var(--primary-subtle);
+		text-align: left;
+	}
+
+	.welcome-panel__cta:hover {
+		background-color: var(--primary-soft);
+	}
+
+	.welcome-panel__cta-icon {
+		width: 2.25rem;
+		height: 2.25rem;
+		background-color: var(--primary);
+		color: var(--text-on-primary);
+	}
+
+	.welcome-panel__cta-title,
+	.welcome-panel__cta-description {
+		display: block;
+	}
+
+	.welcome-panel__cta-description {
+		margin-top: 0.125rem;
+	}
+</style>

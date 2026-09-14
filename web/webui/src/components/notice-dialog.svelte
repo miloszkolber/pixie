@@ -32,9 +32,9 @@ function setOpen(next: boolean): void {
 }
 </script>
 
-<Dialog bind:open {title} {description} hideClose {testid} class="max-w-[24rem]" onOpenChange={setOpen}>
+<Dialog bind:open {title} {description} hideClose {testid} class="dialog--compact" onOpenChange={setOpen}>
 	{#if tone === "error"}
-		<Icon name="triangle-alert" size={16} class="text-feedback-error" />
+		<Icon name="triangle-alert" size={16} class="u-text-feedback-error" />
 	{/if}
 	{#if descriptionContent}<div class="dialog-description">{@render descriptionContent()}</div>{/if}
 	{#snippet actions()}

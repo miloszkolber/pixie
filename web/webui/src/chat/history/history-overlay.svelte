@@ -182,7 +182,7 @@ function selectScope(kind: HistoryScope["kind"]): void {
 {#snippet Highlight(text: string, query: string)}
 	{#each highlightHistoryText(text, query) as part (part.key)}
 		{#if part.highlighted}
-			<mark class="rounded-[var(--radius-xs)] bg-primary-soft text-text-default">{part.text}</mark>
+			<mark class="history-highlight u-text-text-default">{part.text}</mark>
 		{:else}
 			<span>{part.text}</span>
 		{/if}
@@ -203,7 +203,7 @@ function selectScope(kind: HistoryScope["kind"]): void {
 				event.stopPropagation();
 				onDeleteChat(projectAreaId, sessionId);
 			}}
-			class={`flex shrink-0 items-center justify-center rounded-[var(--radius-sm)] p-xs text-text-muted opacity-0 transition hover:bg-container-elevated-bg hover:text-feedback-error group-hover:opacity-100 ${isSelected ? "opacity-100" : ""}`}
+			class={`u-flex u-shrink-0 u-items-center u-justify-center history-row-action ${isSelected ? "history-row-action-visible" : ""}`}
 		>
 			<Icon name="trash-2" size={14} />
 		</button>
@@ -221,28 +221,28 @@ function selectScope(kind: HistoryScope["kind"]): void {
 		data-selected={isSelected}
 		id={`${resultsId}-option-p:${hit.sessionId}:${hit.messageIndex ?? hit.timestamp}`}
 		aria-current={isSelected}
-		class={`group flex w-full items-center gap-xs rounded-[var(--radius-sm)] border-l-2 py-xs pl-sm pr-xs text-left tr-text-ui ${isSelected ? "border-l-primary bg-control-bg-selected text-text-default" : "border-l-transparent text-text-muted"}`}
+		class={`u-flex u-w-full u-items-center u-gap-xs history-prompt-row tr-text-ui ${isSelected ? "history-row-selected u-text-text-default" : "history-row-unselected u-text-text-muted"}`}
 	>
-		<button type="button" onclick={() => onInsert(hit)} class="flex min-w-0 flex-1 items-center gap-sm overflow-hidden text-left">
-			<span class="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-ellipsis">
+		<button type="button" onclick={() => onInsert(hit)} class="u-flex u-min-w-0 u-flex-1 u-items-center u-gap-sm history-row-main">
+			<span class="u-min-w-0 u-flex-1 history-single-line">
 				{@render Highlight(firstLine, historyState.query)}
 			</span>
 			{#if showChip}
-				<span class="shrink-0 rounded-full border border-border-default bg-container-project-bg px-xs text-text-muted tr-text-metadata">
+				<span class="u-shrink-0 history-project-chip u-px-xs u-text-text-muted tr-text-metadata">
 					{hit.projectId ? (projectAreaNames[hit.projectId] ?? "projectArea") : "projectArea"}
 				</span>
 			{/if}
-			<span class="shrink-0 text-text-muted tr-text-metadata">{relativeTime(hit.timestamp)}</span>
+			<span class="u-shrink-0 u-text-text-muted tr-text-metadata">{relativeTime(hit.timestamp)}</span>
 		</button>
 		{#if target}
-			{#if isSelected}<span data-testid="history-jump-shortcut" class="shrink-0 text-text-muted tr-text-metadata">⇧⏎</span>{/if}
+			{#if isSelected}<span data-testid="history-jump-shortcut" class="u-shrink-0 u-text-text-muted tr-text-metadata">⇧⏎</span>{/if}
 			<button
 				type="button"
 				data-testid="history-jump"
 				aria-label="Go to chat"
 				title="⇧⏎ go to chat"
 				onclick={(event) => { event.stopPropagation(); onOpenMessage(target); }}
-				class={`flex shrink-0 items-center justify-center rounded-[var(--radius-sm)] p-xs text-text-muted opacity-0 transition hover:bg-container-elevated-bg hover:text-text-default group-hover:opacity-100 ${isSelected ? "opacity-100" : ""}`}
+				class={`u-flex u-shrink-0 u-items-center u-justify-center history-row-action ${isSelected ? "history-row-action-visible" : ""}`}
 			>
 				<Icon name="corner-up-right" size={14} />
 			</button>
@@ -260,20 +260,20 @@ function selectScope(kind: HistoryScope["kind"]): void {
 		data-selected={isSelected}
 		id={`${resultsId}-option-m:${hit.sessionId}:${hit.messageIndex}`}
 		aria-current={isSelected}
-		class={`group flex w-full items-center gap-xs rounded-[var(--radius-sm)] border-l-2 pr-xs tr-text-ui ${isSelected ? "border-l-primary bg-control-bg-selected text-text-default" : "border-l-transparent text-text-muted"}`}
+		class={`u-flex u-w-full u-items-center u-gap-xs history-message-row tr-text-ui ${isSelected ? "history-row-selected u-text-text-default" : "history-row-unselected u-text-text-muted"}`}
 	>
 		<button
 			type="button"
 			disabled={unmapped}
 			onclick={() => { const target = jumpTarget(hit); if (target) onOpenMessage(target); }}
-			class="flex min-w-0 flex-1 flex-col gap-0.5 px-sm py-xs text-left disabled:cursor-default"
+			class="u-flex u-min-w-0 u-flex-1 u-flex-col u-gap-0.5 u-px-sm u-py-xs u-text-left history-message-button"
 		>
-			<span class="flex items-center gap-xs text-text-muted tr-text-metadata">
-				<span class="truncate">{hit.sessionTitle || hit.cwd.split("/").pop() || "session"}</span>
+			<span class="u-flex u-items-center u-gap-xs u-text-text-muted tr-text-metadata">
+				<span class="u-truncate">{hit.sessionTitle || hit.cwd.split("/").pop() || "session"}</span>
 				<span>·</span><span>{hit.role}</span><span>·</span><span>{relativeTime(hit.timestamp)}</span>
 				{#if unmapped}<span>· not a pixie projectArea</span>{/if}
 			</span>
-			<span class="overflow-hidden whitespace-nowrap text-ellipsis">{@render Highlight(hit.snippet, historyState.query)}</span>
+			<span class="history-single-line">{@render Highlight(hit.snippet, historyState.query)}</span>
 		</button>
 		{@render DeleteChatButton(hit.projectId, hit.sessionId, isSelected)}
 	</li>
@@ -281,22 +281,22 @@ function selectScope(kind: HistoryScope["kind"]): void {
 
 {#snippet ResultsBody()}
 	{#if historyState.error}
-		<div data-testid="history-error" class="p-md text-center text-feedback-error tr-text-ui">search unavailable</div>
+		<div data-testid="history-error" class="u-p-md u-text-center u-text-feedback-error tr-text-ui">search unavailable</div>
 	{:else if historyState.result}
 		{#if historyState.result.indexing}
-			<div data-testid="history-indexing" class="px-sm py-1 text-center text-text-muted tr-text-metadata">indexing history…</div>
+			<div data-testid="history-indexing" class="u-px-sm history-py-1 u-text-center u-text-text-muted tr-text-metadata">indexing history…</div>
 		{/if}
 		{#if historyState.result.incomplete}
-			<div class="px-sm py-1 text-center text-feedback-warning tr-text-metadata">some history could not be indexed</div>
+			<div class="u-px-sm history-py-1 u-text-center u-text-feedback-warning tr-text-metadata">some history could not be indexed</div>
 		{/if}
 		{#if hasResults}
-			<div class="flex flex-col gap-xs p-xs">
+			<div class="u-flex u-flex-col u-gap-xs history-padding-xs">
 				{#if historyState.result.prompts.length > 0}
-					<div class="flex flex-col gap-0.5">
-						<div class="flex items-center justify-between px-sm py-0.5 tr-text-eyebrow text-text-muted">
+					<div class="u-flex u-flex-col u-gap-0.5">
+						<div class="u-flex u-items-center u-justify-between u-px-sm history-py-half tr-text-eyebrow u-text-text-muted">
 							<span>Prompts</span><span data-testid="history-counts">{promptCount}/{historyState.result.promptTotal}</span>
 						</div>
-						<ul aria-label="Prompt history results" class="flex flex-col gap-0.5">
+						<ul aria-label="Prompt history results" class="u-flex u-flex-col u-gap-0.5">
 							{#each historyState.result.prompts as hit, index (`${hit.sessionId}:${hit.messageIndex}`)}
 								{@render PromptRow(hit, index)}
 							{/each}
@@ -304,11 +304,11 @@ function selectScope(kind: HistoryScope["kind"]): void {
 					</div>
 				{/if}
 				{#if historyState.stage === "zoomed" && historyState.result.messages.length > 0}
-					<div class="flex flex-col gap-0.5">
-						<div class="flex items-center justify-between px-sm py-0.5 tr-text-eyebrow text-text-muted">
+					<div class="u-flex u-flex-col u-gap-0.5">
+						<div class="u-flex u-items-center u-justify-between u-px-sm history-py-half tr-text-eyebrow u-text-text-muted">
 							<span>Messages</span><span data-testid="history-counts">{messageCount}/{historyState.result.messageTotal}</span>
 						</div>
-						<ul aria-label="Conversation history results" class="flex flex-col gap-0.5">
+						<ul aria-label="Conversation history results" class="u-flex u-flex-col u-gap-0.5">
 							{#each historyState.result.messages as hit, index (`${hit.sessionId}:${hit.messageIndex}`)}
 								{@render MessageRow(hit, index)}
 							{/each}
@@ -317,7 +317,7 @@ function selectScope(kind: HistoryScope["kind"]): void {
 				{/if}
 			</div>
 		{:else if isEmpty}
-			<div class="p-md text-center text-text-muted tr-text-ui">no matches</div>
+			<div class="u-p-md u-text-center u-text-text-muted tr-text-ui">no matches</div>
 		{/if}
 	{/if}
 {/snippet}
@@ -326,9 +326,9 @@ function selectScope(kind: HistoryScope["kind"]): void {
 	<div
 		data-testid="history-overlay"
 		data-stage={historyState.stage}
-		class="absolute bottom-full left-sm right-sm mb-xs flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border-default bg-container-elevated-bg shadow-[var(--shadow-md)]"
+		class="history-overlay u-flex u-flex-col"
 	>
-		<div class="flex items-center gap-sm border-b border-border-default p-sm">
+		<div class="u-flex u-items-center u-gap-sm u-border-b u-border-border-default history-padding-sm">
 			<input
 				bind:this={input}
 				type="search"
@@ -339,10 +339,10 @@ function selectScope(kind: HistoryScope["kind"]): void {
 				oninput={(event) => onQueryChange(event.currentTarget.value)}
 				onkeydown={handleSearchKeydown}
 				placeholder="Search prompts and conversations…"
-				class="min-w-0 flex-1 bg-transparent tr-text-ui text-text-default outline-none placeholder:text-text-muted"
+				class="u-min-w-0 u-flex-1 history-query tr-text-ui u-text-text-default"
 			/>
-			<span id={selectedStatusId} role="status" aria-live="polite" class="sr-only">{selectedAnnouncement}</span>
-			<span class="contents" {@attach mewa(dropdownBehavior)}>
+			<span id={selectedStatusId} role="status" aria-live="polite" class="u-sr-only">{selectedAnnouncement}</span>
+			<span class="history-contents" {@attach mewa(dropdownBehavior)}>
 				<button
 					type="button"
 					data-dropdown-menu-trigger={scopeMenuId}
@@ -351,9 +351,9 @@ function selectScope(kind: HistoryScope["kind"]): void {
 					aria-expanded="false"
 					data-testid="history-scope"
 					data-scope={historyState.scope.kind}
-					class="flex shrink-0 items-center gap-xs rounded-full border border-border-default bg-container-project-bg px-sm py-0.5 text-text-muted tr-text-metadata outline-none hover:bg-control-bg-hovered"
+					class="u-flex u-shrink-0 u-items-center u-gap-xs history-scope-trigger u-px-sm history-py-half u-text-text-muted tr-text-metadata"
 				>
-					<span>{SCOPE_LABELS[historyState.scope.kind]}</span><span class="text-text-muted">⌃R</span>
+					<span>{SCOPE_LABELS[historyState.scope.kind]}</span><span class="u-text-text-muted">⌃R</span>
 				</button>
 				<div
 					bind:this={scopeMenu}
@@ -377,7 +377,7 @@ function selectScope(kind: HistoryScope["kind"]): void {
 							onkeydown={activateCheckableMenuItem}
 							onclick={() => selectScope(kind)}
 						>
-							<Icon name="check" size={14} class={kind === historyState.scope.kind ? "" : "invisible"} />
+							<Icon name="check" size={14} class={kind === historyState.scope.kind ? "" : "history-scope-icon-hidden"} />
 							<span>{SCOPE_MENU_LABELS[kind]}</span>
 						</button>
 					{/each}
@@ -385,29 +385,29 @@ function selectScope(kind: HistoryScope["kind"]): void {
 			</span>
 		</div>
 		{#if deleteUnavailableReason}
-			<p class="border-border-default border-b px-sm py-xs text-text-muted tr-text-metadata">{deleteUnavailableReason}</p>
+			<p class="u-border-b u-border-border-default u-px-sm u-py-xs u-text-text-muted tr-text-metadata">{deleteUnavailableReason}</p>
 		{/if}
 		{#if historyState.stage === "zoomed"}
-			<div class="flex flex-col overflow-hidden md:flex-row">
-				<div bind:this={resultsElement} data-testid="history-results" id={resultsId} class="max-h-[37.5vh] overflow-y-auto md:max-h-[75vh] md:w-[55%]">
+			<div class="history-zoomed-layout u-flex u-flex-col">
+				<div bind:this={resultsElement} data-testid="history-results" id={resultsId} class="history-results-zoomed">
 					{@render ResultsBody()}
 				</div>
-				<div data-testid="history-preview" class="flex max-h-[37.5vh] flex-col overflow-hidden border-border-default border-t md:max-h-[75vh] md:w-[45%] md:border-t-0 md:border-l">
+				<div data-testid="history-preview" class="history-preview u-flex u-flex-col">
 					{#if selectedItem}
-						<div class="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words p-sm tr-text-ui text-text-default">{@render Highlight(selectedItem.hit.text, historyState.query)}</div>
-						<div class="shrink-0 border-t border-border-default px-sm py-xs text-text-muted tr-text-metadata">
+						<div class="u-min-h-0 u-flex-1 u-overflow-y-auto history-pre-wrap u-break-words history-padding-sm tr-text-ui u-text-text-default">{@render Highlight(selectedItem.hit.text, historyState.query)}</div>
+						<div class="u-shrink-0 u-border-t u-border-border-default u-px-sm u-py-xs u-text-text-muted tr-text-metadata">
 							{selectedItem.kind === "prompt" ? promptCrumb(selectedItem.hit, selectedProjectAreaName) : messageCrumb(selectedItem.hit)}
 						</div>
 					{/if}
 				</div>
 			</div>
 		{:else}
-			<div bind:this={resultsElement} data-testid="history-results" id={resultsId} class="max-h-[40vh] overflow-y-auto">
+			<div bind:this={resultsElement} data-testid="history-results" id={resultsId} class="history-results-compact">
 				{@render ResultsBody()}
 			</div>
 		{/if}
 		{#if historyState.stage === "compact" && !historyState.error && historyState.result && !historyState.result.indexing && historyState.result.messageTotal > 0}
-			<button type="button" data-testid="history-expand-hint" onclick={onToggleStage} class="border-t border-border-default p-xs text-center text-text-muted tr-text-metadata hover:bg-control-bg-hovered">
+			<button type="button" data-testid="history-expand-hint" onclick={onToggleStage} class="u-border-t u-border-border-default history-padding-xs u-text-center u-text-text-muted tr-text-metadata history-expand-hint">
 				{historyState.result.messageTotal} matches in conversations · ⇥ expand
 			</button>
 		{/if}
@@ -416,4 +416,36 @@ function selectScope(kind: HistoryScope["kind"]): void {
 
 <style>
 	.history-scope-menu { left: auto; right: anchor(right); }
+	.history-highlight { border-radius: var(--radius-xs); background: var(--primary-soft); }
+	.history-row-action { border: 0; border-radius: var(--radius-sm); background: transparent; padding: var(--space-xs); color: var(--text-muted); opacity: 0; transition: opacity var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast); }
+	.history-prompt-row:hover .history-row-action, .history-message-row:hover .history-row-action, .history-row-action-visible { opacity: 1; }
+	.history-row-action:hover { background: var(--container-elevated-bg); color: var(--text-default); }
+	.history-row-action[aria-label^="Move"]:hover { color: var(--feedback-error); }
+	.history-prompt-row, .history-message-row { border-inline-start: 2px solid transparent; border-radius: var(--radius-sm); padding-inline-end: var(--space-xs); text-align: start; }
+	.history-prompt-row { padding-block: var(--space-xs); padding-inline-start: var(--space-sm); }
+	.history-row-selected { border-inline-start-color: var(--primary); background: var(--control-bg-selected); }
+	.history-row-unselected { border-inline-start-color: transparent; }
+	.history-row-main { overflow: hidden; border: 0; background: transparent; text-align: start; }
+	.history-single-line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+	.history-project-chip { border: 1px solid var(--border-default); border-radius: 999px; background: var(--container-project-bg); }
+	.history-message-button { border: 0; background: transparent; }
+	.history-message-button:disabled { cursor: default; }
+	.history-py-1 { padding-block: var(--space-2xs); }
+	.history-py-half { padding-block: var(--space-2xs); }
+	.history-padding-xs { padding: var(--space-xs); }
+	.history-padding-sm { padding: var(--space-sm); }
+	.history-overlay { position: absolute; inset-block-end: 100%; inset-inline: var(--space-sm); margin-block-end: var(--space-xs); overflow: hidden; border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--container-elevated-bg); box-shadow: var(--shadow-md); }
+	.history-query { border: 0; outline: none; background: transparent; }
+	.history-query::placeholder { color: var(--text-muted); }
+	.history-contents { display: contents; }
+	.history-scope-trigger { border: 1px solid var(--border-default); border-radius: 999px; outline: none; background: var(--container-project-bg); }
+	.history-scope-trigger:hover, .history-expand-hint:hover { background: var(--control-bg-hovered); }
+	.history-zoomed-layout { overflow: hidden; }
+	.history-results-zoomed, .history-preview { max-height: 37.5vh; }
+	.history-results-zoomed, .history-results-compact { overflow-y: auto; }
+	.history-preview { overflow: hidden; border-top: 1px solid var(--border-default); }
+	.history-pre-wrap { white-space: pre-wrap; }
+	@media (min-width: 48rem) { .history-zoomed-layout { flex-direction: row; } .history-results-zoomed { max-height: 75vh; width: 55%; } .history-preview { max-height: 75vh; width: 45%; border-top: 0; border-inline-start: 1px solid var(--border-default); } }
+	.history-results-compact { max-height: 40vh; }
+	.history-scope-icon-hidden { visibility: hidden; }
 </style>

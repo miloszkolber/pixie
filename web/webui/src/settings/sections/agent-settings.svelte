@@ -10,10 +10,10 @@ let { profile }: Props = $props();
 let operations = $derived(agentOperationRows(profile));
 </script>
 
-<div class="mx-auto flex w-full max-w-[36rem] flex-col gap-lg">
+<div class="agent-settings u-flex u-w-full u-flex-col u-gap-lg">
 	<div>
-		<h2 class="tr-title-entity text-text-default">{profile.name || "Connected agent"}</h2>
-		<p class="mt-xs tr-text-ui text-text-muted">
+		<h2 class="tr-title-entity u-text-text-default">{profile.name || "Connected agent"}</h2>
+		<p class="u-mt-xs tr-text-ui u-text-text-muted">
 			{profile.version ? `Version ${profile.version} · ` : ""}
 			{profile.compatible ? "Compatible with Pixie" : "Missing required capabilities"}
 		</p>
@@ -22,7 +22,7 @@ let operations = $derived(agentOperationRows(profile));
 		<div class="callout" data-variant="caution">
 			<div class="callout-content">
 				<h3 class="callout-title">Required capabilities</h3>
-				<ul class="mt-xs list-disc pl-lg tr-text-metadata text-text-muted">
+				<ul class="agent-settings__missing-list u-mt-xs tr-text-metadata u-text-text-muted">
 					{#each profile.missingRequired as capability (capability)}
 						<li><code>{capability}</code></li>
 					{/each}
@@ -31,13 +31,13 @@ let operations = $derived(agentOperationRows(profile));
 		</div>
 	{/if}
 	<div>
-		<h3 class="tr-text-ui text-text-default">Optional capabilities</h3>
-		<dl class="mt-sm divide-y divide-border-muted rounded-[var(--radius-sm)] border border-border-default">
+		<h3 class="tr-text-ui u-text-text-default">Optional capabilities</h3>
+		<dl class="agent-settings__operations u-mt-sm u-rounded u-border u-border-border-default">
 			{#each operations as operation (operation.operation)}
-				<div class="flex items-center justify-between gap-md px-md py-sm">
-					<dt class="tr-text-ui text-text-default">{operation.label}</dt>
+				<div class="u-flex u-items-center u-justify-between u-gap-md u-px-md u-py-sm">
+					<dt class="tr-text-ui u-text-text-default">{operation.label}</dt>
 					<dd
-						class={`tr-text-metadata ${operation.available ? "text-feedback-success" : "text-text-muted"}`}
+						class={`tr-text-metadata ${operation.available ? "availability--available" : "u-text-text-muted"}`}
 					>
 						{operation.available ? "Available" : "Unavailable"}
 					</dd>
@@ -46,3 +46,23 @@ let operations = $derived(agentOperationRows(profile));
 		</dl>
 	</div>
 </div>
+
+<style>
+	.agent-settings {
+		max-inline-size: 36rem;
+		margin-inline: auto;
+	}
+
+	.agent-settings__missing-list {
+		padding-left: var(--space-lg);
+		list-style-type: disc;
+	}
+
+	.agent-settings__operations > * + * {
+		border-top: 1px solid var(--border-muted);
+	}
+
+	.availability--available {
+		color: var(--feedback-success);
+	}
+</style>

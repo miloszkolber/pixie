@@ -83,7 +83,7 @@ async function openSession(sessionId: string): Promise<void> {
 }
 </script>
 
-<li class="tree-item flex flex-col gap-2xs">
+<li class="tree-item u-flex u-flex-col u-gap-2xs">
 	<div class="dropdown-menu-label">Sessions</div>
 	{#each visibleSessions as session (session.sessionId)}
 		{@const active = activeSessionId === session.sessionId}
@@ -94,50 +94,80 @@ async function openSession(sessionId: string): Promise<void> {
 			title={displaySessionTitle(session.title)}
 			aria-label={sessionRowAccessibleLabel(session)}
 			aria-current={active || undefined}
-			class={`tree-leaf min-w-0 tr-text-metadata ${active ? "bg-control-bg-selected" : ""}`}
+			class="tree-leaf workspace-project-session-row u-min-w-0 tr-text-metadata"
 			onclick={() => void openSession(session.sessionId)}
 		>
 			{#if session.isStreaming}
-				<Icon name="loader-circle" size={12} class="shrink-0 animate-spin motion-reduce:animate-none" />
-				<span class="sr-only">Running</span>
+				<span class="workspace-project-session-spinner u-inline-flex u-shrink-0"><Icon name="loader-circle" size={12} /></span>
+				<span class="u-sr-only">Running</span>
 			{:else}
-				<Icon name="message-square" size={12} class="shrink-0" />
+				<Icon name="message-square" size={12} class="u-shrink-0" />
 			{/if}
-			<span class="min-w-0 flex-1 truncate text-left">{displaySessionTitle(session.title)}</span>
-			<span class={`shrink-0 ${active ? "" : "text-text-muted"}`}>{shortSessionAge(session.updatedAt)}</span>
+			<span class="u-min-w-0 u-flex-1 u-truncate u-text-left">{displaySessionTitle(session.title)}</span>
+			<span class="workspace-project-session-age u-shrink-0">{shortSessionAge(session.updatedAt)}</span>
 		</button>
 	{/each}
 	{#if hiddenCount > 0}
 		<button
 			type="button"
 			data-testid="project-sessions-toggle"
-			class="tree-leaf tr-text-metadata underline"
+			class="tree-leaf tr-text-metadata workspace-project-session-toggle"
 			aria-expanded={expanded}
 			aria-label={`Show ${hiddenCount} more chats`}
 			onclick={() => (expanded = true)}
 		>
 			<span>Expand</span>
-			<span class="shrink-0 text-text-muted">+{hiddenCount}</span>
-			<Icon name="chevron-down" size={12} class="shrink-0" />
+			<span class="u-shrink-0 u-text-text-muted">+{hiddenCount}</span>
+			<Icon name="chevron-down" size={12} class="u-shrink-0" />
 		</button>
 	{/if}
 	{#if expanded && orderedSessions.length > VISIBLE_SESSIONS}
 		<button
 			type="button"
 			data-testid="project-sessions-collapse"
-			class="tree-leaf tr-text-metadata underline"
+			class="tree-leaf tr-text-metadata workspace-project-session-toggle"
 			aria-expanded={expanded}
 			aria-label="Show fewer chats"
 			onclick={() => (expanded = false)}
 		>
 			<span>Show less</span>
-			<Icon name="chevron-up" size={12} class="shrink-0" />
+			<Icon name="chevron-up" size={12} class="u-shrink-0" />
 		</button>
 	{/if}
 	{#if orderedSessions.length === 0 && !failed}
-		<span class="px-sm text-text-muted tr-text-metadata">No sessions yet</span>
+		<span class="u-px-sm u-text-text-muted tr-text-metadata">No sessions yet</span>
 	{/if}
 	{#if failed}
-		<span class="px-sm text-feedback-error tr-text-metadata">Couldn't load sessions</span>
+		<span class="u-px-sm u-text-feedback-error tr-text-metadata">Couldn't load sessions</span>
 	{/if}
 </li>
+
+<style>
+	.workspace-project-session-row[data-active] {
+		background-color: var(--control-bg-selected);
+	}
+
+	.workspace-project-session-row:not([data-active]) .workspace-project-session-age {
+		color: var(--text-muted);
+	}
+
+	.workspace-project-session-toggle {
+		text-decoration: underline;
+	}
+
+	.workspace-project-session-spinner {
+		animation: workspace-project-session-spin 1s linear infinite;
+	}
+
+	@keyframes workspace-project-session-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.workspace-project-session-spinner {
+			animation: none;
+		}
+	}
+</style>

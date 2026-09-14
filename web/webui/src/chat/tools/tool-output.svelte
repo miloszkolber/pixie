@@ -38,14 +38,14 @@ function textBlock(block: unknown): string {
 </script>
 
 {#if blocks.length > 0}
-	<div class="flex flex-col gap-xs" data-testid="tool-output">
+	<div class="u-flex u-flex-col u-gap-xs" data-testid="tool-output">
 		{#each blocks as block, index (`content-${index}`)}
 			{@const image = imageBlock(block)}
 			{#if image}
 				<ImageChip label={image.mimeType} {image} />
 			{:else}
 				<pre
-					class={`overflow-auto tr-code-text ${error ? "text-feedback-error" : "text-text-default"}`}
+					class={`u-overflow-auto tr-code-text ${error ? "u-text-feedback-error" : "u-text-text-default"}`}
 				>{textBlock(block)}</pre>
 			{/if}
 		{/each}

@@ -216,7 +216,7 @@ export interface ChatTranscriptHandle {
 		onkeydown={handleKeydown}
 	>
 		{#if transcriptStart > 0 || loadState === "error"}
-			<div class="mx-auto flex max-w-3xl justify-center px-md py-sm">
+			<div class="chat-transcript-load u-flex u-justify-center u-px-md u-py-sm">
 				<Button
 					variant="outline"
 					size="sm"
@@ -234,17 +234,17 @@ export interface ChatTranscriptHandle {
 					data-chat-row
 					data-row-id={row.id}
 					data-flash={row.id === flashRowId || undefined}
-					class="message-scroller-entry chat-row mx-auto w-full max-w-3xl rounded-[var(--radius-sm)] px-md py-xs transition-colors data-[flash]:bg-primary-subtle"
+					class="message-scroller-entry chat-row chat-transcript-entry u-w-full u-rounded u-px-md u-py-xs"
 				>
 					<ChatTurnView {row} {projectAreaRoot} {onOpenChange} />
 				</li>
 			{/each}
 		</ol>
 		{#if status}
-			<div class="mx-auto max-w-3xl px-md pb-sm"><StreamIndicator {status} /></div>
+			<div class="chat-transcript-stream u-px-md"><StreamIndicator {status} /></div>
 		{/if}
 	</div>
-	<p class="sr-only" role="status" aria-atomic="true" data-testid="chat-announcement">{status ? phaseLabel(status) : ""}</p>
+	<p class="u-sr-only" role="status" aria-atomic="true" data-testid="chat-announcement">{status ? phaseLabel(status) : ""}</p>
 	{#if showScrollButton}
 		<button
 			type="button"
@@ -255,7 +255,7 @@ export interface ChatTranscriptHandle {
 				viewport?.focus({ preventScroll: true });
 				scrollToBottom();
 			}}
-			class="message-scroller-jump flex items-center gap-xs"
+			class="message-scroller-jump u-flex u-items-center u-gap-xs"
 		>
 			<Icon name="arrow-down" size={12} />
 			New messages
@@ -285,5 +285,24 @@ export interface ChatTranscriptHandle {
 
 	.message-scroller-entry.chat-row:last-child {
 		padding-block-end: var(--space-200);
+	}
+
+	.chat-transcript-load,
+	.chat-transcript-entry,
+	.chat-transcript-stream {
+		max-width: 48rem;
+		margin-inline: auto;
+	}
+
+	.chat-transcript-entry {
+		transition: background-color var(--transition-fast);
+	}
+
+	.chat-transcript-entry[data-flash] {
+		background: var(--primary-subtle);
+	}
+
+	.chat-transcript-stream {
+		padding-block-end: var(--space-sm);
 	}
 </style>

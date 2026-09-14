@@ -29,12 +29,17 @@ let src = $derived(`data:${image.mimeType};base64,${image.data}`);
 	bind:open
 	title={label}
 	testid="chat-attachment-dialog"
-	class="max-h-[90vh] w-max max-w-[95vw]"
+	class="image-chip-dialog"
 	onClosedAutoFocus={() => trigger?.focus()}
 >
 	{#if open}
-		<div class="min-h-0 flex-1 overflow-auto">
-			<img src={src} alt="" class="max-h-[80vh] max-w-full rounded-[var(--radius-sm)]" />
+		<div class="u-min-h-0 u-flex-1 u-overflow-auto">
+			<img src={src} alt="" class="u-max-w-full u-rounded image-chip-image" />
 		</div>
 	{/if}
 </Dialog>
+
+<style>
+	:global(.image-chip-dialog) { width: max-content; max-width: 95vw; max-height: 90vh; }
+	.image-chip-image { max-height: 80vh; }
+</style>

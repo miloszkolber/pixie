@@ -33,45 +33,53 @@ let artifact = $derived(details.artifact);
 let artifactHref = $derived(browserArtifactUrl(artifact?.url));
 </script>
 
-<div data-testid="tool-browser" class="flex flex-col gap-xs">
-	<div class="flex items-center gap-xs tr-text-metadata">
-		<Icon name="globe" size={14} class="shrink-0 text-text-muted" />
-		<span class="text-primary">{command}</span>
-		{#if session}<span class="truncate text-text-muted">in {session}</span>{/if}
+<div data-testid="tool-browser" class="u-flex u-flex-col u-gap-xs">
+	<div class="u-flex u-items-center u-gap-xs tr-text-metadata">
+		<Icon name="globe" size={14} class="u-shrink-0 u-text-text-muted" />
+		<span class="tool-primary">{command}</span>
+		{#if session}<span class="u-truncate u-text-text-muted">in {session}</span>{/if}
 	</div>
 	{#if status === "running"}
-		<span class="text-text-muted tr-text-metadata">Running browser command…</span>
+		<span class="u-text-text-muted tr-text-metadata">Running browser command…</span>
 	{:else if failed}
-		<pre class="overflow-auto px-sm py-xs text-feedback-error tr-code-text"
+		<pre class="u-overflow-auto u-px-sm u-py-xs u-text-feedback-error tr-code-text"
 		>{output || (typeof details.code === "string" ? details.code : "Browser command failed.")}</pre>
 	{:else if output}
 		<Collapsible lines={countLines(output)}>
-			<pre class="overflow-auto rounded-[var(--radius-sm)] bg-container-header-bg p-sm tr-code-text text-text-default">{output}</pre>
+			<pre class="u-overflow-auto u-rounded tool-code-surface u-p-md tr-code-text u-text-text-default">{output}</pre>
 		</Collapsible>
 	{/if}
 	{#if artifact}
-		<div data-testid="tool-browser-artifact" class="flex items-center gap-xs text-text-muted tr-text-metadata">
-			<Icon name="camera" size={14} class="shrink-0" />
+		<div data-testid="tool-browser-artifact" class="u-flex u-items-center u-gap-xs u-text-text-muted tr-text-metadata">
+			<Icon name="camera" size={14} class="u-shrink-0" />
 			<span>Artifact:</span>
 			{#if artifactHref}
-				<a href={artifactHref} target="_blank" rel="noreferrer" class="truncate text-primary hover:underline">{artifact.name}</a>
-			{:else}<span class="truncate">{artifact.name}</span>{/if}
+				<a href={artifactHref} target="_blank" rel="noreferrer" class="u-truncate tool-link">{artifact.name}</a>
+			{:else}<span class="u-truncate">{artifact.name}</span>{/if}
 		</div>
 	{/if}
 	{#if images.length > 0}
-		<div data-testid="tool-browser-images" class="flex flex-wrap gap-sm">
+		<div data-testid="tool-browser-images" class="u-flex u-flex-wrap u-gap-sm">
 			{#each images as image, index (`${image.mimeType}-${image.data.length}-${image.data.slice(0, 32)}-${index}`)}
 				<img
 					src={`data:${image.mimeType.toLowerCase()};base64,${image.data}`}
 					alt={`${command} screenshot`}
 					loading="lazy"
 					decoding="async"
-					class="max-h-[28rem] max-w-full rounded-[var(--radius-sm)] border border-border-default object-contain"
+					class="u-max-w-full u-rounded u-border u-border-border-default tool-browser-image"
 				/>
 			{/each}
 		</div>
 	{/if}
 	{#if status === "done" && !failed && !output && !artifact && images.length === 0}
-		<span class="text-text-muted tr-text-metadata italic">No browser output.</span>
+		<span class="u-text-text-muted tr-text-metadata tool-italic">No browser output.</span>
 	{/if}
 </div>
+
+<style>
+	.tool-primary, .tool-link { color: var(--primary); }
+	.tool-link:hover { text-decoration: underline; }
+	.tool-code-surface { background: var(--container-header-bg); }
+	.tool-browser-image { max-block-size: 28rem; object-fit: contain; }
+	.tool-italic { font-style: italic; }
+</style>

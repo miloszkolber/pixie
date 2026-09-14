@@ -172,29 +172,29 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 		data-model={model.id}
 		data-available={String(model.available)}
 		data-hidden={String(model.hidden)}
-		class={`grid min-w-0 grid-cols-1 items-start gap-sm px-md py-sm @2xl:grid-cols-[minmax(12rem,1fr)_auto_auto] @2xl:gap-md ${
-			withBorder ? "border-border-default border-t" : ""
-		} ${!model.available || model.hidden ? "opacity-55" : ""}`}
+		class={`model-row u-min-w-0 u-px-md u-py-sm ${
+			withBorder ? "model-row--bordered" : ""
+		} ${!model.available || model.hidden ? "model-row--dimmed" : ""}`}
 	>
-		<div class="min-w-0">
-			<div class="flex min-w-0 items-center gap-sm">
-				<span class="truncate text-text-default tr-text-ui" title={model.name || model.id}>{model.name || model.id}</span>
+		<div class="u-min-w-0">
+			<div class="u-flex u-min-w-0 u-items-center u-gap-sm">
+				<span class="model-row__name u-text-text-default tr-text-ui" title={model.name || model.id}>{model.name || model.id}</span>
 				{#if !model.available}<span class="badge" data-variant="secondary">Unavailable</span>{/if}
 				{#if model.hidden}<span class="badge" data-variant="secondary">Hidden</span>{/if}
 			</div>
-			<div class="truncate text-text-muted tr-text-metadata">{model.id}</div>
-			<div class="mt-xs flex flex-wrap items-center gap-xs text-text-muted tr-text-metadata">
-				{#if model.input?.includes("text")}<span class="flex items-center gap-1" title="Text input">
+			<div class="model-row__name u-text-text-muted tr-text-metadata">{model.id}</div>
+			<div class="u-mt-xs u-flex u-flex-wrap u-items-center u-gap-xs u-text-text-muted tr-text-metadata">
+				{#if model.input?.includes("text")}<span class="model-row__capability u-flex u-items-center" title="Text input">
 					<Icon name="type" size={12} /> Text
 				</span>{/if}
 				{#if model.input?.includes("image")}
-					<span class="flex items-center gap-1" title="Image input">
+					<span class="model-row__capability u-flex u-items-center" title="Image input">
 						<Icon name="image" size={12} /> Image
 					</span>
 				{/if}
 				{#if model.reasoning}
 					<span
-						class="flex items-center gap-1"
+						class="model-row__capability u-flex u-items-center"
 						title={`Reasoning levels: ${model.thinkingLevels?.join(", ") || "provider default"}`}
 					>
 						<Icon name="brain-circuit" size={12} />
@@ -204,19 +204,19 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 			</div>
 		</div>
 
-		<div class="flex min-w-0 flex-col items-start gap-0.5 text-left @2xl:min-w-[9rem] @2xl:items-end @2xl:text-right">
-			<span class="badge whitespace-nowrap" data-variant="secondary">
+		<div class="model-row__stats u-flex u-min-w-0 u-flex-col u-items-start u-gap-0.5 u-text-left">
+			<span class="badge model-row__context" data-variant="secondary">
 				{model.contextWindow === undefined ? "Unknown" : formatTokenCount(model.contextWindow)} ctx ·
 				{model.maxTokens === undefined ? "Unknown" : formatTokenCount(model.maxTokens)} out
 			</span>
 			{#if model.cost}
-				<span class="text-text-muted tr-text-metadata">{rateText(model.cost)} / 1M</span>
+				<span class="u-text-text-muted tr-text-metadata">{rateText(model.cost)} / 1M</span>
 			{:else}
-				<span class="text-text-muted tr-text-metadata">Pricing unavailable</span>
+				<span class="u-text-text-muted tr-text-metadata">Pricing unavailable</span>
 			{/if}
-			{#if cache}<span class="text-text-muted tr-text-metadata">{cache}</span>{/if}
+			{#if cache}<span class="u-text-text-muted tr-text-metadata">{cache}</span>{/if}
 			{#each model.cost?.tiers ?? [] as tier (tier.inputTokensAbove)}
-				<span class="text-text-muted tr-text-metadata">
+				<span class="u-text-text-muted tr-text-metadata">
 					{tierText(tier, model.cost?.currency ?? "")}
 				</span>
 			{/each}
@@ -235,20 +235,21 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 	</div>
 {/snippet}
 
-<div data-testid="settings-models" class="@container flex flex-col gap-lg">
-	<div class="flex flex-wrap items-start justify-between gap-sm">
-		<div class="flex min-w-0 flex-1 basis-64 flex-col gap-xs">
-			<h3 class="tr-title-section text-text-default">
-				Models <span class="font-normal text-text-muted">({catalog.length})</span>
+
+<div data-testid="settings-models" class="models-settings u-flex u-flex-col u-gap-lg">
+	<div class="u-flex u-flex-wrap u-items-start u-justify-between u-gap-sm">
+		<div class="models-header__intro u-flex u-min-w-0 u-flex-1 u-flex-col u-gap-xs">
+			<h3 class="tr-title-section u-text-text-default">
+				Models <span class="models-count u-text-text-muted">({catalog.length})</span>
 			</h3>
-			<p class="text-text-muted tr-text-metadata">
+			<p class="u-text-text-muted tr-text-metadata">
 				{catalog.length} available · {visibleCount} shown. Visibility is a Pixie preference.
 				Pi keeps the canonical catalog.{metadataIncomplete
 					? " Some optional model metadata did not finish loading."
 					: ""}
 			</p>
 		</div>
-		<div class="flex flex-wrap items-center gap-xs">
+		<div class="u-flex u-flex-wrap u-items-center u-gap-xs">
 			<Button
 				variant="outline"
 				size="sm"
@@ -274,17 +275,17 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 				disabled={refreshing || bulkBusy || busyModel !== null}
 				onclick={() => void load(true)}
 			>
-				<Icon name="refresh-cw" size={14} class={refreshing ? "animate-spin motion-reduce:animate-none" : ""} />
+				<Icon name="refresh-cw" size={14} class={refreshing ? "models-refresh-icon" : ""} />
 				Refresh
 			</Button>
 		</div>
 	</div>
 
-	<label class="text-field flex-row items-center gap-sm">
-		<Icon name="search" size={16} class="text-text-muted" />
+	<label class="text-field models-filter u-items-center u-gap-sm">
+		<Icon name="search" size={16} class="u-text-text-muted" />
 		<span class="text-field-label" data-hidden>Filter models</span>
 		<input
-			class="text-field-input min-w-0 flex-1"
+			class="text-field-input u-min-w-0 u-flex-1"
 			data-testid="models-filter"
 			bind:value={query}
 			placeholder="Filter models…"
@@ -292,27 +293,27 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 	</label>
 
 	{#if loading}
-		<p class="text-text-muted tr-text-ui">Loading models…</p>
+		<p class="u-text-text-muted tr-text-ui">Loading models…</p>
 	{:else if failed}
-		<p class="text-text-muted tr-text-ui">Couldn't read the model catalog.</p>
+		<p class="u-text-text-muted tr-text-ui">Couldn't read the model catalog.</p>
 	{:else if filtered.length === 0}
-		<p class="text-text-muted tr-text-ui">
+		<p class="u-text-text-muted tr-text-ui">
 			{catalog.length === 0
 				? "No available models for configured providers. Connect a provider, then refresh the catalog."
 				: "No models match this filter."}
 		</p>
 	{:else}
-		<div class="flex flex-col gap-lg">
+		<div class="u-flex u-flex-col u-gap-lg">
 			{#each groups as [providerId, providerModels] (providerId)}
-				<section class="flex flex-col gap-xs">
-					<div class="flex items-baseline justify-between gap-sm px-xs">
-						<h4 class="tr-text-eyebrow text-text-muted">{providerName(providerId, providers)}</h4>
-						<span class="text-text-muted tr-text-metadata">
+				<section class="u-flex u-flex-col u-gap-xs">
+					<div class="u-flex u-items-baseline u-justify-between u-gap-sm u-px-xs">
+						<h4 class="tr-text-eyebrow u-text-text-muted">{providerName(providerId, providers)}</h4>
+						<span class="u-text-text-muted tr-text-metadata">
 							{providerModels.filter((model) => model.available).length}/{providerModels.length}
 							available
 						</span>
 					</div>
-					<div class="overflow-hidden rounded-[var(--radius-sm)] border border-border-default bg-control-bg">
+					<div class="models-provider-list u-rounded u-border u-border-border-default u-bg-control-bg">
 						{#each providerModels as model, index (`${model.provider}\0${model.id}`)}
 							{@render ModelRow(
 								model,
@@ -326,3 +327,79 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 		</div>
 	{/if}
 </div>
+
+<style>
+	.models-settings {
+		container-type: inline-size;
+	}
+
+	.model-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		align-items: start;
+		gap: var(--space-sm);
+	}
+
+	.model-row--bordered {
+		border-top: 1px solid var(--border-default);
+	}
+
+	.model-row--dimmed {
+		opacity: 0.55;
+	}
+
+	.model-row__name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.model-row__capability {
+		gap: var(--space-100);
+	}
+
+	.model-row__context {
+		white-space: nowrap;
+	}
+
+	.models-header__intro {
+		flex-basis: 16rem;
+	}
+
+	.models-count {
+		font-weight: var(--tr-font-weight-regular);
+	}
+
+	.models-filter {
+		flex-direction: row;
+	}
+
+	.models-provider-list {
+		overflow: hidden;
+	}
+
+	:global(.models-refresh-icon) {
+		animation: models-refresh-rotate 1s linear infinite;
+	}
+
+	@keyframes models-refresh-rotate {
+		to { transform: rotate(1turn); }
+	}
+
+	@container (min-width: 42rem) {
+		.model-row {
+			grid-template-columns: minmax(12rem, 1fr) auto auto;
+			gap: var(--space-md);
+		}
+
+		.model-row__stats {
+			min-inline-size: 9rem;
+			align-items: flex-end;
+			text-align: right;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.models-refresh-icon) { animation: none; }
+	}
+</style>

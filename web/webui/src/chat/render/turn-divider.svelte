@@ -36,13 +36,13 @@ function activateFiles(): void {
 </script>
 
 {#if !showMetadata}
-	<div data-testid="turn-divider" class="my-sm h-px bg-border-muted"></div>
+	<div data-testid="turn-divider" class="turn-divider-rule"></div>
 {:else}
-	<div data-testid="turn-divider" class="my-sm flex flex-col gap-xs text-text-muted tr-text-metadata">
-		<div class="flex items-center gap-sm">
-			<span class="h-px flex-1 bg-border-muted"></span>
+	<div data-testid="turn-divider" class="u-flex u-flex-col u-gap-xs turn-divider u-text-text-muted tr-text-metadata">
+		<div class="u-flex u-items-center u-gap-sm">
+			<span class="u-flex-1 turn-divider-rule-inline"></span>
 			{#if data.toolCount > 0}
-				<span class="flex items-center gap-xs"><Icon name="wrench" size={12} />{data.toolCount} {data.toolCount === 1 ? "tool call" : "tool calls"}</span>
+				<span class="u-flex u-items-center u-gap-xs"><Icon name="wrench" size={12} />{data.toolCount} {data.toolCount === 1 ? "tool call" : "tool calls"}</span>
 			{/if}
 			{#if data.changedFiles.length > 0}
 				<button
@@ -52,7 +52,7 @@ function activateFiles(): void {
 					aria-expanded={many ? expanded : undefined}
 					aria-controls={expanded ? listId : undefined}
 					onclick={activateFiles}
-					class={`flex items-center gap-xs rounded-[var(--radius-sm)] px-xs text-primary hover:bg-control-bg-hovered ${expanded ? "bg-control-bg-selected" : ""}`}
+					class={`u-flex u-items-center u-gap-xs u-rounded u-px-xs turn-divider-files ${expanded ? "turn-divider-files-expanded" : ""}`}
 				>
 					<Icon name="file-diff" size={12} />
 					{data.changedFiles.length} {data.changedFiles.length === 1 ? "file changed" : "files changed"}
@@ -60,12 +60,12 @@ function activateFiles(): void {
 				</button>
 			{/if}
 			{#if data.elapsedMs != null && data.elapsedMs >= 1000}
-				<span class="flex items-center gap-xs"><Icon name="clock" size={12} />{formatElapsed(data.elapsedMs)}</span>
+				<span class="u-flex u-items-center u-gap-xs"><Icon name="clock" size={12} />{formatElapsed(data.elapsedMs)}</span>
 			{/if}
-			<span class="h-px flex-1 bg-border-muted"></span>
+			<span class="u-flex-1 turn-divider-rule-inline"></span>
 		</div>
 		{#if expanded}
-			<ul id={listId} data-testid="turn-divider-files-list" class="flex flex-col">
+			<ul id={listId} data-testid="turn-divider-files-list" class="u-flex u-flex-col">
 				{#each data.changedFiles as path (path)}
 					<li>
 						<button
@@ -73,11 +73,22 @@ function activateFiles(): void {
 							data-testid="turn-divider-files-list-item"
 							onclick={() => onOpenChange(path)}
 							title={path}
-							class="flex w-full items-center gap-xs rounded-[var(--radius-sm)] px-xs py-0.5 text-left hover:bg-control-bg-hovered"
-						><Icon name="file-diff" size={12} class="shrink-0 text-text-muted" /><span class="min-w-0 flex-1 truncate text-text-muted">{projectRelativePath(path, projectAreaRoot)}</span></button>
+							class="u-flex u-w-full u-items-center u-gap-xs u-rounded u-px-xs turn-divider-file"
+						><Icon name="file-diff" size={12} class="u-shrink-0 u-text-text-muted" /><span class="u-min-w-0 u-flex-1 u-truncate u-text-text-muted">{projectRelativePath(path, projectAreaRoot)}</span></button>
 					</li>
 				{/each}
 			</ul>
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.turn-divider-rule { height: 1px; margin-block: var(--space-sm); background: var(--border-muted); }
+	.turn-divider { margin-block: var(--space-sm); }
+	.turn-divider-rule-inline { height: 1px; background: var(--border-muted); }
+	.turn-divider-files { border: 0; background: transparent; color: var(--primary); }
+	.turn-divider-files:hover { background: var(--control-bg-hovered); }
+	.turn-divider-files-expanded { background: var(--control-bg-selected); }
+	.turn-divider-file { border: 0; background: transparent; padding-block: var(--space-2xs); text-align: start; }
+	.turn-divider-file:hover { background: var(--control-bg-hovered); }
+</style>

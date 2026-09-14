@@ -18,7 +18,7 @@ let expanded = $state(untrack(() => readFold(foldId)));
 <div
 	data-testid="skill-invocation-card"
 	data-expanded={expanded}
-	class="max-w-[85%] overflow-hidden rounded-[var(--radius-lg)] border border-bubble-user-border bg-clip-padding bg-bubble-user-bg"
+	class="skill-invocation-card"
 >
 	<button
 		type="button"
@@ -26,16 +26,25 @@ let expanded = $state(untrack(() => readFold(foldId)));
 		aria-expanded={expanded}
 		aria-label={`${expanded ? "Hide" : "Show"} instructions for ${invocation.name}`}
 		onclick={() => (expanded = toggleFold(foldId, expanded))}
-		class="flex w-full items-center gap-xs px-md py-sm text-left outline-none transition-colors hover:bg-control-bg-hovered focus-visible:ring-2 focus-visible:ring-primary"
+		class="u-flex u-w-full u-items-center u-gap-xs u-px-md u-py-sm u-text-left skill-invocation-toggle"
 	>
-		<Icon name="book-open" size={14} class="shrink-0 text-text-muted" />
-		<span class="shrink-0 tr-text-ui text-text-muted">Skill</span><span class="shrink-0 text-text-subtle" aria-hidden="true">·</span>
-		<span data-testid="skill-invocation-name" class="min-w-0 flex-1 truncate tr-code-text text-text-default">{invocation.name}</span>
-		<Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} class="shrink-0 text-text-muted" />
+		<Icon name="book-open" size={14} class="u-shrink-0 u-text-text-muted" />
+		<span class="u-shrink-0 tr-text-ui u-text-text-muted">Skill</span><span class="u-shrink-0 skill-invocation-subtle" aria-hidden="true">·</span>
+		<span data-testid="skill-invocation-name" class="u-min-w-0 u-flex-1 u-truncate tr-code-text u-text-text-default">{invocation.name}</span>
+		<Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} class="u-shrink-0 u-text-text-muted" />
 	</button>
 	{#if expanded}
-		<div data-testid="skill-invocation-content" class="border-bubble-user-border border-t px-md py-sm text-text-muted">
+		<div data-testid="skill-invocation-content" class="skill-invocation-content u-px-md u-py-sm u-text-text-muted">
 			<Markdown text={invocation.content} />
 		</div>
 	{/if}
 </div>
+
+<style>
+	.skill-invocation-card { max-width: 85%; overflow: hidden; border: 1px solid var(--bubble-user-border); border-radius: var(--radius-lg); background: var(--bubble-user-bg); background-clip: padding-box; }
+	.skill-invocation-toggle { border: 0; outline: none; background: transparent; transition: background-color var(--transition-fast); }
+	.skill-invocation-toggle:hover { background: var(--control-bg-hovered); }
+	.skill-invocation-toggle:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--border-focus); outline-offset: -2px; }
+	.skill-invocation-subtle { color: var(--text-subtle); }
+	.skill-invocation-content { border-top: 1px solid var(--bubble-user-border); }
+</style>

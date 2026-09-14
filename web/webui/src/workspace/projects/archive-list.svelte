@@ -76,35 +76,35 @@ function restore(sessionId: string): void {
 }
 </script>
 
-<div class="flex flex-col gap-2xs">
+<div class="u-flex u-flex-col u-gap-2xs">
 	<div class="dropdown-menu-label">Archived chats</div>
-	<p class="px-sm tr-text-metadata text-text-muted">Archive is Pixie metadata. Restoring keeps the same chat; it never clones it.</p>
+	<p class="u-px-sm tr-text-metadata u-text-text-muted">Archive is Pixie metadata. Restoring keeps the same chat; it never clones it.</p>
 	{#if !canArchive}
-		<p class="px-sm tr-text-metadata text-text-muted">Archiving is unavailable for this connection.</p>
+		<p class="u-px-sm tr-text-metadata u-text-text-muted">Archiving is unavailable for this connection.</p>
 	{:else if loading}
-		<p role="status" class="px-sm py-xs tr-text-metadata text-text-muted">Loading archived chats…</p>
+		<p role="status" class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">Loading archived chats…</p>
 	{:else if loadFailed}
-		<button type="button" class="tree-leaf tr-text-metadata underline" onclick={() => void load()}>Couldn't load archived chats · Retry</button>
+		<button type="button" class="tree-leaf tr-text-metadata archive-list__retry" onclick={() => void load()}>Couldn't load archived chats · Retry</button>
 	{:else if ordered.length === 0}
-		<p class="px-sm py-xs tr-text-metadata text-text-muted">No archived chats.</p>
+		<p class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">No archived chats.</p>
 	{:else}
-		<ul class="tree-group flex flex-col">
+		<ul class="tree-group u-flex u-flex-col">
 			{#each ordered as session (session.sessionId)}
 				<li class="tree-item">
-					<div class="flex w-full min-w-0 items-center gap-2xs">
-						<span class="min-w-0 flex-1">
-							<span class="block truncate tr-text-ui" title={displaySessionTitle(session.title)}>{displaySessionTitle(session.title)}</span>
-							<span class="block truncate tr-text-metadata text-text-muted">{sessionRowAccessibleLabel(session)} · {shortSessionAge(session.updatedAt)}</span>
+					<div class="u-flex u-w-full u-min-w-0 u-items-center u-gap-2xs">
+						<span class="u-min-w-0 u-flex-1">
+							<span class="archive-list__line u-truncate tr-text-ui" title={displaySessionTitle(session.title)}>{displaySessionTitle(session.title)}</span>
+							<span class="archive-list__line u-truncate tr-text-metadata u-text-text-muted">{sessionRowAccessibleLabel(session)} · {shortSessionAge(session.updatedAt)}</span>
 						</span>
 						{#if session.isStreaming}
-							<Icon name="loader-circle" size={12} class="shrink-0 animate-spin motion-reduce:animate-none" />
-							<span class="sr-only">Running</span>
+							<span class="archive-list__spinner u-inline-flex u-shrink-0"><Icon name="loader-circle" size={12} /></span>
+							<span class="u-sr-only">Running</span>
 						{/if}
 						<button
 							type="button"
 							data-testid="archive-restore"
 							data-session-id={session.sessionId}
-							class="tree-leaf shrink-0 tr-text-metadata underline"
+							class="tree-leaf u-shrink-0 tr-text-metadata archive-list__restore"
 							disabled={restoring === session.sessionId}
 							aria-label={restoring === session.sessionId
 								? `Restoring ${displaySessionTitle(session.title)}`
@@ -120,3 +120,30 @@ function restore(sessionId: string): void {
 		</ul>
 	{/if}
 </div>
+
+<style>
+	.archive-list__line {
+		display: block;
+	}
+
+	.archive-list__retry,
+	.archive-list__restore {
+		text-decoration: underline;
+	}
+
+	.archive-list__spinner {
+		animation: archive-list-spin 1s linear infinite;
+	}
+
+	@keyframes archive-list-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.archive-list__spinner {
+			animation: none;
+		}
+	}
+</style>

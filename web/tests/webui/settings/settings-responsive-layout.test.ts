@@ -11,35 +11,53 @@ function readSection(name: string): Promise<string> {
 
 test("provider cards size to the pane and keep the description readable", async () => {
 	const source = await readSection("provider-card");
-	expect(source).toContain('class="@container"');
+	expect(source).toContain('class="provider-card-container"');
+	expect(source).toContain("container-type: inline-size;");
 	// A real minimum keeps the description out of a mid-word crush.
-	expect(source).toContain("min-w-48");
+	expect(source).toContain(".provider-card__summary");
+	expect(source).toContain("min-inline-size: 12rem;");
 	// Only widen to a single action row once the pane itself has room.
-	expect(source).toContain("@2xl:flex-nowrap");
-	expect(source).not.toContain("sm:flex-nowrap");
-	expect(source).toContain("flex shrink-0 flex-wrap items-center gap-xs");
+	expect(source).toContain("@container (min-width: 42rem)");
+	expect(source).toMatch(
+		/@container \(min-width: 42rem\)\s*{[^}]*\.provider-card\s*{[^}]*flex-wrap:\s*nowrap;/s,
+	);
+	expect(source).not.toContain("@media (min-width: 42rem)");
+	expect(source).toContain('class="u-flex u-shrink-0 u-flex-wrap u-items-center u-gap-xs"');
 });
 
 test("system cards stack below the pane threshold and keep label/value separate", async () => {
 	const source = await readSection("system-settings");
-	expect(source).toContain("@container mx-auto flex w-full max-w-[56rem]");
-	expect(source).toContain("@2xl:grid-cols-3");
-	expect(source).not.toContain("md:grid-cols-3");
+	expect(source).toContain(".system-settings");
+	expect(source).toContain("max-inline-size: 56rem;");
+	expect(source).toContain("container-type: inline-size;");
+	expect(source).toContain(".system-service-grid");
+	expect(source).toContain("grid-template-columns: minmax(0, 1fr);");
+	expect(source).toMatch(
+		/@container \(min-width: 42rem\)\s*{[^}]*\.system-service-grid\s*{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s,
+	);
+	expect(source).not.toContain("@media (min-width: 42rem)");
 	// Label keeps its intrinsic width and the value gets the remaining track, so the gap is visible.
-	expect(source).toContain("grid-cols-[max-content_minmax(0,1fr)]");
-	expect(source).toContain("gap-x-sm");
+	expect(source).toContain("grid-template-columns: max-content minmax(0, 1fr);");
+	expect(source).toContain("column-gap: var(--space-sm);");
 	// The badge wraps under the title instead of being clipped, and never breaks inside its label.
-	expect(source).toContain("whitespace-nowrap");
-	expect(source).toContain("gap-x-sm gap-y-xs");
+	expect(source).toContain(".state-badge");
+	expect(source).toContain("white-space: nowrap;");
+	expect(source).toContain('class="u-flex u-flex-wrap u-items-center u-justify-between u-gap-sm"');
 });
 
 test("model rows stack inside the pane and keep the action and meta badge intact", async () => {
 	const source = await readSection("models-settings");
-	expect(source).toContain('class="@container flex flex-col gap-lg"');
-	expect(source).toContain("@2xl:grid-cols-[minmax(12rem,1fr)_auto_auto]");
-	expect(source).not.toContain("sm:grid-cols-");
+	expect(source).toContain('class="models-settings u-flex u-flex-col u-gap-lg"');
+	expect(source).toContain("container-type: inline-size;");
+	expect(source).toContain(".model-row");
+	expect(source).toContain("grid-template-columns: minmax(0, 1fr);");
+	expect(source).toMatch(
+		/@container \(min-width: 42rem\)\s*{[^}]*\.model-row\s*{[^}]*grid-template-columns:\s*minmax\(12rem, 1fr\) auto auto;/s,
+	);
+	expect(source).not.toContain("@media (min-width: 42rem)");
 	// The ctx/out badge stays on one line and the eye control remains present.
-	expect(source).toContain('class="badge whitespace-nowrap"');
+	expect(source).toContain(".model-row__context");
+	expect(source).toContain("white-space: nowrap;");
 	expect(source).toContain('name={model.hidden ? "eye-off" : "eye"}');
 });
 

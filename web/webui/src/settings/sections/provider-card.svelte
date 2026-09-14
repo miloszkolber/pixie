@@ -62,31 +62,31 @@ async function checkReadiness(): Promise<void> {
 }
 </script>
 
-<div class="@container">
+<div class="provider-card-container">
 	<div
 		data-testid="provider-row"
 		data-provider={provider.id}
 		data-configured={String(provider.configured)}
-		class="flex flex-wrap items-center gap-md rounded-[var(--radius-sm)] border border-border-default bg-control-bg px-md py-sm @2xl:flex-nowrap"
+		class="provider-card u-flex u-flex-wrap u-items-center u-gap-md u-rounded u-border u-border-border-default u-bg-control-bg u-px-md u-py-sm"
 	>
 	<span
-		class={`flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] ${
+		class={`provider-card__status u-flex u-shrink-0 u-items-center u-justify-center u-rounded ${
 			availability.usable
-				? "bg-feedback-success-subtle text-feedback-success"
-				: "bg-control-bg-selected text-text-muted"
+				? "provider-card__status--ready"
+				: "provider-card__status--unavailable"
 		}`}
 	>
 		<Icon name={availability.usable ? "check" : "boxes"} size={16} />
 	</span>
-	<div class="min-w-48 flex-1">
-		<div class="break-words text-text-default tr-text-ui">{provider.name}</div>
-		<div class="break-words text-text-muted tr-text-metadata">
+	<div class="provider-card__summary u-flex-1">
+		<div class="provider-card__text u-text-text-default tr-text-ui">{provider.name}</div>
+		<div class="provider-card__text u-text-text-muted tr-text-metadata">
 			{provider.id} · {modelSummary(provider)}
 		</div>
-		{#if provider.deprecated}<p class="text-text-muted tr-text-metadata">Legacy provider{provider.replacement ? ` · Replacement: ${provider.replacement}` : ""}</p>{/if}
-		{#if provider.configuration === "defaults" || provider.configuration === "unknown"}<p class="text-text-muted tr-text-metadata">{provider.configuration === "defaults" ? "Default connection only · configure through Pi to use" : "Configuration could not be verified"}</p>{/if}
+		{#if provider.deprecated}<p class="u-text-text-muted tr-text-metadata">Legacy provider{provider.replacement ? ` · Replacement: ${provider.replacement}` : ""}</p>{/if}
+		{#if provider.configuration === "defaults" || provider.configuration === "unknown"}<p class="u-text-text-muted tr-text-metadata">{provider.configuration === "defaults" ? "Default connection only · configure through Pi to use" : "Configuration could not be verified"}</p>{/if}
 		{#if provider.configured}
-			<div class="break-words text-text-muted tr-text-metadata">
+			<div class="provider-card__text u-text-text-muted tr-text-metadata">
 				Pi reports {configuredLabel}{provider.available === false
 					? " · runtime unavailable"
 					: provider.readinessCheck
@@ -95,7 +95,7 @@ async function checkReadiness(): Promise<void> {
 			</div>
 		{/if}
 	</div>
-	<div class="flex shrink-0 flex-wrap items-center gap-xs">
+	<div class="u-flex u-shrink-0 u-flex-wrap u-items-center u-gap-xs">
 		{#if provider.readinessCheck}
 			<Button
 				variant="outline"
@@ -109,7 +109,7 @@ async function checkReadiness(): Promise<void> {
 				Check configuration
 			</Button>
 			{#if readinessText}
-				<span aria-live="polite" class="text-text-muted tr-text-metadata">
+				<span aria-live="polite" class="u-text-text-muted tr-text-metadata">
 					{readinessText}
 				</span>
 			{/if}
@@ -154,7 +154,7 @@ async function checkReadiness(): Promise<void> {
 		{/if}
 		{#if (provider.configured && !provider.canLogout) || (!provider.configured && !provider.canApiKey && !provider.canOAuth && !provider.canConfigure)}
 			<span
-				class="flex shrink-0 items-center gap-xs text-text-muted tr-text-metadata"
+				class="u-flex u-shrink-0 u-items-center u-gap-xs u-text-text-muted tr-text-metadata"
 				title="Configured through Pi or its environment"
 			>
 				<Icon name="lock" size={12} />
@@ -164,3 +164,38 @@ async function checkReadiness(): Promise<void> {
 	</div>
 	</div>
 </div>
+
+<style>
+	.provider-card-container {
+		container-type: inline-size;
+	}
+
+	.provider-card__status {
+		inline-size: 2rem;
+		block-size: 2rem;
+	}
+
+	.provider-card__status--ready {
+		background: var(--feedback-success-subtle);
+		color: var(--feedback-success);
+	}
+
+	.provider-card__status--unavailable {
+		background: var(--control-bg-selected);
+		color: var(--text-muted);
+	}
+
+	.provider-card__summary {
+		min-inline-size: 12rem;
+	}
+
+	.provider-card__text {
+		overflow-wrap: break-word;
+	}
+
+	@container (min-width: 42rem) {
+		.provider-card {
+			flex-wrap: nowrap;
+		}
+	}
+</style>

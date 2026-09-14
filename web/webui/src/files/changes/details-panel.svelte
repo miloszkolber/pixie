@@ -199,24 +199,24 @@ async function release(): Promise<void> {
 }
 </script>
 
-<div data-testid="details-panel" class="flex min-h-0 flex-1 flex-col gap-md">
+<div data-testid="details-panel" class="u-flex u-min-h-0 u-flex-1 u-flex-col u-gap-md">
 	{#if sessionId === null}
-		<p class="tr-text-metadata text-text-muted">Select a chat to inspect its status and usage.</p>
+		<p class="tr-text-metadata u-text-text-muted">Select a chat to inspect its status and usage.</p>
 	{:else}
 		{#if !connected}
 			<p
 				role="status"
 				data-testid="details-stale"
-				class="tr-text-metadata text-feedback-warning"
+				class="tr-text-metadata u-text-feedback-warning"
 			>
 				Offline — showing last reported values.
 			</p>
 		{/if}
-		<section aria-label="Session" class="flex flex-col gap-2xs">
-			<p class="tr-text-metadata text-text-muted">Session details</p>
-			<p data-testid="details-session" class="mt-xs break-all tr-code-text">{sessionId}</p>
+		<section aria-label="Session" class="u-flex u-flex-col u-gap-2xs">
+			<p class="tr-text-metadata u-text-text-muted">Session details</p>
+			<p data-testid="details-session" class="details-session-id u-mt-xs tr-code-text">{sessionId}</p>
 			{#if summaryError}
-				<p role="alert" data-testid="details-error" class="tr-text-metadata text-feedback-error">
+				<p role="alert" data-testid="details-error" class="tr-text-metadata u-text-feedback-error">
 					Could not load session details: {summaryError}
 				</p>
 				<div>
@@ -230,22 +230,22 @@ async function release(): Promise<void> {
 					</Button>
 				</div>
 			{:else if !summary}
-				<p role="status" class="tr-text-metadata text-text-muted">Loading session details…</p>
+				<p role="status" class="tr-text-metadata u-text-text-muted">Loading session details…</p>
 			{:else}
-				<dl class="grid grid-cols-2 gap-x-lg gap-y-xs tr-text-metadata">
-					<dt class="text-text-muted">Model</dt>
-					<dd data-testid="details-model" class="text-right text-text-default">{modelText}</dd>
-					<dt class="text-text-muted">Thinking</dt>
-					<dd data-testid="details-thinking" class="text-right text-text-default">{thinkingText}</dd>
-					<dt class="text-text-muted">Status</dt>
-					<dd data-testid="details-status" class="text-right text-text-default">{statusText}</dd>
+				<dl class="details-grid tr-text-metadata">
+					<dt class="u-text-text-muted">Model</dt>
+					<dd data-testid="details-model" class="details-value u-text-text-default">{modelText}</dd>
+					<dt class="u-text-text-muted">Thinking</dt>
+					<dd data-testid="details-thinking" class="details-value u-text-text-default">{thinkingText}</dd>
+					<dt class="u-text-text-muted">Status</dt>
+					<dd data-testid="details-status" class="details-value u-text-text-default">{statusText}</dd>
 				</dl>
 			{/if}
 		</section>
-		<section aria-label="Usage" class="flex flex-col gap-2xs">
-			<p class="tr-text-metadata text-text-muted">Usage</p>
+		<section aria-label="Usage" class="u-flex u-flex-col u-gap-2xs">
+			<p class="tr-text-metadata u-text-text-muted">Usage</p>
 			{#if statsError}
-				<p role="alert" data-testid="details-stats-error" class="tr-text-metadata text-feedback-error">
+				<p role="alert" data-testid="details-stats-error" class="tr-text-metadata u-text-feedback-error">
 					Could not load usage: {statsError}
 				</p>
 				<div>
@@ -259,29 +259,29 @@ async function release(): Promise<void> {
 					</Button>
 				</div>
 			{:else if !stats}
-				<p role="status" class="tr-text-metadata text-text-muted">Loading usage…</p>
+				<p role="status" class="tr-text-metadata u-text-text-muted">Loading usage…</p>
 			{:else}
-				<dl data-testid="details-usage" class="grid grid-cols-2 gap-x-lg gap-y-xs tr-text-metadata">
-					<dt class="text-text-muted">Input</dt>
-					<dd data-testid="details-tokens-input" class="text-right text-text-default tabular-nums">{inputTokens}</dd>
-					<dt class="text-text-muted">Output</dt>
-					<dd data-testid="details-tokens-output" class="text-right text-text-default tabular-nums">{outputTokens}</dd>
-					<dt class="text-text-muted">Cache read</dt>
-					<dd data-testid="details-tokens-cache-read" class="text-right text-text-default tabular-nums">{cacheReadTokens}</dd>
-					<dt class="text-text-muted">Cache write</dt>
-					<dd data-testid="details-tokens-cache-write" class="text-right text-text-default tabular-nums">{cacheWriteTokens}</dd>
-					<dt class="text-text-muted">Total</dt>
-					<dd data-testid="details-tokens-total" class="text-right text-text-default tabular-nums">{totalTokens}</dd>
-					<dt class="text-text-muted">Cost</dt>
-					<dd data-testid="details-cost" class="text-right text-text-default tabular-nums">{costText}</dd>
-					<dt class="text-text-muted">Context</dt>
-					<dd data-testid="details-context" class="text-right text-text-default tabular-nums">{contextText}</dd>
+				<dl data-testid="details-usage" class="details-grid tr-text-metadata">
+					<dt class="u-text-text-muted">Input</dt>
+					<dd data-testid="details-tokens-input" class="details-value u-text-text-default">{inputTokens}</dd>
+					<dt class="u-text-text-muted">Output</dt>
+					<dd data-testid="details-tokens-output" class="details-value u-text-text-default">{outputTokens}</dd>
+					<dt class="u-text-text-muted">Cache read</dt>
+					<dd data-testid="details-tokens-cache-read" class="details-value u-text-text-default">{cacheReadTokens}</dd>
+					<dt class="u-text-text-muted">Cache write</dt>
+					<dd data-testid="details-tokens-cache-write" class="details-value u-text-text-default">{cacheWriteTokens}</dd>
+					<dt class="u-text-text-muted">Total</dt>
+					<dd data-testid="details-tokens-total" class="details-value u-text-text-default">{totalTokens}</dd>
+					<dt class="u-text-text-muted">Cost</dt>
+					<dd data-testid="details-cost" class="details-value u-text-text-default">{costText}</dd>
+					<dt class="u-text-text-muted">Context</dt>
+					<dd data-testid="details-context" class="details-value u-text-text-default">{contextText}</dd>
 				</dl>
 			{/if}
 		</section>
 		{#if summary && !summaryError}
-			<section aria-label="Idle runtime" class="flex flex-col items-start gap-xs">
-				<p class="tr-text-metadata text-text-muted">Idle runtime</p>
+			<section aria-label="Idle runtime" class="u-flex u-flex-col u-items-start u-gap-xs">
+				<p class="tr-text-metadata u-text-text-muted">Idle runtime</p>
 				{#if showRelease}
 					<Button
 						variant="outline"
@@ -292,17 +292,31 @@ async function release(): Promise<void> {
 					>
 						{releaseBusy ? "Releasing…" : "Release idle runtime"}
 					</Button>
-					<p class="tr-text-metadata text-text-muted">
+					<p class="tr-text-metadata u-text-text-muted">
 						The controller verifies idleness; active or pinned work stays. History and drafts are retained.
 					</p>
 				{:else if releaseReason}
-					<p data-testid="details-release-reason" class="tr-text-metadata text-text-muted">{releaseReason}</p>
+					<p data-testid="details-release-reason" class="tr-text-metadata u-text-text-muted">{releaseReason}</p>
 				{/if}
 				{#if releaseError}
-					<p role="alert" data-testid="details-release-error" class="tr-text-metadata text-feedback-error">{releaseError}</p>
+					<p role="alert" data-testid="details-release-error" class="tr-text-metadata u-text-feedback-error">{releaseError}</p>
 				{/if}
 			</section>
 		{/if}
-		<p class="tr-text-metadata text-text-muted">Read-only inspection. Releasing frees runtime capacity only.</p>
+		<p class="tr-text-metadata u-text-text-muted">Read-only inspection. Releasing frees runtime capacity only.</p>
 	{/if}
 </div>
+
+<style>
+	.details-session-id { overflow-wrap: anywhere; }
+	.details-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		column-gap: var(--space-lg);
+		row-gap: var(--space-xs);
+	}
+	.details-value {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+</style>

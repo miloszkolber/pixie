@@ -12,13 +12,13 @@ export function statusNameClass(status: GitFileStatus): string {
 	switch (status) {
 		case "added":
 		case "untracked":
-			return "text-feedback-success";
+			return "tree-row-status-added";
 		case "deleted":
-			return "text-feedback-error line-through";
+			return "tree-row-status-deleted";
 		case "renamed":
-			return "text-feedback-info";
+			return "tree-row-status-renamed";
 		default:
-			return "";
+			return "tree-row-status-default";
 	}
 }
 

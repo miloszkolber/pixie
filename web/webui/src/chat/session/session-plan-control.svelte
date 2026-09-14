@@ -31,13 +31,13 @@ function clampPopoverWidth(event: Event): void {
 </script>
 
 {#if visible && planState}
-	<span class="contents" {@attach mewa(popoverBehavior)}>
+	<span class="session-plan-contents" {@attach mewa(popoverBehavior)}>
 		<button
 			type="button"
 			popovertarget={popoverId}
 			data-testid="session-plan-trigger"
 			aria-label={sessionPlanLabel(planState)}
-			class="flex shrink-0 items-center gap-xs rounded-[var(--radius-sm)] px-xs py-0.5 tr-text-metadata text-text-muted outline-none hover:bg-control-bg-hovered hover:text-text-default focus-visible:ring-2 focus-visible:ring-primary"
+			class="u-flex u-shrink-0 u-items-center u-gap-xs u-rounded u-px-xs session-plan-trigger tr-text-metadata u-text-text-muted"
 		>
 			<Icon name="list-checks" size={14} />
 			<span>{hasEntries ? `${progress.completed}/${progress.total}` : "Limited"}</span>
@@ -46,7 +46,7 @@ function clampPopoverWidth(event: Event): void {
 			id={popoverId}
 			popover="auto"
 			ontoggle={clampPopoverWidth}
-			class="session-plan-popover popover w-[min(90vw,30rem)] p-0"
+			class="session-plan-popover popover session-plan-popover-size"
 		>
 			<SessionPlanContent {planState} />
 		</div>
@@ -62,4 +62,9 @@ function clampPopoverWidth(event: Event): void {
 	.session-plan-popover {
 		position-area: bottom span-right;
 	}
+	.session-plan-trigger { border: 0; outline: none; background: transparent; padding-block: var(--space-2xs); }
+	.session-plan-trigger:hover { background: var(--control-bg-hovered); color: var(--text-default); }
+	.session-plan-trigger:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--border-focus); }
+	.session-plan-popover-size { width: min(90vw, 30rem); padding: 0; }
+	.session-plan-contents { display: contents; }
 </style>

@@ -30,22 +30,22 @@ let view = $derived.by(() => {
 </script>
 
 {#snippet usageRow(label: string, value: string)}
-	<div class="contents">
-		<dt class="text-text-muted">{label}</dt>
-		<dd class="text-right text-text-default tabular-nums">{value}</dd>
+	<div class="session-stats-contents">
+		<dt class="u-text-text-muted">{label}</dt>
+		<dd class="u-text-text-default session-stats-value">{value}</dd>
 	</div>
 {/snippet}
 
 {#if view}
-	<div class="contents" {@attach mewa(popoverBehavior)}>
+	<div class="session-stats-contents" {@attach mewa(popoverBehavior)}>
 		<button
 			type="button"
 			popovertarget={popoverId}
 			data-testid="usage-tracker"
-			class="flex shrink-0 flex-nowrap items-center justify-end gap-x-xs rounded-[var(--radius-sm)] px-xs py-0.5 text-text-muted tr-text-metadata hover:bg-control-bg-hovered hover:text-text-default"
+			class="u-flex u-shrink-0 session-stats-nowrap u-items-center session-stats-justify-end u-gap-xs u-rounded u-px-xs session-stats-trigger-padding u-text-text-muted tr-text-metadata session-stats-trigger"
 			aria-label="Open session usage"
 		>
-			<Icon name="gauge" size={14} class="size-3.5 text-primary" />
+			<Icon name="gauge" size={14} class="session-stats-icon" />
 			{#if isUsageReported(view.stats, "total", view.stats.tokens.total)}
 				<span>{formatTokens(view.stats.tokens.total)} tokens</span>
 			{/if}
@@ -54,21 +54,21 @@ let view = $derived.by(() => {
 		<div
 			id={popoverId}
 			popover="auto"
-			class="popover w-[min(90vw,22rem)] p-md"
+			class="popover session-stats-popover u-p-md"
 			data-align="end"
 		>
-			<div data-testid="session-stats" class="flex flex-col gap-md">
+			<div data-testid="session-stats" class="u-flex u-flex-col u-gap-md">
 				<div>
-					<div class="tr-text-ui text-text-default">Session usage</div>
-					<div class="text-text-muted tr-text-metadata">
+					<div class="tr-text-ui u-text-text-default">Session usage</div>
+					<div class="u-text-text-muted tr-text-metadata">
 						Reported by the connected agent for this controller runtime
 					</div>
 				</div>
 				{#if view.stats.contextUsage}
-					<div class="flex flex-col gap-xs">
-						<div class="flex items-center justify-between tr-text-metadata">
-							<span class="text-text-default">Context window</span>
-							<span class="text-text-muted">{view.context?.text}</span>
+					<div class="u-flex u-flex-col u-gap-xs">
+						<div class="u-flex u-items-center u-justify-between tr-text-metadata">
+							<span class="u-text-text-default">Context window</span>
+							<span class="u-text-text-muted">{view.context?.text}</span>
 						</div>
 						<div
 							role="progressbar"
@@ -76,16 +76,16 @@ let view = $derived.by(() => {
 							aria-valuemin={0}
 							aria-valuemax={100}
 							aria-valuenow={Math.round(Math.min(100, Math.max(0, view.progress)))}
-							class="h-1.5 overflow-hidden rounded-full bg-control-bg-selected"
+							class="session-stats-progress-track"
 						>
 							<div
-								class="h-full rounded-full bg-primary"
+								class="session-stats-progress"
 								style:width={`${Math.min(100, Math.max(0, view.progress))}%`}
 							></div>
 						</div>
 					</div>
 				{/if}
-				<dl class="grid grid-cols-2 gap-x-lg gap-y-xs tr-text-metadata">
+				<dl class="session-stats-grid tr-text-metadata">
 					{#if isUsageReported(view.stats, "input", view.stats.tokens.input)}
 						{@render usageRow("Input", `${view.stats.tokens.input.toLocaleString()} tokens`)}
 					{/if}
@@ -109,3 +109,18 @@ let view = $derived.by(() => {
 		</div>
 	</div>
 {/if}
+
+<style>
+	.session-stats-contents { display: contents; }
+	.session-stats-value { text-align: end; font-variant-numeric: tabular-nums; }
+	.session-stats-nowrap { flex-wrap: nowrap; }
+	.session-stats-justify-end { justify-content: end; }
+	.session-stats-trigger-padding { padding-block: var(--space-2xs); }
+	.session-stats-trigger { border: 0; background: transparent; }
+	.session-stats-trigger:hover { background: var(--control-bg-hovered); color: var(--text-default); }
+	:global(.session-stats-icon) { width: 0.875rem; height: 0.875rem; color: var(--primary); }
+	.session-stats-popover { width: min(90vw, 22rem); }
+	.session-stats-progress-track { height: var(--space-xs); overflow: hidden; border-radius: 999px; background: var(--control-bg-selected); }
+	.session-stats-progress { height: 100%; border-radius: 999px; background: var(--primary); }
+	.session-stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-lg); row-gap: var(--space-xs); }
+</style>

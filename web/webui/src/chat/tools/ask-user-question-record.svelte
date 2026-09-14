@@ -14,12 +14,12 @@ let byIndex = $derived(
 </script>
 
 {#if !result}
-	<div data-testid="ask-user-question" data-tone="pending" class="text-text-muted tr-text-metadata">{rawText || "Question closed."}</div>
+	<div data-testid="ask-user-question" data-tone="pending" class="u-text-text-muted tr-text-metadata">{rawText || "Question closed."}</div>
 {:else}
-	<div data-testid="ask-user-question" data-tone={result.cancelled ? "skipped" : "answered"} class="flex flex-col gap-md">
+	<div data-testid="ask-user-question" data-tone={result.cancelled ? "skipped" : "answered"} class="u-flex u-flex-col u-gap-md">
 		{#each questions as question, index (question.question)}
 			<Recap {question} answer={byIndex.get(index)} />
 		{/each}
-		{#if questions.length === 0}<div class="text-text-muted tr-text-metadata">{rawText || "Answered."}</div>{/if}
+		{#if questions.length === 0}<div class="u-text-text-muted tr-text-metadata">{rawText || "Answered."}</div>{/if}
 	</div>
 {/if}

@@ -10,7 +10,7 @@ interface Props {
 	class?: string;
 }
 
-let { text, class: className = "tr-prose-chat max-w-none break-words" }: Props = $props();
+let { text, class: className = "tr-prose-chat chat-markdown-root" }: Props = $props();
 let root = $state<HTMLElement>();
 let parsed = $state<ParsedMarkdown | null>(null);
 let html = $derived(parsed?.source === text ? parsed.html : null);
@@ -159,4 +159,5 @@ $effect(() => {
 	:global(.tr-prose-chat .chat-markdown-code) { overflow: auto; border-radius: var(--radius-sm); }
 	:global(.tr-prose-chat .chat-markdown-code pre) { margin: 0; background: var(--container-elevated-bg) !important; padding: var(--space-300); }
 	.chat-markdown-fallback { white-space: pre-wrap; }
+	.chat-markdown-root { max-width: none; overflow-wrap: break-word; }
 </style>

@@ -133,11 +133,11 @@ $effect(() => {
 });
 </script>
 
-<div data-testid="markdown-preview" class="h-full overflow-auto bg-container-project-bg">
-	<article class="mx-auto max-w-[78ch] px-xl py-lg">
+<div data-testid="markdown-preview" class="markdown-preview-surface u-h-full u-overflow-auto">
+	<article class="markdown-preview-content u-px-xl">
 		<div
 			bind:this={root}
-			class="tr-prose-doc markdown-document max-w-none break-words text-pretty text-text-default"
+			class="tr-prose-doc markdown-document markdown-preview-text u-break-words u-text-text-default"
 		>
 			{@html html}
 		</div>
@@ -145,6 +145,13 @@ $effect(() => {
 </div>
 
 <style>
+	.markdown-preview-surface { background-color: var(--container-project-bg); }
+	.markdown-preview-content {
+		max-inline-size: 78ch;
+		margin-inline: auto;
+		padding-block: var(--space-lg);
+	}
+	.markdown-preview-text { text-wrap: pretty; }
 	:global(.markdown-document > :first-child) { margin-top: 0; }
 	:global(.markdown-document > :last-child) { margin-bottom: 0; }
 	:global(.markdown-document h1), :global(.markdown-document h2) { border-bottom: 1px solid var(--border-primary); padding-bottom: var(--space-200); }

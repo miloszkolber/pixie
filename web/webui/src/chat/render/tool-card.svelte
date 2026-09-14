@@ -62,28 +62,41 @@ $effect(() => {
 	data-tool={toolName}
 	data-status={status}
 	data-expanded={expanded}
-	class="rounded-[var(--radius-sm)] border border-border-default bg-container-elevated-bg"
+	class="tool-card"
 >
 	<button
 		type="button"
 		data-testid="tool-card-toggle"
 		aria-expanded={expanded}
 		onclick={() => (expanded = toggleFold(toolCallId, expanded))}
-		class="flex w-full cursor-pointer select-none items-center gap-xs px-sm py-xs text-left tr-text-metadata outline-none focus-visible:ring-2 focus-visible:ring-primary"
+		class="u-flex u-w-full u-items-center u-gap-xs u-px-sm u-py-xs u-text-left tr-text-metadata tool-card-toggle"
 	>
 		<Icon
 			name={status === "running" ? "loader-circle" : isError || status === "interrupted" ? "x" : "check"}
 			size={12}
-			class={`shrink-0 ${status === "running" ? "animate-spin text-text-muted motion-reduce:animate-none" : isError ? "text-feedback-error" : status === "interrupted" ? "text-text-muted" : "text-feedback-success"}`}
+			class={`u-shrink-0 ${status === "running" ? "tool-card-spinning u-text-text-muted" : isError ? "u-text-feedback-error" : status === "interrupted" ? "u-text-text-muted" : "tool-card-success"}`}
 		/>
-		<span class="min-w-0 break-words text-text-default">{title || toolName}</span>
-		{#if summary}<span class="min-w-0 flex-1 truncate text-text-muted" title={summary}>{summary}</span>
-		{:else}<span class="flex-1"></span>{/if}
-		<Icon name="chevron-right" size={12} class={`shrink-0 text-text-muted transition-transform ${expanded ? "rotate-90" : ""}`} />
+		<span class="u-min-w-0 u-break-words u-text-text-default">{title || toolName}</span>
+		{#if summary}<span class="u-min-w-0 u-flex-1 u-truncate u-text-text-muted" title={summary}>{summary}</span>
+		{:else}<span class="u-flex-1"></span>{/if}
+		<Icon name="chevron-right" size={12} class={`u-shrink-0 u-text-text-muted tool-card-chevron ${expanded ? "tool-card-chevron-expanded" : ""}`} />
 	</button>
 	{#if expanded}
-		<div class={`flex flex-col items-start gap-sm px-sm pb-xs ${isError ? "text-feedback-error" : ""}`}>
+		<div class={`u-flex u-flex-col u-items-start u-gap-sm tool-card-content u-px-sm ${isError ? "u-text-feedback-error" : ""}`}>
 			{#if status === "interrupted"}<DefaultToolRenderer {...renderProps} />{:else}<Renderer {...renderProps} />{/if}
-		</div>
+	</div>
+
+<style>
+	.tool-card { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--container-elevated-bg); }
+	.tool-card-toggle { cursor: pointer; user-select: none; border: 0; outline: none; background: transparent; }
+	.tool-card-toggle:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--border-focus); outline-offset: -2px; }
+	.tool-card-success { color: var(--feedback-success); }
+	.tool-card-spinning { animation: tool-card-spin 1s linear infinite; }
+	.tool-card-chevron { transition: transform var(--transition-fast); }
+	.tool-card-chevron-expanded { transform: rotate(90deg); }
+	.tool-card-content { padding-block-end: var(--space-xs); }
+	@keyframes tool-card-spin { to { transform: rotate(360deg); } }
+	@media (prefers-reduced-motion: reduce) { .tool-card-spinning { animation: none; } }
+</style>
 	{/if}
 </div>

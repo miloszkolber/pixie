@@ -66,7 +66,7 @@ function setCatalogView(view: unknown): void {
 </script>
 
 {#snippet projectList()}
-	<div data-testid="session-catalog-view" role="group" aria-label="Session catalog view" class="flex shrink-0 gap-2xs px-xs">
+	<div data-testid="session-catalog-view" role="group" aria-label="Session catalog view" class="u-flex u-shrink-0 u-gap-2xs u-px-xs">
 		<Button
 			variant="ghost"
 			size="sm"
@@ -89,12 +89,12 @@ function setCatalogView(view: unknown): void {
 	{#if catalogView === "flat"}
 		<SessionFlatList projects={visibleProjects} {activeSessionId} />
 	{:else}
-	<ul class="tree-group flex flex-col gap-2xs">
+		<ul class="tree-group u-flex u-flex-col u-gap-2xs">
 		{#each visibleProjects as project (project.id)}
 			{@const selected = $appStore.selectedProjectId === project.id}
 			{@const expanded = $appStore.expandedProjectIds[project.id] === true || selected}
-			<li class="tree-item group flex min-w-0 flex-col">
-				<div class="flex w-full min-w-0 items-center">
+			<li class="tree-item workspace-project-tree-item u-flex u-min-w-0 u-flex-col">
+				<div class="u-flex u-w-full u-min-w-0 u-items-center">
 					<Button
 						variant="ghost"
 						size="icon-sm"
@@ -113,17 +113,15 @@ function setCatalogView(view: unknown): void {
 						data-project-id={project.id}
 						data-selected={selected || undefined}
 						title={project.roots[0]}
-						class="tree-leaf min-w-0 flex-1"
+						class="tree-leaf u-min-w-0 u-flex-1"
 						onclick={() => void selectProject(project)}
 					>
-						<ProjectIcon
-							icon={project.icon ?? "folder"}
-							size={16}
-							class={selected ? "text-primary" : "text-text-muted"}
-						/>
-						<span class="min-w-0 flex-1">
-							<span class="block truncate tr-text-ui text-text-default">{project.name}</span>
-							<span class="block truncate tr-text-metadata text-text-muted">{project.roots[0]}</span>
+						<span class="workspace-project-tree-icon u-inline-flex" data-selected={selected || undefined}>
+							<ProjectIcon icon={project.icon ?? "folder"} size={16} />
+						</span>
+						<span class="u-min-w-0 u-flex-1">
+							<span class="workspace-project-tree-line u-truncate tr-text-ui u-text-text-default">{project.name}</span>
+							<span class="workspace-project-tree-line u-truncate tr-text-metadata u-text-text-muted">{project.roots[0]}</span>
 						</span>
 					</button>
 					<Button
@@ -131,7 +129,7 @@ function setCatalogView(view: unknown): void {
 						size="icon-sm"
 						aria-label={`Customize ${project.name}`}
 						title="Customize project"
-						class="invisible group-hover:visible focus:visible"
+						class="workspace-project-tree-action"
 						onclick={() => (customizeProject = project)}
 					>
 						<Icon name="settings-2" size={14} />
@@ -141,14 +139,14 @@ function setCatalogView(view: unknown): void {
 						size="icon-sm"
 						aria-label={`Remove ${project.name} from pixie`}
 						title="Remove from pixie"
-						class="invisible group-hover:visible focus:visible"
+						class="workspace-project-tree-action"
 						onclick={() => closeProject(project)}
 					>
 						<Icon name="x" size={14} />
 					</Button>
 				</div>
 				{#if expanded}
-					<ul class="tree-group pixie-guide flex w-full flex-col gap-2xs py-2xs pl-md">
+					<ul class="tree-group pixie-guide workspace-project-tree-children u-flex u-w-full u-flex-col u-gap-2xs">
 						<li class="tree-item"><button type="button" class="tree-leaf tr-text-metadata" onclick={() => void openSettingsArea(SettingsSection.Schedules)}>Schedules</button></li>
 						<ProjectSessions {project} {activeSessionId} />
 					</ul>
@@ -158,18 +156,18 @@ function setCatalogView(view: unknown): void {
 	</ul>
 	{/if}
 	{#if $appStore.projects.length === 0}
-		<p class="px-sm py-xs tr-text-metadata text-text-muted">Open a directory to start a project.</p>
+		<p class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">Open a directory to start a project.</p>
 	{:else if visibleProjects.length === 0}
-		<p class="px-sm py-xs tr-text-metadata text-text-muted">No projects match this filter.</p>
+		<p class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">No projects match this filter.</p>
 	{/if}
 	<!-- Ungrouped chats without a named project render in the flat catalog's
 	explicit Ungrouped section; this tree never invents a hidden catch-all project. -->
 {/snippet}
 
 {#if chrome === "full"}
-	<nav class="tree flex flex-col gap-sm" aria-label="Projects">
-		<header class="flex h-7 items-center justify-between pr-xs pl-sm">
-			<span class="tr-text-eyebrow text-text-muted">Projects</span>
+	<nav class="tree u-flex u-flex-col u-gap-sm" aria-label="Projects">
+		<header class="workspace-project-tree-header u-flex u-items-center u-justify-between">
+			<span class="tr-text-eyebrow u-text-text-muted">Projects</span>
 			{#snippet addTrigger(menuId: string)}
 				<Button
 					variant="ghost"
@@ -194,7 +192,7 @@ function setCatalogView(view: unknown): void {
 		{@render projectList()}
 	</nav>
 {:else}
-	<div class="tree flex flex-col gap-sm">
+	<div class="tree u-flex u-flex-col u-gap-sm">
 		{@render projectList()}
 	</div>
 {/if}
@@ -209,3 +207,37 @@ function setCatalogView(view: unknown): void {
 		onOpenChange={(next) => { if (!next) customizeProject = null; }}
 	/>
 {/if}
+
+<style>
+	.workspace-project-tree-icon {
+		color: var(--text-muted);
+	}
+
+	.workspace-project-tree-icon[data-selected] {
+		color: var(--primary);
+	}
+
+	.workspace-project-tree-line {
+		display: block;
+	}
+
+	.workspace-project-tree-item :global(.workspace-project-tree-action) {
+		visibility: hidden;
+	}
+
+	.workspace-project-tree-item:hover :global(.workspace-project-tree-action),
+	.workspace-project-tree-item :global(.workspace-project-tree-action):focus {
+		visibility: visible;
+	}
+
+	.workspace-project-tree-children {
+		padding-block: var(--space-2xs);
+		padding-left: var(--space-md);
+	}
+
+	.workspace-project-tree-header {
+		min-height: 1.75rem;
+		padding-right: var(--space-xs);
+		padding-left: var(--space-sm);
+	}
+</style>

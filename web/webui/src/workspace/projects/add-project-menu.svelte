@@ -24,7 +24,7 @@ function choose(callback: () => void): void {
 }
 </script>
 
-<div class="contents" {@attach mewa(dropdownBehavior)}>
+<div class="add-project-menu" {@attach mewa(dropdownBehavior)}>
 	{@render trigger(menuId)}
 	<div
 		bind:this={menu}
@@ -60,7 +60,7 @@ function choose(callback: () => void): void {
 						}}
 					>
 						<Icon name="folder" size={16} />
-						<span class="truncate">{project.roots[0]}</span>
+						<span class="u-truncate">{project.roots[0]}</span>
 					</button>
 				{/each}
 			</div>
@@ -69,6 +69,7 @@ function choose(callback: () => void): void {
 </div>
 
 <style>
+	.add-project-menu { display: contents; }
 	.dropdown-menu-content[data-align="end"] {
 		left: auto;
 		right: anchor(right);

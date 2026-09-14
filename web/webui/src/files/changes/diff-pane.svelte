@@ -144,14 +144,14 @@ onDestroy(() => {
 });
 </script>
 
-<div data-testid="diff-pane" class="app-content flex min-h-0 flex-1 flex-col">
+<div data-testid="diff-pane" class="app-content u-flex u-min-h-0 u-flex-1 u-flex-col">
 	{#if refreshError}
 		<div
 			data-testid="diff-refresh-error"
 			role="alert"
-			class="flex shrink-0 items-center gap-sm border-feedback-error-muted border-b bg-feedback-error-subtle px-sm py-xs text-feedback-error tr-text-metadata"
+			class="diff-pane-refresh-error u-flex u-shrink-0 u-items-center u-gap-sm u-border-b u-px-sm u-py-xs u-text-feedback-error tr-text-metadata"
 		>
-			<span class="min-w-0 flex-1 truncate" title={refreshError}>Showing a stale diff. {refreshError}</span>
+			<span class="u-min-w-0 u-flex-1 u-truncate" title={refreshError}>Showing a stale diff. {refreshError}</span>
 			<button
 				type="button"
 				data-testid="diff-refresh-retry"
@@ -166,27 +166,27 @@ onDestroy(() => {
 		<div
 			data-testid="diff-raw-notice"
 			role="status"
-			class="shrink-0 border-border-muted border-b bg-feedback-warning-subtle px-sm py-xs text-feedback-warning tr-text-metadata"
+			class="diff-pane-raw-notice u-shrink-0 u-border-b u-px-sm u-py-xs u-text-feedback-warning tr-text-metadata"
 		>
 			{rawNotice}
 		</div>
 	{/if}
-	<div class="toolbar flex h-8 shrink-0 items-center gap-xs border-border-default border-b bg-container-header-bg px-sm">
+	<div class="toolbar diff-pane-toolbar u-flex u-shrink-0 u-items-center u-gap-xs u-border-border-default u-border-b u-px-sm">
 		<span
 			data-testid="diff-path"
 			title={tab.originalPath ? `${tab.originalPath} → ${tab.path}` : tab.path}
-			class="mr-auto flex min-w-0 items-baseline tr-code-text"
+			class="diff-pane-path u-flex u-min-w-0 tr-code-text"
 		>
 			{#if tab.originalPath}
-				<span class="min-w-0 truncate text-text-muted">{tab.originalPath} → </span>
+				<span class="u-min-w-0 u-truncate u-text-text-muted">{tab.originalPath} → </span>
 			{/if}
-			{#if pathParts.dir}<span class="min-w-0 shrink truncate text-text-muted">{pathParts.dir}</span>{/if}
-			<span class="max-w-full shrink-0 truncate text-text-muted">{pathParts.base}</span>
+			{#if pathParts.dir}<span class="u-min-w-0 u-truncate u-text-text-muted">{pathParts.dir}</span>{/if}
+			<span class="u-max-w-full u-shrink-0 u-truncate u-text-text-muted">{pathParts.base}</span>
 		</span>
 		<span
 			data-testid="diff-scope"
 			title={`${tab.repository} · ${reviewScope}`}
-			class="max-w-[12rem] shrink-0 truncate text-text-muted tr-text-metadata"
+			class="diff-pane-scope u-shrink-0 u-truncate u-text-text-muted tr-text-metadata"
 		>{reviewScope}</span>
 		<button
 			type="button"
@@ -214,12 +214,12 @@ onDestroy(() => {
 			data-variant="ghost"
 			data-size="icon-sm"
 		>
-			<Icon name={copied ? "check" : "copy"} size={14} class={copied ? "text-feedback-success" : ""} />
+			<span class:diff-pane-copy-success={copied}><Icon name={copied ? "check" : "copy"} size={14} /></span>
 		</button>
 	</div>
-	<div class="min-h-0 flex-1">
+	<div class="u-min-h-0 u-flex-1">
 		{#if unavailable}
-			<p role="status" class="p-lg tr-text-ui text-text-muted">{notice}</p>
+			<p role="status" class="diff-pane-message tr-text-ui u-text-text-muted">{notice}</p>
 		{:else}
 			<SourceDiff
 				path={tab.path}
@@ -231,3 +231,25 @@ onDestroy(() => {
 		{/if}
 	</div>
 </div>
+
+<style>
+	.diff-pane-refresh-error {
+		border-color: var(--feedback-error-muted);
+		background-color: var(--feedback-error-subtle);
+	}
+	.diff-pane-raw-notice {
+		border-color: var(--border-muted);
+		background-color: var(--feedback-warning-subtle);
+	}
+	.diff-pane-toolbar {
+		block-size: calc(var(--space-base) * 32 / 13);
+		background-color: var(--container-header-bg);
+	}
+	.diff-pane-path {
+		align-items: baseline;
+		margin-inline-end: auto;
+	}
+	.diff-pane-scope { max-inline-size: 12rem; }
+	.diff-pane-copy-success { color: var(--feedback-success); }
+	.diff-pane-message { padding: var(--space-lg); }
+</style>

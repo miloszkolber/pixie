@@ -59,46 +59,52 @@ let summary = $derived(
 {#if useFallback}
 	<DefaultToolRenderer {...props} />
 {:else}
-	<div data-testid="tool-subagent" class="flex flex-col gap-xs">
-		<div class="flex items-center gap-xs tr-text-metadata">
-			<Icon name="git-fork" size={14} class="shrink-0 text-text-muted" />
-			<span class="truncate text-primary" title={task || "subagent"}>{summary}</span>
-			{#if sessionId}<span class="truncate text-text-muted">{sessionId}</span>{/if}
+	<div data-testid="tool-subagent" class="u-flex u-flex-col u-gap-xs">
+		<div class="u-flex u-items-center u-gap-xs tr-text-metadata">
+			<Icon name="git-fork" size={14} class="u-shrink-0 u-text-text-muted" />
+			<span class="u-truncate tool-primary" title={task || "subagent"}>{summary}</span>
+			{#if sessionId}<span class="u-truncate u-text-text-muted">{sessionId}</span>{/if}
 		</div>
-		{#if task}<p class="truncate text-text-muted tr-text-metadata">{task}</p>{/if}
-		<span class="text-text-muted tr-text-metadata">{label}</span>
-		{#if model}<span class="text-text-muted tr-text-metadata">{model}</span>{/if}
+		{#if task}<p class="u-truncate u-text-text-muted tr-text-metadata">{task}</p>{/if}
+		<span class="u-text-text-muted tr-text-metadata">{label}</span>
+		{#if model}<span class="u-text-text-muted tr-text-metadata">{model}</span>{/if}
 		{#if childrenSummary(details)}
-			<span class="text-text-muted tr-text-metadata">{details.results?.length} children · {childrenSummary(details)}</span>
-			<ul class="flex min-w-0 max-w-full flex-col gap-0.5">
+			<span class="u-text-text-muted tr-text-metadata">{details.results?.length} children · {childrenSummary(details)}</span>
+			<ul class="u-flex u-min-w-0 u-max-w-full u-flex-col u-gap-0.5">
 				{#each details.results ?? [] as call, index (call.callIndex ?? index)}
-					<li class="flex min-w-0 max-w-full items-baseline gap-xs tr-text-metadata">
-						<span class="min-w-0 break-words text-text-default" title={call.task ?? call.agent}>{call.agent ?? `call ${index + 1}`} · {childStatusLabel(call.status, call.currentTool, call.error)}</span>
+					<li class="u-flex u-min-w-0 u-max-w-full tool-items-baseline u-gap-xs tr-text-metadata">
+						<span class="u-min-w-0 u-break-words u-text-text-default" title={call.task ?? call.agent}>{call.agent ?? `call ${index + 1}`} · {childStatusLabel(call.status, call.currentTool, call.error)}</span>
 					</li>
 				{/each}
 			</ul>
 		{/if}
 		{#if entries.length > 0}
-			<div class="flex min-w-0 max-w-full flex-col gap-xs">
-				<span class="text-text-muted tr-text-metadata">Recent child activity</span>
-				<ul class="flex min-w-0 max-w-full flex-col gap-0.5">
+			<div class="u-flex u-min-w-0 u-max-w-full u-flex-col u-gap-xs">
+				<span class="u-text-text-muted tr-text-metadata">Recent child activity</span>
+				<ul class="u-flex u-min-w-0 u-max-w-full u-flex-col u-gap-0.5">
 					{#each entries as entry (entry.key)}
-						<li class="flex min-w-0 max-w-full items-baseline gap-xs tr-text-metadata">
+						<li class="u-flex u-min-w-0 u-max-w-full tool-items-baseline u-gap-xs tr-text-metadata">
 							{#if multipleChildren}
-								<span class="max-w-[12rem] shrink truncate text-text-muted" title={entry.event.childSessionId}>{entry.event.childSessionId}</span>
+								<span class="tool-child-session u-truncate u-text-text-muted" title={entry.event.childSessionId}>{entry.event.childSessionId}</span>
 							{/if}
-							<span class="min-w-0 break-words text-text-default" title={entry.event.toolName}>{entry.event.toolName}</span>
+							<span class="u-min-w-0 u-break-words u-text-text-default" title={entry.event.toolName}>{entry.event.toolName}</span>
 						</li>
 					{/each}
 				</ul>
-				{#if subagentActivity?.truncated}<span class="text-text-muted tr-text-metadata">Earlier activity omitted</span>{/if}
+				{#if subagentActivity?.truncated}<span class="u-text-text-muted tr-text-metadata">Earlier activity omitted</span>{/if}
 			</div>
 		{/if}
-		{#if child?.truncated}<span class="text-text-muted tr-text-metadata">Output truncated</span>{/if}
+		{#if child?.truncated}<span class="u-text-text-muted tr-text-metadata">Output truncated</span>{/if}
 		{#if status === "error" || currentStatus === "failed"}
-			<pre class="overflow-auto px-sm py-xs text-feedback-error tr-code-text">{child?.error || output || "Child failed."}</pre>
+			<pre class="u-overflow-auto u-px-sm u-py-xs u-text-feedback-error tr-code-text">{child?.error || output || "Child failed."}</pre>
 		{:else}
 			<Collapsible lines={countLines(output)}><ToolOutput result={result ?? child?.finalOutput} /></Collapsible>
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.tool-primary { color: var(--primary); }
+	.tool-items-baseline { align-items: baseline; }
+	.tool-child-session { max-inline-size: 12rem; flex-shrink: 1; }
+</style>

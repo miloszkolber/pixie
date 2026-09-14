@@ -1,20 +1,18 @@
 /*
  * Pixie token-backed layout utilities (`u-*`).
  *
- * This is the replacement for the subset of Tailwind layout/spacing utilities
- * migrated in the Svelte markup. Every value reads the existing Pixie/Mewa
+ * This is the shared layout and spacing layer used by the Svelte markup. Every
+ * value reads the existing Pixie/Mewa
  * tokens (`styles/tokens.css`, `styles/palette.css`, `styles/generated/*`); this
  * file declares no colour, spacing, radius or type value of its own, so it
  * cannot become a second generated visual system.
  *
- * Naming keeps the original Tailwind token after a `u-` prefix so the move is a
- * mechanical, grep-verifiable rename (`flex` -> `u-flex`). Responsive and
+ * Naming uses a `u-` prefix so layout utilities remain mechanically
+ * grep-verifiable (`flex` -> `u-flex`). Responsive and
  * arbitrary tokens are given readable slugs (`.u-sm-flex`, `.u-max-w-34rem`).
  *
- * This layer is the migration target for Tailwind removal. Until every file is
- * migrated, Tailwind stays installed for the files that still use its classes;
- * this file is unlayered, so it wins over Tailwind's `@layer utilities` output
- * where both define the same element.
+ * The layer remains unlayered so its utility classes retain their declared
+ * cascade order.
  */
 
 /* Display */
@@ -43,6 +41,9 @@
 }
 
 /* Alignment */
+.u-items-baseline {
+	align-items: baseline;
+}
 .u-items-center {
 	align-items: center;
 }
@@ -91,6 +92,9 @@
 /* Padding */
 .u-p-md {
 	padding: var(--space-md);
+}
+.u-p-sm {
+	padding: var(--space-sm);
 }
 .u-pt-lg {
 	padding-top: var(--space-lg);
@@ -146,6 +150,9 @@
 }
 .u-gap-md {
 	gap: var(--space-md);
+}
+.u-gap-lg {
+	gap: var(--space-lg);
 }
 .u-gap-xl {
 	gap: var(--space-xl);
@@ -264,7 +271,7 @@
 	width: clamp(12rem, 20vw, 16rem);
 }
 
-/* Responsive (Tailwind sm/lg breakpoints, unchanged) */
+/* Responsive breakpoints */
 @media (min-width: 40rem) {
 	.u-sm-flex {
 		display: flex;

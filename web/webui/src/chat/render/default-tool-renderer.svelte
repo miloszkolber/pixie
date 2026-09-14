@@ -7,12 +7,12 @@ let { args, result, status, toolName }: ToolRenderProps = $props();
 let argsText = $derived(toText(args));
 </script>
 
-<div class="flex flex-col gap-xs">
+<div class="u-flex u-flex-col u-gap-xs">
 	{#if argsText && argsText !== "{}"}
-		<pre class="overflow-auto tr-code-text text-text-muted">{argsText}</pre>
+		<pre class="u-overflow-auto tr-code-text u-text-text-muted">{argsText}</pre>
 	{/if}
 	<ToolOutput {result} error={status === "error"} />
 	{#if status === "done" && (toolName === "apps__create_app" || toolName === "apps__iterate_app")}
-		<p class="text-text-muted tr-text-metadata">App saved in the agent session.</p>
+		<p class="u-text-text-muted tr-text-metadata">App saved in the agent session.</p>
 	{/if}
 </div>

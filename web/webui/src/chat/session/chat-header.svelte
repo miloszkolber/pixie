@@ -13,11 +13,16 @@ let { stats, left }: Props = $props();
 
 <div
 	data-testid="chat-toolbar"
-	class="flex min-h-panel-header-row shrink-0 flex-wrap items-center gap-xs border-border-muted border-b bg-container-project-bg px-sm py-xs"
+	class="u-flex u-shrink-0 u-flex-wrap u-items-center u-gap-xs chat-toolbar u-px-sm u-py-xs"
 >
-	<div class="flex min-w-0 flex-1 flex-wrap items-center gap-xs">{@render left?.()}</div>
-	<div class="flex min-w-0 flex-wrap items-center justify-end gap-md">
+	<div class="u-flex u-min-w-0 u-flex-1 u-flex-wrap u-items-center u-gap-xs">{@render left?.()}</div>
+	<div class="u-flex u-min-w-0 u-flex-wrap u-items-center chat-toolbar-end u-gap-md">
 
 		<SessionStatsBar {stats} />
 	</div>
 </div>
+
+<style>
+	.chat-toolbar { min-height: var(--panel-header-row-height); border-bottom: 1px solid var(--border-muted); background: var(--container-project-bg); }
+	.chat-toolbar-end { justify-content: end; }
+</style>

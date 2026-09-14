@@ -138,24 +138,24 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 </script>
 
 {#snippet ExtensionLabel(extension: PiExtensionSummary)}
-	<div class="min-w-0">
-		<div class="break-words text-text-default tr-text-ui">
+	<div class="u-min-w-0">
+		<div class="pi-tools__text u-text-text-default tr-text-ui">
 			{extension.displayName ?? extension.name}
 		</div>
 		{#if extension.description}
-			<p class="break-words text-text-muted tr-text-metadata">{extension.description}</p>
+			<p class="pi-tools__text u-text-text-muted tr-text-metadata">{extension.description}</p>
 		{/if}
 	</div>
 {/snippet}
 
 {#snippet ToolInventory(tool: PiToolSummary)}
 	<div
-		class="card flex flex-wrap items-start justify-between gap-sm p-sm"
+		class="card u-flex u-flex-wrap u-items-start u-justify-between u-gap-sm u-px-sm u-py-sm"
 		data-testid="tool-inventory"
 	>
-		<div class="min-w-0">
-			<div class="break-words text-text-default tr-text-ui">{tool.name}</div>
-			<p class="break-words text-text-muted tr-text-metadata">
+		<div class="u-min-w-0">
+			<div class="pi-tools__text u-text-text-default tr-text-ui">{tool.name}</div>
+			<p class="pi-tools__text u-text-text-muted tr-text-metadata">
 				{tool.description || "No description supplied by Pi."}
 				{tool.parameters.length ? ` Parameters: ${tool.parameters.join(", ")}` : ""}
 			</p>
@@ -163,11 +163,11 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 	</div>
 {/snippet}
 
-<div data-testid="settings-pi-tools" class="flex flex-col gap-lg">
-	<div class="flex flex-wrap items-start justify-between gap-sm">
+<div data-testid="settings-pi-tools" class="u-flex u-flex-col u-gap-lg">
+	<div class="u-flex u-flex-wrap u-items-start u-justify-between u-gap-sm">
 		<div>
-			<h3 class="tr-title-section text-text-default">Extensions and tools</h3>
-			<p class="text-text-muted tr-text-metadata">
+			<h3 class="tr-title-section u-text-text-default">Extensions and tools</h3>
+			<p class="u-text-text-muted tr-text-metadata">
 				Pi supplies the active tools. Compatible extensions supply additional capabilities.
 			</p>
 		</div>
@@ -175,32 +175,32 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 			Refresh
 		</Button>
 	</div>
-	{#if error}<p role="alert" class="text-feedback-error tr-text-metadata">{error}</p>{/if}
+	{#if error}<p role="alert" class="u-text-feedback-error tr-text-metadata">{error}</p>{/if}
 	{#if busy}
-		<p role="status" aria-live="polite" class="text-text-muted tr-text-metadata">
+		<p role="status" aria-live="polite" class="u-text-text-muted tr-text-metadata">
 			Updating Pi settings…
 		</p>
 	{/if}
 
 	{#if mcpAvailable}
-	<section class="flex flex-col gap-sm" aria-labelledby="global-extensions-heading">
+	<section class="u-flex u-flex-col u-gap-sm" aria-labelledby="global-extensions-heading">
 		<div>
-			<h4 id="global-extensions-heading" class="tr-text-eyebrow text-text-muted">
+			<h4 id="global-extensions-heading" class="tr-text-eyebrow u-text-text-muted">
 				Global extensions
 			</h4>
-			<p class="text-text-muted tr-text-metadata">Changes persist in Pi configuration.</p>
+			<p class="u-text-text-muted tr-text-metadata">Changes persist in Pi configuration.</p>
 		</div>
 		{#if loading}
-			<p role="status" class="text-text-muted tr-text-metadata">Loading extensions…</p>
+			<p role="status" class="u-text-text-muted tr-text-metadata">Loading extensions…</p>
 		{/if}
 		{#if !loading && catalog?.configured.length === 0}
-			<p class="text-text-muted tr-text-metadata">No extensions are configured in Pi.</p>
+			<p class="u-text-text-muted tr-text-metadata">No extensions are configured in Pi.</p>
 		{/if}
-		{#if warning}<p class="text-text-muted tr-text-metadata">{warning}</p>{/if}
+		{#if warning}<p class="u-text-text-muted tr-text-metadata">{warning}</p>{/if}
 		{#each catalog?.configured ?? [] as extension (extension.configKey ?? extension.name)}
-			<div class="card flex flex-wrap items-center justify-between gap-sm p-sm">
+			<div class="card u-flex u-flex-wrap u-items-center u-justify-between u-gap-sm u-px-sm u-py-sm">
 				{@render ExtensionLabel(extension)}
-				<div class="flex gap-xs">
+				<div class="u-flex u-gap-xs">
 					<Button
 						size="sm"
 						variant="outline"
@@ -238,7 +238,7 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 				(extension.type === "builtin" || extension.type === "platform") &&
 				!configuredNames.has(extension.name),
 		) as extension (extension.name)}
-			<div class="card flex flex-wrap items-center justify-between gap-sm p-sm">
+			<div class="card u-flex u-flex-wrap u-items-center u-justify-between u-gap-sm u-px-sm u-py-sm">
 				{@render ExtensionLabel(extension)}
 				<Button
 					size="sm"
@@ -259,33 +259,33 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 	</section>
 
 	{/if}
-	<section class="flex flex-col gap-sm" aria-labelledby="in-process-mcp-heading">
+	<section class="u-flex u-flex-col u-gap-sm" aria-labelledby="in-process-mcp-heading">
 		<div>
-		<h4 id="in-process-mcp-heading" class="tr-text-eyebrow text-text-muted">
+		<h4 id="in-process-mcp-heading" class="tr-text-eyebrow u-text-text-muted">
 			In-process MCP publisher
 		</h4>
-		<p class="text-text-muted tr-text-metadata">
+		<p class="u-text-text-muted tr-text-metadata">
 			Published by the Pixie process itself. Toggling persists in Pixie state
 			and starts or stops publication; Pi connection configuration is unchanged.
 		</p>
 		</div>
 		{#if loading && !registryCatalog}
-			<p role="status" class="text-text-muted tr-text-metadata">Checking in-process publisher…</p>
+			<p role="status" class="u-text-text-muted tr-text-metadata">Checking in-process publisher…</p>
 		{:else if !registryCatalog}
-			<p role="status" class="text-text-muted tr-text-metadata">
+			<p role="status" class="u-text-text-muted tr-text-metadata">
 				The in-process publisher is unavailable.
 			</p>
 		{:else}
 			{#each registryCatalog.modules as module (module.id)}
-				<div class="card flex flex-wrap items-center justify-between gap-sm p-sm" data-testid="in-process-mcp-module-row">
+				<div class="card u-flex u-flex-wrap u-items-center u-justify-between u-gap-sm u-px-sm u-py-sm" data-testid="in-process-mcp-module-row">
 					{@render ExtensionLabel({
 						name: module.extensionName,
 						displayName: module.displayName,
 						description: module.description,
 						type: "mcp",
 					})}
-					<div class="flex min-w-0 flex-wrap items-center gap-xs">
-						<div class="min-w-0 tr-text-metadata text-text-muted">
+					<div class="u-flex u-min-w-0 u-flex-wrap u-items-center u-gap-xs">
+						<div class="u-min-w-0 tr-text-metadata u-text-text-muted">
 							<span>{registryModuleStatusLabel(module)}</span>
 							<p>{module.detail ?? `Publisher module: ${module.state}`}</p>
 							<p>{module.endpoint ?? module.path}</p>
@@ -304,26 +304,26 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 			{/each}
 		{/if}
 	</section>
-	<section class="flex flex-col gap-sm" aria-labelledby="session-tools-heading">
-		<h4 id="session-tools-heading" class="tr-text-eyebrow text-text-muted">Active chat tools</h4>
+	<section class="u-flex u-flex-col u-gap-sm" aria-labelledby="session-tools-heading">
+		<h4 id="session-tools-heading" class="tr-text-eyebrow u-text-text-muted">Active chat tools</h4>
 		{#if !hasActiveChat}
-			<p class="text-text-muted tr-text-metadata">
+			<p class="u-text-text-muted tr-text-metadata">
 				Open a chat in the current project to manage its effective extensions and tools.
 			</p>
 		{:else if !sessionInventoryCurrent}
-			<p role="status" class="text-text-muted tr-text-metadata">
+			<p role="status" class="u-text-text-muted tr-text-metadata">
 				{loading
 					? "Loading active chat extensions and tools…"
 					: "Active chat tools are unavailable. Refresh to try again."}
 			</p>
 		{:else}
-			<p class="text-text-muted tr-text-metadata">
+			<p class="u-text-text-muted tr-text-metadata">
 				Session connections add their tools to this chat.
 			</p>
-			<div class="flex flex-wrap gap-sm">
+			<div class="u-flex u-flex-wrap u-gap-sm">
 				{#each extensions as extension (extension.extensionKey)}
-					<div class="card flex items-center gap-xs p-xs">
-						<span class="text-text-default tr-text-ui">
+					<div class="card u-flex u-items-center u-gap-xs u-px-xs u-py-xs">
+						<span class="u-text-text-default tr-text-ui">
 							{extension.displayName ?? extension.name}
 						</span>
 						<Button
@@ -360,12 +360,12 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 					</Button>
 				{/each}
 			</div>
-			<label class="field text-text-default tr-text-ui">
+			<label class="field u-text-text-default tr-text-ui">
 				Search tools
 				<input class="text-field-input" bind:value={query} />
 			</label>
 			{#if !loading && visibleTools.length === 0}
-				<p class="text-text-muted tr-text-metadata">No tools match this chat.</p>
+				<p class="u-text-text-muted tr-text-metadata">No tools match this chat.</p>
 			{/if}
 			{#each visibleTools as tool (tool.name)}
 				{@render ToolInventory(tool)}
@@ -373,3 +373,9 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 		{/if}
 	</section>
 </div>
+
+<style>
+	.pi-tools__text {
+		overflow-wrap: break-word;
+	}
+</style>

@@ -168,7 +168,7 @@ test("project sessions keep selected and running visibility with native titles",
 		"sessionRowAccessibleLabel",
 		'data-testid="project-session-row"',
 		"data-active",
-		"bg-control-bg-selected",
+		"workspace-project-session-row",
 		"loader-circle",
 		"sr-only",
 		"Running",
@@ -181,6 +181,9 @@ test("project sessions keep selected and running visibility with native titles",
 	]) {
 		expect(sessions).toContain(contract);
 	}
+	expect(sessions).toMatch(
+		/\.workspace-project-session-row\[data-active\]\s*{[^}]*background-color:\s*var\(--control-bg-selected\);/s,
+	);
 });
 
 test("catalog toggle uses one flat list and never invents a hidden project", async () => {

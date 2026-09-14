@@ -1,5 +1,5 @@
 <script module lang="ts">
-export const ROW_MENU_SLOT = "mr-xs size-5 shrink-0";
+export const ROW_MENU_SLOT = "change-row-menu-slot";
 </script>
 
 <script lang="ts">
@@ -33,13 +33,12 @@ export const ROW_MENU_SLOT = "mr-xs size-5 shrink-0";
 	}
 </script>
 
-<div class="contents" {@attach mewa(dropdownBehavior)}>
+<div class="change-row-actions" {@attach mewa(dropdownBehavior)}>
 	<div
 		data-testid="change-row"
 		data-active={active || open || undefined}
-		class={`group flex min-w-0 items-center rounded-[var(--radius-sm)] ${
-			active || open ? "bg-control-bg-selected" : "hover:bg-control-bg-hovered"
-		}`}
+		class="change-row u-flex u-min-w-0 u-items-center"
+		class:change-row-active={active || open}
 	>
 		{@render children(openContextMenu)}
 		<button
@@ -50,7 +49,8 @@ export const ROW_MENU_SLOT = "mr-xs size-5 shrink-0";
 			aria-controls={menuId}
 			aria-expanded="false"
 			aria-label={`Actions for ${path}`}
-		class={`${ROW_MENU_SLOT} flex items-center justify-center rounded-[var(--radius-sm)] text-text-muted outline-none transition hover:bg-container-elevated-bg hover:text-text-default focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary group-hover:opacity-100 ${open ? "opacity-100" : "opacity-0"}`}
+			class={`${ROW_MENU_SLOT} change-row-menu-trigger u-flex u-items-center u-justify-center u-text-text-muted u-outline-none`}
+			class:change-row-menu-open={open}
 		>
 			<Icon name="chevron-down" size={16} />
 		</button>
@@ -89,6 +89,34 @@ export const ROW_MENU_SLOT = "mr-xs size-5 shrink-0";
 </div>
 
 <style>
+	.change-row-actions { display: contents; }
+	.change-row {
+		border-radius: var(--radius-sm);
+	}
+	.change-row:not(.change-row-active):hover { background-color: var(--control-bg-hovered); }
+	.change-row-active { background-color: var(--control-bg-selected); }
+	:global(.change-row-menu-slot) {
+		inline-size: calc(var(--space-base) * 20 / 13);
+		block-size: calc(var(--space-base) * 20 / 13);
+		flex: 0 0 auto;
+		margin-inline-end: var(--space-xs);
+	}
+	.change-row-menu-trigger {
+		border-radius: var(--radius-sm);
+		opacity: 0;
+		transition:
+			opacity var(--transition-fast),
+			background-color var(--transition-fast),
+			color var(--transition-fast);
+	}
+	.change-row:hover .change-row-menu-trigger,
+	.change-row-menu-open,
+	.change-row-menu-trigger:focus-visible { opacity: 1; }
+	.change-row-menu-trigger:hover { background-color: var(--container-elevated-bg); color: var(--text-default); }
+	.change-row-menu-trigger:focus-visible {
+		outline: 2px solid var(--primary);
+		outline-offset: 1px;
+	}
 	.dropdown-menu-content[data-align="end"] {
 		left: auto;
 		right: anchor(right);

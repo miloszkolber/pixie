@@ -42,18 +42,37 @@ let {
 	{onclick}
 	{ondblclick}
 	{oncontextmenu}
-	class={`tree-leaf flex min-h-7 w-full min-w-0 items-center gap-xs rounded-none px-xs text-left tr-text-ui ${
+	class={`tree-leaf file-tree-row u-flex u-w-full u-min-w-0 u-items-center u-gap-xs u-px-xs u-text-left tr-text-ui ${
 		highlight === "self"
-			? `hover:bg-control-bg-hovered ${active ? "bg-control-bg-selected" : ""}`
+			? `file-tree-row--hoverable ${active ? "file-tree-row--active" : ""}`
 			: ""
 	}`}
 >
 	{#if kind === "dir"}
-		<Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} class="text-text-muted" />
+		<Icon name={expanded ? "chevron-down" : "chevron-right"} size={14} class="u-text-text-muted" />
 	{:else}
-		<span class="size-3.5 shrink-0"></span>
+		<span class="file-tree-row-toggle-space u-shrink-0"></span>
 	{/if}
-	<Icon name={kind === "dir" ? "folder" : "file"} size={16} class="text-text-muted" />
-	<span class={`min-w-0 flex-1 truncate ${labelClassName}`}>{label}</span>
+	<Icon name={kind === "dir" ? "folder" : "file"} size={16} class="u-text-text-muted" />
+	<span class={`u-min-w-0 u-flex-1 u-truncate ${labelClassName}`}>{label}</span>
 	{@render trailing?.()}
 </button>
+
+<style>
+	.file-tree-row {
+		min-block-size: var(--panel-header-row-height);
+		border-radius: 0;
+	}
+	.file-tree-row--hoverable:hover { background-color: var(--control-bg-hovered); }
+	.file-tree-row--active { background-color: var(--control-bg-selected); }
+	.file-tree-row-toggle-space {
+		inline-size: calc(var(--panel-header-row-height) / 2);
+		block-size: calc(var(--panel-header-row-height) / 2);
+	}
+	.tree-row-status-added { color: var(--feedback-success); }
+	.tree-row-status-deleted {
+		color: var(--feedback-error);
+		text-decoration: line-through;
+	}
+	.tree-row-status-renamed { color: var(--feedback-info); }
+</style>

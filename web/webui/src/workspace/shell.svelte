@@ -32,9 +32,9 @@ const STATUS_LABEL = {
 	disconnected: "Disconnected",
 } as const;
 const STATUS_DOT = {
-	connected: "bg-feedback-success",
-	connecting: "bg-feedback-warning",
-	disconnected: "bg-feedback-error",
+	connected: "positive",
+	connecting: "caution",
+	disconnected: "negative",
 } as const;
 
 let providerError = $state(false);
@@ -231,7 +231,7 @@ function signOut(): void {
 			</div>
 			<div class="app-header-actions u-flex u-shrink-0 u-items-center u-gap-sm u-sm-gap-md">
 				<span data-testid="connection-status" data-status={$appStore.status} role="status" aria-label={STATUS_LABEL[$appStore.status]} class="stat-status u-inline-flex u-items-center u-gap-sm">
-					<span aria-hidden="true" class={`status-dot ${STATUS_DOT[$appStore.status]}`}></span>
+					<span aria-hidden="true" class="status-dot" data-state={STATUS_DOT[$appStore.status]}></span>
 					<span aria-hidden="true" class="u-hidden u-sm-inline">{STATUS_LABEL[$appStore.status]}</span>
 				</span>
 				<Button

@@ -403,12 +403,9 @@ const HEADER = (version: string) => `/*
  * Contains every typography value the UI is allowed to use: primitive custom properties, the \`<body>\`
  * base, one class per semantic text style, and one prose system per markdown surface.
  *
- * Two cascade layers, both deliberate. The \`<body>\` base sits in \`@layer base\` (after Tailwind's
- * preflight, so it wins there) which means ANY semantic class outranks it. The classes sit in
- * \`@layer components\`: Tailwind v4 orders its layers \`theme, base, components, utilities\`, so a
- * semantic class beats the base while a Tailwind utility at a call site — \`italic\`, \`leading-tight\`,
- * \`leading-snug\` — can still override the one property it names. Unlayered CSS would outrank every
- * layer and silently win instead.
+ * Two CSS cascade layers, both deliberate. The \`<body>\` base sits in \`@layer base\`; semantic text
+ * styles sit in \`@layer components\`, so they outrank document defaults while Pixie or Mewa can make
+ * scoped, unlayered component exceptions when necessary.
  */\n`;
 
 function declarations(t: Typography, style: Style, indent = "\t"): string {

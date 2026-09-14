@@ -47,37 +47,37 @@ function select(id: string): void {
 }
 </script>
 
-<section aria-label="Schedules" data-testid="schedules-list" class="flex min-w-0 flex-col gap-sm">
-	<p class="tr-text-metadata text-text-muted">Pixie must be running to dispatch schedules. Missed occurrences coalesce into one run. Runs never overlap for the same schedule.</p>
-	<label class="flex items-center gap-sm rounded-[var(--radius-sm)] border border-border-default bg-control-bg px-md py-sm">
-		<span class="sr-only">Filter schedules</span>
+<section aria-label="Schedules" data-testid="schedules-list" class="u-flex u-min-w-0 u-flex-col u-gap-sm">
+	<p class="tr-text-metadata u-text-text-muted">Pixie must be running to dispatch schedules. Missed occurrences coalesce into one run. Runs never overlap for the same schedule.</p>
+	<label class="schedule-filter u-flex u-items-center u-gap-sm u-rounded u-border u-border-border-default u-bg-control-bg u-px-md u-py-sm">
+		<span class="u-sr-only">Filter schedules</span>
 		<input
 			type="search"
 			data-testid="schedules-filter"
 			aria-label="Filter schedules"
 			placeholder="Filter schedules…"
-			class="min-w-0 flex-1 bg-transparent tr-text-ui outline-none placeholder:text-text-muted"
+			class="schedule-filter__input u-min-w-0 u-flex-1 tr-text-ui"
 			bind:value={query}
 		/>
 	</label>
-	{#if $view.error}<p role="alert" class="tr-text-ui text-feedback-error">{$view.error}</p>{/if}
+	{#if $view.error}<p role="alert" class="tr-text-ui u-text-feedback-error">{$view.error}</p>{/if}
 	{#if !$view.loaded && $view.loading}<p role="status">Loading schedules…</p>{/if}
-	{#if $view.loaded && $view.jobs.length === 0}<p class="tr-text-ui text-text-muted">No schedules in this project.</p>{/if}
-	{#if $view.loaded && $view.jobs.length > 0 && filtered.length === 0}<p class="tr-text-ui text-text-muted">No schedules match this filter.</p>{/if}
-	<ul class="min-w-0 divide-y divide-border-muted" aria-label="Schedules">
+	{#if $view.loaded && $view.jobs.length === 0}<p class="tr-text-ui u-text-text-muted">No schedules in this project.</p>{/if}
+	{#if $view.loaded && $view.jobs.length > 0 && filtered.length === 0}<p class="tr-text-ui u-text-text-muted">No schedules match this filter.</p>{/if}
+	<ul class="schedule-list__items u-min-w-0" aria-label="Schedules">
 		{#each filtered as job (job.id)}
 			<li>
 				<button
 					type="button"
 					data-testid="schedule-row"
-					class="schedule-row flex w-full min-w-0 flex-col gap-xs p-sm text-left"
+					class="schedule-row u-flex u-w-full u-min-w-0 u-flex-col u-gap-xs u-px-sm u-py-sm u-text-left"
 					aria-pressed={requestedId === job.id}
 					onclick={() => select(job.id)}
 				>
-					<span class="line-clamp-2 break-words tr-text-ui">{job.prompt}</span>
-					<span class="tr-text-metadata text-text-muted">{job.paused ? "Paused" : "Enabled"} · {activeExecution(job) ? "Running" : job.runs[0]?.status ?? "Not run yet"}</span>
-					<span class="break-all tr-text-metadata text-text-muted">{job.cron} · {job.timezone}</span>
-					<span class="tr-text-metadata text-text-muted">{job.paused ? "Next dispatch paused" : `Next: ${scheduleTime(job.nextRun, job.timezone)}`}</span>
+					<span class="schedule-row__prompt tr-text-ui">{job.prompt}</span>
+					<span class="tr-text-metadata u-text-text-muted">{job.paused ? "Paused" : "Enabled"} · {activeExecution(job) ? "Running" : job.runs[0]?.status ?? "Not run yet"}</span>
+					<span class="schedule-value tr-text-metadata u-text-text-muted">{job.cron} · {job.timezone}</span>
+					<span class="tr-text-metadata u-text-text-muted">{job.paused ? "Next dispatch paused" : `Next: ${scheduleTime(job.nextRun, job.timezone)}`}</span>
 				</button>
 			</li>
 		{/each}
@@ -85,6 +85,39 @@ function select(id: string): void {
 </section>
 
 <style>
+	.schedule-filter__input {
+		background: transparent;
+		color: var(--text-default);
+		outline: none;
+	}
+
+	.schedule-filter__input::placeholder {
+		color: var(--text-muted);
+	}
+
+	.schedule-filter:focus-within {
+		outline: var(--focus-ring-width, 2px) solid var(--border-focus);
+		outline-offset: -1px;
+	}
+
+	.schedule-list__items > * + * {
+		border-top: 1px solid var(--border-muted);
+	}
+
+	.schedule-row__prompt {
+		display: -webkit-box;
+		overflow: hidden;
+		overflow-wrap: break-word;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+	}
+
+	.schedule-value {
+		word-break: break-all;
+	}
+
 	.schedule-row[aria-pressed="true"] { background: var(--surface-selected); }
 	.schedule-row:hover { background: var(--surface-hover); }
+	.schedule-row:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--border-focus); outline-offset: -1px; }
 </style>

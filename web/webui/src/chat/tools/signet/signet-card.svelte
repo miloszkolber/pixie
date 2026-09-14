@@ -16,24 +16,30 @@ let count = $derived(
 );
 </script>
 
-<div data-testid="tool-signet" class="flex flex-col gap-xs">
-	<div class="flex items-center gap-xs tr-text-metadata">
-		<Icon name="brain" size={14} class="shrink-0 text-text-muted" />
-		<span class="text-primary">{signetTitle(toolName)}</span>
+
+<div data-testid="tool-signet" class="u-flex u-flex-col u-gap-xs">
+	<div class="u-flex u-items-center u-gap-xs tr-text-metadata">
+		<Icon name="brain" size={14} class="u-shrink-0 u-text-text-muted" />
+		<span class="tool-primary">{signetTitle(toolName)}</span>
 		{#if count !== undefined}
-			<span class="shrink-0 text-text-muted">{count} result{count === 1 ? "" : "s"}</span>
+			<span class="u-shrink-0 u-text-text-muted">{count} result{count === 1 ? "" : "s"}</span>
 		{/if}
 	</div>
-	{#if query}<p class="truncate text-text-muted tr-text-metadata">{query}</p>{/if}
+	{#if query}<p class="u-truncate u-text-text-muted tr-text-metadata">{query}</p>{/if}
 	{#if status === "running"}
-		<span class="text-text-muted tr-text-metadata">{signetRunningLabel(toolName)}</span>
+		<span class="u-text-text-muted tr-text-metadata">{signetRunningLabel(toolName)}</span>
 	{:else if offline}
-		<span data-testid="tool-signet-offline" class="text-text-muted tr-text-metadata">Signet daemon unavailable. Memory integration is disabled for this turn.</span>
+		<span data-testid="tool-signet-offline" class="u-text-text-muted tr-text-metadata">Signet daemon unavailable. Memory integration is disabled for this turn.</span>
 	{:else if status === "error"}
-		<pre class="overflow-auto px-sm py-xs text-feedback-error tr-code-text">{output || "Signet request failed."}</pre>
+		<pre class="u-overflow-auto u-px-sm u-py-xs u-text-feedback-error tr-code-text">{output || "Signet request failed."}</pre>
 	{:else if output}
 		<Collapsible lines={countLines(output)}>
-			<pre class="overflow-auto rounded-[var(--radius-sm)] bg-container-header-bg p-sm tr-code-text text-text-default">{output}</pre>
+			<pre class="u-overflow-auto u-rounded tool-code-surface u-p-md tr-code-text u-text-text-default">{output}</pre>
 		</Collapsible>
 	{/if}
 </div>
+
+<style>
+	.tool-primary { color: var(--primary); }
+	.tool-code-surface { background: var(--container-header-bg); }
+</style>

@@ -76,11 +76,11 @@ $effect(() => {
 	bind:open
 	title="Choose a project directory"
 	description="Only directories under configured Pixie mounts are available."
-	class="max-h-[min(38rem,calc(100vh-2rem))] max-w-[min(42rem,calc(100vw-2rem))]"
+	class="directory-picker-dialog"
 	onOpenChange={setOpen}
 >
-	<div class="flex flex-col gap-md">
-		<div class="text-field flex min-w-0 items-center gap-xs">
+	<div class="u-flex u-flex-col u-gap-md">
+		<div class="text-field u-flex u-min-w-0 u-items-center u-gap-xs">
 			<Button
 				variant="ghost"
 				size="icon"
@@ -90,11 +90,11 @@ $effect(() => {
 			>
 				<Icon name="chevron-left" size={16} />
 			</Button>
-			<span data-testid="directory-picker-path" class="min-w-0 flex-1 truncate tr-text-metadata">
+			<span data-testid="directory-picker-path" class="u-min-w-0 u-flex-1 u-truncate tr-text-metadata">
 				{current ?? "Configured directories"}
 			</span>
 		</div>
-		<label class="field flex-row items-center self-start">
+		<label class="field directory-picker-dialog__hidden-toggle u-flex u-items-center">
 			<input
 				type="checkbox"
 				class="checkbox"
@@ -109,19 +109,19 @@ $effect(() => {
 			<span class="field-label">Show hidden directories</span>
 		</label>
 		<div
-			class="min-h-40 overflow-auto border border-border-default"
+			class="directory-picker-dialog__listing"
 			aria-busy={loading}
 		>
 			{#if loading}
-				<div role="status" class="app-empty app-empty--compact min-h-40">
-					<Icon name="loader-circle" size={16} class="animate-spin motion-reduce:animate-none" /> Loading directories…
+				<div role="status" class="app-empty app-empty--compact directory-picker-dialog__empty">
+					<span class="directory-picker-dialog__spinner u-inline-flex u-shrink-0"><Icon name="loader-circle" size={16} /></span> Loading directories…
 				</div>
 			{:else if error}
-				<div role="alert" class="app-empty app-empty--compact min-h-40 text-feedback-error">
+				<div role="alert" class="app-empty app-empty--compact directory-picker-dialog__empty directory-picker-dialog__error">
 					{error}
 				</div>
 			{:else if listing?.directories.length}
-				<ul aria-label="Directories" class="tree p-2xs">
+				<ul aria-label="Directories" class="tree directory-picker-dialog__tree">
 					{#each listing.directories as directory (directory.path)}
 						<li class="tree-item">
 							<button
@@ -130,27 +130,27 @@ $effect(() => {
 								onclick={() => navigate(directory.path)}
 							>
 								<Icon name={current === null ? "folder" : "folder-open"} size={16} />
-								<span class="min-w-0 flex-1 truncate">{directory.name}</span>
+							<span class="u-min-w-0 u-flex-1 u-truncate">{directory.name}</span>
 							</button>
 						</li>
 					{/each}
 				</ul>
 			{:else}
-				<p class="app-empty app-empty--compact min-h-40">No directories are available here.</p>
+				<p class="app-empty app-empty--compact directory-picker-dialog__empty">No directories are available here.</p>
 			{/if}
 		</div>
 		{#if listing && listing.warnings.length > 0}
 			<p role="status" class="callout" data-variant="warning">{listing.warnings.join(" ")}</p>
 		{/if}
 		{#if listing && (listing.page > 0 || listing.hasMore)}
-			<div class="flex items-center justify-between gap-sm">
+			<div class="u-flex u-items-center u-justify-between u-gap-sm">
 				<Button
 					variant="ghost"
 					size="sm"
 					disabled={listing.page === 0 || loading}
 					onclick={() => (page -= 1)}
 				>Previous</Button>
-				<span class="tr-text-metadata text-text-muted">Page {listing.page + 1}</span>
+				<span class="tr-text-metadata u-text-text-muted">Page {listing.page + 1}</span>
 				<Button
 					variant="ghost"
 					size="sm"
@@ -167,3 +167,49 @@ $effect(() => {
 		</Button>
 	{/snippet}
 </Dialog>
+
+<style>
+	:global(.dialog.directory-picker-dialog) {
+		max-height: min(38rem, calc(100vh - 2rem));
+		max-width: min(42rem, calc(100vw - 2rem));
+	}
+
+	.directory-picker-dialog__hidden-toggle {
+		align-self: flex-start;
+		flex-direction: row;
+	}
+
+	.directory-picker-dialog__listing {
+		min-height: 10rem;
+		overflow: auto;
+		border: 1px solid var(--border-default);
+	}
+
+	.directory-picker-dialog__empty {
+		min-height: 10rem;
+	}
+
+	.directory-picker-dialog__error {
+		color: var(--feedback-error);
+	}
+
+	.directory-picker-dialog__tree {
+		padding: var(--space-2xs);
+	}
+
+	.directory-picker-dialog__spinner {
+		animation: directory-picker-dialog-spin 1s linear infinite;
+	}
+
+	@keyframes directory-picker-dialog-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.directory-picker-dialog__spinner {
+			animation: none;
+		}
+	}
+</style>

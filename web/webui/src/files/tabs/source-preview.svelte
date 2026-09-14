@@ -32,13 +32,24 @@ $effect(() => {
 {#if html === null}
 	<pre
 		data-testid={testid}
-		class="h-full overflow-auto bg-container-content-bg p-md text-text-default tr-code-document"
+		class="source-preview-surface u-h-full u-overflow-auto u-p-md u-text-text-default tr-code-document"
 	>{content}</pre>
 {:else}
 	<div
 		data-testid={testid}
-		class="h-full overflow-auto bg-container-content-bg [&_.shiki]:min-h-full [&_.shiki]:!bg-transparent [&_.shiki]:p-md [&_pre]:!m-0"
+		class="source-preview-highlight u-h-full u-overflow-auto"
 	>
 		{@html html}
 	</div>
 {/if}
+
+<style>
+	.source-preview-surface,
+	.source-preview-highlight { background-color: var(--container-content-bg); }
+	.source-preview-highlight :global(.shiki) {
+		min-block-size: 100%;
+		background-color: transparent !important;
+		padding: var(--space-md);
+	}
+	.source-preview-highlight :global(pre) { margin: 0 !important; }
+</style>

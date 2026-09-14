@@ -43,7 +43,7 @@
 			"additionalProperties": {
 				"type": "object",
 				"additionalProperties": false,
-				"required": ["from", "publish"],
+				"required": ["from"],
 				"not": {
 					"required": ["alpha", "fallback"]
 				},
@@ -60,10 +60,6 @@
 						"type": "string",
 						"description": "Used when the manifest value is null (the nullable selection foregrounds)."
 					},
-					"publish": {
-						"type": "boolean",
-						"description": "true → a Tailwind utility. false → read directly by preview/global CSS."
-					},
 					"note": {
 						"type": "string"
 					}
@@ -79,7 +75,7 @@
 			"additionalProperties": {
 				"type": "object",
 				"additionalProperties": false,
-				"required": ["dark", "light", "publish"],
+				"required": ["dark", "light"],
 				"properties": {
 					"dark": {
 						"type": "string",
@@ -88,9 +84,6 @@
 					"light": {
 						"type": "string",
 						"minLength": 1
-					},
-					"publish": {
-						"type": "boolean"
 					},
 					"note": {
 						"type": "string"

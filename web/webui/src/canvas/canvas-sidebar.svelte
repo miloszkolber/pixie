@@ -30,47 +30,47 @@ let model = $derived(canvasSidebarViewModel(state, { ready, pending }));
 </script>
 
 <aside
-	class={`flex min-w-0 flex-col gap-sm ${className}`}
+	class={`u-flex u-min-w-0 u-flex-col u-gap-sm ${className}`}
 	data-testid="canvas-sidebar"
 	data-scope="session"
 	aria-label="Canvas revision and status controls"
 >
-	<p class="tr-text-eyebrow text-text-muted">Canvas</p>
-	<p class="tr-text-metadata text-text-muted" data-testid="canvas-scope-label">{model.scopeLabel}</p>
-	<dl class="flex min-w-0 flex-col gap-xs">
-		<div class="flex min-w-0 items-baseline justify-between gap-xs">
-			<dt class="tr-text-metadata text-text-muted">Version</dt>
-			<dd class="truncate tr-text-metadata text-text-default" data-testid="canvas-version-label">
+	<p class="tr-text-eyebrow u-text-text-muted">Canvas</p>
+	<p class="tr-text-metadata u-text-text-muted" data-testid="canvas-scope-label">{model.scopeLabel}</p>
+	<dl class="u-flex u-min-w-0 u-flex-col u-gap-xs">
+		<div class="canvas-metadata-row u-flex u-min-w-0 u-justify-between u-gap-xs">
+			<dt class="tr-text-metadata u-text-text-muted">Version</dt>
+			<dd class="u-truncate tr-text-metadata u-text-text-default" data-testid="canvas-version-label">
 				{model.version.label}
 			</dd>
 		</div>
-		<div class="flex min-w-0 items-baseline justify-between gap-xs">
-			<dt class="tr-text-metadata text-text-muted">Rendering</dt>
-			<dd class="truncate tr-text-metadata text-text-default" data-testid="canvas-rendering-label">
+		<div class="canvas-metadata-row u-flex u-min-w-0 u-justify-between u-gap-xs">
+			<dt class="tr-text-metadata u-text-text-muted">Rendering</dt>
+			<dd class="u-truncate tr-text-metadata u-text-text-default" data-testid="canvas-rendering-label">
 				{model.rendering.label}
 			</dd>
 		</div>
-		<div class="flex min-w-0 items-baseline justify-between gap-xs">
-			<dt class="tr-text-metadata text-text-muted">Updated</dt>
-			<dd class="truncate tr-text-metadata text-text-muted" data-testid="canvas-updated-label">
+		<div class="canvas-metadata-row u-flex u-min-w-0 u-justify-between u-gap-xs">
+			<dt class="tr-text-metadata u-text-text-muted">Updated</dt>
+			<dd class="u-truncate tr-text-metadata u-text-text-muted" data-testid="canvas-updated-label">
 				{model.updated.label}
 			</dd>
 		</div>
 	</dl>
 	{#if model.version.detail}
-		<p class="tr-text-metadata text-text-muted" data-testid="canvas-version-detail">{model.version.detail}</p>
+		<p class="tr-text-metadata u-text-text-muted" data-testid="canvas-version-detail">{model.version.detail}</p>
 	{/if}
 	{#if state.warnings.length > 0}
-		<ul class="flex min-w-0 flex-col gap-0.5" aria-label="Canvas warnings">
+		<ul class="u-flex u-min-w-0 u-flex-col u-gap-0.5" aria-label="Canvas warnings">
 			{#each state.warnings as warning}
-				<li class="break-words tr-text-metadata text-text-muted">{warning.message}</li>
+				<li class="u-break-words tr-text-metadata u-text-text-muted">{warning.message}</li>
 			{/each}
 		</ul>
 	{/if}
 	{#if error}
-		<p role="alert" class="tr-text-metadata text-feedback-error" data-testid="canvas-sidebar-error">{error}</p>
+		<p role="alert" class="tr-text-metadata u-text-feedback-error" data-testid="canvas-sidebar-error">{error}</p>
 	{/if}
-	<div class="flex flex-wrap gap-xs">
+	<div class="u-flex u-flex-wrap u-gap-xs">
 		<button
 			type="button"
 			class="btn"
@@ -109,13 +109,13 @@ let model = $derived(canvasSidebarViewModel(state, { ready, pending }));
 		</button>
 	</div>
 	{#if model.removal}
-		<p class="tr-text-metadata text-text-muted" data-testid="canvas-removal-confirmation">
+		<p class="tr-text-metadata u-text-text-muted" data-testid="canvas-removal-confirmation">
 			{model.removal.title} {model.removal.message}
 		</p>
 	{/if}
-	<section aria-label="Mewa test templates" class="flex min-w-0 flex-col gap-xs">
-		<h3 class="tr-text-metadata text-text-muted">Mewa test templates</h3>
-		<ul class="flex min-w-0 flex-col gap-xs">
+	<section aria-label="Mewa test templates" class="u-flex u-min-w-0 u-flex-col u-gap-xs">
+		<h3 class="tr-text-metadata u-text-text-muted">Mewa test templates</h3>
+		<ul class="u-flex u-min-w-0 u-flex-col u-gap-xs">
 			{#each CANVAS_TEMPLATES as template}
 				<li class="card" data-testid={`canvas-template-${template.id}`}>
 					<div class="card-header">
@@ -123,7 +123,7 @@ let model = $derived(canvasSidebarViewModel(state, { ready, pending }));
 						<p class="card-description tr-text-metadata">{template.description}</p>
 					</div>
 					<div class="card-content">
-						<p class="tr-text-metadata text-text-muted">{canvasTemplateSummary(template)}</p>
+						<p class="tr-text-metadata u-text-text-muted">{canvasTemplateSummary(template)}</p>
 					</div>
 					<div class="card-footer">
 						<button
@@ -143,3 +143,9 @@ let model = $derived(canvasSidebarViewModel(state, { ready, pending }));
 		</ul>
 	</section>
 </aside>
+
+<style>
+	.canvas-metadata-row {
+		align-items: baseline;
+	}
+</style>

@@ -121,14 +121,14 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 <div
 	data-testid="settings-area"
 	data-settings-surface="standalone"
-	class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row"
+	class="settings-area u-flex u-min-h-0 u-min-w-0 u-flex-1 u-flex-col u-lg-flex-row"
 >
 	<aside
 		data-testid="settings-area-sidebar"
 		aria-label="Settings sections"
-		class="app-sidebar flex max-h-[45%] w-full shrink-0 flex-col overflow-auto border-b p-md lg:max-h-none lg:w-[clamp(12rem,20vw,16rem)] lg:border-r lg:border-b-0"
+		class="app-sidebar u-flex u-max-h-45pct u-w-full u-shrink-0 u-flex-col u-overflow-auto u-border-b u-p-md u-lg-max-h-none u-lg-w-sidebar u-lg-border-r u-lg-border-b-0"
 	>
-		<div class="flex items-center justify-between gap-sm">
+		<div class="u-flex u-items-center u-justify-between u-gap-sm">
 			<span class="eyebrow">SETTINGS</span>
 			{#if onClose}
 				<Button
@@ -142,7 +142,7 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 				</Button>
 			{/if}
 		</div>
-		<ul role="tablist" aria-label="Settings sections" class="mt-sm flex flex-col gap-2xs">
+		<ul role="tablist" aria-label="Settings sections" class="u-mt-sm u-flex u-flex-col u-gap-2xs">
 			{#each settingsTabList as tab (tab.section)}
 				<li role="presentation">
 					<button
@@ -150,7 +150,7 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 						role="tab"
 						id={`settings-area-tab-${tab.section}`}
 						data-testid="settings-section-row"
-						class={`tree-leaf w-full text-left tr-text-ui ${settingsActiveSection === tab.section ? "bg-control-bg-selected" : ""}`}
+						class={`tree-leaf u-w-full u-text-left tr-text-ui ${settingsActiveSection === tab.section ? "u-bg-control-bg-selected" : ""}`}
 						aria-selected={settingsActiveSection === tab.section}
 						aria-controls={`settings-area-panel-${tab.section}`}
 						tabindex={settingsActiveSection === tab.section ? 0 : -1}
@@ -162,7 +162,7 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 				</li>
 			{/each}
 		</ul>
-		<p class="mt-sm tr-text-metadata text-text-muted">
+		<p class="u-mt-sm tr-text-metadata u-text-text-muted">
 			Choose a section to review or change this Pi's configuration.
 		</p>
 	</aside>
@@ -170,7 +170,7 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 	<main
 		id="main-content"
 		data-testid="settings-detail"
-		class="flex min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md"
+		class="u-flex u-min-h-0 u-min-w-0 u-flex-1 u-flex-col u-gap-md u-overflow-y-auto u-px-lg u-py-md"
 	>
 		{#each settingsVisited as section (section)}
 			<div
@@ -178,7 +178,7 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 				role="tabpanel"
 				aria-labelledby={`settings-area-tab-${section}`}
 				hidden={section !== settingsActiveSection}
-				class="min-w-0 flex-1"
+				class="u-min-w-0 u-flex-1"
 			>
 				{#if section === SettingsSection.Agent && $appStore.agentProfile}
 					<AgentSettings profile={$appStore.agentProfile} />
@@ -188,25 +188,31 @@ function handleSettingsSectionKeydown(event: KeyboardEvent): void {
 							{#if settingsModules[section]}
 								{@const Section = settingsModules[section]!}<Section project={schedulesProject} />
 							{:else if settingsLoadErrors[section]}
-								<div role="alert" class="flex flex-col items-start gap-sm">
-									<p class="tr-text-ui text-feedback-error">Couldn't load this settings section.</p>
+								<div role="alert" class="u-flex u-flex-col u-items-start u-gap-sm">
+									<p class="tr-text-ui u-text-feedback-error">Couldn't load this settings section.</p>
 									<Button variant="outline" onclick={() => retrySettingsSection(section)}>Retry loading</Button>
 								</div>
-							{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+							{:else}<p class="tr-text-ui u-text-text-muted">Loading settings…</p>{/if}
 						{/key}
 					{:else}
-						<p class="tr-text-ui text-text-muted">Select a project to manage its schedules.</p>
+						<p class="tr-text-ui u-text-text-muted">Select a project to manage its schedules.</p>
 					{/if}
 				{:else if settingsModules[section]}
 					{@const Section = settingsModules[section]!}<Section />
 				{:else if settingsLoadErrors[section]}
-					<div role="alert" class="flex flex-col items-start gap-sm">
-						<p class="tr-text-ui text-feedback-error">Couldn't load this settings section.</p>
+					<div role="alert" class="u-flex u-flex-col u-items-start u-gap-sm">
+						<p class="tr-text-ui u-text-feedback-error">Couldn't load this settings section.</p>
 						<Button variant="outline" onclick={() => retrySettingsSection(section)}>Retry loading</Button>
 					</div>
-				{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+				{:else}<p class="tr-text-ui u-text-text-muted">Loading settings…</p>{/if}
 			</div>
 		{/each}
-		{#if settingsVisited.length === 0}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+		{#if settingsVisited.length === 0}<p class="tr-text-ui u-text-text-muted">Loading settings…</p>{/if}
 	</main>
 </div>
+
+<style>
+	.settings-area {
+		overflow: hidden;
+	}
+</style>

@@ -109,23 +109,23 @@ function select(next: GitDiffScope): void {
 }
 </script>
 
-<div class="contents" {@attach mewa(popoverBehavior)}>
+<div class="git-scope-menu" {@attach mewa(popoverBehavior)}>
 	<button
 		type="button"
 		popovertarget={popoverId}
 		aria-label={`Review scope: ${scopeLabel(scope)}`}
-		class="btn min-w-0"
+		class="btn u-min-w-0"
 		data-variant="ghost"
 		data-size="sm"
 	>
-		<span class="truncate">{scopeLabel(scope)}</span>
+		<span class="u-truncate">{scopeLabel(scope)}</span>
 		<Icon name="chevron-down" size={12} />
 	</button>
 	<div
 		bind:this={popover}
 		id={popoverId}
 		popover="auto"
-		class="popover w-[min(24rem,calc(100vw-2rem))] p-sm"
+		class="popover git-scope-menu-popover u-p-sm"
 		data-align="start"
 		ontoggle={(event) => (open = event.newState === "open")}
 	>
@@ -134,7 +134,7 @@ function select(next: GitDiffScope): void {
 			type="button"
 			autofocus
 			onclick={() => select({ kind: "uncommitted" })}
-			class="btn mb-sm w-full justify-start"
+			class="btn git-scope-menu-uncommitted u-w-full"
 			data-variant="ghost"
 		>Uncommitted changes</button>
 		<BranchPicker
@@ -158,3 +158,12 @@ function select(next: GitDiffScope): void {
 		/>
 	</div>
 </div>
+
+<style>
+	.git-scope-menu { display: contents; }
+	.git-scope-menu-popover { inline-size: min(24rem, calc(100vw - 2rem)); }
+	.git-scope-menu-uncommitted {
+		justify-content: flex-start;
+		margin-block-end: var(--space-sm);
+	}
+</style>

@@ -129,7 +129,7 @@ function beginEdit(): void {
 }
 </script>
 
-<span class="contents" {@attach mewa(popoverBehavior)}>
+<span class="session-goal-contents" {@attach mewa(popoverBehavior)}>
 	<button
 		type="button"
 		popovertarget={popoverId}
@@ -138,28 +138,28 @@ function beginEdit(): void {
 		aria-expanded={open}
 		disabled={busy}
 		onclick={beginEdit}
-		class="flex min-w-0 max-w-[min(36vw,24rem)] items-center gap-xs rounded-[var(--radius-sm)] px-sm py-0.5 text-text-muted tr-text-metadata outline-none transition-colors hover:bg-control-bg-hovered hover:text-text-default focus-visible:ring-2 focus-visible:ring-primary disabled:text-text-muted"
+		class="u-flex u-min-w-0 session-goal-trigger-size u-items-center u-gap-xs u-rounded u-px-sm session-goal-trigger-padding u-text-text-muted tr-text-metadata session-goal-trigger"
 	>
 		<Icon name="target" size={14} />
-		<span class="truncate">{label}</span>
+		<span class="u-truncate">{label}</span>
 		{#if goalState.goal}<Icon name="pencil" size={12} />{/if}
 	</button>
 	<div
 		bind:this={editor}
 		id={popoverId}
 		popover="auto"
-		class="popover w-[min(90vw,28rem)] p-md"
+		class="popover session-goal-popover u-p-md"
 		data-align="start"
 		ontoggle={(event) => (open = event.newState === "open")}
 	>
 		<form
 			data-testid="session-goal-editor"
 			onsubmit={(event) => { event.preventDefault(); void save(); }}
-			class="flex flex-col gap-sm"
+			class="u-flex u-flex-col u-gap-sm"
 		>
-			<div class="flex items-center justify-between gap-sm">
-				<label for={inputId} class="tr-text-ui text-text-default">Session goal</label>
-				<span class="text-text-muted tr-text-metadata">{draft.length}/{SESSION_GOAL_MAX_LENGTH}</span>
+			<div class="u-flex u-items-center u-justify-between u-gap-sm">
+				<label for={inputId} class="tr-text-ui u-text-text-default">Session goal</label>
+				<span class="u-text-text-muted tr-text-metadata">{draft.length}/{SESSION_GOAL_MAX_LENGTH}</span>
 			</div>
 			<!-- svelte-ignore a11y_autofocus -->
 			<textarea
@@ -172,12 +172,12 @@ function beginEdit(): void {
 				maxlength={SESSION_GOAL_MAX_LENGTH + 1}
 				rows={3}
 				disabled={busy}
-				class="input min-h-20 resize-y"
+				class="input session-goal-textarea"
 			></textarea>
 			{#if goalState.error}
-				<div data-testid="session-goal-error" role="alert" class="text-feedback-error tr-text-metadata">{goalState.error}</div>
+				<div data-testid="session-goal-error" role="alert" class="u-text-feedback-error tr-text-metadata">{goalState.error}</div>
 			{/if}
-			<div class="flex items-center justify-end gap-sm">
+			<div class="u-flex u-items-center session-goal-justify-end u-gap-sm">
 				{#if goalState.goal}
 					<Button variant="ghost" size="sm" data-testid="session-goal-clear" disabled={busy} onclick={() => void clear()}>
 						<Icon name="trash-2" size={14} /> Clear
@@ -189,24 +189,40 @@ function beginEdit(): void {
 				<Button type="submit" size="sm" data-testid="session-goal-save" disabled={busy || !draft.trim()}>Save</Button>
 			</div>
 		</form>
-		<div class="mt-md flex flex-col gap-xs border-border-default border-t pt-md">
-			<div class="flex items-center justify-between gap-sm">
-				<div class="tr-text-ui text-text-default">Agent tasks</div>
-				<span class="text-text-muted tr-text-metadata">{agentCanAccessGoal ? "Managed by the agent" : "Agent access unavailable"}</span>
+		<div class="session-goal-tasks u-flex u-flex-col u-gap-xs u-border-t u-border-border-default">
+			<div class="u-flex u-items-center u-justify-between u-gap-sm">
+				<div class="tr-text-ui u-text-text-default">Agent tasks</div>
+				<span class="u-text-text-muted tr-text-metadata">{agentCanAccessGoal ? "Managed by the agent" : "Agent access unavailable"}</span>
 			</div>
 			{#each goalState.tasks as task (task.id)}
-				<div class="flex items-center gap-xs">
-					<span class="text-text-muted" title={task.status}>
-						<Icon name={task.status === "done" ? "check" : "circle"} size={14} class={task.status === "active" ? "text-primary" : ""} />
+				<div class="u-flex u-items-center u-gap-xs">
+					<span class="u-text-text-muted" title={task.status}>
+						<Icon name={task.status === "done" ? "check" : "circle"} size={14} class={task.status === "active" ? "session-goal-active" : ""} />
 					</span>
-					<span class={`min-w-0 flex-1 tr-text-metadata ${task.status === "done" ? "text-text-muted line-through" : "text-text-default"}`}>{task.text}</span>
+					<span class={`u-min-w-0 u-flex-1 tr-text-metadata ${task.status === "done" ? "u-text-text-muted session-goal-completed" : "u-text-text-default"}`}>{task.text}</span>
 				</div>
 			{/each}
 			{#if goalState.tasks.length === 0}
-				<div class="text-text-muted tr-text-metadata">
+				<div class="u-text-text-muted tr-text-metadata">
 					{agentCanAccessGoal ? "No tasks reported." : `${agentName || "The connected agent"} cannot access or update this goal.`}
 				</div>
 			{/if}
 		</div>
 	</div>
 </span>
+
+<style>
+	.session-goal-contents { display: contents; }
+	.session-goal-trigger-size { max-width: min(36vw, 24rem); }
+	.session-goal-trigger { border: 0; outline: none; background: transparent; transition: background-color var(--transition-fast), color var(--transition-fast); }
+	.session-goal-trigger-padding { padding-block: var(--space-2xs); }
+	.session-goal-trigger:hover { background: var(--control-bg-hovered); color: var(--text-default); }
+	.session-goal-trigger:focus-visible { outline: var(--focus-ring-width, 2px) solid var(--border-focus); }
+	.session-goal-trigger:disabled { color: var(--text-muted); }
+	.session-goal-popover { width: min(90vw, 28rem); }
+	.session-goal-textarea { min-height: 5rem; resize: vertical; }
+	.session-goal-justify-end { justify-content: end; }
+	.session-goal-tasks { margin-block-start: var(--space-md); padding-block-start: var(--space-md); }
+	.session-goal-active { color: var(--primary); }
+	.session-goal-completed { text-decoration: line-through; }
+</style>

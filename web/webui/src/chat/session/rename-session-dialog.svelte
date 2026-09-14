@@ -65,7 +65,7 @@ function submit(event: SubmitEvent): void {
 }
 </script>
 
-	<Dialog open={open} title="Rename chat" description="The title is stored with this agent session." testid="session-rename-dialog" class="max-w-[24rem]" onOpenChange={setOpen}>
+	<Dialog open={open} title="Rename chat" description="The title is stored with this agent session." testid="session-rename-dialog" class="session-rename-dialog" onOpenChange={setOpen}>
 	<form id="session-rename-form" class="form" onsubmit={submit}>
 		<label class="text-field">
 			<span class="text-field-label">Title</span>
@@ -79,3 +79,7 @@ function submit(event: SubmitEvent): void {
 		<Button type="submit" form="session-rename-form" disabled={busy} data-testid="session-rename-submit">{busy ? "Renaming…" : "Rename"}</Button>
 	{/snippet}
 </Dialog>
+
+<style>
+	:global(.session-rename-dialog) { max-width: 24rem; }
+</style>

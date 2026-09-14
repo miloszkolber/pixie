@@ -90,8 +90,8 @@ $effect(() => {
 	}}
 >
 	<div class="dialog-content">
-		<div class="dialog-header flex items-start justify-between gap-sm">
-			<div class="min-w-0 flex-1">
+		<div class="dialog-header u-flex u-items-start u-justify-between u-gap-sm">
+			<div class="u-min-w-0 u-flex-1">
 				<h2 id={titleId} class="dialog-title">{title}</h2>
 				{#if description}<p id={descriptionId} class="dialog-description">{description}</p>{/if}
 			</div>
@@ -105,3 +105,9 @@ $effect(() => {
 		{#if actions}<footer class="dialog-footer">{@render actions()}</footer>{/if}
 	</div>
 </dialog>
+
+<style>
+	dialog.dialog--compact {
+		max-width: calc(var(--size-3200) * 3);
+	}
+</style>

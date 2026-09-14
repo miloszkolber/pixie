@@ -43,14 +43,12 @@ export interface Role {
 	readonly from: string;
 	readonly alpha?: string;
 	readonly fallback?: string;
-	readonly publish: boolean;
 	readonly note?: string;
 }
 
 export interface Effect {
 	readonly dark: string;
 	readonly light: string;
-	readonly publish: boolean;
 	readonly note?: string;
 }
 
@@ -66,7 +64,6 @@ export function loadColors(path = SOURCE_PATH): Colors {
 }
 
 export const roleVar = (name: string) => `--${name}`;
-export const themeVar = (name: string) => `--color-${name}`;
 
 export function derive(colors: Colors, role: Role): string {
 	const source = paletteVar(role.from);
@@ -101,7 +98,11 @@ export function validate(colors: Colors): string[] {
 		if (role.alpha !== undefined && role.fallback !== undefined) {
 			issues.push(`roles.${name} cannot combine alpha with fallback`);
 		}
-		if (typeof role.publish !== "boolean") issues.push(`roles.${name}.publish must be a boolean`);
+		for (const key of Object.keys(role)) {
+			if (!["from", "alpha", "fallback", "note"].includes(key)) {
+				issues.push(`roles.${name}: unexpected property ${key}`);
+			}
+		}
 		if (!/^[a-z][a-z0-9-]*$/.test(name)) issues.push(`roles.${name} must be a kebab-case slug`);
 	}
 	for (const [name, effect] of Object.entries(colors.effects)) {
@@ -110,8 +111,11 @@ export function validate(colors: Colors): string[] {
 				issues.push(`effects.${name}.${appearance} must be a non-empty string`);
 			}
 		}
-		if (typeof effect.publish !== "boolean")
-			issues.push(`effects.${name}.publish must be a boolean`);
+		for (const key of Object.keys(effect)) {
+			if (!["dark", "light", "note"].includes(key)) {
+				issues.push(`effects.${name}: unexpected property ${key}`);
+			}
+		}
 	}
 	const used = new Set(Object.values(colors.roles).map((r) => r.from));
 	for (const key of keys) {
@@ -130,7 +134,6 @@ const HEADER = (version: string, kind: string) => `/*
 
 export function renderCss(colors: Colors): string {
 	const roles = Object.entries(colors.roles);
-	const effects = Object.entries(colors.effects).filter(([, e]) => e.publish);
 
 	const rootLines = roles
 		.filter(([name, role]) => !aliasesPaletteVar(name, role))
@@ -154,17 +157,10 @@ export function renderCss(colors: Colors): string {
 		].join("\n"),
 	];
 
-	const themeLines = [
-		// The built-in-palette reset must precede our entries. A reset in a later block would wipe them too.
-		"\t--color-*: initial;",
-		...roles.filter(([, r]) => r.publish).map(([n]) => `\t${themeVar(n)}: var(${roleVar(n)});`),
-		...effects.map(([n]) => `\t${themeVar(n)}: var(--${n});`),
-	];
-
 	return [
 		HEADER(
 			colors.metadata.version,
-			"The semantic roles, then the Tailwind utility map. The palette they read is written to the\n * document root by the fixed system palette before Svelte mounts.",
+			"Semantic roles and appearance effects. The palette they read is written to the document\n * root by the fixed system palette before Svelte mounts.",
 		),
 		":root {",
 		...rootLines,
@@ -172,10 +168,6 @@ export function renderCss(colors: Colors): string {
 		"",
 		"/* Appearance-level effects follow the system color scheme with no JavaScript theme runtime. */",
 		...effectBlocks,
-		"",
-		"@theme inline {",
-		...themeLines,
-		"}",
 		"",
 	].join("\n");
 }

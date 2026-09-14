@@ -33,12 +33,17 @@ $effect(() => {
 
 {#if html === null}
 	<pre
-		class="overflow-auto rounded-[var(--radius-sm)] bg-container-header-bg p-sm tr-code-text text-text-default"
+		class="u-overflow-auto u-rounded code-block-surface u-p-md tr-code-text u-text-text-default"
 	>{code}</pre>
 {:else}
 	<div
-		class="overflow-auto rounded-[var(--radius-sm)] tr-code-text [&_pre]:!m-0 [&_pre]:!bg-container-header-bg [&_pre]:p-sm"
+		class="u-overflow-auto u-rounded code-block-highlighted tr-code-text"
 	>
 		{@html html}
 	</div>
 {/if}
+
+<style>
+	.code-block-surface { background: var(--container-header-bg); }
+	.code-block-highlighted :global(pre) { margin: 0 !important; background: var(--container-header-bg) !important; padding: var(--space-sm); }
+</style>

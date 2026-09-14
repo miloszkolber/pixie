@@ -80,10 +80,10 @@ function submit(event: SubmitEvent): void {
 	title="Customize project"
 	description="Choose the name and icon shown in Pixie."
 	testid="project-customization-dialog"
-	class="max-w-[26rem]"
+	class="project-customization-dialog"
 	onOpenChange={setOpen}
 >
-	<form id="project-customization-form" class="form flex flex-col gap-lg" onsubmit={submit}>
+	<form id="project-customization-form" class="form u-flex u-flex-col u-gap-lg" onsubmit={submit}>
 		<label class="text-field">
 			<span class="text-field-label">Name</span>
 			<!-- svelte-ignore a11y_autofocus (A newly opened customization dialog starts in its primary field.) -->
@@ -97,7 +97,7 @@ function submit(event: SubmitEvent): void {
 		</label>
 		<fieldset class="radio-group" disabled={busy}>
 			<legend class="field-label">Icon</legend>
-			<div class="grid grid-cols-3 gap-xs">
+		<div class="project-customization-dialog__icon-grid">
 				{#each PROJECT_ICONS as candidate}
 					<label class="radio-card">
 						<input
@@ -108,7 +108,7 @@ function submit(event: SubmitEvent): void {
 							checked={candidate === icon}
 							onchange={() => (icon = candidate)}
 						/>
-						<span class="flex items-center gap-xs">
+					<span class="u-flex u-items-center u-gap-xs">
 							<ProjectIcon icon={candidate} size={14} /> {ICON_LABELS[candidate]}
 						</span>
 					</label>
@@ -129,3 +129,15 @@ function submit(event: SubmitEvent): void {
 		</Button>
 	{/snippet}
 </Dialog>
+
+<style>
+	:global(.dialog.project-customization-dialog) {
+		max-width: 26rem;
+	}
+
+	.project-customization-dialog__icon-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: var(--space-xs);
+	}
+</style>

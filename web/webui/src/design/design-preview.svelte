@@ -10,23 +10,30 @@ let { preview, class: className = "" }: Props = $props();
 let imageUrl = $derived(preview.url ?? preview.artifactUrl ?? null);
 </script>
 
-<figure class={`flex min-w-0 flex-col gap-xs ${className}`} data-testid="design-preview">
-	<figcaption class="tr-text-metadata text-text-muted">{preview.label}</figcaption>
+<figure class={`u-flex u-min-w-0 u-flex-col u-gap-xs ${className}`} data-testid="design-preview">
+	<figcaption class="tr-text-metadata u-text-text-muted">{preview.label}</figcaption>
 	{#if preview.status === "ready" && imageUrl}
 		<img
 			src={imageUrl}
 			alt={preview.kind === "cover" ? "Document thumbnail" : "Design frame preview"}
 			loading="lazy"
 			decoding="async"
-			class="max-h-[28rem] max-w-full rounded-[var(--radius-sm)] border border-border-default object-contain"
+			class="design-preview-image u-max-w-full u-rounded u-border u-border-border-default"
 		/>
 	{:else if preview.kind === "frame"}
-		<p data-testid="design-frame-preview-unavailable" role="status" class="tr-text-metadata text-text-muted">Frame preview unavailable. Structure and text remain available.</p>
+		<p data-testid="design-frame-preview-unavailable" role="status" class="tr-text-metadata u-text-text-muted">Frame preview unavailable. Structure and text remain available.</p>
 	{:else if preview.status === "pending"}
-		<p role="status" class="tr-text-metadata text-text-muted">Loading document thumbnail…</p>
+		<p role="status" class="tr-text-metadata u-text-text-muted">Loading document thumbnail…</p>
 	{:else if preview.status === "error"}
-		<p role="alert" class="tr-text-metadata text-feedback-error">{preview.reason ?? "Document thumbnail failed."}</p>
+		<p role="alert" class="tr-text-metadata u-text-feedback-error">{preview.reason ?? "Document thumbnail failed."}</p>
 	{:else}
-		<p role="status" class="tr-text-metadata text-text-muted">{preview.reason ?? "Document thumbnail unavailable."}</p>
+		<p role="status" class="tr-text-metadata u-text-text-muted">{preview.reason ?? "Document thumbnail unavailable."}</p>
 	{/if}
 </figure>
+
+<style>
+	.design-preview-image {
+		max-height: calc(var(--space-800) * 14);
+		object-fit: contain;
+	}
+</style>

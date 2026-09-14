@@ -26,32 +26,32 @@ let oldLines = $derived(oldText ? oldText.split("\n") : []);
 let newLines = $derived(newText ? newText.split("\n") : []);
 </script>
 
-<div data-testid="tool-edit" class="flex flex-col gap-xs">
-	<div class="flex items-center gap-xs tr-text-metadata">
-		<Icon name="pencil" size={14} class="shrink-0 text-feedback-warning" />
-		<span class="truncate text-text-default" title={path}>{displayPath}</span>
-		<span class="shrink-0 text-text-muted">
+<div data-testid="tool-edit" class="u-flex u-flex-col u-gap-xs">
+	<div class="u-flex u-items-center u-gap-xs tr-text-metadata">
+		<Icon name="pencil" size={14} class="u-shrink-0 u-text-feedback-warning" />
+		<span class="u-truncate u-text-text-default" title={path}>{displayPath}</span>
+		<span class="u-shrink-0 u-text-text-muted">
 			{status === "running" ? "editing…" : status === "error" ? "edit failed" : "edited"}
 		</span>
 	</div>
 	{#if status === "error"}
-		<pre class="overflow-auto px-sm py-xs text-feedback-error tr-code-text">{message}</pre>
+		<pre class="u-overflow-auto u-px-sm u-py-xs u-text-feedback-error tr-code-text">{message}</pre>
 	{:else}
 		<Collapsible
 			lines={oldLines.length + newLines.length}
-			fadeClass="bg-[linear-gradient(to_top,var(--container-elevated-bg),transparent)]"
+			fadeTone="elevated"
 		>
-			<div class="overflow-auto rounded-[var(--radius-sm)] border border-border-default tr-code-text leading-relaxed">
+			<div class="u-overflow-auto u-rounded u-border u-border-border-default tr-code-text tool-relaxed">
 				{#each oldLines as line, index (`old-${index}`)}
-					<div class="flex bg-feedback-error-subtle">
-						<span class="w-6 shrink-0 select-none px-1 text-right text-feedback-error-muted">−</span>
-						<pre class="min-w-0 flex-1 px-1 text-feedback-error tr-code-text">{line}</pre>
+					<div class="u-flex tool-diff-error">
+						<span class="tool-diff-marker tool-diff-error-marker">−</span>
+						<pre class="u-min-w-0 u-flex-1 tool-diff-padding u-text-feedback-error tr-code-text">{line}</pre>
 					</div>
 				{/each}
 				{#each newLines as line, index (`new-${index}`)}
-					<div class="flex bg-feedback-success-subtle">
-						<span class="w-6 shrink-0 select-none px-1 text-right text-feedback-success-muted">+</span>
-						<pre class="min-w-0 flex-1 px-1 text-feedback-success tr-code-text">{line}</pre>
+					<div class="u-flex tool-diff-success">
+						<span class="tool-diff-marker tool-diff-success-marker">+</span>
+						<pre class="u-min-w-0 u-flex-1 tool-diff-padding tool-success tr-code-text">{line}</pre>
 					</div>
 				{/each}
 			</div>
@@ -59,3 +59,14 @@ let newLines = $derived(newText ? newText.split("\n") : []);
 		<ToolOutput {result} />
 	{/if}
 </div>
+
+<style>
+	.tool-relaxed { line-height: var(--tr-line-height-relaxed); }
+	.tool-diff-error { background: var(--feedback-error-subtle); }
+	.tool-diff-success { background: var(--feedback-success-subtle); }
+	.tool-diff-marker { width: 1.5rem; flex-shrink: 0; user-select: none; padding-inline: var(--space-2xs); text-align: end; }
+	.tool-diff-error-marker { color: var(--feedback-error-muted); }
+	.tool-diff-success-marker { color: var(--feedback-success-muted); }
+	.tool-diff-padding { padding-inline: var(--space-2xs); }
+	.tool-success { color: var(--feedback-success); }
+</style>

@@ -13,14 +13,19 @@ let provider = $derived(webSearchProvider(result));
 let output = $derived(resultText(result, status === "error"));
 </script>
 
-<div data-testid="tool-web_search" class="flex flex-col gap-xs">
-	<div class="flex items-center gap-xs tr-text-metadata">
-		<Icon name="search" size={14} class="shrink-0 text-text-muted" />
-		<span class="truncate text-primary" title={query}>{query}</span>
-		{#if provider}<span class="shrink-0 text-text-muted">via {provider}</span>{/if}
+<div data-testid="tool-web_search" class="u-flex u-flex-col u-gap-xs">
+	<div class="u-flex u-items-center u-gap-xs tr-text-metadata">
+		<Icon name="search" size={14} class="u-shrink-0 u-text-text-muted" />
+		<span class="u-truncate tool-primary" title={query}>{query}</span>
+		{#if provider}<span class="u-shrink-0 u-text-text-muted">via {provider}</span>{/if}
 	</div>
-	{#if status === "running"}<span class="text-text-muted tr-text-metadata">Searching…</span>
-	{:else if status === "error"}<pre class="overflow-auto px-sm py-xs text-feedback-error tr-code-text">{output}</pre>
+	{#if status === "running"}<span class="u-text-text-muted tr-text-metadata">Searching…</span>
+	{:else if status === "error"}<pre class="u-overflow-auto u-px-sm u-py-xs u-text-feedback-error tr-code-text">{output}</pre>
 	{:else if output}<Collapsible lines={countLines(output)}><CodeBlock code={output} lang="markdown" /></Collapsible>
-	{:else}<span class="text-text-muted tr-text-metadata italic">No results.</span>{/if}
+	{:else}<span class="u-text-text-muted tr-text-metadata tool-italic">No results.</span>{/if}
 </div>
+
+<style>
+	.tool-primary { color: var(--primary); }
+	.tool-italic { font-style: italic; }
+</style>

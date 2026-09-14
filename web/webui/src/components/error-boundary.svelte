@@ -21,13 +21,13 @@ function report(error: unknown): void {
 	<div
 		data-testid="error-boundary-fallback"
 		role="alert"
-		class="flex h-full min-h-0 flex-col items-center justify-center gap-sm overflow-auto p-lg text-center"
+		class="error-boundary-fallback u-flex u-h-full u-min-h-0 u-flex-col u-items-center u-justify-center u-gap-sm u-overflow-auto u-text-center"
 	>
-		<Icon name="triangle-alert" size={24} class="text-feedback-error" />
-		<p class="tr-title-compact text-text-default">
+		<Icon name="triangle-alert" size={24} class="u-text-feedback-error" />
+		<p class="tr-title-compact u-text-text-default">
 			{label ? `The ${label} panel hit an error` : "Something went wrong"}
 		</p>
-		<p class="max-w-[28rem] tr-text-metadata text-text-muted">
+		<p class="error-boundary-message tr-text-metadata u-text-text-muted">
 			{chunkError
 				? "Failed to load part of the app (a stale or unreachable resource). Reloading usually fixes it."
 				: error instanceof Error
@@ -49,3 +49,13 @@ function report(error: unknown): void {
 <svelte:boundary onerror={report} {failed}>
 	{@render children()}
 </svelte:boundary>
+
+<style>
+	.error-boundary-fallback {
+		padding: var(--space-lg);
+	}
+
+	.error-boundary-message {
+		max-width: calc(var(--size-2800) * 4);
+	}
+</style>

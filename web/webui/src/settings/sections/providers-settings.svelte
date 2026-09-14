@@ -165,12 +165,12 @@ async function closeLogin(): Promise<void> {
 }
 </script>
 
-<div data-testid="settings-providers" class="flex flex-col gap-lg">
-{#if actionError}<p role="alert" class="text-feedback-error tr-text-ui">{actionError}</p>{/if}
-	<div class="flex items-start justify-between gap-sm">
-		<div class="flex flex-col gap-xs">
-			<h3 class="text-text-default tr-title-section">Providers</h3>
-			<p class="text-text-muted tr-text-metadata">
+<div data-testid="settings-providers" class="u-flex u-flex-col u-gap-lg">
+{#if actionError}<p role="alert" class="u-text-feedback-error tr-text-ui">{actionError}</p>{/if}
+	<div class="u-flex u-items-start u-justify-between u-gap-sm">
+		<div class="u-flex u-flex-col u-gap-xs">
+			<h3 class="u-text-text-default tr-title-section">Providers</h3>
+			<p class="u-text-text-muted tr-text-metadata">
 				Provider credentials are stored and managed by Pi.
 			</p>
 		</div>
@@ -183,36 +183,36 @@ async function closeLogin(): Promise<void> {
 			disabled={refreshing}
 			onclick={() => void load()}
 		>
-			<Icon name="refresh-cw" size={14} class={refreshing ? "animate-spin motion-reduce:animate-none" : ""} />
+			<Icon name="refresh-cw" size={14} class={refreshing ? "provider-refresh-icon" : ""} />
 			Refresh
 		</Button>
 	</div>
 
-	<label class="flex items-center gap-sm rounded-[var(--radius-sm)] border border-border-default bg-control-bg px-md py-sm">
-		<Icon name="search" size={16} class="shrink-0 text-text-muted" />
+	<label class="provider-filter u-flex u-items-center u-gap-sm u-rounded u-border u-border-border-default u-bg-control-bg u-px-md u-py-sm">
+		<Icon name="search" size={16} class="u-shrink-0 u-text-text-muted" />
 		<input
 			data-testid="providers-filter"
             aria-label="Filter providers"
 			bind:value={query}
 			placeholder="Filter providers…"
-			class="min-w-0 flex-1 bg-transparent text-text-default outline-none tr-text-ui placeholder:text-text-muted"
+			class="provider-filter__input u-min-w-0 u-flex-1 tr-text-ui"
 		/>
 	</label>
 
-	<label class="flex items-center gap-xs tr-text-ui"><input type="checkbox" bind:checked={showLegacy} />Show legacy providers</label>
+	<label class="u-flex u-items-center u-gap-xs tr-text-ui"><input type="checkbox" bind:checked={showLegacy} />Show legacy providers</label>
 	{#if report === null && !failed}
-		<p class="text-text-muted tr-text-ui">Loading providers…</p>
+		<p class="u-text-text-muted tr-text-ui">Loading providers…</p>
 	{:else if failed}
-		<p data-testid="providers-error" class="text-text-muted tr-text-ui">
+		<p data-testid="providers-error" class="u-text-text-muted tr-text-ui">
 			Couldn't read provider status from the controller.
 		</p>
 	{:else if filtered.length === 0}
-		<p class="text-text-muted tr-text-ui">No providers match this filter.</p>
+		<p class="u-text-text-muted tr-text-ui">No providers match this filter.</p>
 	{:else}
 		{#if configured.length > 0}
-			<section class="flex flex-col gap-sm">
-				<h4 class="text-text-muted tr-text-eyebrow">Configured in Pi ({configured.length})</h4>
-				<div class="flex flex-col gap-xs">
+			<section class="u-flex u-flex-col u-gap-sm">
+				<h4 class="u-text-text-muted tr-text-eyebrow">Configured in Pi ({configured.length})</h4>
+				<div class="u-flex u-flex-col u-gap-xs">
 					{#each configured as provider (provider.id)}
 						<ProviderCard
 							{provider}
@@ -226,9 +226,9 @@ async function closeLogin(): Promise<void> {
 			</section>
 		{/if}
 		{#if unconfigured.length > 0}
-			<section class="flex flex-col gap-sm">
-				<h4 class="text-text-muted tr-text-eyebrow">Not configured ({unconfigured.length})</h4>
-				<div class="flex flex-col gap-xs">
+			<section class="u-flex u-flex-col u-gap-sm">
+				<h4 class="u-text-text-muted tr-text-eyebrow">Not configured ({unconfigured.length})</h4>
+				<div class="u-flex u-flex-col u-gap-xs">
 					{#each unconfigured as provider (provider.id)}
 						<ProviderCard
 							{provider}
@@ -255,3 +255,32 @@ async function closeLogin(): Promise<void> {
 		{/key}
 	{/if}
 </div>
+
+<style>
+	.provider-filter__input {
+		background: transparent;
+		color: var(--text-default);
+		outline: none;
+	}
+
+	.provider-filter__input::placeholder {
+		color: var(--text-muted);
+	}
+
+	.provider-filter:focus-within {
+		outline: var(--focus-ring-width, 2px) solid var(--border-focus);
+		outline-offset: -1px;
+	}
+
+	:global(.provider-refresh-icon) {
+		animation: provider-refresh-rotate 1s linear infinite;
+	}
+
+	@keyframes provider-refresh-rotate {
+		to { transform: rotate(1turn); }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.provider-refresh-icon) { animation: none; }
+	}
+</style>

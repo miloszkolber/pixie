@@ -37,8 +37,8 @@ async function submit(event: SubmitEvent): Promise<void> {
 }
 </script>
 
-<main class="app-content flex h-full items-center justify-center p-lg">
-	<section class="card w-full max-w-[32rem]">
+<main class="app-content controller-access u-flex u-h-full u-items-center u-justify-center">
+	<section class="card controller-access-card u-w-full">
 		<header class="card-header">
 			<h1 class="card-title">Connect to Pixie</h1>
 			<p class="card-description">
@@ -48,7 +48,7 @@ async function submit(event: SubmitEvent): Promise<void> {
 		</header>
 		<div class="card-content">
 			{#if status}
-				<form class="form flex flex-col gap-md" onsubmit={submit}>
+				<form class="form u-flex u-flex-col u-gap-md" onsubmit={submit}>
 					<label class="text-field">
 						<span class="text-field-label">Controller token</span>
 						<input
@@ -60,11 +60,25 @@ async function submit(event: SubmitEvent): Promise<void> {
 						/>
 					</label>
 					{#if error}<p role="alert" class="field-error">{error}</p>{/if}
-					<div class="flex justify-end"><Button type="submit">Connect</Button></div>
+					<div class="u-flex controller-access-actions"><Button type="submit">Connect</Button></div>
 				</form>
 			{:else}
-				<p class="tr-text-ui text-text-muted">{error || "Checking controller authentication…"}</p>
+				<p class="tr-text-ui u-text-text-muted">{error || "Checking controller authentication…"}</p>
 			{/if}
 		</div>
 	</section>
 </main>
+
+<style>
+	.controller-access-card {
+		max-inline-size: 32rem;
+	}
+
+	.controller-access {
+		padding: var(--space-lg);
+	}
+
+	.controller-access-actions {
+		justify-content: flex-end;
+	}
+</style>

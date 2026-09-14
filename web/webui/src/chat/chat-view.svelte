@@ -688,7 +688,7 @@ function openChanges(path: string): void {
 </script>
 
 {#snippet HeaderLeft()}
-	<div class="flex min-w-0 flex-wrap items-center gap-xs">
+	<div class="u-flex u-min-w-0 u-flex-wrap u-items-center u-gap-xs">
 		{#if piAgent}
 			<SessionModelControls
 				sessionId={sessionId}
@@ -718,7 +718,7 @@ function openChanges(path: string): void {
 	</div>
 {/snippet}
 
-<div class="flex min-h-0 flex-1 flex-col bg-container-project-bg">
+<div class="u-flex u-min-h-0 u-flex-1 u-flex-col chat-view-root">
 
 	<ChatTranscript
 		bind:this={transcriptView}
@@ -733,7 +733,7 @@ function openChanges(path: string): void {
 		onOpenChange={openChanges}
 	/>
 
-	<div class="relative shrink-0">
+	<div class="chat-view-editor-region u-shrink-0">
 		<HistoryOverlay
 			state={historyState}
 			{projectAreaNames}
@@ -749,11 +749,11 @@ function openChanges(path: string): void {
 				void deleteHistoryChat(targetProjectAreaId, targetSessionId)}
 			{deleteUnavailableReason}
 		/>
-		{#if runtime.activity}<p role="status" class="px-md py-xs text-text-muted tr-text-ui">{runtime.activity}</p>{/if}
-		<div class="max-h-[15dvh] overflow-y-auto px-md text-text-muted tr-text-ui" role="status" aria-label="Extension status">
-			{#if runtime.extensionTitle}<p class="break-words">Extension: {runtime.extensionTitle}</p>{/if}
-			{#each Object.entries(runtime.extensionStatuses) as [key, text] (key)}<p class="break-words">{key}: {text}</p>{/each}
-			{#if runtime.extensionWorking}<p class="break-words">{runtime.extensionWorking}</p>{/if}
+		{#if runtime.activity}<p role="status" class="u-px-md u-py-xs u-text-text-muted tr-text-ui">{runtime.activity}</p>{/if}
+		<div class="chat-view-extension-status u-overflow-y-auto u-px-md u-text-text-muted tr-text-ui" role="status" aria-label="Extension status">
+			{#if runtime.extensionTitle}<p class="u-break-words">Extension: {runtime.extensionTitle}</p>{/if}
+			{#each Object.entries(runtime.extensionStatuses) as [key, text] (key)}<p class="u-break-words">{key}: {text}</p>{/each}
+			{#if runtime.extensionWorking}<p class="u-break-words">{runtime.extensionWorking}</p>{/if}
 		</div>
 		<QueueStrip
 			queue={runtime.queue}
@@ -791,10 +791,10 @@ function openChanges(path: string): void {
 					oninput={(event) => {
 						if (queueEdit) queueEdit = { ...queueEdit, text: event.currentTarget.value };
 					}}
-					class="input min-h-28 w-full resize-y"
+					class="input chat-queue-textarea u-w-full"
 				></textarea>
 				{#if queueEditStale || activeQueueEdit.error}
-					<p role="alert" class="text-feedback-warning tr-text-ui">
+					<p role="alert" class="u-text-feedback-warning tr-text-ui">
 						{queueEditStale
 							? "The queue changed while you were editing. Copy your draft, then reopen the message to edit its current version."
 							: `${activeQueueEdit.error} Your draft is still here.`}
@@ -802,16 +802,16 @@ function openChanges(path: string): void {
 				{/if}
 			</Dialog>
 		{/if}
-  {#if stopError}<p role="alert" class="px-md py-xs text-feedback-error tr-text-ui">Couldn't stop the response: {stopError}</p>{/if}
+   {#if stopError}<p role="alert" class="u-px-md u-py-xs u-text-feedback-error tr-text-ui">Couldn't stop the response: {stopError}</p>{/if}
   {#if runtime.submission}
    {@const pending = runtime.submission}
-   <div class="mx-sm my-xs max-h-[min(40dvh,20rem)] overflow-y-auto rounded border border-border-default p-sm tr-text-ui" role="status">
+    <div class="chat-submission-status u-overflow-y-auto u-rounded u-border u-border-border-default chat-submission-padding tr-text-ui" role="status">
     {#if pending.busy}<p>Sending message…</p>{:else}
-     <p class="text-feedback-error">{pending.error}</p>
-     <p class="text-text-muted">Check the transcript before retrying: a lost connection can leave delivery uncertain.</p>
-     <textarea aria-label="Retained message" class="input mt-xs w-full" value={pending.text} oninput={(event) => appStoreApi.getState().setSubmission(sessionId, { ...pending, text: event.currentTarget.value })}></textarea>
-     {#if pending.attachments.length}<p class="break-words">Attachments: {pending.attachments.map((attachment) => attachment.name).join(", ")}</p>{/if}
-     <div class="mt-xs flex flex-wrap gap-xs">
+      <p class="u-text-feedback-error">{pending.error}</p>
+      <p class="u-text-text-muted">Check the transcript before retrying: a lost connection can leave delivery uncertain.</p>
+      <textarea aria-label="Retained message" class="input chat-submission-textarea u-w-full" value={pending.text} oninput={(event) => appStoreApi.getState().setSubmission(sessionId, { ...pending, text: event.currentTarget.value })}></textarea>
+      {#if pending.attachments.length}<p class="u-break-words">Attachments: {pending.attachments.map((attachment) => attachment.name).join(", ")}</p>{/if}
+      <div class="u-flex u-flex-wrap u-gap-xs chat-submission-actions">
       <Button onclick={retrySubmission}>Retry message</Button>
       <Button variant="ghost" onclick={() => appStoreApi.getState().setSubmission(sessionId, null)}>Discard retained message</Button>
      </div>
@@ -844,3 +844,13 @@ function openChanges(path: string): void {
 		{/key}
 	{/if}
 </div>
+
+<style>
+	.chat-view-root { background: var(--container-project-bg); }
+	.chat-view-editor-region { position: relative; }
+	.chat-view-extension-status { max-height: 15dvh; }
+	.chat-queue-textarea { min-height: 7rem; resize: vertical; }
+	.chat-submission-status { max-height: min(40dvh, 20rem); margin: var(--space-xs) var(--space-sm); }
+	.chat-submission-padding { padding: var(--space-sm); }
+	.chat-submission-textarea, .chat-submission-actions { margin-block-start: var(--space-xs); }
+</style>

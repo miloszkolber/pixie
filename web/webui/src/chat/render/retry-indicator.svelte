@@ -15,9 +15,16 @@ $effect(() => {
 });
 </script>
 
-<div data-testid="retry-indicator" data-source={source} class="flex flex-col gap-xs rounded-[var(--radius-sm)] border border-border-default bg-container-elevated-bg px-sm py-xs text-text-muted tr-text-metadata">
-	<span class="flex items-center gap-xs"><Icon name="rotate-cw" size={12} />{source === "summarization" ? "Retrying summarization" : "Retrying"} ({attempt}/{maxAttempts})…</span>
-	<div class="h-1 w-full overflow-hidden rounded-full bg-border-default">
-		<div class={`h-full bg-primary transition-[width] ease-linear ${draining ? "w-0" : "w-full"}`} style={`transition-duration: ${delayMs}ms`}></div>
+<div data-testid="retry-indicator" data-source={source} class="u-flex u-flex-col u-gap-xs retry-indicator tr-text-metadata">
+	<span class="u-flex u-items-center u-gap-xs"><Icon name="rotate-cw" size={12} />{source === "summarization" ? "Retrying summarization" : "Retrying"} ({attempt}/{maxAttempts})…</span>
+	<div class="retry-progress-track">
+		<div class="retry-progress" class:retry-progress-draining={draining} style={`transition-duration: ${delayMs}ms`}></div>
 	</div>
 </div>
+
+<style>
+	.retry-indicator { border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--container-elevated-bg); padding: var(--space-xs) var(--space-sm); color: var(--text-muted); }
+	.retry-progress-track { width: 100%; height: var(--space-2xs); overflow: hidden; border-radius: 999px; background: var(--border-default); }
+	.retry-progress { height: 100%; width: 100%; background: var(--primary); transition-property: width; transition-timing-function: linear; }
+	.retry-progress-draining { width: 0; }
+</style>

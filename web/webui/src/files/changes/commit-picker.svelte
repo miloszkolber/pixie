@@ -23,23 +23,23 @@ $effect(() => {
 </script>
 
 {#if history === null}
-	<p role="status" class="px-sm py-xs tr-text-metadata text-text-muted">Loading commits…</p>
+	<p role="status" class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">Loading commits…</p>
 {:else if "error" in history}
-	<div class="px-sm py-xs">
-		<p role="alert" class="tr-text-metadata text-feedback-error">Could not read commits: {history.error}</p>
-		<button type="button" onclick={onRetry} class="btn mt-xs" data-variant="ghost" data-size="sm">Retry</button>
+	<div class="u-px-sm u-py-xs">
+		<p role="alert" class="tr-text-metadata u-text-feedback-error">Could not read commits: {history.error}</p>
+		<button type="button" onclick={onRetry} class="btn u-mt-xs" data-variant="ghost" data-size="sm">Retry</button>
 	</div>
 {:else if history.commits.length === 0}
-	<p role="status" class="px-sm py-xs tr-text-metadata text-text-muted">No commits yet.</p>
+	<p role="status" class="u-px-sm u-py-xs tr-text-metadata u-text-text-muted">No commits yet.</p>
 {:else}
-	<div class="flex flex-col gap-sm border-border-default border-t px-sm pt-sm">
-		<label class="field tr-text-metadata text-text-muted">
+	<div class="commit-picker u-flex u-flex-col u-gap-sm u-border-border-default u-border-t u-px-sm">
+		<label class="field tr-text-metadata u-text-text-muted">
 			<span class="field-label">Recent commit</span>
 			<select
 				aria-label="Recent commit"
 				value={selected?.sha ?? ""}
 				onchange={(event) => (selection = event.currentTarget.value)}
-				class="select mt-xs w-full min-w-0"
+				class="select u-mt-xs u-w-full u-min-w-0"
 			>
 				<option value="" disabled>Choose a commit…</option>
 				{#each history.commits as commit (commit.sha)}
@@ -47,7 +47,7 @@ $effect(() => {
 				{/each}
 			</select>
 		</label>
-		<div class="flex flex-wrap gap-xs">
+		<div class="u-flex u-flex-wrap u-gap-xs">
 			<button
 				type="button"
 				disabled={!selected}
@@ -66,7 +66,11 @@ $effect(() => {
 			>Compare with working tree</button>
 		</div>
 		{#if history.commits.length === 200}
-			<p class="tr-text-metadata text-text-muted">Showing the latest 200 commits.</p>
+			<p class="tr-text-metadata u-text-text-muted">Showing the latest 200 commits.</p>
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.commit-picker { padding-block-start: var(--space-sm); }
+</style>

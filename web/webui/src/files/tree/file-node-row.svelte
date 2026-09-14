@@ -150,7 +150,7 @@ function open(intent: TabIntent): void {
 		ondblclick={isDirectory ? undefined : () => open("keep")}
 	/>
 	{#if isDirectory && shownExpanded && children}
-		<ul class="tree-group pixie-guide flex flex-col pl-md">
+		<ul class="tree-group pixie-guide u-flex u-flex-col file-node-children">
 			{#each visibleChildren ?? [] as child (child.path)}
 				<FileNodeRow
 					node={child}
@@ -167,3 +167,7 @@ function open(intent: TabIntent): void {
 	{/if}
 </li>
 {/if}
+
+<style>
+	.file-node-children { padding-inline-start: var(--space-md); }
+</style>

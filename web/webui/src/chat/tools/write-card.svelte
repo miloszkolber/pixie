@@ -16,20 +16,25 @@ let language = $derived(languageFromPath(path));
 let message = $derived(resultText(result, status === "error"));
 </script>
 
-<div data-testid="tool-write" class="flex flex-col gap-xs">
-	<div class="flex items-center gap-xs tr-text-metadata">
-		<Icon name="file-plus" size={14} class="shrink-0 text-feedback-success" />
-		<span class="truncate text-text-default" title={path}>{displayPath}</span>
-		<span class="shrink-0 text-text-muted">
+<div data-testid="tool-write" class="u-flex u-flex-col u-gap-xs">
+	<div class="u-flex u-items-center u-gap-xs tr-text-metadata">
+		<Icon name="file-plus" size={14} class="tool-success-icon" />
+		<span class="u-truncate u-text-text-default" title={path}>{displayPath}</span>
+		<span class="u-shrink-0 u-text-text-muted">
 			{status === "running" ? "writing…" : status === "error" ? "write failed" : "written"}
 		</span>
 	</div>
 	{#if status === "error"}
-		<pre class="overflow-auto px-sm py-xs text-feedback-error tr-code-text">{message}</pre>
+		<pre class="u-overflow-auto u-px-sm u-py-xs u-text-feedback-error tr-code-text">{message}</pre>
 	{:else if content}
 		<Collapsible lines={countLines(content)}><CodeBlock code={content} lang={language} /></Collapsible>
 	{:else}
-		<span class="text-text-muted tr-text-metadata italic">(empty file)</span>
+		<span class="u-text-text-muted tr-text-metadata tool-italic">(empty file)</span>
 	{/if}
 	{#if status !== "error"}<ToolOutput {result} />{/if}
 </div>
+
+<style>
+	:global(.tool-success-icon) { flex-shrink: 0; color: var(--feedback-success); }
+	.tool-italic { font-style: italic; }
+</style>
