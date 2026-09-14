@@ -156,7 +156,8 @@ func (s *Service) load() error {
 // index and optional cover without ever promoting an old payload over a
 // tombstone. It is safe to call after an operator repairs durable files.
 //
-// Gap note (FIG-02/FIG-05, roadmap/README.md): Reconcile does not rebuild
+// Gap note (FIG-02/FIG-05,
+// roadmap/roadmap-openfig.md#phase-2-normalization-and-slot-fig-02): Reconcile does not rebuild
 // a missing or corrupt normalized index
 // from the retained source.fig. A retained-source reindex under the same
 // preflight/parser/dedicated-artifact bounds remains unimplemented; do not

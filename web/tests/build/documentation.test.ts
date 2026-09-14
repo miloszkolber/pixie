@@ -20,7 +20,7 @@ function passingDocumentation(): DocumentationInput {
 				["check:deps", "check:docs", "check:coverage", "lint", "typecheck", "test", "build"]
 					.map((name) => `bun run ${name}`)
 					.join("\n"),
-			"roadmap/README.md": "# Roadmap\n",
+			"roadmap/roadmap.md": "# Roadmap\n",
 		},
 		packageScripts: Object.fromEntries(
 			["check:deps", "check:docs", "check:coverage", "lint", "typecheck", "test", "build"].map(

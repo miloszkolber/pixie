@@ -51,6 +51,66 @@ func newGitFixture(t *testing.T) (*workspace.Git, workspace.Project, string) {
 	return workspace.NewGit(projects, policy), project, repository
 }
 
+const gitWorkspaceTestTagEnv = "PIXIE_GIT_WORKSPACE_TEST_TAG"
+
+type taggedWorkspaceGit struct {
+	executable  string
+	tag         string
+	invocations string
+}
+
+// newTaggedWorkspaceGit provides a test-only executable accepted by the
+// explicit PIXIE_GIT_EXECUTABLE policy. It tags only Git processes launched by
+// workspace.runGit, not the fixture's direct git commands or other observers.
+func newTaggedWorkspaceGit(t *testing.T) taggedWorkspaceGit {
+	t.Helper()
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("locate test Git executable: %v", err)
+	}
+	git, err = filepath.Abs(git)
+	if err != nil {
+		t.Fatalf("make test Git executable absolute: %v", err)
+	}
+	git, err = filepath.EvalSymlinks(git)
+	if err != nil {
+		t.Fatalf("resolve test Git executable: %v", err)
+	}
+	directory := t.TempDir()
+	tag := filepath.Join(directory, "workspace-run")
+	invocations := filepath.Join(directory, "invocations")
+	executable := filepath.Join(directory, "git-wrapper.sh")
+	script := "#!/bin/sh\nprintf x >> " + shellQuote(invocations) + "\n" + gitWorkspaceTestTagEnv + "=" + shellQuote(tag) + "\nexport " + gitWorkspaceTestTagEnv + "\nexec " + shellQuote(git) + " \"$@\"\n"
+	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return taggedWorkspaceGit{executable: executable, tag: tag, invocations: invocations}
+}
+
+func (tagged taggedWorkspaceGit) install(t *testing.T) {
+	t.Helper()
+	t.Setenv("PIXIE_GIT_EXECUTABLE", tagged.executable)
+}
+
+func (tagged taggedWorkspaceGit) requireInvocation(t *testing.T) {
+	t.Helper()
+	contents, err := os.ReadFile(tagged.invocations)
+	if err != nil {
+		t.Fatalf("tagged workspace Git executable was not invoked: %v", err)
+	}
+	if len(contents) == 0 {
+		t.Fatal("tagged workspace Git executable was not invoked")
+	}
+}
+
+func taggedGitHelper(marker, tag string) string {
+	return "#!/bin/sh\nif [ \"${" + gitWorkspaceTestTagEnv + "-}\" = " + shellQuote(tag) + " ]; then\n\tprintf x >> " + shellQuote(marker) + "\nfi\nexit 73\n"
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
 func TestGitLinkedWorktreeKeepsRepositoryAndDiffScopeBoundaries(t *testing.T) {
 	_, _, repository := newGitFixture(t)
 	name := "shared.txt"
@@ -117,6 +177,7 @@ func TestGitLinkedWorktreeKeepsRepositoryAndDiffScopeBoundaries(t *testing.T) {
 
 func TestGitSubmoduleMetadataInspectionDoesNotRunNestedFilters(t *testing.T) {
 	service, project, repository := newGitFixture(t)
+	taggedGit := newTaggedWorkspaceGit(t)
 	nested := filepath.Join(repository, "modules", "nested")
 	if err := os.MkdirAll(nested, 0o700); err != nil {
 		t.Fatal(err)
@@ -144,10 +205,7 @@ func TestGitSubmoduleMetadataInspectionDoesNotRunNestedFilters(t *testing.T) {
 	markerDir := t.TempDir()
 	marker := filepath.Join(markerDir, "marker")
 	helper := filepath.Join(markerDir, "helper.sh")
-	quoteShell := func(value string) string {
-		return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-	}
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf x >> "+quoteShell(marker)+"\nexit 73\n"), 0o700); err != nil {
+	if err := os.WriteFile(helper, []byte(taggedGitHelper(marker, taggedGit.tag)), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	runGit(t, nested, "config", "filter.pixie-marker.clean", helper)
@@ -157,9 +215,13 @@ func TestGitSubmoduleMetadataInspectionDoesNotRunNestedFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Fixture setup invokes Git directly. From here, only workspace operations
+	// select this wrapper through PIXIE_GIT_EXECUTABLE.
+	taggedGit.install(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	list, err := service.ListRepositories(ctx, project.ID)
+	taggedGit.requireInvocation(t)
 	if err != nil || len(list.Repositories) != 2 {
 		t.Fatalf("submodule repository discovery: %#v, %v", list, err)
 	}
@@ -364,13 +426,11 @@ func TestGitPreservesOddPathsAndRejectsUnsafeOrUnreadablePreviews(t *testing.T) 
 
 func TestGitInspectionDoesNotRunRepositoryFiltersOrConfigHelpers(t *testing.T) {
 	service, project, repository := newGitFixture(t)
+	taggedGit := newTaggedWorkspaceGit(t)
 	markerDir := t.TempDir()
 	marker := filepath.Join(markerDir, "marker")
 	helper := filepath.Join(markerDir, "helper.sh")
-	quoteShell := func(value string) string {
-		return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-	}
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf x >> "+quoteShell(marker)+"\nexit 73\n"), 0o700); err != nil {
+	if err := os.WriteFile(helper, []byte(taggedGitHelper(marker, taggedGit.tag)), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(repository, ".gitattributes"), []byte("* filter=pixie-wildcard\n*.txt filter=pixie-marker\n*.proc filter=pixie-process\n*.probe diff=pixie-marker\n"), 0o600); err != nil {
@@ -397,7 +457,7 @@ func TestGitInspectionDoesNotRunRepositoryFiltersOrConfigHelpers(t *testing.T) {
 	runGit(t, repository, "commit", "-m", "second")
 	secondCommit := runGit(t, repository, "rev-parse", "HEAD")
 	include := filepath.Join(markerDir, "included.gitconfig")
-	config := fmt.Sprintf("[filter \"pixie-wildcard\"]\n\tclean = %s\n\tprocess = %s\n\trequired = true\n[filter \"pixie-marker\"]\n\tclean = %s\n\trequired = true\n[filter \"pixie-process\"]\n\tprocess = %s\n\trequired = true\n[diff \"pixie-marker\"]\n\ttextconv = %s\n\tcommand = %s\n[core]\n\tfsmonitor = %s\n\thooksPath = %s\n[diff]\n\texternal = %s\n", quoteShell(helper), quoteShell(helper), quoteShell(helper), quoteShell(helper), quoteShell(helper), quoteShell(helper), quoteShell(helper), quoteShell(markerDir), quoteShell(helper))
+	config := fmt.Sprintf("[filter \"pixie-wildcard\"]\n\tclean = %s\n\tprocess = %s\n\trequired = true\n[filter \"pixie-marker\"]\n\tclean = %s\n\trequired = true\n[filter \"pixie-process\"]\n\tprocess = %s\n\trequired = true\n[diff \"pixie-marker\"]\n\ttextconv = %s\n\tcommand = %s\n[core]\n\tfsmonitor = %s\n\thooksPath = %s\n[diff]\n\texternal = %s\n", shellQuote(helper), shellQuote(helper), shellQuote(helper), shellQuote(helper), shellQuote(helper), shellQuote(helper), shellQuote(helper), shellQuote(markerDir), shellQuote(helper))
 	if err := os.WriteFile(include, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -419,10 +479,14 @@ func TestGitInspectionDoesNotRunRepositoryFiltersOrConfigHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", tmpDir)
+	// Fixture setup invokes Git directly. From here, only workspace operations
+	// select this wrapper through PIXIE_GIT_EXECUTABLE.
+	taggedGit.install(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	commitScope := workspace.GitDiffScope{Kind: "commit", SHA: secondCommit}
 	commitStatus, err := service.Status(ctx, project.ID, repository, commitScope)
+	taggedGit.requireInvocation(t)
 	if err != nil || len(commitStatus.Changes) != 2 || commitStatus.Changes[0].Path != "tracked.probe" || commitStatus.Changes[1].Path != "tracked.txt" {
 		t.Fatalf("safe commit status: %#v, %v", commitStatus, err)
 	}

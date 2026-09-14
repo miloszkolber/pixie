@@ -15,7 +15,7 @@ import (
 // routes; contributions receive validated context through scope credentials
 // (see descriptor_scope.go), not mutable global state.
 //
-// Slots follow roadmap/README.md: rail is
+// Shell slots: rail is
 // slot 6, sidebar is slot 5, and the selected viewer is slot 4.
 // Sidebar-only, viewer-only, and combined modules are valid.
 const (

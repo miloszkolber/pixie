@@ -32,7 +32,7 @@ import (
 // HostV2ProtocolVersion is the rewritten host contract version.
 const HostV2ProtocolVersion = 2
 
-// Host v2 transport close codes from roadmap/README.md.
+// Host v2 transport close codes mirror docs/pi.md#assistant-protocol.
 type HostV2CloseCode int
 
 const (
@@ -61,7 +61,7 @@ func HostV2CloseCodeFor(err error) (HostV2CloseCode, bool) {
 	return 0, false
 }
 
-// Ordinary in-flight host bounds from roadmap/README.md. Exceeding them answers
+// Ordinary in-flight host bounds. Exceeding them answers
 // with a typed error frame; only duplicate in-flight IDs close the
 // connection in v2.
 const (

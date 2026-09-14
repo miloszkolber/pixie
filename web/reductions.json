@@ -4,7 +4,7 @@
 	"approval": {
 		"approved": true,
 		"approver": "operator",
-		"reference": "roadmap/README.md#legacy-removal, roadmap/README.md#d4-reductions-confirmed",
+		"reference": "roadmap/roadmap.md#resolved-with-the-host-replacement",
 		"statement": "The operator approved the breaking removal of the legacy Bun assistant and the lean live-evidence reductions recorded here. Each reduction removes a legacy live-matrix requirement; the retained feature remains a release requirement unless it is listed in optionalFeatures. No reduced row is recorded as passing."
 	},
 	"coverage": {
@@ -109,7 +109,7 @@
 		"approval": {
 			"approved": true,
 			"approver": "operator",
-			"reference": "roadmap/README.md#legacy-removal, docs/release-checklist.md#live-evidence-production",
+			"reference": "roadmap/roadmap.md#resolved-with-the-host-replacement, docs/release-checklist.md#live-evidence-production",
 			"statement": "The operator approved reducing the staged-binary live-execution and full-host rows that the exact-commit evidence job cannot produce without a running host. This exempts only the listed rows; every structural archive, systemd, configuration and static command check stays mandatory, and no reduced row is recorded as passing."
 		},
 		"reductionGroups": [
@@ -129,7 +129,7 @@
 		"approval": {
 			"approved": true,
 			"approver": "operator",
-			"reference": "roadmap/README.md#legacy-removal, docs/release-checklist.md#live-evidence-production",
+			"reference": "roadmap/roadmap.md#resolved-with-the-host-replacement, docs/release-checklist.md#live-evidence-production",
 			"statement": "The operator approved reducing the release-gate inputs that require an actual publication or registry. This exempts only the listed rows; the static workflow publication-policy checks, source reachability from main, archive/binary identity and checksum consistency, and the controller-image evidence mapping stay mandatory, and no reduced row is recorded as passing."
 		},
 		"reductionGroups": [
