@@ -2,26 +2,27 @@
 
 | Process | Location | Owns |
 | --- | --- | --- |
-| Pi assistant service, `:3284` | Host user | Selected Pi process, native sessions, providers, credentials, models and extensions; the Go `pixie-assistant` binary is the release target |
-| Pixie, `:7312` | Application container | Web UI, projects, files, Git, goals, questions, queues, schedules and browser-MCP registration |
+| `pixie_assistant`, `:3284` | Host user | Pi sessions, providers, credentials, models and extensions through the operator's installed Pi SDK; the interim Go host supervises the selected `pi` executable over native RPC |
+| `pixie_web`, `:7312` | Application container or local process | Web UI, projects, files, Git, goals, questions, queues, schedules and browser-MCP registration |
 | External browser MCP, operator-chosen | Deployment | Browser runtime and MCP transport; Pi is the client and Pixie stores only the registration setting |
 
 Host networking lets the container reach host services over loopback. The application receives project mounts, read-only and at the same absolute paths used by Pi. Pixie hosts no browser and never proxies MCP traffic: Pi dials the operator-chosen browser MCP endpoint directly, while Pixie writes the registration into Pi's MCP configuration and reports a bounded probe.
 
 ## Source
 
-Paths below are relative to `pixie/`, which holds the shared Bun workspace and lockfile.
+Paths below are relative to the repository root, which holds the shared Bun workspace and lockfile.
 
 | Directory | Responsibility |
 | --- | --- |
-| `assistant/` | Go assistant facade and native Pi supervisor, plus the opt-in Bun administration bridge sidecar |
-| `package/cmd`, `package/internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection, lifecycle and browser-MCP registration (`mcp_browser.go`) |
-| `package/internal/mcpserver` | Module catalog and MCP publication |
-| `package/internal/workspace`, `package/internal/persist` | Bounded project access and durable state |
-| `package/webui`, `package/contracts` | Svelte 5 interface and shared wire contracts |
-| `package/tests` | Unit, integration and deployment checks |
+| `assistant/` | The `pixie_assistant` host. Target: a Bun host running Pi in-process through the installed Pi SDK. Current: the interim Go host in `assistant/cmd` and the opt-in Bun administration bridge in `assistant/bridge` |
+| `web/cmd`, `web/internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection, lifecycle and browser-MCP registration (`mcp_browser.go`) |
+| `web/internal/canvas`, `web/internal/design` | Optional Canvas and Openfig workspace modules |
+| `web/internal/mcpserver` | Module catalog and in-process MCP publication |
+| `web/internal/workspace`, `web/internal/persist` | Bounded project access and durable state |
+| `web/webui`, `shared/` | Svelte 5 interface and the shared wire-contract schema plus generated Go and TypeScript catalogs |
+| `web/tests`, `shared/tests` | Unit, integration and deployment checks; assistant tests are currently colocated with the interim host |
 
-Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets and Git. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
+The root `go.work` links the `assistant`, `shared` and `web` Go modules, each with its own `go.mod` and local `replace` so `GOWORK=off` still works. Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets and Git. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
 
 ## Configuration ownership
 

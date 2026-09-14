@@ -192,11 +192,11 @@ function signOut(): void {
 <div data-testid="shell" class="app-shell app-shell-edge pixie-shell">
 	<a class="skip-link" href="#main-content">Skip to content</a>
 	{#if primarySurface === "project-work-area" && $appStore.activeProjectAreaId}
-		<div data-testid="project-shell" class="flex min-h-0 min-w-0 flex-1 flex-col">
+		<div data-testid="project-shell" class="u-flex u-min-h-0 u-min-w-0 u-flex-1 u-flex-col">
 			{#if ProjectWorkArea}
 				{#key $appStore.activeProjectAreaId}<ProjectWorkArea projectAreaId={$appStore.activeProjectAreaId} />{/key}
 			{:else if projectWorkAreaLoadError}
-				<main id="main-content" data-testid="project-work-area-load-error" class="app-empty flex-1" role="alert">
+				<main id="main-content" data-testid="project-work-area-load-error" class="app-empty u-flex-1" role="alert">
 					<p>The workspace view needs the current bundle. Open work remains intact.</p>
 					<Button
 						variant="outline"
@@ -207,32 +207,32 @@ function signOut(): void {
 					</Button>
 				</main>
 			{:else}
-				<main id="main-content" data-testid="project-work-area-loading" class="app-empty flex-1" role="status">Loading workspace…</main>
+				<main id="main-content" data-testid="project-work-area-loading" class="app-empty u-flex-1" role="status">Loading workspace…</main>
 			{/if}
 		</div>
 	{:else}
-		<header class="app-header flex min-w-0 items-center justify-between gap-sm border-b px-sm py-sm sm:px-lg">
-			<div class="flex min-w-0 items-center gap-md">
+		<header class="app-header u-flex u-min-w-0 u-items-center u-justify-between u-gap-sm u-border-b u-px-sm u-py-sm u-sm-px-lg">
+			<div class="u-flex u-min-w-0 u-items-center u-gap-md">
 				<BrandLogo />
 				{#if availability === "ready" && contextProject}
 					<div
 						data-testid="scope-context"
 						data-context={activeProjectArea ? "project" : "project-home"}
-						class="flex min-w-0 items-center gap-xs leading-tight tr-text-ui"
+						class="u-flex u-min-w-0 u-items-center u-gap-xs u-leading-tight tr-text-ui"
 					>
-						<span class="hidden min-w-0 items-center gap-xs sm:flex">
-							<span data-testid="scope-project" class="max-w-[160px] truncate">{contextProject.name}</span>
-							<Icon name="chevron-right" size={12} class="text-text-muted" />
+						<span class="u-hidden u-min-w-0 u-items-center u-gap-xs u-sm-flex">
+							<span data-testid="scope-project" class="u-max-w-160px u-truncate">{contextProject.name}</span>
+							<Icon name="chevron-right" size={12} class="u-text-text-muted" />
 						</span>
-						<span data-testid="scope-name" class="max-w-[220px] truncate">{activeProjectArea?.name ?? "Project home"}</span>
-						{#if activeProjectArea}<span class="max-w-[260px] truncate text-text-muted">{activeProjectArea.root}</span>{/if}
+						<span data-testid="scope-name" class="u-max-w-220px u-truncate">{activeProjectArea?.name ?? "Project home"}</span>
+						{#if activeProjectArea}<span class="u-max-w-260px u-truncate u-text-text-muted">{activeProjectArea.root}</span>{/if}
 					</div>
 				{/if}
 			</div>
-			<div class="app-header-actions flex shrink-0 items-center gap-sm sm:gap-md">
-				<span data-testid="connection-status" data-status={$appStore.status} role="status" aria-label={STATUS_LABEL[$appStore.status]} class="stat-status inline-flex items-center gap-sm">
+			<div class="app-header-actions u-flex u-shrink-0 u-items-center u-gap-sm u-sm-gap-md">
+				<span data-testid="connection-status" data-status={$appStore.status} role="status" aria-label={STATUS_LABEL[$appStore.status]} class="stat-status u-inline-flex u-items-center u-gap-sm">
 					<span aria-hidden="true" class={`status-dot ${STATUS_DOT[$appStore.status]}`}></span>
-					<span aria-hidden="true" class="hidden sm:inline">{STATUS_LABEL[$appStore.status]}</span>
+					<span aria-hidden="true" class="u-hidden u-sm-inline">{STATUS_LABEL[$appStore.status]}</span>
 				</span>
 				<Button
 					variant="ghost"
@@ -259,18 +259,18 @@ function signOut(): void {
 	{:else if availability === "unconfigured"}
 		<NoProviderWelcome />
 	{:else if availability === "incompatible"}
-		<main id="main-content" class="app-content flex h-full min-h-0 min-w-0 items-center justify-center px-xl py-xl text-center">
-			<div class="app-status-copy max-w-[34rem]">
+		<main id="main-content" class="app-content u-flex u-h-full u-min-h-0 u-min-w-0 u-items-center u-justify-center u-px-xl u-py-xl u-text-center">
+			<div class="app-status-copy u-max-w-34rem">
 				<h1 class="app-status-title">{$appStore.agentProfile?.name || "Connected agent"} is not compatible with Pixie</h1>
 				<p role="alert" class="app-status-description">The agent must support the Pi session operations Pixie uses to list and reopen chats.</p>
 				{#if $appStore.agentProfile?.missingRequired.length}
-					<div class="text-left tr-text-ui text-text-muted"><p>Missing capabilities:</p><ul class="mt-xs list-disc pl-lg">{#each $appStore.agentProfile.missingRequired as capability}<li><code>{capability}</code></li>{/each}</ul></div>
+					<div class="u-text-left tr-text-ui u-text-text-muted"><p>Missing capabilities:</p><ul class="u-mt-xs u-list-disc u-pl-lg">{#each $appStore.agentProfile.missingRequired as capability}<li><code>{capability}</code></li>{/each}</ul></div>
 				{/if}
 			</div>
 		</main>
 	{:else if availability === "disconnected" || availability === "error"}
-		<main id="main-content" class="app-content flex h-full min-h-0 min-w-0 items-center justify-center px-xl py-xl text-center">
-			<div class="app-status-copy max-w-[30rem]">
+		<main id="main-content" class="app-content u-flex u-h-full u-min-h-0 u-min-w-0 u-items-center u-justify-center u-px-xl u-py-xl u-text-center">
+			<div class="app-status-copy u-max-w-30rem">
 				<h1 class="app-status-title">{availability === "disconnected" ? "Controller disconnected" : "Agent status unavailable"}</h1>
 				<p role="alert" class="app-status-description">{availability === "disconnected" ? "Pixie will reconnect automatically. Your open work remains in this browser." : "The controller is connected, but the agent status could not be read."}</p>
 				{#if availability === "error"}
@@ -282,11 +282,11 @@ function signOut(): void {
 			</div>
 		</main>
 	{:else if availability === "loading"}
-		<main id="main-content" data-testid="provider-status-loading" class="app-empty h-full" role="status">Checking agent status…</main>
+		<main id="main-content" data-testid="provider-status-loading" class="app-empty u-h-full" role="status">Checking agent status…</main>
 	{:else}
-		<div data-testid="welcome-shell" class="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
-			<aside aria-label="Projects" data-testid="left-nav" tabindex="-1" class="app-sidebar max-h-[45%] w-full shrink-0 overflow-auto border-b p-md outline-none lg:max-h-none lg:w-[clamp(12rem,20vw,16rem)] lg:border-r lg:border-b-0"><ProjectTree /></aside>
-			<main id="main-content" class="app-content min-h-0 min-w-0 flex-1"><WelcomePanel /></main>
+		<div data-testid="welcome-shell" class="u-flex u-min-h-0 u-min-w-0 u-flex-1 u-flex-col u-lg-flex-row">
+			<aside aria-label="Projects" data-testid="left-nav" tabindex="-1" class="app-sidebar u-max-h-45pct u-w-full u-shrink-0 u-overflow-auto u-border-b u-p-md u-outline-none u-lg-max-h-none u-lg-w-sidebar u-lg-border-r u-lg-border-b-0"><ProjectTree /></aside>
+			<main id="main-content" class="app-content u-min-h-0 u-min-w-0 u-flex-1"><WelcomePanel /></main>
 		</div>
 	{/if}
 	<Toaster />

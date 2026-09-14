@@ -418,7 +418,7 @@ export async function collectCoverageInput(
 ): Promise<CoverageInput> {
 	// Reading the concise implementation summary makes a missing/renamed roadmap
 	// visible to this helper while keeping the authoritative FC/X lists stable.
-	const implementationSummary = await readOptional(resolve(repositoryRoot, "roadmap/README.md"));
+	const implementationSummary = await readOptional(resolve(repositoryRoot, "roadmap/roadmap.md"));
 	const declaredFeatures = [...implementationSummary.matchAll(/\bFC\d{2}\b/g)].map(
 		(match) => match[0],
 	);
@@ -426,7 +426,7 @@ export async function collectCoverageInput(
 		(match) => match[0],
 	);
 	const staticViolations: string[] = [];
-	if (implementationSummary.trim() === "") staticViolations.push("roadmap/README.md is missing");
+	if (implementationSummary.trim() === "") staticViolations.push("roadmap/roadmap.md is missing");
 	for (const id of new Set(declaredFeatures)) {
 		if (!(ALL_FEATURE_IDS as readonly string[]).includes(id))
 			staticViolations.push(`unknown feature row ${id}`);

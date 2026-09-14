@@ -26,7 +26,7 @@ The Docker reference is `ghcr.io/miloszkolber/pixie:sha-<12>`. Verify one multi-
 
 ## Live evidence production
 
-From `package/`, the evidence job runs the committed producer before the bundle collector:
+From `web/`, the evidence job runs the committed producer before the bundle collector:
 
 ```sh
 bun run scripts/produce-evidence-inputs.ts \
@@ -34,13 +34,13 @@ bun run scripts/produce-evidence-inputs.ts \
   --output <evidence-dir> \
   --source-commit <40-hex> \
   --release-id sha-<12> \
-  --reduction-manifest package/contracts/reductions.json \
+  --reduction-manifest web/reductions.json \
   [--base-url <running-host-origin>]
 ```
 
 It extracts the native-architecture staged binaries, executes only the checks it can honestly complete (`--version`, `doctor` when supported, and a readiness GET when `--base-url` is supplied), and marks those `actual: true, live: true`. A skipped, unsupported or failed check stays absent or blocked; it never becomes a pass. It then measures at least five fresh-process startup samples per native target with p50/p95 and peak process RSS and writes `coverage.json` and `performance.json`.
 
-`package/contracts/reductions.json` records the operator-approved reductions that make the live matrix and the staged-artifact gates runnable. The coverage input reduces the mandatory FC rows the producer does not execute (FC01 is executed), the 14 X rows and Gates 1–5. The performance input reduces only the legacy worker/decoded-buffer fields; the workflow measures both the amd64 targets and the native arm64 targets on `ubuntu-24.04-arm`, then merges them before collection. `packageArtifacts` reduces only the staged-binary live-execution and full-host rows that need a running host: every `readiness`, `lifecycle` and `uninstall` row, host `embedded-UI` rows, and the full-host native-engine facade. Both architectures' `--version`/`doctor` probes are now required from the per-architecture evidence merge. `releaseGate` reduces only publication inputs: Git tag and GitHub Release state, the published `ghcr.io` tag, registry provenance/SBOM, registry image and platform digests, the staged manifest's publication-only fields, and latest-promotion ancestry. Every structural archive/systemd/config/static command check, the static workflow publication-policy checks, source reachability from main, archive/binary identity, archive checksum consistency and the controller-image evidence mapping stay mandatory. A reduced row is not evidence that the behavior passes: `check-package-artifacts` and `release-gate` report it as reduced, never as passing, and an unreduced row without evidence still fails the gate.
+`web/reductions.json` records the operator-approved reductions that make the live matrix and the staged-artifact gates runnable. The coverage input reduces the mandatory FC rows the producer does not execute (FC01 is executed), the 14 X rows and Gates 1–5. The performance input reduces only the legacy worker/decoded-buffer fields; the workflow measures both the amd64 targets and the native arm64 targets on `ubuntu-24.04-arm`, then merges them before collection. `packageArtifacts` reduces only the staged-binary live-execution and full-host rows that need a running host: every `readiness`, `lifecycle` and `uninstall` row, host `embedded-UI` rows, and the full-host native-engine facade. Both architectures' `--version`/`doctor` probes are now required from the per-architecture evidence merge. `releaseGate` reduces only publication inputs: Git tag and GitHub Release state, the published `ghcr.io` tag, registry provenance/SBOM, registry image and platform digests, the staged manifest's publication-only fields, and latest-promotion ancestry. Every structural archive/systemd/config/static command check, the static workflow publication-policy checks, source reachability from main, archive/binary identity, archive checksum consistency and the controller-image evidence mapping stay mandatory. A reduced row is not evidence that the behavior passes: `check-package-artifacts` and `release-gate` report it as reduced, never as passing, and an unreduced row without evidence still fails the gate.
 
 The `evidence` job runs `check-package-artifacts --evidence` and `release-gate --evidence`; both load the committed manifest (with `--reductions` or `PIXIE_REDUCTIONS_MANIFEST` as an override) and default to the checked-in file. `release-gate` also reads the staged local `release-manifest.json` the collector embeds, so release ID, source commit, clean-tree, archive hashes and checksums stay mandatory. `automaticMainAuthorized` and `sourceReachableFromMain` default to false and must be explicitly enabled (`PIXIE_AUTOMATIC_MAIN_AUTHORIZED`, `PIXIE_SOURCE_REACHABLE_FROM_MAIN`) by the release job after it verifies them.
 
@@ -50,7 +50,7 @@ The `verify-publication` job runs after `publish` and cannot gate the release it
 
 ## Architecture evidence status
 
-The host campaign exercises `linux/amd64`; a Mac arm64 pass is recorded in [roadmap/arm64-test-pr23.md](../roadmap/arm64-test-pr23.md). That pass covers the arm64 Go tests, native-Pi host profiles, serialized race suite, both release archives with matching checksums, and the packaged full-host readiness on a Linux arm64 VM. Still open and required for a real release: the `linux/arm64` OCI image build and run (the Apple Container probe failed on the percent-encoded patch filename and an empty `package/webui` context, so verify with Linux BuildKit or a GitHub arm64 runner), a fresh-artifact systemd lifecycle, and the registry digests/SBOM/provenance. The release workflow now measures native arm64 performance and executes the arm64 `--version`/`doctor` probes on `ubuntu-24.04-arm`. No amd64 result substitutes for arm64 evidence, and the static gates continue to fail closed on the missing arm64 inputs.
+The host campaign exercises `linux/amd64`. Still open and required for a real release: the `linux/arm64` OCI image build and run (verify with Linux BuildKit or a GitHub arm64 runner), a fresh-artifact systemd lifecycle, and the registry digests, SBOM and provenance. The release workflow measures native arm64 performance and executes the arm64 `--version`/`doctor` probes on `ubuntu-24.04-arm`. No amd64 result substitutes for arm64 evidence, and the static gates fail closed on the missing arm64 inputs.
 
 ## Validation-only paths
 
@@ -70,12 +70,12 @@ The static gate combines identity, package and policy checks:
 bun scripts/release-gate.ts
 ```
 
-Its failure output separates static violations, missing live inputs and reduced live inputs. A green report is not live evidence: both final binaries on both architectures, systemd lifecycle, Docker platform runs, downloaded payload verification, collision/retry behavior and provenance attestations still require real candidate artifacts; the reduced rows in `package/contracts/reductions.json` are documented gaps, not results.
+Its failure output separates static violations, missing live inputs and reduced live inputs. A green report is not live evidence: both final binaries on both architectures, systemd lifecycle, Docker platform runs, downloaded payload verification, collision/retry behavior and provenance attestations still require real candidate artifacts; the reduced rows in `web/reductions.json` are documented gaps, not results.
 
 ## Current repository evidence
 
-From `package/`, `bun scripts/check-release-identity.ts`, `bun scripts/check-package-artifacts.ts` and `bun scripts/release-gate.ts` are static checks. The commit release workflow is present and validate-only paths are guarded. With `--evidence`, `check-package-artifacts` and `release-gate` consume the collector's staged bundle and the committed reductions file; they still need the exact-commit archives, the local controller image tar and the executed native binary probes. This checkout still lacks a published tag/release, the published OCI tag/digests and registry provenance/SBOM. Those missing inputs are reported as reduced or missing and are never represented as completed release evidence.
+From `web/`, `bun scripts/check-release-identity.ts`, `bun scripts/check-package-artifacts.ts` and `bun scripts/release-gate.ts` are static checks. The commit release workflow is present and validate-only paths are guarded. With `--evidence`, `check-package-artifacts` and `release-gate` consume the collector's staged bundle and the committed reductions file; they still need the exact-commit archives, the local controller image tar and the executed native binary probes. This checkout still lacks a published tag/release, the published OCI tag/digests and registry provenance/SBOM. Those missing inputs are reported as reduced or missing and are never represented as completed release evidence.
 
 Browser MCP registration is implemented at source: the controller writes one setting into Pi's MCP configuration and reports a bounded probe, and the WebUI exposes the setting under Settings → Browser. Pixie hosts no browser. Compose ships an optional `pixie-browser` service that is not a `pixie` dependency, is not part of the Pixie archive or image, and is not required for controller release. Host verification of registration, probe and that Compose service is recorded in the roadmap and is not release evidence.
 
-The canonical status, release gaps, and sequencing are in the [roadmap](../roadmap/README.md#current-verdict) and its [next steps](../roadmap/README.md#dependency-ordered-next-steps).
+The canonical status, release gaps, and sequencing are in the [roadmap](../roadmap/roadmap.md). Other operating documentation remains under [docs](architecture.md).

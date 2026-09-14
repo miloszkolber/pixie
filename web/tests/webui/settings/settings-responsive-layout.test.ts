@@ -58,7 +58,7 @@ test("Pi preference resets sit with their fields instead of the save action", as
 	expect(thinkingReset).toBeGreaterThan(thinkingField);
 	expect(thinkingReset).toBeLessThan(save);
 	const saveBlock = source.match(
-		/<div class="flex flex-wrap gap-xs">\s*<Button size="sm" disabled=\{busy \|\| loading \|\| !preferencesReady\} onclick=\{\(\) => void savePreferences\(\)\}>[\s\S]*?<\/Button>\s*<\/div>/,
+		/<div class="u-flex u-flex-wrap u-gap-xs">\s*<Button size="sm" disabled=\{busy \|\| loading \|\| !preferencesReady\} onclick=\{\(\) => void savePreferences\(\)\}>[\s\S]*?<\/Button>\s*<\/div>/,
 	);
 	expect(saveBlock?.[0]).toBeDefined();
 	expect(saveBlock?.[0]).not.toContain("Reset");

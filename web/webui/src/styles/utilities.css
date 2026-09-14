@@ -1,0 +1,304 @@
+/*
+ * Pixie token-backed layout utilities (`u-*`).
+ *
+ * This is the replacement for the subset of Tailwind layout/spacing utilities
+ * migrated in the Svelte markup. Every value reads the existing Pixie/Mewa
+ * tokens (`styles/tokens.css`, `styles/palette.css`, `styles/generated/*`); this
+ * file declares no colour, spacing, radius or type value of its own, so it
+ * cannot become a second generated visual system.
+ *
+ * Naming keeps the original Tailwind token after a `u-` prefix so the move is a
+ * mechanical, grep-verifiable rename (`flex` -> `u-flex`). Responsive and
+ * arbitrary tokens are given readable slugs (`.u-sm-flex`, `.u-max-w-34rem`).
+ *
+ * This layer is the migration target for Tailwind removal. Until every file is
+ * migrated, Tailwind stays installed for the files that still use its classes;
+ * this file is unlayered, so it wins over Tailwind's `@layer utilities` output
+ * where both define the same element.
+ */
+
+/* Display */
+.u-flex {
+	display: flex;
+}
+.u-inline-flex {
+	display: inline-flex;
+}
+.u-hidden {
+	display: none;
+}
+
+/* Flexbox */
+.u-flex-1 {
+	flex: 1;
+}
+.u-flex-col {
+	flex-direction: column;
+}
+.u-flex-wrap {
+	flex-wrap: wrap;
+}
+.u-shrink-0 {
+	flex-shrink: 0;
+}
+
+/* Alignment */
+.u-items-center {
+	align-items: center;
+}
+.u-items-start {
+	align-items: flex-start;
+}
+.u-items-end {
+	align-items: flex-end;
+}
+.u-justify-center {
+	justify-content: center;
+}
+.u-justify-between {
+	justify-content: space-between;
+}
+.u-self-center {
+	align-self: center;
+}
+
+/* Sizing */
+.u-min-w-0 {
+	min-width: 0;
+}
+.u-min-h-0 {
+	min-height: 0;
+}
+.u-min-h-10 {
+	min-height: 2.5rem;
+}
+.u-min-h-11 {
+	min-height: 2.75rem;
+}
+.u-min-h-16 {
+	min-height: 4rem;
+}
+.u-w-full {
+	width: 100%;
+}
+.u-h-full {
+	height: 100%;
+}
+.u-max-w-full {
+	max-width: 100%;
+}
+
+/* Padding */
+.u-p-md {
+	padding: var(--space-md);
+}
+.u-pt-lg {
+	padding-top: var(--space-lg);
+}
+.u-px-sm {
+	padding-inline: var(--space-sm);
+}
+.u-px-md {
+	padding-inline: var(--space-md);
+}
+.u-px-lg {
+	padding-inline: var(--space-lg);
+}
+.u-px-xs {
+	padding-inline: var(--space-xs);
+}
+.u-px-xl {
+	padding-inline: var(--space-xl);
+}
+.u-py-xs {
+	padding-block: var(--space-xs);
+}
+.u-py-sm {
+	padding-block: var(--space-sm);
+}
+.u-py-md {
+	padding-block: var(--space-md);
+}
+.u-py-xl {
+	padding-block: var(--space-xl);
+}
+.u-pl-lg {
+	padding-left: var(--space-lg);
+}
+
+/* Margin */
+.u-mt-xs {
+	margin-top: var(--space-xs);
+}
+.u-mt-sm {
+	margin-top: var(--space-sm);
+}
+
+/* Gap */
+.u-gap-2xs {
+	gap: var(--space-2xs);
+}
+.u-gap-xs {
+	gap: var(--space-xs);
+}
+.u-gap-sm {
+	gap: var(--space-sm);
+}
+.u-gap-md {
+	gap: var(--space-md);
+}
+.u-gap-xl {
+	gap: var(--space-xl);
+}
+.u-gap-0\.5 {
+	gap: 0.125rem;
+}
+
+/* Border + shape */
+.u-border {
+	border-width: 1px;
+	border-style: solid;
+}
+.u-border-b {
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+.u-border-t {
+	border-top-width: 1px;
+	border-top-style: solid;
+}
+.u-border-border-default {
+	border-color: var(--border-default);
+}
+.u-rounded {
+	border-radius: var(--radius-sm);
+}
+
+/* Colour */
+.u-bg-control-bg {
+	background-color: var(--control-bg);
+}
+.u-bg-control-bg-selected {
+	background-color: var(--control-bg-selected);
+}
+.u-text-text-default {
+	color: var(--text-default);
+}
+.u-text-text-muted {
+	color: var(--text-muted);
+}
+.u-text-feedback-error {
+	color: var(--feedback-error);
+}
+.u-text-feedback-warning {
+	color: var(--feedback-warning);
+}
+
+/* Text */
+.u-truncate {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.u-text-center {
+	text-align: center;
+}
+.u-text-left {
+	text-align: left;
+}
+.u-leading-tight {
+	line-height: var(--tr-line-height-compact);
+}
+.u-break-words {
+	overflow-wrap: break-word;
+}
+.u-list-disc {
+	list-style-type: disc;
+}
+.u-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border-width: 0;
+}
+
+/* Overflow + outline */
+.u-overflow-auto {
+	overflow: auto;
+}
+.u-overflow-y-auto {
+	overflow-y: auto;
+}
+.u-outline-none {
+	outline-style: none;
+}
+
+/* Arbitrary sizes migrated verbatim */
+.u-max-w-34rem {
+	max-width: 34rem;
+}
+.u-max-w-30rem {
+	max-width: 30rem;
+}
+.u-max-w-160px {
+	max-width: 160px;
+}
+.u-max-w-220px {
+	max-width: 220px;
+}
+.u-max-w-260px {
+	max-width: 260px;
+}
+.u-max-h-45pct {
+	max-height: 45%;
+}
+.u-max-h-shell {
+	max-height: calc(100dvh - 4.5rem);
+}
+.u-lg-w-sidebar {
+	width: clamp(12rem, 20vw, 16rem);
+}
+
+/* Responsive (Tailwind sm/lg breakpoints, unchanged) */
+@media (min-width: 40rem) {
+	.u-sm-flex {
+		display: flex;
+	}
+	.u-sm-inline {
+		display: inline;
+	}
+	.u-sm-gap-md {
+		gap: var(--space-md);
+	}
+	.u-sm-px-lg {
+		padding-inline: var(--space-lg);
+	}
+}
+
+@media (min-width: 64rem) {
+	.u-lg-flex {
+		display: flex;
+	}
+	.u-lg-hidden {
+		display: none;
+	}
+	.u-lg-flex-row {
+		flex-direction: row;
+	}
+	.u-lg-max-h-none {
+		max-height: none;
+	}
+	.u-lg-border-r {
+		border-right-width: 1px;
+		border-right-style: solid;
+	}
+	.u-lg-border-b-0 {
+		border-bottom-width: 0;
+		border-bottom-style: solid;
+	}
+}

@@ -335,20 +335,20 @@ function changeDraftProject(projectId: string): void {
 }
 </script>
 
-<div data-testid="settings-pi" class="flex flex-col gap-xl">
- {#if loadError}<p role="alert" class="text-feedback-warning tr-text-ui">{loadError} </p><Button disabled={loading || busy} onclick={() => void load()}>Retry loading</Button>{/if}
- {#if actionError}<p role="alert" class="text-feedback-error tr-text-ui">{actionError}</p>{/if}
-	<section class="flex flex-col gap-sm">
+<div data-testid="settings-pi" class="u-flex u-flex-col u-gap-xl">
+ {#if loadError}<p role="alert" class="u-text-feedback-warning tr-text-ui">{loadError} </p><Button disabled={loading || busy} onclick={() => void load()}>Retry loading</Button>{/if}
+ {#if actionError}<p role="alert" class="u-text-feedback-error tr-text-ui">{actionError}</p>{/if}
+	<section class="u-flex u-flex-col u-gap-sm">
 		<div>
 			<h3 class="tr-title-section">Pi preferences</h3>
-			<p class="text-text-muted tr-text-metadata">
+			<p class="u-text-text-muted tr-text-metadata">
 				These are the only Pi preferences available here. Pi persists them.
 			</p>
 		</div>
-		<div class="flex flex-col gap-xs">
-			<label class="flex flex-col gap-xs">
+		<div class="u-flex u-flex-col u-gap-xs">
+			<label class="u-flex u-flex-col u-gap-xs">
 				Compaction reserve tokens
-				<span class="text-text-muted tr-text-metadata">
+				<span class="u-text-text-muted tr-text-metadata">
 					Tokens Pi reserves for a response before compacting. Clearing the field keeps the saved value; reset restores Pi’s default.
 				</span>
 				<input
@@ -359,10 +359,10 @@ function changeDraftProject(projectId: string): void {
 					step="1"
 					bind:value={reserveTokens}
 					disabled={busy || !preferencesReady}
-					class="rounded border border-border-default bg-control-bg px-sm py-xs"
+					class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 				/>
 			</label>
-			<div class="flex flex-wrap gap-xs">
+			<div class="u-flex u-flex-wrap u-gap-xs">
 				<Button
 					size="sm"
 					variant="outline"
@@ -374,8 +374,8 @@ function changeDraftProject(projectId: string): void {
 				</Button>
 			</div>
 		</div>
-		<div class="flex flex-col gap-xs">
-			<label class="flex flex-col gap-xs">
+		<div class="u-flex u-flex-col u-gap-xs">
+			<label class="u-flex u-flex-col u-gap-xs">
 				Thinking effort
 				<select
 					data-testid="pi-thinking-effort"
@@ -392,7 +392,7 @@ function changeDraftProject(projectId: string): void {
 							preferences = unset;
 						}
 					}}
-					class="rounded border border-border-default bg-control-bg px-sm py-xs"
+					class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 				>
 					<option value="">Pi default</option>
 					{#each THINKING_EFFORTS as effort (effort)}
@@ -400,7 +400,7 @@ function changeDraftProject(projectId: string): void {
 					{/each}
 				</select>
 			</label>
-			<div class="flex flex-wrap gap-xs">
+			<div class="u-flex u-flex-wrap u-gap-xs">
 				<Button
 					size="sm"
 					variant="outline"
@@ -411,7 +411,7 @@ function changeDraftProject(projectId: string): void {
 				</Button>
 			</div>
 		</div>
-		<div class="flex flex-wrap gap-xs">
+		<div class="u-flex u-flex-wrap u-gap-xs">
 			<Button size="sm" disabled={busy || loading || !preferencesReady} onclick={() => void savePreferences()}>
 				<Icon name="save" size={14} />
 				Save preferences
@@ -419,15 +419,15 @@ function changeDraftProject(projectId: string): void {
 		</div>
 	</section>
 
-	<section class="flex flex-col gap-sm border-border-default border-t pt-lg">
+	<section class="u-flex u-flex-col u-gap-sm u-border-border-default u-border-t u-pt-lg">
 		<div>
 			<h3 class="tr-title-section">New session defaults</h3>
-			<p class="text-text-muted tr-text-metadata">
+			<p class="u-text-text-muted tr-text-metadata">
 				Pi persists this provider and model default. New sessions inherit Pi’s saved
 				default.
 			</p>
 		</div>
-		<label class="flex flex-col gap-xs">
+		<label class="u-flex u-flex-col u-gap-xs">
 			Provider
 			<select
 				data-testid="default-provider"
@@ -436,7 +436,7 @@ function changeDraftProject(projectId: string): void {
 				onchange={(event) => {
 					defaults = { providerId: event.currentTarget.value || null, modelId: null };
 				}}
-				class="rounded border border-border-default bg-control-bg px-sm py-xs"
+				class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 			>
 				<option value="">Choose provider</option>
 				{#if currentUnavailableProvider}
@@ -449,7 +449,7 @@ function changeDraftProject(projectId: string): void {
 				{/each}
 			</select>
 		</label>
-		<label class="flex flex-col gap-xs">
+		<label class="u-flex u-flex-col u-gap-xs">
 			Model
 			<input
 				data-testid="default-model"
@@ -460,7 +460,7 @@ function changeDraftProject(projectId: string): void {
 					defaults = { ...defaults, modelId: event.currentTarget.value || null };
 				}}
 				placeholder="Provider default"
-				class="rounded border border-border-default bg-control-bg px-sm py-xs"
+				class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 			/>
 			<datalist id="default-model-suggestions">
 				{#each defaultSuggestions as model (`${model.provider}\0${model.id}`)}
@@ -468,7 +468,7 @@ function changeDraftProject(projectId: string): void {
 				{/each}
 			</datalist>
 		</label>
-		<div class="flex gap-xs">
+		<div class="u-flex u-gap-xs">
 			<Button
 				size="sm"
 				disabled={busy || loading || !defaultsReady || !selectedDefaultProviderAvailable}
@@ -482,22 +482,22 @@ function changeDraftProject(projectId: string): void {
 		</div>
 	</section>
 
-	<section class="flex flex-col gap-sm border-border-default border-t pt-lg">
-		<div class="flex flex-wrap items-end justify-between gap-sm">
+	<section class="u-flex u-flex-col u-gap-sm u-border-border-default u-border-t u-pt-lg">
+		<div class="u-flex u-flex-wrap u-items-end u-justify-between u-gap-sm">
 			<div>
 				<h3 class="tr-title-section">Agent catalog</h3>
-				<p class="text-text-muted tr-text-metadata">
+				<p class="u-text-text-muted tr-text-metadata">
 					Definitions live in Pi’s agent folders. Use a model ID or provider/model.
 				</p>
 			</div>
-			<label class="flex flex-col gap-xs text-text-muted tr-text-metadata">
+			<label class="u-flex u-flex-col u-gap-xs u-text-text-muted tr-text-metadata">
 				Project scope
 				<select
 					data-testid="agent-catalog-project"
 					value={catalogProjectId}
 					disabled={busy}
 					onchange={(event) => changeProjectScope(event.currentTarget.value)}
-					class="rounded border border-border-default bg-control-bg px-sm py-xs text-text-default"
+					class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs u-text-text-default"
 				>
 					<option value="">Global agents</option>
 					{#each projects as project (project.id)}
@@ -506,37 +506,37 @@ function changeDraftProject(projectId: string): void {
 				</select>
 			</label>
 		</div>
-		{#if agentWarnings.length}<p role="status" class="tr-text-ui text-feedback-warning">{agentWarnings.join(". ")}</p>{/if}
+		{#if agentWarnings.length}<p role="status" class="tr-text-ui u-text-feedback-warning">{agentWarnings.join(". ")}</p>{/if}
 		{#if loading}
-			<p class="text-text-muted">Loading Pi settings…</p>
-        {:else if !agentsAvailable}<p class="text-text-muted">No compatible agents extension in this scope.</p>
+			<p class="u-text-text-muted">Loading Pi settings…</p>
+        {:else if !agentsAvailable}<p class="u-text-text-muted">No compatible agents extension in this scope.</p>
 		{:else}
-			<div class="flex flex-col gap-xs">
+			<div class="u-flex u-flex-col u-gap-xs">
 				{#if agents.length === 0}
-					<p class="text-text-muted tr-text-ui">No agents in this scope.</p>
+					<p class="u-text-text-muted tr-text-ui">No agents in this scope.</p>
 				{:else}
 					{#each agents as agent (agent.id)}
 						<div
 							data-testid="agent-row"
-							class="flex items-center gap-sm rounded border border-border-default bg-control-bg px-sm py-xs"
+							class="u-flex u-items-center u-gap-sm u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 						>
-							<Icon name="bot" size={16} class="text-text-muted" />
-							<div class="min-w-0 flex-1">
+							<Icon name="bot" size={16} class="u-text-text-muted" />
+							<div class="u-min-w-0 u-flex-1">
 								<div>
 									{agent.name}
-									<span class="text-text-muted tr-text-metadata">
+									<span class="u-text-text-muted tr-text-metadata">
 										{agent.scope} · {agent.writable ? "Writable" : "Read-only"}
 									</span>
 								</div>
-								<div class="truncate text-text-muted tr-text-metadata">{agent.description}</div>
+								<div class="u-truncate u-text-text-muted tr-text-metadata">{agent.description}</div>
 								{#if agent.modelId}
-									<div class="text-text-muted tr-text-metadata">Model ID: {agent.modelId}</div>
+									<div class="u-text-text-muted tr-text-metadata">Model ID: {agent.modelId}</div>
 								{/if}
 
 
 							</div>
 							{#if agent.writable}
-								<div class="flex gap-xs">
+								<div class="u-flex u-gap-xs">
 									<Button
 										size="sm"
 										variant="outline"
@@ -563,35 +563,35 @@ function changeDraftProject(projectId: string): void {
 		{/if}
 
 		<form
-			class="flex flex-col gap-sm rounded border border-border-default p-md"
+			class="u-flex u-flex-col u-gap-sm u-rounded u-border u-border-border-default u-p-md"
 			onsubmit={(event) => {
 				event.preventDefault();
 				void saveAgent();
 			}}
 		>
 			<h4 class="tr-text-ui">{editing ? `Edit ${editing.name}` : "Add agent"}</h4>
-			<label class="flex flex-col gap-xs">
+			<label class="u-flex u-flex-col u-gap-xs">
 				Name
-				<span class="text-text-muted tr-text-metadata">
+				<span class="u-text-text-muted tr-text-metadata">
 					Up to 80 UTF-8 bytes. Slashes are not allowed.
 				</span>
 				<input
 					bind:value={draft.name}
 					maxlength="80"
 					disabled={busy}
-					class="rounded border border-border-default bg-control-bg px-sm py-xs"
+					class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 				/>
 			</label>
-			<label class="flex flex-col gap-xs">
+			<label class="u-flex u-flex-col u-gap-xs">
 				Description
 				<input
 					bind:value={draft.description}
 					maxlength="1000"
 					disabled={busy}
-					class="rounded border border-border-default bg-control-bg px-sm py-xs"
+					class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 				/>
 			</label>
-			<label class="flex flex-col gap-xs">
+			<label class="u-flex u-flex-col u-gap-xs">
 				Instructions (Markdown as plain text)
 				<textarea
 					data-testid="agent-instructions"
@@ -599,11 +599,11 @@ function changeDraftProject(projectId: string): void {
 					maxlength={64 * 1024}
 					rows="7"
 					disabled={busy}
-					class="rounded border border-border-default bg-control-bg px-sm py-xs"
+					class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 				></textarea>
 			</label>
 			{#if !editing}
-				<label class="flex flex-col gap-xs">
+				<label class="u-flex u-flex-col u-gap-xs">
 					Scope
 					<select
 						value={draft.scope}
@@ -611,20 +611,20 @@ function changeDraftProject(projectId: string): void {
 						onchange={(event) => {
 							draft = { ...draft, scope: event.currentTarget.value as AgentDraft["scope"] };
 						}}
-						class="rounded border border-border-default bg-control-bg px-sm py-xs"
+						class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 					>
 						<option value="global">Global</option>
 						<option value="project">Project</option>
 					</select>
 				</label>
 				{#if draft.scope === "project"}
-					<label class="flex flex-col gap-xs">
+					<label class="u-flex u-flex-col u-gap-xs">
 						Admitted project
 						<select
 							value={draft.projectId}
 							disabled={busy}
 							onchange={(event) => changeDraftProject(event.currentTarget.value)}
-							class="rounded border border-border-default bg-control-bg px-sm py-xs"
+							class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 						>
 							<option value="">Choose project</option>
 							{#each projects as project (project.id)}
@@ -634,7 +634,7 @@ function changeDraftProject(projectId: string): void {
 					</label>
 				{/if}
 			{/if}
-			<label class="flex flex-col gap-xs">
+			<label class="u-flex u-flex-col u-gap-xs">
 				Preferred model ID
 				<input
 					data-testid="agent-model"
@@ -642,7 +642,7 @@ function changeDraftProject(projectId: string): void {
 					list="agent-model-suggestions"
 					disabled={busy}
 					placeholder="Inherit provider model"
-					class="rounded border border-border-default bg-control-bg px-sm py-xs"
+					class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 				/>
 				<datalist id="agent-model-suggestions">
 					{#each availableModels as model (`${model.provider}\0${model.id}`)}
@@ -650,7 +650,7 @@ function changeDraftProject(projectId: string): void {
 					{/each}
 				</datalist>
 			</label>
-			<div class="flex gap-xs">
+			<div class="u-flex u-gap-xs">
 				<Button size="sm" type="submit" disabled={busy}>
 					{editing ? "Save agent" : "Add agent"}
 				</Button>

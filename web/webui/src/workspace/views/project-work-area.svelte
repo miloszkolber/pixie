@@ -940,7 +940,7 @@ function signOut(): void {
 	{#if Object.hasOwn(sessionStreaming, tab.sessionId)}
 		{#key tab.sessionId}<ErrorBoundary label="chat"><ChatView sessionId={tab.sessionId} {projectAreaId} onOpenChanges={showActivity} /></ErrorBoundary>{/key}
 	{:else}
-		<div class="app-empty flex flex-1"><p>Restoring chat…</p><Button variant="outline" onclick={() => void hydrateChatResource(projectAreaId, tab.sessionId)}>Retry</Button></div>
+		<div class="app-empty u-flex u-flex-1"><p>Restoring chat…</p><Button variant="outline" onclick={() => void hydrateChatResource(projectAreaId, tab.sessionId)}>Retry</Button></div>
 	{/if}
 {/snippet}
 
@@ -950,23 +950,23 @@ function signOut(): void {
 	{:else if tab.kind === "diff"}
 		{#key tab.id}<ErrorBoundary label="preview"><DiffPane {tab} /></ErrorBoundary>{/key}
 	{:else if tab.kind === "canvas"}
-		<div data-testid="canvas-module-view" class="mewa-layout-probe__scroll flex min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
-			<div class="flex flex-wrap items-start justify-between gap-sm">
+		<div data-testid="canvas-module-view" class="mewa-layout-probe__scroll u-flex u-min-h-0 u-min-w-0 u-flex-1 u-flex-col u-gap-md u-overflow-y-auto u-px-lg u-py-md">
+			<div class="u-flex u-flex-wrap u-items-start u-justify-between u-gap-sm">
 				<div>
 					<span class="eyebrow">{CANVAS_CONTRIBUTION.railLabel}</span>
 					<h2 class="tr-title-entity">Session Canvas</h2>
-					<p class="tr-text-metadata text-text-muted">Session {tab.sessionId}</p>
+					<p class="tr-text-metadata u-text-text-muted">Session {tab.sessionId}</p>
 				</div>
 				<Button size="sm" variant="outline" disabled={!canvasReady || canvasRefreshPending} onclick={() => void refreshCanvasModule(tab.sessionId)}>
 					<Icon name="refresh-cw" size={14} /> {canvasRefreshPending ? "Refreshing…" : "Refresh"}
 				</Button>
 			</div>
-			<p data-testid="canvas-module-status" class="tr-text-ui text-text-muted">{moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel)}</p>
-			{#if canvasRefreshError}<p role="alert" class="tr-text-metadata text-feedback-error">{canvasRefreshError}</p>{/if}
+			<p data-testid="canvas-module-status" class="tr-text-ui u-text-text-muted">{moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel)}</p>
+			{#if canvasRefreshError}<p role="alert" class="tr-text-metadata u-text-feedback-error">{canvasRefreshError}</p>{/if}
 			{#if CanvasPreview}
 				<CanvasPreview preview={canvasState.scope?.sessionId === tab.sessionId ? canvasState.preview : unavailableCanvasState(tab.sessionId).preview} />
 			{:else if canvasPreviewLoadError}
-				<p role="alert" class="tr-text-metadata text-feedback-error">Canvas preview needs the current bundle. Canvas content remains unchanged.</p>
+				<p role="alert" class="tr-text-metadata u-text-feedback-error">Canvas preview needs the current bundle. Canvas content remains unchanged.</p>
 				<Button
 					size="sm"
 					variant="outline"
@@ -976,30 +976,30 @@ function signOut(): void {
 					{canvasPreviewReloadAttempts === 0 ? "Try loading once" : "Retry preview"}
 				</Button>
 			{:else}
-				<p role="status" class="tr-text-metadata text-text-muted">Loading Canvas preview…</p>
+				<p role="status" class="tr-text-metadata u-text-text-muted">Loading Canvas preview…</p>
 			{/if}
 		</div>
 	{:else}
-		<div data-testid="design-module-view" class="mewa-layout-probe__scroll flex min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
-			<div class="flex flex-wrap items-start justify-between gap-sm">
+		<div data-testid="design-module-view" class="mewa-layout-probe__scroll u-flex u-min-h-0 u-min-w-0 u-flex-1 u-flex-col u-gap-md u-overflow-y-auto u-px-lg u-py-md">
+			<div class="u-flex u-flex-wrap u-items-start u-justify-between u-gap-sm">
 				<div>
 					<span class="eyebrow">{DESIGN_CONTRIBUTION.railLabel}</span>
 					<h2 class="tr-title-entity">Instance Design</h2>
-					<p class="tr-text-metadata text-text-muted">Shared across project areas</p>
+					<p class="tr-text-metadata u-text-text-muted">Shared across project areas</p>
 				</div>
 				<Button size="sm" variant="outline" disabled={!designReady || designRefreshPending} onclick={() => void refreshDesignModule()}>
 					<Icon name="refresh-cw" size={14} /> {designRefreshPending ? "Refreshing…" : "Refresh"}
 				</Button>
 			</div>
-			<p data-testid="design-module-status" class="tr-text-ui text-text-muted">{moduleStatusDetail(browserStatus?.design, DESIGN_CONTRIBUTION.railLabel)}</p>
-			{#if designRefreshError}<p role="alert" class="tr-text-metadata text-feedback-error">{designRefreshError}</p>{/if}
+			<p data-testid="design-module-status" class="tr-text-ui u-text-text-muted">{moduleStatusDetail(browserStatus?.design, DESIGN_CONTRIBUTION.railLabel)}</p>
+			{#if designRefreshError}<p role="alert" class="tr-text-metadata u-text-feedback-error">{designRefreshError}</p>{/if}
 			{#if designState.document}
-				<p class="tr-text-ui text-text-muted">{designState.document.name} · {designState.document.pageCount} pages · {designState.document.nodeCount} nodes</p>
+				<p class="tr-text-ui u-text-text-muted">{designState.document.name} · {designState.document.pageCount} pages · {designState.document.nodeCount} nodes</p>
 			{/if}
 			{#if DesignPreview}
 				<DesignPreview preview={designState.preview} />
 			{:else if designPreviewLoadError}
-				<p role="alert" class="tr-text-metadata text-feedback-error">Design preview needs the current bundle. Design data remains unchanged.</p>
+				<p role="alert" class="tr-text-metadata u-text-feedback-error">Design preview needs the current bundle. Design data remains unchanged.</p>
 				<Button
 					size="sm"
 					variant="outline"
@@ -1009,7 +1009,7 @@ function signOut(): void {
 					{designPreviewReloadAttempts === 0 ? "Try loading once" : "Retry preview"}
 				</Button>
 			{:else}
-				<p role="status" class="tr-text-metadata text-text-muted">Loading Design preview…</p>
+				<p role="status" class="tr-text-metadata u-text-text-muted">Loading Design preview…</p>
 			{/if}
 		</div>
 	{/if}
@@ -1040,15 +1040,15 @@ function signOut(): void {
 			data-recovery-topology={state.recovery.topology}
 			data-retained-assets={retainedUpgradeAssets.length}
 			role="alert"
-			class="mewa-layout-probe__recovery flex min-h-0 flex-col items-center justify-center gap-sm overflow-auto px-lg py-xl text-center"
+			class="mewa-layout-probe__recovery u-flex u-min-h-0 u-flex-col u-items-center u-justify-center u-gap-sm u-overflow-auto u-px-lg u-py-xl u-text-center"
 		>
-			<Icon name="triangle-alert" size={24} class="text-feedback-warning" />
+			<Icon name="triangle-alert" size={24} class="u-text-feedback-warning" />
 			<h3 class="tr-title-compact">This view needs the current bundle</h3>
-			<p class="max-w-[34rem] tr-text-ui text-text-muted">{state.recovery.message}</p>
+			<p class="u-max-w-34rem tr-text-ui u-text-text-muted">{state.recovery.message}</p>
 			{#if state.drafts.unsavedWarning}
-				<p data-testid="upgrade-recovery-draft-warning" class="max-w-[34rem] tr-text-metadata text-feedback-warning">{state.drafts.unsavedWarning}</p>
+				<p data-testid="upgrade-recovery-draft-warning" class="u-max-w-34rem tr-text-metadata u-text-feedback-warning">{state.drafts.unsavedWarning}</p>
 			{/if}
-			<p data-testid="upgrade-recovery-mutation-status" class="max-w-[34rem] tr-text-metadata text-text-muted">
+			<p data-testid="upgrade-recovery-mutation-status" class="u-max-w-34rem tr-text-metadata u-text-text-muted">
 				Pending actions remain attached to their original mutation identities; this recovery view never replays them.
 				{#if state.mutations.retryWithSameId.length} Retry is available only with the original identity.{/if}
 				{#if state.mutations.held.length} Unconfirmed actions remain held for ledger confirmation.{/if}
@@ -1058,23 +1058,23 @@ function signOut(): void {
 					<Icon name="refresh-cw" size={16} /> Try refresh once
 				</Button>
 			{:else}
-				<p data-testid="upgrade-recovery-loop-paused" class="max-w-[34rem] tr-text-metadata text-text-muted">Automatic refresh is paused. Copy unsaved work, then retry loading explicitly.</p>
+				<p data-testid="upgrade-recovery-loop-paused" class="u-max-w-34rem tr-text-metadata u-text-text-muted">Automatic refresh is paused. Copy unsaved work, then retry loading explicitly.</p>
 				<Button data-testid="upgrade-recovery-retry" variant="outline" onclick={() => retrySettingsSection(section)}>
 					<Icon name="rotate-ccw" size={16} /> Retry loading
 				</Button>
 			{/if}
 		</div>
 	{:else}
-		<p role="alert" class="tr-text-ui text-feedback-error">Couldn't load this settings section. Your open form drafts are retained.</p>
+		<p role="alert" class="tr-text-ui u-text-feedback-error">Couldn't load this settings section. Your open form drafts are retained.</p>
 		<Button variant="outline" onclick={() => retrySettingsSection(section)}>Retry loading</Button>
 	{/if}
 {/snippet}
 
 <div data-testid="project-work-area" class="pixie-work-area">
-	<div aria-label="Mobile panes" role="tablist" data-testid="mobile-pane-navigation" class="tab-list flex shrink-0 border-b lg:hidden">
-		<button type="button" role="tab" data-testid="mobile-projects" class="tab-trigger min-h-11 flex-1" aria-selected={mobilePane === "projects"} onkeydown={handleSettingsSectionKeydown} onclick={showProjects}>{MOBILE_PANE_LABELS.projects}</button>
-		<button type="button" role="tab" data-testid="mobile-primary" class="tab-trigger min-h-11 flex-1" aria-selected={mobilePane === "primary"} onkeydown={handleSettingsSectionKeydown} onclick={showPrimarySurface}>{MOBILE_PANE_LABELS.primary}</button>
-		<button type="button" role="tab" data-testid="mobile-secondary" class="tab-trigger min-h-11 flex-1" aria-selected={mobilePane === "secondary"} onkeydown={handleSettingsSectionKeydown} onclick={showSecondarySurface}>{MOBILE_PANE_LABELS.secondary}</button>
+	<div aria-label="Mobile panes" role="tablist" data-testid="mobile-pane-navigation" class="tab-list u-flex u-shrink-0 u-border-b u-lg-hidden">
+		<button type="button" role="tab" data-testid="mobile-projects" class="tab-trigger u-min-h-11 u-flex-1" aria-selected={mobilePane === "projects"} onkeydown={handleSettingsSectionKeydown} onclick={showProjects}>{MOBILE_PANE_LABELS.projects}</button>
+		<button type="button" role="tab" data-testid="mobile-primary" class="tab-trigger u-min-h-11 u-flex-1" aria-selected={mobilePane === "primary"} onkeydown={handleSettingsSectionKeydown} onclick={showPrimarySurface}>{MOBILE_PANE_LABELS.primary}</button>
+		<button type="button" role="tab" data-testid="mobile-secondary" class="tab-trigger u-min-h-11 u-flex-1" aria-selected={mobilePane === "secondary"} onkeydown={handleSettingsSectionKeydown} onclick={showSecondarySurface}>{MOBILE_PANE_LABELS.secondary}</button>
 	</div>
 	<div
 		data-testid="workspace-grid"
@@ -1086,7 +1086,7 @@ function signOut(): void {
 		class="pixie-shell-grid mewa-layout-probe"
 		bind:this={grid}
 	>
-		<aside data-testid="primary-rail" data-slot="primary-rail" aria-label="Primary rail" class="pixie-slot mewa-layout-probe__slot pixie-slot-primary-rail hidden lg:flex">
+		<aside data-testid="primary-rail" data-slot="primary-rail" aria-label="Primary rail" class="pixie-slot mewa-layout-probe__slot pixie-slot-primary-rail u-hidden u-lg-flex">
 			<ShellRail side="left" label="Primary navigation">
 				{#snippet top()}
 					<Button
@@ -1154,9 +1154,9 @@ function signOut(): void {
 							<Icon name="log-out" size={16} />
 						</Button>
 					{/if}
-					<span data-testid="connection-status" data-status={$appStore.status} role="status" aria-label={STATUS_LABEL[$appStore.status]} title={STATUS_LABEL[$appStore.status]} class="stat-status inline-flex items-center">
+					<span data-testid="connection-status" data-status={$appStore.status} role="status" aria-label={STATUS_LABEL[$appStore.status]} title={STATUS_LABEL[$appStore.status]} class="stat-status u-inline-flex u-items-center">
 						<span aria-hidden="true" class={`status-dot ${STATUS_DOT[$appStore.status]}`}></span>
-						<span class="sr-only">{STATUS_LABEL[$appStore.status]}</span>
+						<span class="u-sr-only">{STATUS_LABEL[$appStore.status]}</span>
 					</span>
 				{/snippet}
 			</ShellRail>
@@ -1169,15 +1169,15 @@ function signOut(): void {
 			aria-hidden={!primarySidebarVisible}
 			inert={!primarySidebarVisible}
 			tabindex="-1"
-			class={`pixie-slot mewa-layout-probe__slot pixie-slot-primary-sidebar outline-none ${mobilePane === "projects" && primarySidebarVisible ? "flex" : "hidden"} ${primarySidebarVisible ? "lg:flex" : "lg:hidden"}`}
+			class={`pixie-slot mewa-layout-probe__slot pixie-slot-primary-sidebar u-outline-none ${mobilePane === "projects" && primarySidebarVisible ? "u-flex" : "u-hidden"} ${primarySidebarVisible ? "u-lg-flex" : "u-lg-hidden"}`}
 		>
 			{#if primarySidebarVisible}
 				<div class="pixie-panel-box pixie-panel">
-					<div data-testid="mobile-primary-area-navigation" aria-label="Primary areas" role="tablist" class="tab-list flex shrink-0 border-b lg:hidden">
-						<button type="button" role="tab" data-testid="mobile-area-chats" class="tab-trigger min-h-10 flex-1" aria-selected={primaryArea === "chats"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("chats")}>Chats</button>
-						<button type="button" role="tab" data-testid="mobile-area-archive" class="tab-trigger min-h-10 flex-1" aria-selected={primaryArea === "archive"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("archive")}>Archive</button>
-						<button type="button" role="tab" data-testid="mobile-area-schedules" class="tab-trigger min-h-10 flex-1" aria-selected={primaryArea === "schedules"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("schedules")}>Schedules</button>
-						<button type="button" role="tab" data-testid="mobile-area-settings" class="tab-trigger min-h-10 flex-1" aria-selected={primaryArea === "settings"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("settings")}>Settings</button>
+					<div data-testid="mobile-primary-area-navigation" aria-label="Primary areas" role="tablist" class="tab-list u-flex u-shrink-0 u-border-b u-lg-hidden">
+						<button type="button" role="tab" data-testid="mobile-area-chats" class="tab-trigger u-min-h-10 u-flex-1" aria-selected={primaryArea === "chats"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("chats")}>Chats</button>
+						<button type="button" role="tab" data-testid="mobile-area-archive" class="tab-trigger u-min-h-10 u-flex-1" aria-selected={primaryArea === "archive"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("archive")}>Archive</button>
+						<button type="button" role="tab" data-testid="mobile-area-schedules" class="tab-trigger u-min-h-10 u-flex-1" aria-selected={primaryArea === "schedules"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("schedules")}>Schedules</button>
+						<button type="button" role="tab" data-testid="mobile-area-settings" class="tab-trigger u-min-h-10 u-flex-1" aria-selected={primaryArea === "settings"} onkeydown={handleSettingsSectionKeydown} onclick={() => selectPrimaryArea("settings")}>Settings</button>
 					</div>
 					<PanelHeader title={primaryArea === "chats" ? "PROJECTS" : primaryArea.toUpperCase()}>
 						{#snippet actions()}
@@ -1198,39 +1198,39 @@ function signOut(): void {
 					</PanelHeader>
 					{#if primaryArea === "chats"}
 						{#if projectFilterOpen}
-							<div class="shrink-0 px-sm py-xs"><input type="search" aria-label="Filter projects" placeholder="Filter projects" class="input w-full" bind:value={projectFilter} /></div>
+							<div class="u-shrink-0 u-px-sm u-py-xs"><input type="search" aria-label="Filter projects" placeholder="Filter projects" class="input u-w-full" bind:value={projectFilter} /></div>
 						{/if}
-						<div data-testid="primary-sidebar-content" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-xs py-xs"><ProjectTree chrome="bare" activeSessionId={primarySelection?.kind === "session" ? primarySelection.sessionId : null} filter={projectFilter} /></div>
+						<div data-testid="primary-sidebar-content" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-px-xs u-py-xs"><ProjectTree chrome="bare" activeSessionId={primarySelection?.kind === "session" ? primarySelection.sessionId : null} filter={projectFilter} /></div>
 					{:else if primaryArea === "archive"}
-						<div data-testid="archive-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area flex flex-col gap-md px-sm py-sm">
+						<div data-testid="archive-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-flex u-flex-col u-gap-md u-px-sm u-py-sm">
 							{#if projectArea}
 								<ArchiveList {projectAreaId} />
 							{/if}
-							<section aria-label="Recently closed chats" class="flex flex-col gap-2xs">
-								<p class="tr-text-metadata text-text-muted">Recently closed chats</p>
-								<p class="tr-text-metadata text-text-muted">Closing a view is not archiving. Closed chats reopen here; archived chats restore above without cloning; deleting moves a chat to trash from history.</p>
+							<section aria-label="Recently closed chats" class="u-flex u-flex-col u-gap-2xs">
+								<p class="tr-text-metadata u-text-text-muted">Recently closed chats</p>
+								<p class="tr-text-metadata u-text-text-muted">Closing a view is not archiving. Closed chats reopen here; archived chats restore above without cloning; deleting moves a chat to trash from history.</p>
 								{#if ($appStore.closedChatsByProjectArea[projectAreaId] ?? []).length === 0}
-									<p class="mt-xs tr-text-metadata text-text-muted">No closed chats.</p>
+									<p class="u-mt-xs tr-text-metadata u-text-text-muted">No closed chats.</p>
 								{:else}
-									<ul class="tree-group mt-xs flex flex-col">
+									<ul class="tree-group u-mt-xs u-flex u-flex-col">
 										{#each $appStore.closedChatsByProjectArea[projectAreaId] ?? [] as chat (chat.sessionId)}
-											<li><button type="button" data-testid="archive-closed-row" class="tree-leaf w-full text-left tr-text-ui" onclick={() => void appStoreApi.getState().reopenChat(projectAreaId, chat.sessionId)}>{chat.title}</button></li>
+											<li><button type="button" data-testid="archive-closed-row" class="tree-leaf u-w-full u-text-left tr-text-ui" onclick={() => void appStoreApi.getState().reopenChat(projectAreaId, chat.sessionId)}>{chat.title}</button></li>
 										{/each}
 									</ul>
 								{/if}
 							</section>
 						</div>
 					{:else if primaryArea === "schedules"}
-						<div data-testid="schedules-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-sm py-sm">
+						<div data-testid="schedules-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-px-sm u-py-sm">
 							{#if schedulesProject}
 								{#key schedulesProject.id}<ErrorBoundary label="schedules"><ScheduleList project={schedulesProject} /></ErrorBoundary>{/key}
 							{:else}
-								<p class="tr-text-metadata text-text-muted">Select a project to manage its schedules. Schedules remain project-scoped.</p>
+								<p class="tr-text-metadata u-text-text-muted">Select a project to manage its schedules. Schedules remain project-scoped.</p>
 							{/if}
 						</div>
 					{:else}
-						<div data-testid="settings-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-sm py-sm">
-							<ul role="tablist" aria-label="Settings sections" class="flex flex-col gap-2xs">
+						<div data-testid="settings-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-px-sm u-py-sm">
+							<ul role="tablist" aria-label="Settings sections" class="u-flex u-flex-col u-gap-2xs">
 								{#each settingsTabList as tab (tab.section)}
 									<li role="presentation">
 										<button
@@ -1238,7 +1238,7 @@ function signOut(): void {
 											role="tab"
 											id={`settings-tab-${tab.section}`}
 											data-testid="settings-section-row"
-											class={`tree-leaf w-full text-left tr-text-ui ${settingsActiveSection === tab.section ? "bg-control-bg-selected" : ""}`}
+											class={`tree-leaf u-w-full u-text-left tr-text-ui ${settingsActiveSection === tab.section ? "u-bg-control-bg-selected" : ""}`}
 											aria-selected={settingsActiveSection === tab.section}
 											aria-controls={`settings-panel-${tab.section}`}
 											tabindex={settingsActiveSection === tab.section ? 0 : -1}
@@ -1250,7 +1250,7 @@ function signOut(): void {
 									</li>
 								{/each}
 							</ul>
-							<p class="mt-sm tr-text-metadata text-text-muted">Choose a section to review or change this Pi's configuration.</p>
+							<p class="u-mt-sm tr-text-metadata u-text-text-muted">Choose a section to review or change this Pi's configuration.</p>
 						</div>
 					{/if}
 				</div>
@@ -1264,7 +1264,7 @@ function signOut(): void {
 			aria-label={primaryTitle}
 			aria-hidden={!primaryViewVisible}
 			inert={!primaryViewVisible}
-			class={`pixie-slot mewa-layout-probe__slot pixie-slot-primary-view min-w-0 ${mobilePane === "primary" && primaryViewVisible ? "flex" : "hidden"} ${primaryViewVisible ? "lg:flex" : "lg:hidden"}`}
+			class={`pixie-slot mewa-layout-probe__slot pixie-slot-primary-view u-min-w-0 ${mobilePane === "primary" && primaryViewVisible ? "u-flex" : "u-hidden"} ${primaryViewVisible ? "u-lg-flex" : "u-lg-hidden"}`}
 		>
 			<div class="pixie-panel pixie-center">
 				<PanelHeader title={primaryTitle}>
@@ -1282,34 +1282,34 @@ function signOut(): void {
 						{#if primaryTab}
 							{@render chatPane(primaryTab)}
 						{:else if primarySelection?.kind === "session"}
-							<div class="app-empty flex flex-1 flex-col items-center justify-center gap-xs px-lg text-center"><p>Restoring chat…</p><Button variant="outline" onclick={() => void hydrateChatResource(projectAreaId, primarySelection.sessionId)}>Retry</Button></div>
+							<div class="app-empty u-flex u-flex-1 u-flex-col u-items-center u-justify-center u-gap-xs u-px-lg u-text-center"><p>Restoring chat…</p><Button variant="outline" onclick={() => void hydrateChatResource(projectAreaId, primarySelection.sessionId)}>Retry</Button></div>
 						{:else}
-							<div data-testid="project-ready" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center">
+							<div data-testid="project-ready" class="app-empty u-flex u-flex-1 u-flex-col u-gap-xs u-px-lg u-text-center">
 								<span class="eyebrow">Project ready</span>
-								{#if projectArea}<h2 class="max-w-full truncate tr-title-entity">{contextProject?.name ?? projectArea.name}</h2><p class="max-w-full truncate tr-text-metadata text-text-muted">{projectArea.root}</p>{/if}
-								<p class="mt-xs tr-text-ui text-text-muted">Files, chats, and discovered repositories are scoped to this project.</p>
-								<Button class="mt-xs self-center" data-testid="start-chat" onclick={startChat}><Icon name="message-square-plus" size={16} /> New chat</Button>
+								{#if projectArea}<h2 class="u-max-w-full u-truncate tr-title-entity">{contextProject?.name ?? projectArea.name}</h2><p class="u-max-w-full u-truncate tr-text-metadata u-text-text-muted">{projectArea.root}</p>{/if}
+								<p class="u-mt-xs tr-text-ui u-text-text-muted">Files, chats, and discovered repositories are scoped to this project.</p>
+								<Button class="u-mt-xs u-self-center" data-testid="start-chat" onclick={startChat}><Icon name="message-square-plus" size={16} /> New chat</Button>
 							</div>
 						{/if}
 					{:else if primaryArea === "archive"}
-						<div data-testid="archive-detail" class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Archive</span><p class="tr-text-ui text-text-muted">Restore keeps the same archived chat; it never clones it. Closing a view is separate from archiving, and deleting is separate from both.</p><p class="tr-text-metadata text-text-muted">Select an archived chat in the primary sidebar to restore it.</p></div>
+						<div data-testid="archive-detail" class="app-empty u-flex u-flex-1 u-flex-col u-gap-xs u-px-lg u-text-center"><span class="eyebrow">Archive</span><p class="tr-text-ui u-text-text-muted">Restore keeps the same archived chat; it never clones it. Closing a view is separate from archiving, and deleting is separate from both.</p><p class="tr-text-metadata u-text-text-muted">Select an archived chat in the primary sidebar to restore it.</p></div>
 					{:else if primaryArea === "schedules"}
-						<div data-testid="schedules-detail" class="mewa-layout-probe__scroll flex min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+						<div data-testid="schedules-detail" class="mewa-layout-probe__scroll u-flex u-min-w-0 u-flex-1 u-flex-col u-gap-md u-overflow-y-auto u-px-lg u-py-md">
 							{#if schedulesProject}
 								{#key schedulesProject.id}<ErrorBoundary label="schedule details"><ScheduleDetail project={schedulesProject} /></ErrorBoundary>{/key}
 							{:else}
-								<div class="app-empty flex flex-1 flex-col gap-xs px-lg text-center"><span class="eyebrow">Schedule details</span><p class="tr-text-ui text-text-muted">Select a project to inspect its schedules. Definitions and run sessions keep separate identities.</p></div>
+								<div class="app-empty u-flex u-flex-1 u-flex-col u-gap-xs u-px-lg u-text-center"><span class="eyebrow">Schedule details</span><p class="tr-text-ui u-text-text-muted">Select a project to inspect its schedules. Definitions and run sessions keep separate identities.</p></div>
 							{/if}
 						</div>
 					{:else}
-						<div data-testid="settings-detail" class="mewa-layout-probe__scroll flex max-h-[calc(100dvh-4.5rem)] min-h-0 min-w-0 flex-1 flex-col gap-md overflow-y-auto px-lg py-md">
+						<div data-testid="settings-detail" class="mewa-layout-probe__scroll u-flex u-max-h-shell u-min-h-0 u-min-w-0 u-flex-1 u-flex-col u-gap-md u-overflow-y-auto u-px-lg u-py-md">
 							{#each settingsVisited as section (section)}
 								<div
 									id={`settings-panel-${section}`}
 									role="tabpanel"
 									aria-labelledby={`settings-tab-${section}`}
 									hidden={section !== settingsActiveSection}
-									class="min-w-0 flex-1"
+									class="u-min-w-0 u-flex-1"
 								>
 									{#if section === SettingsSection.Agent && $appStore.agentProfile}
 										<AgentSettings profile={$appStore.agentProfile} />
@@ -1320,19 +1320,19 @@ function signOut(): void {
 													{@const Section = settingsModules[section]!}<Section project={schedulesProject} />
 													{:else if settingsLoadErrors[section]}
 														{@render settingsRecoveryPane(section)}
-												{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+												{:else}<p class="tr-text-ui u-text-text-muted">Loading settings…</p>{/if}
 											{/key}
 										{:else}
-											<p class="tr-text-ui text-text-muted">Select a project to manage its schedules.</p>
+											<p class="tr-text-ui u-text-text-muted">Select a project to manage its schedules.</p>
 										{/if}
 									{:else if settingsModules[section]}
 										{@const Section = settingsModules[section]!}<Section />
 										{:else if settingsLoadErrors[section]}
 											{@render settingsRecoveryPane(section)}
-									{:else}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+									{:else}<p class="tr-text-ui u-text-text-muted">Loading settings…</p>{/if}
 								</div>
 							{/each}
-							{#if settingsVisited.length === 0}<p class="tr-text-ui text-text-muted">Loading settings…</p>{/if}
+							{#if settingsVisited.length === 0}<p class="tr-text-ui u-text-text-muted">Loading settings…</p>{/if}
 						</div>
 					{/if}
 				</div>
@@ -1346,12 +1346,12 @@ function signOut(): void {
 				aria-label={secondaryTitle}
 				aria-hidden={!secondarySlotAccessible}
 				inert={!secondarySlotAccessible}
-					class={`pixie-slot mewa-layout-probe__slot pixie-slot-secondary-view min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "view" && hasSecondarySelection && layout.focus !== "primary" ? "flex" : "hidden"} ${secondaryViewVisible ? "lg:flex" : "lg:hidden"}`}
+					class={`pixie-slot mewa-layout-probe__slot pixie-slot-secondary-view u-min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "view" && hasSecondarySelection && layout.focus !== "primary" ? "u-flex" : "u-hidden"} ${secondaryViewVisible ? "u-lg-flex" : "u-lg-hidden"}`}
 			>
 				<div class="pixie-panel pixie-secondary-view">
 					<PanelHeader title={secondaryTitle}>
 						{#snippet actions()}
-							<Button variant="ghost" size="sm" class="lg:hidden" data-testid="mobile-secondary-sidebar" aria-label="Open secondary sidebar" onclick={showSecondarySidebar}>Controls</Button>
+							<Button variant="ghost" size="sm" class="u-lg-hidden" data-testid="mobile-secondary-sidebar" aria-label="Open secondary sidebar" onclick={showSecondarySidebar}>Controls</Button>
 							<Button variant="ghost" size="sm" data-testid="focus-secondary" aria-label="Focus secondary view" aria-pressed={layout.focus === "secondary"} onclick={() => setFocus("secondary")}>Focus</Button>
 							<Button variant="ghost" size="sm" data-testid="restore-secondary" aria-label="Restore secondary pane" onclick={restoreSecondary}>Restore</Button>
 							<Button variant="ghost" size="icon-sm" data-testid="close-secondary" aria-label={`Close ${secondaryTitle}`} title={`Close ${secondaryTitle}`} onclick={closeSecondary}><Icon name="x" size={14} /></Button>
@@ -1361,7 +1361,7 @@ function signOut(): void {
 						{#if secondaryTab}
 							{@render previewPane(secondaryTab)}
 						{:else}
-							<div data-testid="secondary-unavailable" class="app-empty flex flex-1 flex-col items-center justify-center gap-xs px-lg text-center"><p role="alert">The selected secondary resource is unavailable.</p><Button variant="outline" onclick={closeSecondary}>Close</Button></div>
+							<div data-testid="secondary-unavailable" class="app-empty u-flex u-flex-1 u-flex-col u-items-center u-justify-center u-gap-xs u-px-lg u-text-center"><p role="alert">The selected secondary resource is unavailable.</p><Button variant="outline" onclick={closeSecondary}>Close</Button></div>
 						{/if}
 					</div>
 				</div>
@@ -1376,7 +1376,7 @@ function signOut(): void {
 			inert={!secondarySidebarVisible}
 			tabindex="-1"
 			id="right-panel"
-			class={`pixie-slot mewa-layout-probe__slot pixie-slot-secondary-sidebar min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "sidebar" && secondarySidebarVisible ? "flex" : "hidden"} ${secondarySidebarVisible ? "lg:flex" : "lg:hidden"}`}
+			class={`pixie-slot mewa-layout-probe__slot pixie-slot-secondary-sidebar u-min-w-0 ${mobilePane === "secondary" && mobileSecondarySurface === "sidebar" && secondarySidebarVisible ? "u-flex" : "u-hidden"} ${secondarySidebarVisible ? "u-lg-flex" : "u-lg-hidden"}`}
 		>
 			{#if secondarySidebarVisible}
 				<div id="activity-panel" class="pixie-panel-box pixie-panel">
@@ -1385,56 +1385,56 @@ function signOut(): void {
 							{#if secondaryArea === "files"}
 								<Button variant="ghost" size="icon-sm" data-testid="toggle-files-filter" aria-label="Filter files" title="Filter files" aria-pressed={filesFilterOpen} onclick={() => (filesFilterOpen = !filesFilterOpen)}><Icon name="search" size={16} /></Button>
 							{/if}
-							{#if hasSecondarySelection}<Button variant="ghost" size="sm" class="lg:hidden" data-testid="mobile-secondary-view" aria-label="Return to secondary preview" onclick={showSecondarySurface}>Preview</Button>{/if}
+							{#if hasSecondarySelection}<Button variant="ghost" size="sm" class="u-lg-hidden" data-testid="mobile-secondary-view" aria-label="Return to secondary preview" onclick={showSecondarySurface}>Preview</Button>{/if}
 							<Button variant="ghost" size="sm" data-testid="restore-secondary-sidebar" aria-label="Restore secondary pane" onclick={restoreSecondary}>Restore</Button>
 							<Button variant="ghost" size="icon-sm" data-testid="collapse-right-panel" aria-label="Close secondary sidebar" title="Close secondary sidebar" onclick={collapseRightPanel}><Icon name="chevron-right" size={16} /></Button>
 						{/snippet}
 					</PanelHeader>
 					{#if secondaryArea === "files"}
-						{#if filesFilterOpen}<div class="shrink-0 px-sm py-xs"><input type="search" aria-label="Filter files" placeholder="Filter loaded files" class="input w-full" bind:value={filesFilter} /></div>{/if}
-						<div role="tabpanel" aria-label="Files" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-xs py-xs"><ErrorBoundary label="files activity"><FileTree {projectAreaId} filter={filesFilter} onOpen={showSecondarySurface} /></ErrorBoundary></div>
+						{#if filesFilterOpen}<div class="u-shrink-0 u-px-sm u-py-xs"><input type="search" aria-label="Filter files" placeholder="Filter loaded files" class="input u-w-full" bind:value={filesFilter} /></div>{/if}
+						<div role="tabpanel" aria-label="Files" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-min-h-0 u-flex-1 u-px-xs u-py-xs"><ErrorBoundary label="files activity"><FileTree {projectAreaId} filter={filesFilter} onOpen={showSecondarySurface} /></ErrorBoundary></div>
 					{:else if secondaryArea === "git"}
-						<div role="tabpanel" aria-label="Git" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-xs py-xs"><ErrorBoundary label="git activity"><ChangesPanel {projectAreaId} onOpen={showSecondarySurface} /></ErrorBoundary></div>
+						<div role="tabpanel" aria-label="Git" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-min-h-0 u-flex-1 u-px-xs u-py-xs"><ErrorBoundary label="git activity"><ChangesPanel {projectAreaId} onOpen={showSecondarySurface} /></ErrorBoundary></div>
 					{:else if secondaryArea === "details"}
-						<div role="tabpanel" aria-label="Details" data-testid="details-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-sm py-sm"><ErrorBoundary label="details"><DetailsPanel {projectAreaId} sessionId={sessionDetailsVisible && primarySelection?.kind === "session" ? primarySelection.sessionId : null} /></ErrorBoundary></div>
+						<div role="tabpanel" aria-label="Details" data-testid="details-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-min-h-0 u-flex-1 u-px-sm u-py-sm"><ErrorBoundary label="details"><DetailsPanel {projectAreaId} sessionId={sessionDetailsVisible && primarySelection?.kind === "session" ? primarySelection.sessionId : null} /></ErrorBoundary></div>
 					{:else if secondaryArea === "module:canvas"}
-						<div role="tabpanel" aria-label="Canvas" data-testid="canvas-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-sm py-sm">
-							<p class="tr-text-eyebrow text-text-muted">{CANVAS_CONTRIBUTION.railLabel}</p>
-							<p class="mt-xs tr-text-ui text-text-default">Session-scoped revision controls</p>
+						<div role="tabpanel" aria-label="Canvas" data-testid="canvas-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-min-h-0 u-flex-1 u-px-sm u-py-sm">
+							<p class="tr-text-eyebrow u-text-text-muted">{CANVAS_CONTRIBUTION.railLabel}</p>
+							<p class="u-mt-xs tr-text-ui u-text-text-default">Session-scoped revision controls</p>
 							{#if activeCanvasTab}
-								<p class="mt-xs tr-text-metadata text-text-muted">Session {activeCanvasTab.sessionId}</p>
+								<p class="u-mt-xs tr-text-metadata u-text-text-muted">Session {activeCanvasTab.sessionId}</p>
 							{/if}
-							<p data-testid="canvas-sidebar-status" class="mt-sm tr-text-metadata text-text-muted">{moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel)}</p>
-							{#if canvasRefreshError}<p role="alert" class="mt-xs tr-text-metadata text-feedback-error">{canvasRefreshError}</p>{/if}
+							<p data-testid="canvas-sidebar-status" class="u-mt-sm tr-text-metadata u-text-text-muted">{moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel)}</p>
+							{#if canvasRefreshError}<p role="alert" class="u-mt-xs tr-text-metadata u-text-feedback-error">{canvasRefreshError}</p>{/if}
 							{#if activeCanvasTab && canvasReady}
-								<Button class="mt-sm" size="sm" variant="outline" disabled={canvasRefreshPending} onclick={() => void refreshCanvasModule(activeCanvasTab?.sessionId ?? null)}>
+								<Button class="u-mt-sm" size="sm" variant="outline" disabled={canvasRefreshPending} onclick={() => void refreshCanvasModule(activeCanvasTab?.sessionId ?? null)}>
 									<Icon name="refresh-cw" size={14} /> {canvasRefreshPending ? "Refreshing…" : "Refresh status"}
 								</Button>
 							{/if}
 						</div>
 					{:else if secondaryArea === "module:design"}
-						<div role="tabpanel" aria-label="Design" data-testid="design-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area min-h-0 flex-1 px-sm py-sm">
-							<p class="tr-text-eyebrow text-text-muted">{DESIGN_CONTRIBUTION.railLabel}</p>
-							<p class="mt-xs tr-text-ui text-text-default">Instance-wide document and focus controls</p>
-							<p data-testid="design-sidebar-status" class="mt-sm tr-text-metadata text-text-muted">{moduleStatusDetail(browserStatus?.design, DESIGN_CONTRIBUTION.railLabel)}</p>
+						<div role="tabpanel" aria-label="Design" data-testid="design-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-min-h-0 u-flex-1 u-px-sm u-py-sm">
+							<p class="tr-text-eyebrow u-text-text-muted">{DESIGN_CONTRIBUTION.railLabel}</p>
+							<p class="u-mt-xs tr-text-ui u-text-text-default">Instance-wide document and focus controls</p>
+							<p data-testid="design-sidebar-status" class="u-mt-sm tr-text-metadata u-text-text-muted">{moduleStatusDetail(browserStatus?.design, DESIGN_CONTRIBUTION.railLabel)}</p>
 							{#if designState.document}
-								<p class="mt-xs tr-text-metadata text-text-muted">{designState.document.name} · {designState.document.pageCount} pages · {designState.document.nodeCount} nodes</p>
+								<p class="u-mt-xs tr-text-metadata u-text-text-muted">{designState.document.name} · {designState.document.pageCount} pages · {designState.document.nodeCount} nodes</p>
 							{/if}
-							{#if designRefreshError}<p role="alert" class="mt-xs tr-text-metadata text-feedback-error">{designRefreshError}</p>{/if}
+							{#if designRefreshError}<p role="alert" class="u-mt-xs tr-text-metadata u-text-feedback-error">{designRefreshError}</p>{/if}
 							{#if activeDesignTab && designReady}
-								<Button class="mt-sm" size="sm" variant="outline" disabled={designRefreshPending} onclick={() => void refreshDesignModule()}>
+								<Button class="u-mt-sm" size="sm" variant="outline" disabled={designRefreshPending} onclick={() => void refreshDesignModule()}>
 									<Icon name="refresh-cw" size={14} /> {designRefreshPending ? "Refreshing…" : "Refresh status"}
 								</Button>
 							{/if}
 						</div>
 					{:else}
-						<div data-testid="module-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area px-sm py-sm"><p class="tr-text-metadata text-text-muted">{secondaryTitle} controls</p><p class="mt-xs tr-text-metadata text-text-muted">The selected module preview owns its renderer and lifecycle.</p></div>
+						<div data-testid="module-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-px-sm u-py-sm"><p class="tr-text-metadata u-text-text-muted">{secondaryTitle} controls</p><p class="u-mt-xs tr-text-metadata u-text-text-muted">The selected module preview owns its renderer and lifecycle.</p></div>
 					{/if}
 				</div>
 			{/if}
 		</aside>
 
-		<aside data-testid="secondary-rail" data-slot="secondary-rail" aria-label="Secondary rail" class="pixie-slot mewa-layout-probe__slot pixie-slot-secondary-rail hidden lg:flex">
+		<aside data-testid="secondary-rail" data-slot="secondary-rail" aria-label="Secondary rail" class="pixie-slot mewa-layout-probe__slot pixie-slot-secondary-rail u-hidden u-lg-flex">
 			<ShellRail side="right" label="Secondary navigation">
 				{#snippet top()}
 					<Button variant="ghost" size="icon-sm" data-testid="rail-details" aria-label="Details" title="Details" aria-current={secondaryArea === "details" ? "page" : undefined} onclick={() => selectSecondaryRail("details")}><Icon name="info" size={16} /></Button>
@@ -1473,16 +1473,16 @@ function signOut(): void {
 		<section data-testid="mewa-layout-probes" aria-label="Mewa layout probes" class="mewa-layout-probe-fixtures">
 			<header class="mewa-layout-probe-fixtures__header">
 				<h2 class="tr-title-compact">Mewa layout probes</h2>
-				<p class="tr-text-metadata text-text-muted">Five workspace modes, light and dark, with content.</p>
+				<p class="tr-text-metadata u-text-text-muted">Five workspace modes, light and dark, with content.</p>
 			</header>
 			{#each LAYOUT_PROBE_THEMES as probeTheme}
 				{#each LAYOUT_PROBE_MODES as probeMode (probeMode)}
 					<article data-testid={`mewa-layout-probe-${probeTheme}-${probeMode}`} data-probe-theme={probeTheme} data-probe-layout={probeMode} class="mewa-layout-probe-fixture">
 						<h3 class="tr-text-ui">{probeTheme} · {probeMode}</h3>
 						<div data-testid={`mewa-shell-${probeTheme}-${probeMode}`} data-layout={probeMode} data-theme={probeTheme} class={`mewa-layout-probe ${probeThemeClass(probeTheme)}`}>
-							<aside data-slot="primary-rail" aria-label="Probe primary rail" aria-hidden={!probeSlotVisible(probeMode, "primary-rail")} inert={!probeSlotVisible(probeMode, "primary-rail")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
-								<nav class="flex min-h-0 flex-1 flex-col items-center justify-between gap-xs py-xs">
-									<div class="flex flex-col gap-2xs">
+							<aside data-slot="primary-rail" aria-label="Probe primary rail" aria-hidden={!probeSlotVisible(probeMode, "primary-rail")} inert={!probeSlotVisible(probeMode, "primary-rail")} class="mewa-layout-probe__slot u-flex u-min-h-0 u-min-w-0 u-flex-col">
+								<nav class="u-flex u-min-h-0 u-flex-1 u-flex-col u-items-center u-justify-between u-gap-xs u-py-xs">
+									<div class="u-flex u-flex-col u-gap-2xs">
 										<button type="button" class="btn" aria-label="Probe chats">C</button>
 										<button type="button" class="btn" aria-label="Probe archive">A</button>
 										<button type="button" class="btn" aria-label="Probe schedules">S</button>
@@ -1491,58 +1491,58 @@ function signOut(): void {
 								</nav>
 							</aside>
 
-							<aside data-slot="primary-sidebar" aria-label="Probe primary sidebar" aria-hidden={!probeSlotVisible(probeMode, "primary-sidebar")} inert={!probeSlotVisible(probeMode, "primary-sidebar")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
-								<header class="mewa-layout-probe__header border-b px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Projects / a-very-long-project-name-that-must-not-widen-the-sidebar</span></header>
-								<div class="mewa-layout-probe__scroll flex flex-col gap-xs px-sm py-xs">
-									<p class="tr-text-metadata text-text-muted">Recent sessions</p>
-									<ul class="flex flex-col gap-2xs">
+							<aside data-slot="primary-sidebar" aria-label="Probe primary sidebar" aria-hidden={!probeSlotVisible(probeMode, "primary-sidebar")} inert={!probeSlotVisible(probeMode, "primary-sidebar")} class="mewa-layout-probe__slot u-flex u-min-h-0 u-min-w-0 u-flex-col">
+								<header class="mewa-layout-probe__header u-border-b u-px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Projects / a-very-long-project-name-that-must-not-widen-the-sidebar</span></header>
+								<div class="mewa-layout-probe__scroll u-flex u-flex-col u-gap-xs u-px-sm u-py-xs">
+									<p class="tr-text-metadata u-text-text-muted">Recent sessions</p>
+									<ul class="u-flex u-flex-col u-gap-2xs">
 										{#each ["Investigate transport replay", "Review file changes", "Prepare release notes", "Inspect large history", "Unresolved session title", "A session with a deliberately long native title"] as item, index (item)}
-											<li><button type="button" class="tree-leaf w-full text-left tr-text-ui" aria-label={`Open ${item}`}>{index + 1}. {item}</button></li>
+											<li><button type="button" class="tree-leaf u-w-full u-text-left tr-text-ui" aria-label={`Open ${item}`}>{index + 1}. {item}</button></li>
 										{/each}
 									</ul>
 								</div>
 							</aside>
 
-							<main data-slot="primary-view" aria-label="Probe conversation" aria-hidden={!probeSlotVisible(probeMode, "primary-view")} inert={!probeSlotVisible(probeMode, "primary-view")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
-								<header class="mewa-layout-probe__header border-b px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Investigate transport replay · conversation</span></header>
-								<div class="mewa-layout-probe__scroll flex min-h-0 flex-1 flex-col gap-sm px-md py-sm">
-									<ol class="mewa-layout-probe__history flex flex-col gap-sm">
+							<main data-slot="primary-view" aria-label="Probe conversation" aria-hidden={!probeSlotVisible(probeMode, "primary-view")} inert={!probeSlotVisible(probeMode, "primary-view")} class="mewa-layout-probe__slot u-flex u-min-h-0 u-min-w-0 u-flex-col">
+								<header class="mewa-layout-probe__header u-border-b u-px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Investigate transport replay · conversation</span></header>
+								<div class="mewa-layout-probe__scroll u-flex u-min-h-0 u-flex-1 u-flex-col u-gap-sm u-px-md u-py-sm">
+									<ol class="mewa-layout-probe__history u-flex u-flex-col u-gap-sm">
 										<li class="tr-text-ui"><strong>User</strong><p>Keep this draft while the shell changes layout.</p></li>
 										<li class="tr-text-ui"><strong>Assistant</strong><p>The transcript, stream, and selected file remain owned by the runtime.</p></li>
-										<li class="tr-text-ui"><strong>Tool</strong><pre class="mewa-layout-probe__code overflow-auto">mutationId=schedule-original
+										<li class="tr-text-ui"><strong>Tool</strong><pre class="mewa-layout-probe__code u-overflow-auto">mutationId=schedule-original
 result=awaiting-ledger-confirmation</pre></li>
 									</ol>
 								</div>
-								<form class="mewa-layout-probe__composer border-t px-sm py-xs" onsubmit={(event) => event.preventDefault()}>
-									<label class="sr-only" for={`probe-composer-${probeTheme}-${probeMode}`}>Draft message</label>
-									<textarea id={`probe-composer-${probeTheme}-${probeMode}`} class="input min-h-16 w-full" rows="2">Draft retained across focus and restore.</textarea>
+								<form class="mewa-layout-probe__composer u-border-t u-px-sm u-py-xs" onsubmit={(event) => event.preventDefault()}>
+									<label class="u-sr-only" for={`probe-composer-${probeTheme}-${probeMode}`}>Draft message</label>
+									<textarea id={`probe-composer-${probeTheme}-${probeMode}`} class="input u-min-h-16 u-w-full" rows="2">Draft retained across focus and restore.</textarea>
 									<button type="submit" class="btn">Send</button>
 								</form>
 							</main>
 
-							<section data-slot="secondary-view" aria-label="Probe file preview" aria-hidden={!probeSlotVisible(probeMode, "secondary-view")} inert={!probeSlotVisible(probeMode, "secondary-view")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
-								<header class="mewa-layout-probe__header border-b px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">src/workspace/views/project-work-area.svelte</span></header>
-								<div class="mewa-layout-probe__scroll flex min-h-0 flex-1 flex-col gap-sm px-md py-sm">
-									<pre class="mewa-layout-probe__code overflow-auto tr-code-text">@@ -401,7 +401,12 @@ restoreLayout
+							<section data-slot="secondary-view" aria-label="Probe file preview" aria-hidden={!probeSlotVisible(probeMode, "secondary-view")} inert={!probeSlotVisible(probeMode, "secondary-view")} class="mewa-layout-probe__slot u-flex u-min-h-0 u-min-w-0 u-flex-col">
+								<header class="mewa-layout-probe__header u-border-b u-px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">src/workspace/views/project-work-area.svelte</span></header>
+								<div class="mewa-layout-probe__scroll u-flex u-min-h-0 u-flex-1 u-flex-col u-gap-sm u-px-md u-py-sm">
+									<pre class="mewa-layout-probe__code u-overflow-auto tr-code-text">@@ -401,7 +401,12 @@ restoreLayout
 // Selections, drafts and accepted work remain intact.
 dispatchLayout(&#123; focus: "none" &#125;);</pre>
-									<p class="tr-text-metadata text-text-muted">Read-only preview; opening it never replaces the conversation.</p>
+									<p class="tr-text-metadata u-text-text-muted">Read-only preview; opening it never replaces the conversation.</p>
 								</div>
 							</section>
 
-							<aside data-slot="secondary-sidebar" aria-label="Probe secondary sidebar" aria-hidden={!probeSlotVisible(probeMode, "secondary-sidebar")} inert={!probeSlotVisible(probeMode, "secondary-sidebar")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
-								<header class="mewa-layout-probe__header border-b px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Files / activity and history controls</span></header>
-								<div class="mewa-layout-probe__scroll flex flex-col gap-xs px-sm py-xs">
-									<p class="tr-text-metadata text-text-muted">Selected resource</p>
-									<button type="button" class="tree-leaf w-full text-left tr-text-ui">project/src/index.ts</button>
-									<button type="button" class="tree-leaf w-full text-left tr-text-ui">project/src/workspace/views/project-work-area.svelte</button>
-									<p class="tr-text-metadata text-text-muted">Large histories and file trees scroll in their own region.</p>
+							<aside data-slot="secondary-sidebar" aria-label="Probe secondary sidebar" aria-hidden={!probeSlotVisible(probeMode, "secondary-sidebar")} inert={!probeSlotVisible(probeMode, "secondary-sidebar")} class="mewa-layout-probe__slot u-flex u-min-h-0 u-min-w-0 u-flex-col">
+								<header class="mewa-layout-probe__header u-border-b u-px-sm"><span class="mewa-layout-probe__long-name tr-text-ui">Files / activity and history controls</span></header>
+								<div class="mewa-layout-probe__scroll u-flex u-flex-col u-gap-xs u-px-sm u-py-xs">
+									<p class="tr-text-metadata u-text-text-muted">Selected resource</p>
+									<button type="button" class="tree-leaf u-w-full u-text-left tr-text-ui">project/src/index.ts</button>
+									<button type="button" class="tree-leaf u-w-full u-text-left tr-text-ui">project/src/workspace/views/project-work-area.svelte</button>
+									<p class="tr-text-metadata u-text-text-muted">Large histories and file trees scroll in their own region.</p>
 								</div>
 							</aside>
 
-							<aside data-slot="secondary-rail" aria-label="Probe secondary rail" aria-hidden={!probeSlotVisible(probeMode, "secondary-rail")} inert={!probeSlotVisible(probeMode, "secondary-rail")} class="mewa-layout-probe__slot flex min-h-0 min-w-0 flex-col">
-								<nav class="flex min-h-0 flex-1 flex-col items-center justify-between gap-xs py-xs">
-									<div class="flex flex-col gap-2xs">
+							<aside data-slot="secondary-rail" aria-label="Probe secondary rail" aria-hidden={!probeSlotVisible(probeMode, "secondary-rail")} inert={!probeSlotVisible(probeMode, "secondary-rail")} class="mewa-layout-probe__slot u-flex u-min-h-0 u-min-w-0 u-flex-col">
+								<nav class="u-flex u-min-h-0 u-flex-1 u-flex-col u-items-center u-justify-between u-gap-xs u-py-xs">
+									<div class="u-flex u-flex-col u-gap-2xs">
 										<button type="button" class="btn" aria-label="Probe details">D</button>
 										<button type="button" class="btn" aria-label="Probe files">F</button>
 										<button type="button" class="btn" aria-label="Probe git">G</button>

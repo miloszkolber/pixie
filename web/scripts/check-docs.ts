@@ -107,15 +107,10 @@ function localPathReference(value: string): string | null {
 	return normalizePath(path);
 }
 
-// Checked sources are the operating docs plus the central roadmap and the
-// assistant README. Planning copies must not hide broken links or stale paths.
+// Checked sources are the operating docs plus the planning roadmap. Planning
+// copies must not hide broken links or stale paths.
 function isCheckedSource(path: string): boolean {
-	return (
-		path === "README.md" ||
-		path.startsWith("docs/") ||
-		path === "roadmap/README.md" ||
-		path === "assistant/README.md"
-	);
+	return path === "README.md" || path.startsWith("docs/") || path.startsWith("roadmap/");
 }
 
 function checkLinks(files: Readonly<Record<string, string>>, violations: string[]): number {
