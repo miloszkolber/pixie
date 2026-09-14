@@ -4,7 +4,9 @@ The assistant is the `pixie_assistant` process. It owns Pi interaction for Pixie
 
 ## Target runtime
 
-The target `pixie_assistant` is a Bun host that runs Pi sessions in-process through the operator's installed Pi SDK. It resolves the SDK from the operator's Pi installation at runtime and never bundles or forks Pi. This replaces the interim Go host's `pi --mode rpc` child processes and the separate Bun administration bridge: there is no RPC child model and no bridge sidecar.
+The target `pixie_assistant` is a Bun host that runs Pi sessions in-process through the operator's installed Pi SDK. It resolves the SDK from the operator's Pi installation at runtime and never bundles or forks Pi. This replaces the interim Go host's `pi --mode rpc` child processes and the separate Bun administration bridge: there is no Pi RPC child model and no bridge sidecar. The separate `pixie_web` process consumes a narrow authenticated loopback host event protocol; it is not a Pi execution fallback.
+
+The first Bun host preserves the current controller wire contract as a compatibility boundary. It is not session pairing or a second execution path: Pi calls remain direct SDK calls in the host. Controller protocol simplification happens only in a coordinated controller migration after the Bun host is live.
 
 The `cli/` build flavor ships the assistant plus a bundled Pi for users who do not already have one. It is a packaging variant of the same assistant source, not a separate supervisor.
 

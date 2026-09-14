@@ -43,7 +43,7 @@
 		"format": "bun run --cwd web format",
 		"lint": "bun run --cwd web lint",
 		"mewa:check": "bun run --cwd web mewa:check",
-		"test": "bun run --cwd web test",
+		"test": "bun run --cwd web test && bun run --cwd assistant test",
 		"typecheck": "bun run --cwd web typecheck"
 	}
 }

@@ -6,7 +6,7 @@ This is the canonical implementation plan and forward backlog for Pixie. Operati
 
 Pixie is a self-hosted web workspace for the operator's installed Pi. Three binary targets share one protocol contract: `pixie_assistant` (assistant host), `pixie_web` (Go controller and UI) and `pixie_cli` (assistant plus a bundled Pi for users without their own).
 
-`assistant/` builds `pixie_assistant`: a Bun host that runs Pi sessions in-process through the operator's installed Pi SDK, resolved from that installation at runtime and never bundled. It replaces the interim Go host's `pi --mode rpc` child processes and the separate Bun administration bridge. There is no RPC child model and no bridge sidecar.
+`assistant/` builds `pixie_assistant`: a Bun host that runs Pi sessions in-process through the operator's installed Pi SDK, resolved from that installation at runtime and never bundled. It replaces the interim Go host's `pi --mode rpc` child processes and the separate Bun administration bridge. There is no Pi RPC child model and no bridge sidecar. The separate `pixie_web` process retains a narrow authenticated loopback event protocol to the host; it is not a Pi execution fallback.
 
 `web/` builds `pixie_web`: the Go controller and UI. It contains the `internal/controller`, `internal/canvas`, `internal/design`, `internal/mcpserver`, `internal/persist`, `internal/workspace`, `internal/security`, `internal/diagnostics` and `internal/identifier` packages, plus the `web/webui` Svelte interface. It runs as the Docker container or a local process.
 
@@ -42,7 +42,7 @@ These defects existed only because Pi was supervised through a Go host, RPC chil
 
 - Wrong-session and wrong-cwd dispatch, acceptance-versus-settlement races and per-event attribution are resolved. One host process owns Pi sessions directly, so there is no child-to-logical-session registry or event multiplexing to reconcile.
 - The administration bridge and its sidecar protocol are retired. Provider, settings, extension and MCP administration run in-process against the installed Pi SDK.
-- Host-v2 envelopes, per-connection protocol negotiation and durable cross-process pairing helpers are removed as production concerns. A single in-process host does not pair two processes over a transport.
+- The first Bun host preserves the authenticated controller wire contract as a compatibility boundary, including the current protocol negotiation where the controller still requires it. It is not Pi RPC, session pairing or a second execution path. Host-v2 envelopes, negotiation and pairing helpers are simplified only in a coordinated controller migration after the Bun host is live.
 - The hand-maintained Go `nativeOperationSet` and its missing binding to controller call sites are removed with RPC capability negotiation. The shared catalog is the contract.
 
 ## Open defects and risks

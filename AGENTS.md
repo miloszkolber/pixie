@@ -10,7 +10,7 @@ The canonical implementation plan lives under roadmap/. Current operating docume
 
 ## Target and retained behavior
 
-Three binary targets build from one repository: `pixie_assistant` (assistant host), `pixie_web` (Go controller and UI) and `pixie_cli` (assistant plus a bundled Pi). `pixie_assistant` is a Bun host that runs Pi sessions in-process through the operator's installed Pi SDK, resolved from that installation at runtime and never bundled. It replaces the Go host's `pi --mode rpc` child processes and the separate Bun administration bridge; there is no RPC child model and no bridge sidecar. `cli/` is a build flavor of the assistant, not a separate supervisor.
+Three binary targets build from one repository: `pixie_assistant` (assistant host), `pixie_web` (Go controller and UI) and `pixie_cli` (assistant plus a bundled Pi). `pixie_assistant` is a Bun host that runs Pi sessions in-process through the operator's installed Pi SDK, resolved from that installation at runtime and never bundled. It replaces the Go host's `pi --mode rpc` child processes and the separate Bun administration bridge; there is no Pi RPC child model and no bridge sidecar. `pixie_web` consumes a narrow authenticated loopback host event protocol because the two binaries are separate processes; that protocol is not a Pi execution fallback. `cli/` is a build flavor of the assistant, not a separate supervisor.
 
 `pixie_web` runs as the Docker controller container or a local process. Docker runs controller-only mode and never starts local Pi.
 

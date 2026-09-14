@@ -89,6 +89,8 @@ jobs:
         working-directory: shared
       - name: Test administration bridge
         run: bun test assistant/bridge
+      - name: Test Bun assistant SDK probe
+        run: bun run --cwd assistant test
   ui:
     name: Browser acceptance
     runs-on: ubuntu-latest

@@ -5,7 +5,10 @@
 	"license": "Apache-2.0",
 	"type": "module",
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"spike": "bun run src/pi-sdk-probe.ts",
+		"spike:build": "bun build --compile --compile-autoload-package-json --target=bun --outfile pixie-pi-sdk-probe.bun-build src/pi-sdk-probe.ts",
+		"test": "bun test tests",
+		"typecheck": "tsc --noEmit && tsc --project src/tsconfig.json"
 	},
 	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "0.85.1",
