@@ -117,9 +117,9 @@ func TestPurposeBuiltProfilesStayJustified(t *testing.T) {
 // TestGeneratedSessionListMetadataContract makes the session.list metadata
 // requirement explicit in the generated contract: the browser method maps to
 // the catalogued host route and is dispatchable, and the host result schema
-// requires the listing whose entries carry identity and cwd metadata. The
-// browser-facing controller projection stays controller-owned and is validated
-// separately by its handler.
+// requires a `sessions` array. Entry identity and cwd are returned by the host
+// projection but are not contract-enforced here; the browser-facing controller
+// projection stays controller-owned and is validated separately by its handler.
 func TestGeneratedSessionListMetadataContract(t *testing.T) {
 	if route := piwire.CatalogControllerMethodRoutes["session.list"]; route != "session.list" {
 		t.Fatalf("session.list route = %q, want the catalogued host route", route)

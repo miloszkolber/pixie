@@ -402,6 +402,11 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	// AUX-19: internal prompt settlement, attach/resume and lifecycle wakeups
+	// dispatch follow-ups through the session manager rather than the browser
+	// boundary. Share the server's gate so those runs are refused during a drain
+	// and counted by WaitForDrain until they settle.
+	sessions.SetAdmissionGate(socket.gate)
 	socket.LoginSnapshot = admin.logins.Snapshot
 	socket.ClientReaped = func(clientKey string) {
 		sessions.ReleaseClient(clientKey)

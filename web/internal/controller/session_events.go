@@ -321,8 +321,13 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 			if !valid {
 				return nil
 			}
-			if role == "user" && consumeEchoResource(entry, marker) {
-				return nil
+			if role == "user" {
+				if matched, enriched := consumeUserEcho(entry, "resource", textValue(update["entryId"]), marker); matched {
+					if enriched != nil {
+						return []map[string]any{{"type": "message_start", "message": enriched}}
+					}
+					return nil
+				}
 			}
 			if role != "user" || !appendUserResourceMarker(entry, marker, byteLength) {
 				return nil
@@ -332,8 +337,13 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 		}
 		if textValue(content["type"]) == "image" {
 			image := map[string]any{"type": "image", "data": textValue(content["data"]), "mimeType": textValue(content["mimeType"])}
-			if role == "user" && consumeEchoImage(entry, image) {
-				return nil
+			if role == "user" {
+				if matched, enriched := consumeUserEcho(entry, "image", textValue(update["entryId"]), image); matched {
+					if enriched != nil {
+						return []map[string]any{{"type": "message_start", "message": enriched}}
+					}
+					return nil
+				}
 			}
 			appendMessageBlock(entry, role, image, textValue(update["messageId"]), textValue(update["entryId"]))
 			entry.stats.TotalMessages = len(entry.messages)
@@ -350,8 +360,13 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 			content = map[string]any{"type": "text", "text": "[Unsupported content: " + textValue(content["type"]) + "]"}
 		}
 		text := textValue(content["text"])
-		if role == "user" && consumeEchoText(entry, text) {
-			return nil
+		if role == "user" {
+			if matched, enriched := consumeUserEcho(entry, "text", textValue(update["entryId"]), map[string]any{"text": text}); matched {
+				if enriched != nil {
+					return []map[string]any{{"type": "message_start", "message": enriched}}
+				}
+				return nil
+			}
 		}
 		appendMessageBlock(entry, role, map[string]any{"type": "text", "text": text}, textValue(update["messageId"]), textValue(update["entryId"]))
 		entry.streaming = true
@@ -1042,56 +1057,112 @@ func cloneJSON(value any) any {
 	}
 }
 
-func consumeEchoText(entry *sessionEntry, text string) bool {
+func consumeEchoText(entry *sessionEntry, text, entryID string) (matched, attached bool) {
 	echo := entry.pendingEcho
 	if echo == nil || echo.offset > len(echo.text) || !strings.HasPrefix(echo.text[echo.offset:], text) {
 		entry.pendingEcho = nil
-		return false
+		return false, false
+	}
+	if attachEchoEntryID(entry, echo, entryID) {
+		attached = true
 	}
 	echo.offset += len(text)
 	if echoComplete(echo) {
 		entry.promptAcknowledged = true
 		entry.pendingEcho = nil
 	}
-	return true
+	return true, attached
 }
 
-func consumeEchoImage(entry *sessionEntry, image map[string]any) bool {
+func consumeEchoImage(entry *sessionEntry, image map[string]any, entryID string) (matched, attached bool) {
 	echo := entry.pendingEcho
 	if echo == nil {
-		return false
+		return false, false
 	}
 	for index, expected := range echo.images {
 		if !echo.matched[index] && expected["data"] == image["data"] && expected["mimeType"] == image["mimeType"] {
 			echo.matched[index] = true
+			if attachEchoEntryID(entry, echo, entryID) {
+				attached = true
+			}
 			if echoComplete(echo) {
 				entry.promptAcknowledged = true
 				entry.pendingEcho = nil
 			}
-			return true
+			return true, attached
 		}
 	}
 	entry.pendingEcho = nil
-	return false
+	return false, false
 }
 
-func consumeEchoResource(entry *sessionEntry, marker map[string]any) bool {
+func consumeEchoResource(entry *sessionEntry, marker map[string]any, entryID string) (matched, attached bool) {
 	echo := entry.pendingEcho
 	if echo == nil {
-		return false
+		return false, false
 	}
 	for index, expected := range echo.resources {
 		if !echo.resourceMatched[index] && expected["name"] == marker["name"] && expected["mimeType"] == marker["mimeType"] {
 			echo.resourceMatched[index] = true
+			if attachEchoEntryID(entry, echo, entryID) {
+				attached = true
+			}
 			if echoComplete(echo) {
 				entry.promptAcknowledged = true
 				entry.pendingEcho = nil
 			}
-			return true
+			return true, attached
 		}
 	}
 	entry.pendingEcho = nil
-	return false
+	return false, false
+}
+
+// consumeUserEcho routes one native user fragment to the pending optimistic
+// message. It reports whether the fragment belonged to that message and, when
+// the host supplied a previously unknown entry id, returns the enriched
+// projected message so the caller can publish it without waiting for a replay.
+func consumeUserEcho(entry *sessionEntry, kind, entryID string, payload map[string]any) (matched bool, enriched map[string]any) {
+	echoIndex := -1
+	if entry.pendingEcho != nil {
+		echoIndex = entry.pendingEcho.messageIndex
+	}
+	var attached bool
+	switch kind {
+	case "text":
+		matched, attached = consumeEchoText(entry, textValue(payload["text"]), entryID)
+	case "image":
+		matched, attached = consumeEchoImage(entry, payload, entryID)
+	case "resource":
+		matched, attached = consumeEchoResource(entry, payload, entryID)
+	}
+	if matched && attached && echoIndex >= 0 && echoIndex < len(entry.messages) {
+		if message, ok := cloneJSON(entry.messages[echoIndex]).(map[string]any); ok {
+			return true, message
+		}
+	}
+	return matched, nil
+}
+
+// attachEchoEntryID records the native session-entry id on the optimistic user
+// message being consumed. It only fills an absent id, so a later fragment or
+// replay cannot retarget an earlier entry and no id is ever fabricated. The
+// pending echo's rollback snapshot is updated in step so a proven rejection can
+// still recognize the exact optimistic message.
+func attachEchoEntryID(entry *sessionEntry, echo *userEcho, entryID string) bool {
+	if echo == nil || entryID == "" || echo.messageIndex < 0 || echo.messageIndex >= len(entry.messages) {
+		return false
+	}
+	message, ok := entry.messages[echo.messageIndex].(map[string]any)
+	if !ok || textValue(message["entryId"]) != "" {
+		return false
+	}
+	message["entryId"] = entryID
+	entry.messages[echo.messageIndex] = message
+	if optimistic, ok := echo.optimistic.(map[string]any); ok {
+		optimistic["entryId"] = entryID
+	}
+	return true
 }
 
 func echoComplete(echo *userEcho) bool {

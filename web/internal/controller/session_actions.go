@@ -814,10 +814,26 @@ func (m *SessionManager) scheduleFollowUp(sessionID string, entry *sessionEntry)
 	}
 }
 
+// followUpAdmissionMethod is the gated admission class a controller-owned
+// follow-up dispatch occupies. Dispatching a follow-up starts a prompt run, so
+// it shares the session.prompt class: WaitForDrain and Quiescing then account
+// for internal settlement paths that never crossed the browser boundary.
+const followUpAdmissionMethod = "session.prompt"
+
 func (m *SessionManager) admitFollowUp(sessionID string, entry *sessionEntry) bool {
 	m.mu.Lock()
 	entry.state.Lock()
 	if m.closed || m.sessions[sessionID] != entry || m.lifecycle[sessionID] || entry.drainScheduled || !runnableFollowUpLocked(entry) {
+		entry.state.Unlock()
+		m.mu.Unlock()
+		return false
+	}
+	// Register with the drain gate before committing to the run. TryAdmit is
+	// also the quiesce check: after BeginDrain it returns false and the durable
+	// queue is left untouched for recovery. The gate is held until runFollowUp
+	// settles, so WaitForDrain never reports an empty set while this dispatch
+	// is still in flight.
+	if m.gate != nil && !m.gate.TryAdmit(followUpAdmissionMethod) {
 		entry.state.Unlock()
 		m.mu.Unlock()
 		return false
@@ -836,6 +852,9 @@ func (m *SessionManager) admitFollowUp(sessionID string, entry *sessionEntry) bo
 }
 
 func (m *SessionManager) runFollowUp(sessionID string, entry *sessionEntry) {
+	// Hold the drain admission for the whole dispatch; a drain must wait until
+	// this admitted follow-up run has settled.
+	defer m.releaseFollowUpRun()
 	defer m.releaseWork(entry)
 	retry := false
 	if err := m.lockEntry(sessionID, entry); err == nil {
@@ -857,6 +876,12 @@ func (m *SessionManager) runFollowUp(sessionID string, entry *sessionEntry) {
 	}
 	if retry {
 		m.retryFollowUp(sessionID, entry)
+	}
+}
+
+func (m *SessionManager) releaseFollowUpRun() {
+	if m.gate != nil {
+		m.gate.Release()
 	}
 }
 

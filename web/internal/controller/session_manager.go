@@ -185,6 +185,11 @@ type SessionManager struct {
 	deviceCode            func(map[string]any)
 	history               *HistoryIndex
 	nativeMCP             nativeMCPRevoker
+	// gate is the AUX-19 drain admission gate owned by the WebSocket server.
+	// When set, a controller-owned follow-up dispatch is refused while the
+	// controller is quiescing and each admitted follow-up run is counted until
+	// runFollowUp settles, so WaitForDrain waits for internal work too.
+	gate *AdmissionGate
 
 	// deletionQuarantine retains requested records that could not be safely
 	// resumed this boot. They are never dispatched or forgotten implicitly.
@@ -213,6 +218,12 @@ func NewSessionManager(projects *workspace.Projects, policy *workspace.PathPolic
 
 func (m *SessionManager) SetClient(client *PiClient)     { m.client = client }
 func (m *SessionManager) SetSettings(settings *Settings) { m.settings = settings }
+
+// SetAdmissionGate wires the process-local AUX-19 drain gate so controller-owned
+// follow-up dispatch participates in quiesce admission. Runtime installs the
+// WebSocket server's gate after both are constructed; a nil gate keeps the
+// pre-drain behavior for embeddings and focused tests.
+func (m *SessionManager) SetAdmissionGate(gate *AdmissionGate) { m.gate = gate }
 
 // SetDeletionAuthority wires the configured destructive-recovery authority and
 // the resolved pairing storage key before the first recovery. Recovery defaults

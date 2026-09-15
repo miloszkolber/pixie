@@ -2,9 +2,39 @@ package controller
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
+
+	"github.com/miloszkolber/pixie/internal/workspace"
 )
+
+// AUX-19 wiring: Runtime installs one admission gate shared by the WebSocket
+// server and the session manager, so a drain started from the runtime also
+// refuses controller-owned follow-up dispatch and WaitForDrain accounts for it.
+func TestRuntimeSharesAdmissionGateWithSessionManager(t *testing.T) {
+	policy, err := workspace.NewPathPolicy([]string{t.TempDir()}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+	runtime, err := NewRuntime(RuntimeConfig{Host: "127.0.0.1", Port: port, DataDir: t.TempDir(), StaticDir: t.TempDir(), Policy: policy, Getenv: func(string) string { return "" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.sessions == nil || runtime.socket == nil || runtime.sessions.gate == nil || runtime.sessions.gate != runtime.socket.gate {
+		t.Fatal("runtime did not share the admission gate with the session manager")
+	}
+	runtime.BeginDrain()
+	if !runtime.Quiescing() || !runtime.sessions.gate.Quiescing() {
+		t.Fatal("BeginDrain did not reach the session manager's gate")
+	}
+}
 
 // AUX-19 admission gate: while the controller is quiescing, new prompts, forks
 // and resume-style session creation are refused so in-flight work can settle,
