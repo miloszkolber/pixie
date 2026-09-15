@@ -133,10 +133,20 @@ describe("Bun host operationSet truthfulness", () => {
 });
 
 describe("Bun host dispatch coverage", () => {
+	// Routes served outside the host's dispatch switch. Keep this empty unless a
+	// route is genuinely handled elsewhere; every available operation currently
+	// has a `case` in assistant/src/host.ts.
+	const handlerAllowlist: readonly string[] = [];
 	// Available catalog operations deliberately exercised only through another
 	// operation instead of a direct frame. Keep this empty unless a route is
 	// genuinely dispatched indirectly.
 	const dispatchCoverageAllowlist: readonly string[] = [];
+
+	// A fail-closed probe proves only that the host refuses a route the catalog
+	// marks unavailable, not that the host serves one. Such a frame must not
+	// satisfy coverage for an operation advertised as available. The admin code
+	// -32004 is the numeric form of capability_unavailable.
+	const FAIL_CLOSED_MARKERS = ["capability_unavailable", "-32004"] as const;
 
 	// A real dispatch is a frame a test actually sends. Matching the bare
 	// operation name is not enough: the truthfulness lists above name every
@@ -144,49 +154,115 @@ describe("Bun host dispatch coverage", () => {
 	// `method: "<operation>"` frame property or the method argument of the
 	// shared `request(...)` helpers; bare array elements in those lists never
 	// match, so the capabilities test's own static lists cannot satisfy it.
-	function invokedOperations(source: string): Set<string> {
-		const invoked = new Set<string>();
-		for (const match of source.matchAll(/method\s*:\s*"([^"]+)"/g)) invoked.add(match[1]);
-		for (const match of source.matchAll(/request\s*\([^;]*?"([^"]+)"/gs)) invoked.add(match[1]);
-		return invoked;
+	const dispatchPattern = /method\s*:\s*"([^"]+)"|request\s*\([^;]*?"([^"]+)"/gs;
+
+	type DispatchSite = { readonly operation: string; readonly start: number; readonly end: number };
+
+	function dispatchSites(source: string): DispatchSite[] {
+		const sites: DispatchSite[] = [];
+		for (const match of source.matchAll(dispatchPattern)) {
+			const operation = match[1] ?? match[2];
+			if (operation === undefined || match.index === undefined) continue;
+			sites.push({ operation, start: match.index, end: match.index + match[0].length });
+		}
+		return sites;
+	}
+
+	function hostCaseOperations(hostSource: string): Set<string> {
+		return new Set([...hostSource.matchAll(/case\s+"([^"]+)"/g)].map((match) => match[1]));
+	}
+
+	// A dispatch is positive unless the text up to the next dispatch asserts a
+	// fail-closed outcome; that only documents refusal for the preceding frame.
+	function positiveDispatchOperations(sources: readonly string[]): Set<string> {
+		const covered = new Set<string>();
+		for (const source of sources) {
+			const sites = dispatchSites(source);
+			sites.forEach((site, index) => {
+				const next = sites[index + 1];
+				const segment = source.slice(site.end, next ? next.start : source.length);
+				if (!FAIL_CLOSED_MARKERS.some((marker) => segment.includes(marker))) {
+					covered.add(site.operation);
+				}
+			});
+		}
+		return covered;
 	}
 
 	function uncoveredOperations(
 		operations: readonly string[],
 		sources: readonly string[],
-		allowlist: readonly string[],
+		hostSource: string,
+		allowlist: {
+			readonly handlers?: readonly string[];
+			readonly dispatches?: readonly string[];
+		} = {},
 	): string[] {
-		const invoked = new Set<string>();
-		for (const source of sources) {
-			for (const operation of invokedOperations(source)) invoked.add(operation);
-		}
-		return operations.filter(
-			(operation) => !invoked.has(operation) && !allowlist.includes(operation),
-		);
+		const handlers = hostCaseOperations(hostSource);
+		const dispatches = positiveDispatchOperations(sources);
+		return operations.filter((operation) => {
+			const handled = handlers.has(operation) || allowlist.handlers?.includes(operation);
+			const dispatched = dispatches.has(operation) || allowlist.dispatches?.includes(operation);
+			return !(handled && dispatched);
+		});
 	}
 
-	test("references every available catalog operation from a real dispatch", () => {
+	function testSources(): string[] {
 		const testDir = import.meta.dir;
-		const sources = readdirSync(testDir)
+		return readdirSync(testDir)
 			.filter((entry) => entry.endsWith(".test.ts"))
 			.map((entry) => readFileSync(join(testDir, entry), "utf8"));
-		const uncovered = uncoveredOperations(
-			HOST_AVAILABLE_OPERATIONS,
-			sources,
-			dispatchCoverageAllowlist,
-		);
+	}
+
+	function hostSource(): string {
+		return readFileSync(join(import.meta.dir, "..", "src", "host.ts"), "utf8");
+	}
+
+	const syntheticHost = 'switch (method) { case "session.synthetic": { return; } }';
+
+	test("requires a host handler and a positive dispatch for every available operation", () => {
+		const uncovered = uncoveredOperations(HOST_AVAILABLE_OPERATIONS, testSources(), hostSource(), {
+			handlers: handlerAllowlist,
+			dispatches: dispatchCoverageAllowlist,
+		});
 		expect(uncovered).toEqual([]);
 	});
 
-	test("fails a synthetic available operation with no dispatch invocation", () => {
-		// Naming the operation in a static list is not a dispatch, so the guard
-		// still reports it. This is the false-negative the previous bare-text scan
-		// allowed.
+	test("ignores a static list name and a dispatch the host cannot handle", () => {
+		// Naming the operation in a static list is not a dispatch. This is the
+		// false-negative the previous bare-text scan allowed.
 		const staticListOnly = 'for (const name of ["session.synthetic"]) {}';
-		expect(uncoveredOperations(["session.synthetic"], [staticListOnly], [])).toEqual([
+		expect(uncoveredOperations(["session.synthetic"], [staticListOnly], syntheticHost)).toEqual([
 			"session.synthetic",
 		]);
+		// A real frame is not enough when the host has no case for the route.
 		const dispatched = 'await raw.send({ id: 1, method: "session.synthetic", params: {} });';
-		expect(uncoveredOperations(["session.synthetic"], [dispatched], [])).toEqual([]);
+		expect(uncoveredOperations(["session.synthetic"], [dispatched], "")).toEqual([
+			"session.synthetic",
+		]);
+	});
+
+	test("reports a host case reached only by a fail-closed probe as uncovered", () => {
+		// The reproduced weakness: the frame exists, but the only assertion on it
+		// expects capability_unavailable, so the host is not shown to serve the
+		// route the catalog advertises.
+		const failClosed = [
+			'await raw.send({ id: 1, method: "session.synthetic", params: {} });',
+			"expect(rawFrames(raw.socket).at(-1)).toEqual(",
+			'\texpect.objectContaining({ reason: "capability_unavailable" }),',
+			");",
+		].join("\n");
+		expect(uncoveredOperations(["session.synthetic"], [failClosed], syntheticHost)).toEqual([
+			"session.synthetic",
+		]);
+		const positive = 'await raw.send({ id: 2, method: "session.synthetic", params: {} });';
+		expect(
+			uncoveredOperations(["session.synthetic"], [failClosed, positive], syntheticHost),
+		).toEqual([]);
+	});
+
+	test("detects the request(...) helper form as a positive dispatch", () => {
+		const viaHelper = 'const reply = await request(ws, 1, "session.synthetic", {});';
+		expect(uncoveredOperations(["session.synthetic"], [viaHelper], syntheticHost)).toEqual([]);
 	});
 });
