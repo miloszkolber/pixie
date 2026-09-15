@@ -557,10 +557,29 @@ export interface AgentMentionInfo {
 	mention: string;
 }
 
-/** The focused, allowlisted Pi preference projection. */
+export type PiPreferenceKeyName = "compactionReserveTokens" | "piThinkingEffort";
+
+/** Where a projected preference's value comes from and who may write it. */
+export type PiPreferenceSource = "pi" | "controller" | "read-only";
+
+/** Per-key writability metadata. Never carries a credential, token, URL or path. */
+export interface PiPreferenceDescriptor {
+	key: PiPreferenceKeyName;
+	writable: boolean;
+	source: PiPreferenceSource;
+}
+
+/**
+ * The focused, allowlisted Pi preference projection.
+ *
+ * `keys` reports per-key writability and source so a client can disable a
+ * control whose value Pi does not expose a public setter for. It never
+ * contains a credential key, token, URL or filesystem path.
+ */
 export interface PiPreferences {
 	compactionReserveTokens?: number;
 	piThinkingEffort?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+	keys?: PiPreferenceDescriptor[];
 }
 
 /** Pi's global provider/model default, never persisted by Pixie. */

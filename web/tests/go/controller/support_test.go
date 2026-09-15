@@ -40,10 +40,10 @@ func piInitializeResponse() map[string]any {
 	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}, "operationSet": map[string]bool{
 		"session.list": true, "session.create": true, "session.load": true, "session.prompt": true, "session.cancel": true,
 		"session.delete": true, "session.fork": true, "session.prompt.image": true, "session.prompt.resource": true,
-		"session.steer": true, "session.rename": true, "session.archive": true, "session.configure": true,
+		"session.steer": true, "session.rename": true, "session.configure": true,
 		"session.release": true, "runtime.release": true, "runtime.releaseToTui": true,
 		"session.uiResponse": true, "session.uiCancel": true, "mcp.attach": true,
-		"pi.session.info": true, "pi.session.rename": true, "pi.session.archive": true, "pi.session.unarchive": true, "pi.session.steer": true,
+		"pi.session.info": true, "pi.session.rename": true, "pi.session.steer": true,
 		"pi.tools.list": true, "runtime.capabilities": true, "pi.slash-commands.list": true,
 		"pi.providers.list": true, "pi.providers.canonical-model-info": true, "pi.providers.inventory.refresh": true, "pi.providers.readiness.check": true,
 		"provider.loginStart": true, "provider.loginBegin": true, "provider.loginReply": true, "provider.loginCancel": true,

@@ -68,6 +68,41 @@ test("documentation checker rejects stale links, anchors, source references and 
 	expect(output).toContain("removed planning copy");
 });
 
+test("documentation checker rejects an undocumented environment variable", () => {
+	const input = passingDocumentation();
+	const report = inspectDocumentation({
+		...input,
+		files: {
+			...input.files,
+			"assistant/src/seeded.ts": "const value = process.env.PIXIE_SEEDED_UNDOCUMENTED;\n",
+		},
+	});
+
+	expect(report.ok).toBe(false);
+	expect(formatDocumentationReport(report)).toContain(
+		"undocumented environment variable PIXIE_SEEDED_UNDOCUMENTED",
+	);
+});
+
+test("documentation checker accepts documented and fixture environment variables", () => {
+	const input = passingDocumentation();
+	const report = inspectDocumentation({
+		...input,
+		files: {
+			...input.files,
+			"docs/deployment.md": "# Deployment\nPIXIE_SEEDED_DOCUMENTED\n",
+			"assistant/src/config.ts": "process.env.PIXIE_SEEDED_DOCUMENTED;\n",
+			"assistant/src/probe.ts": "process.env.PIXIE_PI_SDK_PROBE_CHECKER;\n",
+			// The scanner ignores test files, so their fixtures need no entry.
+			"web/internal/controller/seeded_test.go": "PIXIE_SEEDED_TEST_FIXTURE\n",
+		},
+	});
+
+	expect(report.ok).toBe(true);
+	expect(report.violations).toEqual([]);
+	expect(report.facts.environmentVariables).toBe(2);
+});
+
 test("checked-in operating docs pass static checks", async () => {
 	const report = inspectDocumentation(await collectDocumentationInput());
 	expect(formatDocumentationReport(report)).toContain("check-docs: OK");

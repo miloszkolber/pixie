@@ -18,6 +18,23 @@ pixie_cli serve --config "$HOME/.config/pixie/assistant.json"
 
 Point `--config` at an absolute private JSON file that selects the literal loopback host, required `port`, and agent directory; `web/systemd/assistant.json` is the example. Set controller `PIXIE_PI_PORT` to the same value as config `port`. `pixie_cli` uses its own archive-local Pi package and rejects external `PIXIE_PI_PACKAGE` selection. Provider setup and optional extensions remain native Pi configuration. Remaining lifecycle, parity, and recovery gaps are tracked in the [roadmap](../roadmap/roadmap.md).
 
+## Protocol negotiation
+
+`PIXIE_PI_PROTOCOL` opts into host protocol version 2 negotiation. Unset or `v1` keeps the default legacy handshake byte-for-byte. `auto` offers protocol versions `[2,1]` and accepts a v1 host; `v2` requires the negotiated version to be 2 and rejects a v1 selection. The controller and the assistant host read the same variable, the value is case-insensitive, and an invalid value fails startup instead of silently selecting a version. A peer that cannot agree on a version is rejected rather than downgraded. This is a source-level operator surface; live and credentialed version-2 behavior is not verified here.
+
+## Internal environment
+
+These variables exist for the archive launchers, the supervisor and deletion authority; they are not part of the operator-facing configuration above.
+
+- `PIXIE_BUNDLED_PI_PACKAGE` is the archive-local Pi package path set by the `pixie_cli` and `pixie_full` launchers. An operator-supplied value is removed and replaced.
+- `PIXIE_ASSISTANT_HOST` overrides the internal loopback host endpoint for the supervisor and the assistant service. The controller-only image rejects it and other `PIXIE_ASSISTANT_*` values so a shared environment cannot configure a local Pi.
+- `PIXIE_DELETION_AUTHORITY` selects `auto`, `paired` or `legacy` deletion authority; `paired` requires a pairing key.
+- `PIXIE_PI_STORAGE_KEY` supplies that pairing key for controller-only runs; full-host mode derives it from the selected agent directory.
+- `PIXIE_SCHEDULE_DEFAULT_MAX_RUN` sets the default schedule run limit as a whole-second duration or `off` for unlimited.
+- `PIXIE_SCHEDULE_DEADLINES` enables or disables schedule deadlines (`on` or `off`).
+
+Rejected or retired selection knobs either fail startup or are ignored: `PIXIE_ASSISTANT_PORT`, `PIXIE_PI_EXECUTABLE` and `PIXIE_PI_ARGS` are rejected by the assistant host; `PIXIE_LLAMA` is stripped from the controller child environment and rejected by controller-only mode; any non-empty `PIXIE_ADMIN_BRIDGE*` value is rejected; and `PIXIE_PI_PACKAGE` is rejected because the archive supplies the bundled Pi package.
+
 ## Optional local models
 
 Configure local providers through the selected Pi installation. `LLAMA_BASE_URL` is passed to the native Pi session when present; Pixie does not maintain a separate provider database.

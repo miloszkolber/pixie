@@ -403,16 +403,34 @@ func (a *PiAdmin) LogoutProvider(ctx context.Context, providerID string) error {
 	return a.call(ctx, "pi.providers.config.delete", map[string]any{"providerId": providerID}, &ignored)
 }
 
+// Pi preference sources are a fixed enum. A projected key is writable only
+// through its stated source; "read-only" keys have no public setter.
+const (
+	piPreferenceSourcePi       = "pi"
+	piPreferenceSourceReadOnly = "read-only"
+)
+
+// PiPreferenceDescriptor carries per-key writability and source for the focused
+// preference projection. It never contains a credential, token, URL or path.
+type PiPreferenceDescriptor struct {
+	Key      string `json:"key"`
+	Writable bool   `json:"writable"`
+	Source   string `json:"source"`
+}
+
 type PiPreferences struct {
-	CompactionReserveTokens *float64 `json:"compactionReserveTokens,omitempty"`
-	PiThinkingEffort        *string  `json:"piThinkingEffort,omitempty"`
+	CompactionReserveTokens *float64                 `json:"compactionReserveTokens,omitempty"`
+	PiThinkingEffort        *string                  `json:"piThinkingEffort,omitempty"`
+	Keys                    []PiPreferenceDescriptor `json:"keys,omitempty"`
 }
 
 func (a *PiAdmin) ReadPreferences(ctx context.Context) (PiPreferences, error) {
 	var response struct {
 		Values []struct {
-			Key   string `json:"key"`
-			Value any    `json:"value"`
+			Key      string  `json:"key"`
+			Value    any     `json:"value"`
+			Writable *bool   `json:"writable"`
+			Source   *string `json:"source"`
 		} `json:"values"`
 	}
 	if err := a.call(ctx, "pi.preferences.read", map[string]any{"keys": []string{"compactionReserveTokens", "piThinkingEffort"}}, &response); err != nil {
@@ -429,9 +447,29 @@ func (a *PiAdmin) SavePreferences(ctx context.Context, preferences PiPreferences
 	if err != nil {
 		return PiPreferences{}, err
 	}
-	if len(values) > 0 {
+	if len(values) == 0 {
+		return a.ReadPreferences(ctx)
+	}
+	current, err := a.ReadPreferences(ctx)
+	if err != nil {
+		return PiPreferences{}, err
+	}
+	// An unwritable key is tolerated only when the caller leaves its value
+	// unchanged; a real mutation fails closed with a reason the UI can show.
+	writable := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		key, _ := value["key"].(string)
+		if preferenceWritable(current, key) {
+			writable = append(writable, value)
+			continue
+		}
+		if !preferenceUnchanged(current, key, value["value"]) {
+			return PiPreferences{}, fmt.Errorf("%s is read-only and cannot be changed", key)
+		}
+	}
+	if len(writable) > 0 {
 		var ignored any
-		if err := a.call(ctx, "pi.preferences.save", map[string]any{"values": values}, &ignored); err != nil {
+		if err := a.call(ctx, "pi.preferences.save", map[string]any{"values": writable}, &ignored); err != nil {
 			return PiPreferences{}, err
 		}
 	}
@@ -451,10 +489,71 @@ func (a *PiAdmin) ResetPreferences(ctx context.Context, keys []string) (PiPrefer
 		seen[key] = true
 		configKeys = append(configKeys, key)
 	}
-	if err := a.call(ctx, "pi.preferences.reset", map[string]any{"keys": configKeys}, nil); err != nil {
+	current, err := a.ReadPreferences(ctx)
+	if err != nil {
 		return PiPreferences{}, err
 	}
+	// Resetting an unwritable key is tolerated only when it currently has no
+	// stored value, so the reset would not change Pi state.
+	writable := make([]string, 0, len(configKeys))
+	for _, key := range configKeys {
+		if preferenceWritable(current, key) {
+			writable = append(writable, key)
+			continue
+		}
+		if preferenceHasValue(current, key) {
+			return PiPreferences{}, fmt.Errorf("%s is read-only and cannot be reset", key)
+		}
+	}
+	if len(writable) > 0 {
+		if err := a.call(ctx, "pi.preferences.reset", map[string]any{"keys": writable}, nil); err != nil {
+			return PiPreferences{}, err
+		}
+	}
 	return a.ReadPreferences(ctx)
+}
+
+func preferenceMetadata(key string) (bool, string) {
+	switch key {
+	case "piThinkingEffort":
+		return true, piPreferenceSourcePi
+	default:
+		return false, piPreferenceSourceReadOnly
+	}
+}
+
+func preferenceWritable(current PiPreferences, key string) bool {
+	for _, descriptor := range current.Keys {
+		if descriptor.Key == key {
+			return descriptor.Writable
+		}
+	}
+	writable, _ := preferenceMetadata(key)
+	return writable
+}
+
+func preferenceUnchanged(current PiPreferences, key string, value any) bool {
+	switch key {
+	case "compactionReserveTokens":
+		number, ok := value.(float64)
+		return ok && current.CompactionReserveTokens != nil && number == *current.CompactionReserveTokens
+	case "piThinkingEffort":
+		text, ok := value.(string)
+		return ok && current.PiThinkingEffort != nil && text == *current.PiThinkingEffort
+	default:
+		return false
+	}
+}
+
+func preferenceHasValue(current PiPreferences, key string) bool {
+	switch key {
+	case "compactionReserveTokens":
+		return current.CompactionReserveTokens != nil
+	case "piThinkingEffort":
+		return current.PiThinkingEffort != nil
+	default:
+		return false
+	}
 }
 
 type PiProviderDefaults struct {
@@ -547,8 +646,10 @@ func (e piAdministrationError) Error() string {
 func (e piAdministrationError) Unwrap() error { return e.cause }
 
 func normalizePreferences(values []struct {
-	Key   string `json:"key"`
-	Value any    `json:"value"`
+	Key      string  `json:"key"`
+	Value    any     `json:"value"`
+	Writable *bool   `json:"writable"`
+	Source   *string `json:"source"`
 }) (PiPreferences, error) {
 	result := PiPreferences{}
 	seen := make(map[string]bool)
@@ -557,6 +658,14 @@ func normalizePreferences(values []struct {
 			return PiPreferences{}, fmt.Errorf("Pi preferences response is invalid")
 		}
 		seen[entry.Key] = true
+		writable, source := preferenceMetadata(entry.Key)
+		if entry.Writable != nil || entry.Source != nil {
+			if entry.Writable == nil || entry.Source == nil || !validPreferenceSource(*entry.Source) || *entry.Writable != (*entry.Source != piPreferenceSourceReadOnly) {
+				return PiPreferences{}, fmt.Errorf("Pi preferences response is invalid")
+			}
+			writable, source = *entry.Writable, *entry.Source
+		}
+		result.Keys = append(result.Keys, PiPreferenceDescriptor{Key: entry.Key, Writable: writable, Source: source})
 		switch entry.Key {
 		case "compactionReserveTokens":
 			if entry.Value == nil {
@@ -581,6 +690,15 @@ func normalizePreferences(values []struct {
 		}
 	}
 	return result, nil
+}
+
+func validPreferenceSource(source string) bool {
+	switch source {
+	case piPreferenceSourcePi, "controller", piPreferenceSourceReadOnly:
+		return true
+	default:
+		return false
+	}
 }
 
 func preferenceValues(value PiPreferences) ([]map[string]any, error) {

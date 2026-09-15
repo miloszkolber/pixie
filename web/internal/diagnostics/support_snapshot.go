@@ -70,16 +70,14 @@ var (
 
 // SupportSnapshot is the complete JSON support-export boundary. It contains
 // only the fields below: the process run identity, bounded health transitions,
-// optional retained child stderr, controller runtime facts and structured
-// controller request outcomes. It never gathers logs, configs, transcripts,
-// paths, project/session identities, endpoint addresses, credentials, or raw
-// errors.
+// controller runtime facts and structured controller request outcomes. It never
+// gathers logs, configs, transcripts, paths, project/session identities,
+// endpoint addresses, credentials, or raw errors.
 type SupportSnapshot struct {
 	SchemaVersion     int                    `json:"schemaVersion"`
 	GeneratedAt       string                 `json:"generatedAt"`
 	Identity          *RunIdentity           `json:"identity,omitempty"`
 	HealthTransitions []HealthTransition     `json:"healthTransitions,omitempty"`
-	ChildStderr       *StderrSummary         `json:"childStderr,omitempty"`
 	Runtime           SupportSnapshotRuntime `json:"runtime"`
 	Events            []ControllerEvent      `json:"events"`
 }
@@ -100,9 +98,6 @@ type SupportSnapshotRuntime struct {
 	// mapped from controller types by the caller. This package only sanitizes
 	// and bounds it.
 	HealthTransitions []HealthTransition `json:"-"`
-	// ChildStderr is the bounded summary of any child processes this process
-	// owns. The controller owns none, so it is normally nil.
-	ChildStderr *StderrSummary `json:"-"`
 }
 
 type SupportSnapshotHost struct {
@@ -239,7 +234,6 @@ func MarshalSupportSnapshot(runtime SupportSnapshotRuntime, events []ControllerE
 		GeneratedAt:       time.Now().UTC().Format(time.RFC3339),
 		Identity:          resolveSupportIdentity(runtime.Identity),
 		HealthTransitions: SanitizeHealthTransitions(runtime.HealthTransitions),
-		ChildStderr:       sanitizedStderrSummary(runtime.ChildStderr),
 		Runtime:           runtime,
 		Events:            sanitizedSupportEvents(events),
 	}

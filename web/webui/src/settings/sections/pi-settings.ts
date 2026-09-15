@@ -24,6 +24,58 @@ export function compactionReserveTokensValue(preferences: PiPreferences): number
 		: preferences.compactionReserveTokens;
 }
 
+export type PreferenceSavePayload = {
+	piThinkingEffort?: NonNullable<PiPreferences["piThinkingEffort"]>;
+	compactionReserveTokens?: number;
+};
+
+export type PreferenceSaveResult =
+	| { ok: true; payload: PreferenceSavePayload }
+	| { ok: false; error: string };
+
+/**
+ * Build the Pi preference save payload.
+ *
+ * A writable compaction reserve is parsed, bounded and included so a writable
+ * projection round-trips; an out-of-range value fails here instead of being
+ * silently dropped. A cleared field omits the key so the saved value stands.
+ * A read-only reserve never joins the payload, preserving the fail-closed
+ * controller/host behavior.
+ */
+export function preferenceSavePayload(
+	preferences: PiPreferences,
+	reserveTokens: number | undefined,
+	reserveWritable: boolean,
+): PreferenceSaveResult {
+	const payload: PreferenceSavePayload = {};
+	if (preferences.piThinkingEffort !== undefined)
+		payload.piThinkingEffort = preferences.piThinkingEffort;
+	if (reserveWritable && reserveTokens !== undefined) {
+		const parsed = parseCompactionReserveTokens(reserveTokens);
+		if (!parsed.valid || parsed.value === undefined)
+			return {
+				ok: false,
+				error: "Compaction reserve tokens must be a whole number between 1024 and 1000000.",
+			};
+		payload.compactionReserveTokens = parsed.value;
+	}
+	return { ok: true, payload };
+}
+
+/**
+ * The selected Pi exposes no public setter for the compaction reserve, so the
+ * control is disabled unless the projection explicitly marks it writable.
+ * Missing metadata fails closed instead of offering a mutation that cannot
+ * complete.
+ */
+export function compactionReserveWritable(preferences: PiPreferences): boolean {
+	return (
+		preferences.keys?.some(
+			(entry) => entry.key === "compactionReserveTokens" && entry.writable === true,
+		) === true
+	);
+}
+
 export type AgentDraft = {
 	name: string;
 	description: string;

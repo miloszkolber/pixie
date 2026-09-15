@@ -1,6 +1,7 @@
 package controller_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -82,25 +83,35 @@ func TestPendingDialogSurvivesAttachAndReachesSnapshot(t *testing.T) {
 	}
 }
 
-func TestArchiveDismissesPendingDialogs(t *testing.T) {
+// Archive is controller-owned state and the Bun host negotiates no archive
+// route. The operation must fail closed with no false success: it neither
+// dispatches a host method nor dismisses the pending dialog it used to settle
+// through the invented route.
+func TestArchiveFailsClosedWithoutDismissingPendingDialogs(t *testing.T) {
 	events := make(chan publishedEvent, 32)
-	manager, _, project, _ := newSessionManagerWithPublisher(t, func(channel string, data any) {
+	recorder := &deletionMethodRecorder{}
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, bunHostInitializeResponse(), func(channel string, data any) {
 		events <- publishedEvent{channel: channel, data: data}
-	})
+	}, recorder.observe)
 	ctx := t.Context()
 	if err := manager.SessionUpdate(ctx, dialogUpdate(selectRequest("dialog-archive", nil))); err != nil {
 		t.Fatal(err)
 	}
 	publishedUiEvents(t, events, "agent.event", 1)
-	if err := manager.Archive(ctx, project.ID, "chat", project.Roots[0]); err != nil {
-		t.Fatal(err)
+	if err := manager.Archive(ctx, project.ID, "chat", project.Roots[0]); err == nil || !strings.Contains(err.Error(), "controller-owned") {
+		t.Fatalf("archive did not fail closed: %v", err)
 	}
-	cancelled := nextAgentEventOfType(t, events, "ui_cancel")
-	if cancelled["requestId"] != "dialog-archive" {
-		t.Fatalf("archive did not dismiss the dialog: %#v", cancelled)
+	if recorder.saw("pi.session.archive") || recorder.saw("session.archive") {
+		t.Fatal("failed archive dispatched a host archive route")
 	}
-	if err := manager.ResolveDialog(ctx, "chat", "dialog-archive", map[string]any{"cancelled": true}); err == nil {
-		t.Fatal("archived dialog still accepts answers")
+	select {
+	case published := <-events:
+		t.Fatalf("failed archive emitted a lifecycle event: %#v", published)
+	case <-time.After(50 * time.Millisecond):
+	}
+	// The dialog survives because the rejected archive changed no state.
+	if err := manager.ResolveDialog(ctx, "chat", "dialog-archive", map[string]any{"cancelled": true}); err != nil {
+		t.Fatalf("failed archive dismissed the dialog: %v", err)
 	}
 }
 

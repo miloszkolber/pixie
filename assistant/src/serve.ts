@@ -11,7 +11,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { type BunHost, startBunHostFromVerifiedPi } from "./host.ts";
-import { redactHostLogText } from "./log.ts";
+import { createHostLogger, redactHostLogText } from "./log.ts";
 import { PI_CODING_AGENT_PACKAGE, type VerifiedPiPackage, verifyPiPackage } from "./probe.ts";
 
 // Keep in sync with assistant/package.json version.
@@ -78,6 +78,11 @@ function fail(message: string): never {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+/** Redact a top-level serve failure before it can reach stderr. */
+export function fatalServeMessage(error: unknown): string {
+	return redactHostLogText(errorMessage(error));
 }
 
 function usage(): string {
@@ -724,6 +729,14 @@ async function runDoctor(
 async function runServe(resolved: ResolvedConfig): Promise<void> {
 	const verified = await verifiedPiOrFail(resolved.piPackage);
 	requirePiVersion(verified);
+	const hostLogger = createHostLogger({
+		secrets: [resolved.secret],
+		sink: (entry) => {
+			// Entries are already redacted by the logger; retain the emit path
+			// only for service stderr so an operator can inspect lifecycle.
+			console.error(JSON.stringify(entry));
+		},
+	});
 	let host: BunHost;
 	try {
 		host = await startBunHostFromVerifiedPi({
@@ -733,6 +746,7 @@ async function runServe(resolved: ResolvedConfig): Promise<void> {
 			agentDir: resolved.agentDir,
 			verifiedPi: verified,
 			allowSelfRestart: resolved.allowSelfRestart,
+			logger: hostLogger,
 			onRestart: () => {
 				// The host drains before invoking this hook; exit with the
 				// restart status honored by the packaged systemd unit.
@@ -806,7 +820,7 @@ if (import.meta.main) {
 	try {
 		await main();
 	} catch (error) {
-		console.error(`pixie_assistant: ${errorMessage(error)}`);
+		console.error(`pixie_assistant: ${fatalServeMessage(error)}`);
 		process.exitCode = 1;
 	}
 }

@@ -143,6 +143,17 @@ func (m *SessionManager) Rename(ctx context.Context, projectID, sessionID, cwd, 
 	return nil
 }
 
+// errSessionArchiveUnavailable fails archive/unarchive closed.
+//
+// Archive is controller-owned state: the catalog marks session.archive,
+// session.unarchive, pi.session.archive and pi.session.unarchive "absent", and
+// the Bun host negotiates none of them. This controller does not yet persist an
+// archive marker, so delegating to a native route could only surface a host
+// success a legacy fixture invented. Failing closed here keeps a caller from
+// observing a false success; it never mutates the resident projection, revokes
+// MCP credentials or emits an archived lifecycle event.
+var errSessionArchiveUnavailable = errors.New("session archive is controller-owned state; this controller does not implement it yet")
+
 func (m *SessionManager) Archive(ctx context.Context, projectID, sessionID, cwd string) error {
 	admitted, err := m.projects.AssertCWD(projectID, cwd)
 	if err != nil {
@@ -171,26 +182,11 @@ func (m *SessionManager) Archive(ctx context.Context, projectID, sessionID, cwd 
 		return err
 	}
 	defer finish()
-	// Archiving removes the live resident from the controller. Revoke native
-	// MCP credentials before any native lifecycle continuation; unarchiving must
-	// establish a fresh binding.
-	m.revokeNativeMCPSession(sessionID)
-	if err := m.attachLockedWithoutCanvas(ctx, sessionID, entry); err != nil {
-		return err
-	}
-	if _, err := m.client.CallPi(entry.context(ctx), "pi.session.archive", map[string]any{"sessionId": sessionID}); err != nil {
-		return err
-	}
-
-	// Archiving dismisses blocked UI like a stop: the host settles its
-	// awaiting call through pi.session.archive, and browsers drop the modal.
-	m.cancelDialogs(sessionID)
-	m.mu.Lock()
-	delete(m.sessions, sessionID)
-	m.mu.Unlock()
-	m.history.Forget(sessionID)
-	m.emit("session.lifecycleChanged", map[string]any{"projectId": projectID, "sessionId": sessionID, "operation": "archived"})
-	return nil
+	// The operation is rejected before any controller mutation: no native MCP
+	// revocation, no resident removal, no dialog dismissal and no archived
+	// event. The host routes stay unused because the real Bun host exposes
+	// none of them.
+	return errSessionArchiveUnavailable
 }
 
 func (m *SessionManager) Unarchive(ctx context.Context, projectID, sessionID string) error {
@@ -216,11 +212,9 @@ func (m *SessionManager) Unarchive(ctx context.Context, projectID, sessionID str
 	if !found {
 		return fmt.Errorf("unknown session: %s", sessionID)
 	}
-	if _, err := m.client.CallPi(ctx, "pi.session.unarchive", map[string]any{"sessionId": sessionID}); err != nil {
-		return err
-	}
-	m.emit("session.lifecycleChanged", map[string]any{"projectId": projectID, "sessionId": sessionID, "operation": "unarchived"})
-	return nil
+	// Restore is controller-owned state too; no host route exists and no
+	// archived event is emitted without a durable archive marker to clear.
+	return errSessionArchiveUnavailable
 }
 
 func (m *SessionManager) Delete(ctx context.Context, projectID, sessionID, cwd string) error {

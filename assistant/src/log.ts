@@ -35,6 +35,23 @@ export interface HostLoggerOptions {
 const DEFAULT_CAPACITY = 200;
 const MIN_SECRET_LENGTH = 8;
 
+/**
+ * Bounds for structured field redaction. A hostile or accidental field graph
+ * must not grow retained host memory or overflow the stack, so a value that
+ * crosses a depth, entry-count or cycle bound becomes a fixed placeholder
+ * instead of being traversed further.
+ */
+export const MAX_FIELD_DEPTH = 8;
+export const MAX_COLLECTION_ENTRIES = 100;
+export const FIELD_BOUND_PLACEHOLDER = "[truncated]";
+
+/**
+ * Maximum retained length of one redacted stderr line. The line is redacted
+ * first so a truncated tail can never expose raw secret text, then shortened.
+ */
+export const MAX_STDERR_LINE_LENGTH = 4096;
+const STDERR_TRUNCATION_MARKER = FIELD_BOUND_PLACEHOLDER;
+
 // Absolute POSIX paths (at least two segments) become a placeholder. A bare
 // "/" or a short relative fragment is left alone so ordinary prose survives.
 const ABSOLUTE_PATH = /(?<![\w.])\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]*/g;
@@ -67,17 +84,53 @@ export function redactHostLogText(text: string, secrets: readonly string[] = [])
 
 /** Redact one structured field value without changing its JSON-safe shape. */
 export function redactHostLogField(value: unknown, secrets: readonly string[] = []): unknown {
+	return redactFieldValue(value, secrets, 0, new WeakSet<object>());
+}
+
+function redactFieldValue(
+	value: unknown,
+	secrets: readonly string[],
+	depth: number,
+	seen: WeakSet<object>,
+): unknown {
 	if (typeof value === "string") return redactHostLogText(value, secrets);
 	if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
-	if (Array.isArray(value)) return value.map((entry) => redactHostLogField(entry, secrets));
-	if (value && typeof value === "object") {
+	if (typeof value !== "object") return undefined;
+	if (depth >= MAX_FIELD_DEPTH) return FIELD_BOUND_PLACEHOLDER;
+	if (seen.has(value)) return FIELD_BOUND_PLACEHOLDER;
+	// `seen` tracks the current path only, so a shared (non-cyclic) reference is
+	// still serialized at each position while a true cycle stops immediately.
+	seen.add(value);
+	try {
+		if (Array.isArray(value)) {
+			const result: unknown[] = [];
+			let truncated = false;
+			for (let index = 0; index < value.length; index += 1) {
+				if (result.length >= MAX_COLLECTION_ENTRIES) {
+					truncated = true;
+					break;
+				}
+				result.push(redactFieldValue(value[index], secrets, depth + 1, seen));
+			}
+			if (truncated) result.push(FIELD_BOUND_PLACEHOLDER);
+			return result;
+		}
+		const source = value as Record<string, unknown>;
 		const result: Record<string, unknown> = {};
-		for (const [key, entry] of Object.entries(value)) {
-			result[key] = redactHostLogField(entry, secrets);
+		let count = 0;
+		for (const key in source) {
+			if (!Object.hasOwn(source, key)) continue;
+			if (count >= MAX_COLLECTION_ENTRIES) {
+				result[FIELD_BOUND_PLACEHOLDER] = true;
+				break;
+			}
+			result[key] = redactFieldValue(source[key], secrets, depth + 1, seen);
+			count += 1;
 		}
 		return result;
+	} finally {
+		seen.delete(value);
 	}
-	return undefined;
 }
 
 /**
@@ -135,9 +188,15 @@ export class BoundedStderrBuffer {
 	append(chunk: string): void {
 		for (const line of chunk.split(/\r?\n/)) {
 			if (line === "") continue;
-			this.#lines.push(redactHostLogText(line, this.#secrets));
+			this.#lines.push(this.#boundLine(redactHostLogText(line, this.#secrets)));
 		}
 		while (this.#lines.length > this.#capacity) this.#lines.shift();
+	}
+
+	#boundLine(line: string): string {
+		if (line.length <= MAX_STDERR_LINE_LENGTH) return line;
+		const keep = MAX_STDERR_LINE_LENGTH - STDERR_TRUNCATION_MARKER.length;
+		return `${line.slice(0, keep)}${STDERR_TRUNCATION_MARKER}`;
 	}
 
 	lines(): readonly string[] {

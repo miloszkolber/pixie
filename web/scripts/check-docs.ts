@@ -19,6 +19,7 @@ export interface DocumentationFacts {
 	documentCount: number;
 	localLinks: number;
 	pathReferences: number;
+	environmentVariables: number;
 	checkedCommands: readonly string[];
 }
 
@@ -46,6 +47,28 @@ const REQUIRED_COMMANDS = [
 	"test",
 	"build",
 ] as const;
+
+// Environment variables are read by these source roots and must be named in an
+// operating document or the example configuration.
+const ENVIRONMENT_SOURCE_ROOTS = [
+	"assistant/src/",
+	"web/cmd/",
+	"web/internal/controller/",
+	"shared/piprotocol/",
+] as const;
+
+// Test-only fixtures and build-time defines that are deliberately not operator
+// configuration. The probe variables only cross a spawned test helper, the
+// test-mode flag is set by the integration harness, and the assistant
+// version/revision are bundler defines rather than process environment.
+const NON_OPERATOR_ENVIRONMENT = new Set([
+	"PIXIE_ASSISTANT_REVISION",
+	"PIXIE_ASSISTANT_VERSION",
+	"PIXIE_BUNDLED_PI_TEST_MODE",
+	"PIXIE_PI_SDK_PROBE_CHECKER",
+	"PIXIE_PI_SDK_PROBE_WORKER_SUCCESS_MARKER",
+	"PIXIE_PI_SDK_PROBE_WORKER_SUCCESS_TOKEN",
+]);
 
 function normalizePath(path: string): string {
 	return path.replaceAll("\\", "/").replace(/^\.\//, "");
@@ -176,6 +199,46 @@ function checkPathReferences(
 	return count;
 }
 
+function isEnvironmentSource(path: string): boolean {
+	if (!ENVIRONMENT_SOURCE_ROOTS.some((root) => path.startsWith(root))) return false;
+	if (path.endsWith("_test.go") || path.endsWith(".test.ts") || path.endsWith(".test.tsx")) {
+		return false;
+	}
+	return !path.split("/").some((segment) => segment === "tests" || segment === "testdata");
+}
+
+// Every PIXIE_* name read by the scanned source must appear in the operating
+// docs or the example configuration. A name that is only used as a prefix
+// (trailing underscore) is not a variable and is ignored. The check is a
+// documentation-consistency gate only: naming a variable in prose does not
+// establish its runtime behavior.
+function checkEnvironmentDocumentation(
+	files: Readonly<Record<string, string>>,
+	violations: string[],
+): number {
+	const documented = Object.entries(files)
+		.filter(([path]) => path === ".pixie.example" || path.startsWith("docs/"))
+		.map(([, text]) => text)
+		.join("\n");
+	// First source occurrence per name keeps one violation per distinct
+	// variable even when a symbol or reject-list repeats it. Files are visited
+	// in path order so the reported location is deterministic.
+	const referenced = new Map<string, string>();
+	for (const [source, text] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
+		if (!isEnvironmentSource(source)) continue;
+		for (const match of text.matchAll(/PIXIE_[A-Z0-9_]+/g)) {
+			const name = match[0] ?? "";
+			if (name.endsWith("_") || referenced.has(name)) continue;
+			referenced.set(name, source);
+		}
+	}
+	for (const [name, source] of [...referenced].sort(([a], [b]) => a.localeCompare(b))) {
+		if (NON_OPERATOR_ENVIRONMENT.has(name) || documented.includes(name)) continue;
+		violations.push(`${source}: undocumented environment variable ${name}`);
+	}
+	return referenced.size;
+}
+
 export function inspectDocumentation(input: DocumentationInput): DocumentationReport {
 	const violations: string[] = [];
 	const files = Object.fromEntries(
@@ -186,6 +249,7 @@ export function inspectDocumentation(input: DocumentationInput): DocumentationRe
 	}
 	const localLinks = checkLinks(files, violations);
 	const pathReferences = checkPathReferences(files, violations);
+	const environmentVariables = checkEnvironmentDocumentation(files, violations);
 	const checkedCommands: string[] = [];
 	const development = files["docs/development.md"] ?? "";
 	for (const command of REQUIRED_COMMANDS) {
@@ -222,6 +286,7 @@ export function inspectDocumentation(input: DocumentationInput): DocumentationRe
 			documentCount: Object.keys(files).filter((path) => path.endsWith(".md")).length,
 			localLinks,
 			pathReferences,
+			environmentVariables,
 			checkedCommands,
 		},
 	};
@@ -275,7 +340,7 @@ export async function collectDocumentationInput(
 
 export function formatDocumentationReport(report: DocumentationReport): string {
 	if (report.ok) {
-		return `check-docs: OK (${report.facts.documentCount} Markdown documents, ${report.facts.localLinks} local links, ${report.facts.checkedCommands.length} commands)`;
+		return `check-docs: OK (${report.facts.documentCount} Markdown documents, ${report.facts.localLinks} local links, ${report.facts.environmentVariables} environment variables, ${report.facts.checkedCommands.length} commands)`;
 	}
 	return ["check-docs: FAILED", ...report.violations.map((violation) => `  - ${violation}`)].join(
 		"\n",

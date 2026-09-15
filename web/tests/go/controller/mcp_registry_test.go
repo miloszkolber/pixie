@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -165,5 +166,61 @@ func TestMCPAdapterStatusProjectsBridgeAndStaysFailOpen(t *testing.T) {
 	servers := snapshot["servers"].([]any)
 	if len(servers) != 1 || servers[0].(map[string]any)["status"] != "connected" {
 		t.Fatalf("adapter snapshot servers = %#v", servers)
+	}
+}
+
+// The Bun host negotiates no adapter.status route. The caller must fail open
+// (available:false) and must not dispatch the absent route, so the UI never
+// shows a bridge that the connected host cannot report.
+func TestMCPAdapterStatusFailsOpenOnBunHostWithoutAdapterRoute(t *testing.T) {
+	var mu sync.Mutex
+	var methods []string
+	piServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil {
+				return
+			}
+			mu.Lock()
+			methods = append(methods, rpc.Method)
+			mu.Unlock()
+			result := any(map[string]any{})
+			switch rpc.Method {
+			case "runtime.hello":
+				result = bunHostInitializeResponse()
+			case "adapter.status":
+				result = map[string]any{"engine": "pi-mcp-adapter", "version": "2.32.1"}
+			}
+			if len(rpc.ID) > 0 {
+				_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result})
+			}
+		}
+	}))
+	defer piServer.Close()
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(piServer.URL, "http"), "", "test", nil)
+	defer client.Close()
+	admin := controller.NewPiAdmin(client, controller.NewSettings(persist.Store{Dir: t.TempDir()}, nil))
+	status := admin.AdapterStatus(context.Background())
+	if status["available"] != false {
+		t.Fatalf("Bun host adapter status = %#v", status)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, method := range methods {
+		if method == "adapter.status" {
+			t.Fatal("absent adapter.status route was dispatched")
+		}
 	}
 }

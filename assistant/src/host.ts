@@ -23,6 +23,7 @@ import {
 	HOST_OPERATION_REASONS,
 	HOST_OPERATIONS,
 } from "../../shared/src/generated/protocol-catalog.ts";
+import { createHostLogger, type HostLogger } from "./log.ts";
 import { loadVerifiedPiPublicApi, type VerifiedPiPackage } from "./probe.ts";
 
 const MIN_SECRET_LENGTH = 32;
@@ -192,6 +193,8 @@ export interface BunHostOptions {
 	}) => Promise<{ session: PiSession }>;
 	readonly allowSelfRestart?: boolean;
 	readonly onRestart?: () => void;
+	/** Secret-safe lifecycle logger. Defaults to a bounded in-memory logger. */
+	readonly logger?: HostLogger;
 }
 
 export interface BunHost {
@@ -1557,6 +1560,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 	let lifecycle: Lifecycle = "new";
 	let runtimeId = "";
 	const bootId = randomUUID();
+	const logger = options.logger ?? createHostLogger({ secrets: [secret] });
 	let closePromise: Promise<void> | undefined;
 	const residents = new Map<string, ResidentSession>();
 	const connections = new Set<Connection>();
@@ -1682,6 +1686,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				if (lifecycle !== "running") throw new HostError("assistant host is draining");
 				if (typeof session.sessionFile === "string" && session.sessionFile !== "")
 					resident.path = session.sessionFile;
+				logger.info("session.created", { sessionId: resident.id });
 				return resident;
 			} catch (error) {
 				residents.delete(resident.id);
@@ -1976,6 +1981,35 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		if (!api || typeof api.create !== "function")
 			throw new CapabilityError("SettingsManager is unavailable in the selected Pi");
 		return api.create(cwd, options.agentDir) as ReturnType<typeof sdkSettingsManager>;
+	};
+
+	// The focused preference projection crosses one boundary with per-key
+	// writability metadata. Keys without a public setter stay visible but are
+	// reported read-only so a client never claims a mutation it cannot make.
+	type SettingsManager = ReturnType<typeof sdkSettingsManager>;
+
+	const preferenceEntries = (
+		manager: SettingsManager,
+	): Array<{ key: string; value: unknown; writable: boolean; source: string }> => {
+		const global = manager.getGlobalSettings() as {
+			defaultThinkingLevel?: string;
+			compaction?: { reserveTokens?: number };
+		};
+		const storedReserve = global.compaction?.reserveTokens;
+		return [
+			{
+				key: "piThinkingEffort",
+				value: global.defaultThinkingLevel ?? null,
+				writable: true,
+				source: "pi",
+			},
+			{
+				key: "compactionReserveTokens",
+				value: storedReserve === undefined ? null : manager.getCompactionReserveTokens(),
+				writable: false,
+				source: "read-only",
+			},
+		];
 	};
 
 	const sdkModelRuntime = async (): Promise<{
@@ -2335,6 +2369,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		closePromise = (async () => {
 			if (lifecycle === "closed") return;
 			lifecycle = "draining";
+			logger.info("host.draining");
 			server?.stop(true);
 			for (const connection of [...connections]) closeConnection(connection);
 			for (const login of [...logins.values()]) {
@@ -2360,8 +2395,10 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				} catch {
 					/* close every remaining resident */
 				}
+				logger.info("session.released", { sessionId: resident.id });
 			}
 			lifecycle = "closed";
+			logger.info("host.closed");
 		})();
 		return closePromise;
 	};
@@ -2686,6 +2723,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				for (const requestId of resident.dialogs.keys())
 					settleDialog(resident, requestId, undefined);
 				await resident.session.dispose();
+				logger.info("session.released", { sessionId: id });
 				return { ok: true };
 			}
 			case "session.uiResponse":
@@ -2964,20 +3002,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			case "pi.preferences.read": {
 				const manager = sdkSettingsManager(optionalCwd(params));
 				await manager.reload();
-				const global = manager.getGlobalSettings() as {
-					defaultThinkingLevel?: string;
-					compaction?: { reserveTokens?: number };
-				};
-				const storedReserve = global.compaction?.reserveTokens;
-				return {
-					values: [
-						{ key: "piThinkingEffort", value: global.defaultThinkingLevel ?? null },
-						{
-							key: "compactionReserveTokens",
-							value: storedReserve === undefined ? null : manager.getCompactionReserveTokens(),
-						},
-					],
-				};
+				return { values: preferenceEntries(manager) };
 			}
 			case "pi.preferences.save":
 			case "pi.preferences.reset": {
@@ -2985,6 +3010,13 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				const cwd = optionalCwd(params);
 				const manager = sdkSettingsManager(cwd);
 				await manager.reload();
+				const global = manager.getGlobalSettings() as {
+					defaultThinkingLevel?: string;
+					compaction?: { reserveTokens?: number };
+				};
+				const storedReserve = global.compaction?.reserveTokens;
+				const currentReserve =
+					storedReserve === undefined ? null : manager.getCompactionReserveTokens();
 				const rawEntries = reset
 					? (Array.isArray(params.keys) ? params.keys : []).map((key) => ({ key, value: null }))
 					: Array.isArray(params.values)
@@ -3007,8 +3039,18 @@ export function createBunHost(options: BunHostOptions): BunHost {
 							);
 						}
 					} else if (key === "compactionReserveTokens") {
+						// The selected Pi exposes no public setter. Tolerate an
+						// unchanged value so a read-only key can be echoed back,
+						// and fail closed with a clear reason on a real change.
+						if (reset) {
+							if (storedReserve === undefined) continue;
+							throw new CapabilityError(
+								"compactionReserveTokens is read-only in the selected Pi; reset it in native Pi configuration",
+							);
+						}
+						if (entry.value === currentReserve) continue;
 						throw new CapabilityError(
-							"compactionReserveTokens has no public setter in the selected Pi",
+							"compactionReserveTokens is read-only in the selected Pi; it cannot be changed here",
 						);
 					} else {
 						throw new HostError("Unknown preference");
@@ -3016,20 +3058,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				}
 				await manager.flush();
 				await manager.reload();
-				const global = manager.getGlobalSettings() as {
-					defaultThinkingLevel?: string;
-					compaction?: { reserveTokens?: number };
-				};
-				const storedReserve = global.compaction?.reserveTokens;
-				return {
-					values: [
-						{ key: "piThinkingEffort", value: global.defaultThinkingLevel ?? null },
-						{
-							key: "compactionReserveTokens",
-							value: storedReserve === undefined ? null : manager.getCompactionReserveTokens(),
-						},
-					],
-				};
+				return { values: preferenceEntries(manager) };
 			}
 			case "pi.extensions.list": {
 				const cwd = optionalCwd(params);
@@ -3388,6 +3417,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			case "runtime.restart": {
 				if (!allowSelfRestart)
 					throw new CapabilityError("runtime.restart is disabled by configuration");
+				logger.info("host.restart");
 				setTimeout(() => {
 					void closeHost().finally(() => {
 						try {
@@ -3619,6 +3649,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			.then(
 				(result) => queue(connection, encode({ id: request.id, result })),
 				(error: unknown) => {
+					logger.error("host.request.failed", error, { method: request.method });
 					const message = error instanceof Error ? error.message : "operation failed";
 					if (connection.protocolVersion === 2) {
 						if (error instanceof CapabilityError)
@@ -3644,61 +3675,73 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				throw new HostError(
 					lifecycle === "closed" ? "Bun host is closed" : "Bun host is already started",
 				);
-			runtimeId = loadOrCreateHostIdentity(options.agentDir);
+			logger.info("host.starting", { port: options.port });
+			try {
+				runtimeId = loadOrCreateHostIdentity(options.agentDir);
+			} catch (error) {
+				logger.error("host.identity.failed", error);
+				throw error;
+			}
 			lifecycle = "running";
-			server = (options.serverFactory ?? defaultServerFactory()).serve({
-				hostname: host,
-				port: options.port,
-				fetch(request, activeServer) {
-					if (lifecycle !== "running") return new Response(null, { status: 503 });
-					const pathname = new URL(request.url).pathname;
-					if (pathname === "/livez")
-						return request.method === "GET"
-							? new Response("ok")
-							: new Response(null, { status: 405 });
-					if (pathname === "/readyz") {
+			try {
+				server = (options.serverFactory ?? defaultServerFactory()).serve({
+					hostname: host,
+					port: options.port,
+					fetch(request, activeServer) {
+						if (lifecycle !== "running") return new Response(null, { status: 503 });
+						const pathname = new URL(request.url).pathname;
+						if (pathname === "/livez")
+							return request.method === "GET"
+								? new Response("ok")
+								: new Response(null, { status: 405 });
+						if (pathname === "/readyz") {
+							if (!authorized(request, secret)) return new Response(null, { status: 401 });
+							return request.method === "GET"
+								? Response.json({
+										protocolVersion: 1,
+										runtimeId,
+										bootId,
+										version: options.verifiedPi.packageVersion,
+										capabilities: hostCapabilities(),
+										operationSet: currentOperationSet(),
+										ready: lifecycle === "running",
+									})
+								: new Response(null, { status: 405 });
+						}
+						if (pathname !== "/pi") return new Response(null, { status: 404 });
 						if (!authorized(request, secret)) return new Response(null, { status: 401 });
-						return request.method === "GET"
-							? Response.json({
-									protocolVersion: 1,
-									runtimeId,
-									bootId,
-									version: options.verifiedPi.packageVersion,
-									capabilities: hostCapabilities(),
-									operationSet: currentOperationSet(),
-									ready: lifecycle === "running",
-								})
-							: new Response(null, { status: 405 });
-					}
-					if (pathname !== "/pi") return new Response(null, { status: 404 });
-					if (!authorized(request, secret)) return new Response(null, { status: 401 });
-					if (request.headers.has("origin")) return new Response(null, { status: 403 });
-					const connection: Connection = {
-						handshaken: false,
-						closed: false,
-						flushing: false,
-						outbound: [],
-						outboundBytes: 0,
-						active: new Set(),
-					};
-					return activeServer.upgrade(request, { data: { connection } })
-						? undefined
-						: new Response(null, { status: 400 });
-				},
-				websocket: {
-					open(socket) {
-						socket.data.connection.socket = socket;
-						connections.add(socket.data.connection);
+						if (request.headers.has("origin")) return new Response(null, { status: 403 });
+						const connection: Connection = {
+							handshaken: false,
+							closed: false,
+							flushing: false,
+							outbound: [],
+							outboundBytes: 0,
+							active: new Set(),
+						};
+						return activeServer.upgrade(request, { data: { connection } })
+							? undefined
+							: new Response(null, { status: 400 });
 					},
-					message(socket, message) {
-						handleMessage(socket.data.connection, message);
+					websocket: {
+						open(socket) {
+							socket.data.connection.socket = socket;
+							connections.add(socket.data.connection);
+						},
+						message(socket, message) {
+							handleMessage(socket.data.connection, message);
+						},
+						close(socket) {
+							closeConnection(socket.data.connection);
+						},
 					},
-					close(socket) {
-						closeConnection(socket.data.connection);
-					},
-				},
-			});
-			if (server.port !== undefined) endpoint = `ws://${host}:${server.port}/pi`;
+				});
+				if (server.port !== undefined) endpoint = `ws://${host}:${server.port}/pi`;
+				logger.info("host.ready", { port: server.port ?? options.port });
+			} catch (error) {
+				logger.error("host.start.failed", error);
+				throw error;
+			}
 		},
 		close: closeHost,
 	};

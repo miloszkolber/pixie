@@ -13,6 +13,7 @@ import {
 	startBunHost,
 	startBunHostFromPublicApi,
 } from "../src/host.ts";
+import { createHostLogger } from "../src/log.ts";
 
 type HostResult = {
 	readonly bootId?: string;
@@ -190,6 +191,7 @@ function hostWith(
 		readonly sessionFactory?: Parameters<typeof startBunHost>[0]["sessionFactory"];
 		readonly sdk?: Record<string, unknown>;
 		readonly protocol?: string;
+		readonly logger?: Parameters<typeof startBunHost>[0]["logger"];
 	} = {},
 ) {
 	const agentDir = options.agentDir ?? tempAgentDir();
@@ -230,6 +232,7 @@ function hostWith(
 			sdk: sdk as Parameters<typeof startBunHost>[0]["sdk"],
 			serverFactory: options.serverFactory,
 			sessionFactory: options.sessionFactory,
+			logger: options.logger,
 		});
 	} finally {
 		if (previousProtocol === undefined) delete process.env.PIXIE_PI_PROTOCOL;
@@ -1453,7 +1456,28 @@ describe("Bun host admin parity", () => {
 			method: "pi.preferences.save",
 			params: { values: [{ key: "compactionReserveTokens", value: 1 }] },
 		});
-		expect((await waitForId(raw.socket, 6)).error?.message).toContain("no public setter");
+		expect((await waitForId(raw.socket, 6)).error?.message).toContain("read-only");
+		await raw.send({ id: 11, method: "pi.preferences.read", params: {} });
+		const projection = (await waitForId(raw.socket, 11)).result as unknown as {
+			values: Array<{ key: string; value: unknown; writable: boolean; source: string }>;
+		};
+		expect(projection.values).toEqual([
+			{ key: "piThinkingEffort", value: "high", writable: true, source: "pi" },
+			{ key: "compactionReserveTokens", value: null, writable: false, source: "read-only" },
+		]);
+		// Re-sending the unchanged read-only value is tolerated, not a mutation.
+		await raw.send({
+			id: 12,
+			method: "pi.preferences.save",
+			params: { values: [{ key: "compactionReserveTokens", value: null }] },
+		});
+		expect((await waitForId(raw.socket, 12)).error).toBeUndefined();
+		await raw.send({
+			id: 13,
+			method: "pi.preferences.reset",
+			params: { keys: ["compactionReserveTokens"] },
+		});
+		expect((await waitForId(raw.socket, 13)).error).toBeUndefined();
 		await raw.send({ id: 7, method: "pi.slash-commands.list", params: {} });
 		const commands = (await waitForId(raw.socket, 7)).result as unknown as {
 			availableCommands: Array<{ name: string }>;
@@ -1695,5 +1719,297 @@ describe("Bun host admin parity", () => {
 		for (let attempt = 0; !restarted && attempt < 50; attempt += 1) await Bun.sleep(10);
 		expect(restarted).toBe(true);
 		ws.close();
+	});
+});
+
+describe("Bun host extension dispatch", () => {
+	const extensionPath = "/native/pi/extensions/fixture.ts";
+	const longSource = `ext-${"x".repeat(2000)}`;
+
+	function extensionSdk() {
+		return {
+			SettingsManager: {
+				create: () => ({
+					reload: async () => {},
+					flush: async () => {},
+					drainErrors: () => [],
+					getGlobalSettings: () => ({
+						defaultThinkingLevel: undefined,
+						compaction: {},
+						packages: [],
+						extensions: [extensionPath],
+					}),
+					getProjectSettings: () => ({ packages: [], extensions: [] }),
+					getDefaultProvider: () => undefined,
+					getDefaultModel: () => undefined,
+					setDefaultProvider: () => {},
+					setDefaultModel: () => {},
+					getDefaultThinkingLevel: () => undefined,
+					setDefaultThinkingLevel: () => {},
+					getCompactionReserveTokens: () => 0,
+					setPackages: () => {},
+					setProjectPackages: () => {},
+					setExtensionPaths: () => {},
+					setProjectExtensionPaths: () => {},
+				}),
+			},
+			DefaultPackageManager: class {
+				listConfiguredPackages(): unknown[] {
+					return [
+						{
+							source: longSource,
+							scope: "user",
+							filtered: false,
+							installedPath: "/native/pi/extensions/fixture",
+						},
+					];
+				}
+				async resolve(): Promise<unknown> {
+					return {
+						extensions: [
+							{
+								path: extensionPath,
+								enabled: true,
+								metadata: { source: "local", scope: "user", origin: "top-level" },
+							},
+						],
+						skills: [],
+						prompts: [],
+					};
+				}
+			},
+		};
+	}
+
+	test("bounds native extension inventory and rejects malformed scope, confirmation and revision", async () => {
+		const sentinel = "sk-live-extension-sentinel";
+		const raw = rawHost(new FakeSession("extensions"), { sdk: extensionSdk() });
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({ id: 2, method: "pi.extensions.list", params: {} });
+		const inventory = (await waitForId(raw.socket, 2)).result as unknown as {
+			version: number;
+			packages: Array<{ source: string; installed: boolean; state: string }>;
+			configurationRevisions: { user: string; project: string };
+			context: { reader: string };
+			paths: Array<{ path: string; scope: string }>;
+			resources: Array<{ path: string; source: string; scope: string }>;
+		};
+		expect(inventory.version).toBe(1);
+		expect(inventory.context.reader).toBe("service");
+		expect(inventory.packages).toHaveLength(1);
+		expect(inventory.packages[0]?.source).toHaveLength(1024);
+		expect(inventory.packages[0]?.installed).toBe(true);
+		expect(inventory.packages[0]?.state).toBe("not-observed");
+		expect(inventory.paths).toEqual([{ path: extensionPath, scope: "user" }]);
+		expect(inventory.resources[0]?.path).toBe(extensionPath);
+		expect(inventory.configurationRevisions.user).toMatch(/^[a-f0-9]{64}$/);
+		expect(JSON.stringify(inventory)).not.toContain(secret);
+
+		await raw.send({
+			id: 3,
+			method: "pi.extensions.configure",
+			params: {
+				scope: "workspace",
+				confirmed: true,
+				enabled: true,
+				resourceKey: "k",
+				expectedRevision: "r",
+				note: sentinel,
+			},
+		});
+		const badScope = (await waitForId(raw.socket, 3)).error?.message ?? "";
+		expect(badScope).toContain("scope");
+		expect(badScope).not.toContain(sentinel);
+		expect(badScope).not.toContain(raw.agentDir);
+
+		await raw.send({
+			id: 4,
+			method: "pi.extensions.configure",
+			params: {
+				scope: "user",
+				confirmed: false,
+				enabled: true,
+				resourceKey: "k",
+				expectedRevision: "r",
+			},
+		});
+		expect((await waitForId(raw.socket, 4)).error?.message).toContain("Confirm");
+
+		await raw.send({
+			id: 5,
+			method: "pi.extensions.configure",
+			params: {
+				scope: "user",
+				confirmed: true,
+				enabled: true,
+				resourceKey: "",
+				expectedRevision: "r",
+			},
+		});
+		expect((await waitForId(raw.socket, 5)).error?.message).toContain("revision");
+
+		await raw.send({
+			id: 6,
+			method: "pi.extensions.configure",
+			params: {
+				scope: "user",
+				confirmed: true,
+				enabled: "yes",
+				resourceKey: "k",
+				expectedRevision: "r",
+			},
+		});
+		expect((await waitForId(raw.socket, 6)).error?.message).toContain("boolean");
+
+		await raw.send({
+			id: 7,
+			method: "pi.extensions.configure",
+			params: {
+				scope: "user",
+				confirmed: true,
+				enabled: true,
+				resourceKey: "k",
+				expectedRevision: "stale",
+				note: sentinel,
+			},
+		});
+		const stale = (await waitForId(raw.socket, 7)).error?.message ?? "";
+		expect(stale).toContain("Native configuration changed");
+		expect(stale).not.toContain(sentinel);
+		expect(stale).not.toContain(raw.agentDir);
+	});
+
+	test("manages stored MCP configuration and never echoes a rejected credential", async () => {
+		const sentinel = "sk-live-config-sentinel";
+		const raw = rawHost(new FakeSession("config-extensions"));
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({
+			id: 2,
+			method: "pi.config.extensions.add",
+			params: {
+				extension: { name: "fixture", command: "/bin/echo", args: ["hello"] },
+				enabled: true,
+			},
+		});
+		expect((await waitForId(raw.socket, 2)).result).toEqual({ ok: true });
+		await raw.send({ id: 3, method: "pi.config.extensions.list", params: {} });
+		const listed = (await waitForId(raw.socket, 3)).result as unknown as {
+			extensions: Array<{ configKey: string; enabled: boolean }>;
+			warnings: string[];
+		};
+		expect(listed.warnings).toEqual([]);
+		expect(listed.extensions).toEqual([
+			expect.objectContaining({ configKey: "fixture", enabled: true }),
+		]);
+		await raw.send({
+			id: 4,
+			method: "pi.config.extensions.set-enabled",
+			params: { configKey: "fixture", enabled: false },
+		});
+		expect((await waitForId(raw.socket, 4)).result).toEqual({ ok: true });
+		await raw.send({
+			id: 5,
+			method: "pi.config.extensions.set-enabled",
+			params: { configKey: "fixture" },
+		});
+		expect((await waitForId(raw.socket, 5)).error?.message).toContain("boolean");
+		await raw.send({
+			id: 6,
+			method: "pi.config.extensions.remove",
+			params: { configKey: "fixture" },
+		});
+		expect((await waitForId(raw.socket, 6)).result).toEqual({ ok: true });
+		await raw.send({ id: 7, method: "pi.config.extensions.list", params: {} });
+		expect((await waitForId(raw.socket, 7)).result).toEqual({ extensions: [], warnings: [] });
+		await raw.send({
+			id: 8,
+			method: "pi.config.extensions.add",
+			params: { extension: { name: "leaky", url: `http://operator:${sentinel}@127.0.0.1/mcp` } },
+		});
+		const leaky = (await waitForId(raw.socket, 8)).error?.message ?? "";
+		expect(leaky).toContain("credentials");
+		expect(leaky).not.toContain(sentinel);
+		expect(leaky).not.toContain(raw.agentDir);
+	});
+
+	test("manages per-session extensions and rejects a credential-bearing definition", async () => {
+		const sentinel = "sk-live-session-sentinel";
+		const raw = rawHost(new FakeSession("session-extensions"));
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({
+			id: 2,
+			method: "pi.session.extensions.add",
+			params: { sessionId: "s1", extension: { name: "fixture", command: "/bin/echo", args: [] } },
+		});
+		expect((await waitForId(raw.socket, 2)).result).toEqual({ ok: true });
+		await raw.send({ id: 3, method: "pi.session.extensions.list", params: { sessionId: "s1" } });
+		const listed = (await waitForId(raw.socket, 3)).result as unknown as {
+			extensions: Array<{ extensionKey: string }>;
+		};
+		expect(listed.extensions).toEqual([expect.objectContaining({ extensionKey: "fixture" })]);
+		await raw.send({
+			id: 4,
+			method: "pi.session.extensions.remove",
+			params: { sessionId: "s1", extensionKey: "fixture" },
+		});
+		expect((await waitForId(raw.socket, 4)).result).toEqual({ ok: true });
+		await raw.send({ id: 5, method: "pi.session.extensions.list", params: { sessionId: "s1" } });
+		expect((await waitForId(raw.socket, 5)).result).toEqual({ extensions: [], warnings: [] });
+		await raw.send({ id: 6, method: "pi.session.extensions.list", params: {} });
+		expect((await waitForId(raw.socket, 6)).error?.message).toContain("sessionId");
+		await raw.send({
+			id: 7,
+			method: "pi.session.extensions.add",
+			params: {
+				sessionId: "s1",
+				extension: { name: "leaky", url: `http://operator:${sentinel}@127.0.0.1/mcp` },
+			},
+		});
+		const leaky = (await waitForId(raw.socket, 7)).error?.message ?? "";
+		expect(leaky).toContain("credentials");
+		expect(leaky).not.toContain(sentinel);
+		expect(leaky).not.toContain(raw.agentDir);
+	});
+});
+
+describe("Bun host lifecycle logging", () => {
+	test("emits bounded secret-safe lifecycle and error entries without paths", async () => {
+		const capacity = 6;
+		const logged: string[] = [];
+		const logger = createHostLogger({
+			capacity,
+			secrets: [secret],
+			sink: (entry) => logged.push(entry.event),
+		});
+		const raw = rawHost(new FakeSession("logging"), { logger });
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({ id: 2, method: "session.create", params: { cwd: raw.agentDir } });
+		const created = (await waitForId(raw.socket, 2)).result as unknown as { sessionId: string };
+		await raw.send({
+			id: 3,
+			method: "session.release",
+			params: { sessionId: created.sessionId, cwd: raw.agentDir },
+		});
+		await waitForId(raw.socket, 3);
+		// The default SDK has no SettingsManager, so this fails and is logged.
+		await raw.send({ id: 4, method: "pi.preferences.read", params: {} });
+		await waitForId(raw.socket, 4);
+		await raw.host.close();
+		for (const event of [
+			"host.starting",
+			"host.ready",
+			"session.created",
+			"session.released",
+			"host.draining",
+			"host.closed",
+			"host.request.failed",
+		]) {
+			expect(logged).toContain(event);
+		}
+		const retained = logger.entries();
+		expect(retained.length).toBeLessThanOrEqual(capacity);
+		const serialized = JSON.stringify(retained);
+		expect(serialized).not.toContain(secret);
+		expect(serialized).not.toContain(raw.agentDir);
 	});
 });

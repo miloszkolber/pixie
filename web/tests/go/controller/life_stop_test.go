@@ -319,7 +319,7 @@ func TestArchiveDeleteNeverImplyStop(t *testing.T) {
 	var methods []string
 	events := make(chan publishedEvent, 64)
 	requests := make(chan map[string]any, 4)
-	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, piInitializeResponse(), func(channel string, data any) {
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, bunHostInitializeResponse(), func(channel string, data any) {
 		events <- publishedEvent{channel: channel, data: data}
 	}, func(method string, _ map[string]any) {
 		mu.Lock()
@@ -366,14 +366,16 @@ func TestArchiveDeleteNeverImplyStop(t *testing.T) {
 	mu.Lock()
 	methods = nil
 	mu.Unlock()
-	if err := manager.Archive(ctx, project.ID, "chat", project.Roots[0]); err != nil {
-		t.Fatal(err)
+	// The Bun host negotiates no archive route, so a settled archive fails
+	// closed instead of reporting success from a legacy fixture.
+	if err := manager.Archive(ctx, project.ID, "chat", project.Roots[0]); err == nil || !strings.Contains(err.Error(), "controller-owned") {
+		t.Fatalf("settled archive did not fail closed: %v", err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
 	for _, method := range methods {
-		if method == "session.cancel" {
-			t.Fatal("archive implied Stop via session.cancel")
+		if method == "session.cancel" || method == "pi.session.archive" {
+			t.Fatalf("failed archive dispatched %q", method)
 		}
 	}
 }

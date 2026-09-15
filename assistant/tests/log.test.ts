@@ -3,6 +3,10 @@ import {
 	BoundedStderrBuffer,
 	createHostLogger,
 	describeHostLogError,
+	FIELD_BOUND_PLACEHOLDER,
+	MAX_COLLECTION_ENTRIES,
+	MAX_FIELD_DEPTH,
+	MAX_STDERR_LINE_LENGTH,
 	redactHostLogField,
 	redactHostLogText,
 } from "../src/log.ts";
@@ -37,6 +41,49 @@ describe("secret-safe host logging", () => {
 		expect(JSON.stringify(value)).not.toContain("/var/lib");
 	});
 
+	test("bounds a self-referential field graph instead of recursing without limit", () => {
+		const value: Record<string, unknown> = { name: "root" };
+		value.self = value;
+		const redacted = redactHostLogField(value) as Record<string, unknown>;
+		expect(redacted.name).toBe("root");
+		expect(redacted.self).toBe(FIELD_BOUND_PLACEHOLDER);
+		expect(JSON.stringify(redacted)).toContain(FIELD_BOUND_PLACEHOLDER);
+
+		const array: unknown[] = [];
+		array.push(array);
+		expect(redactHostLogField(array)).toEqual([FIELD_BOUND_PLACEHOLDER]);
+	});
+
+	test("bounds deeply nested field objects at the depth limit", () => {
+		let nested: Record<string, unknown> = { leaf: "/var/lib/pi-agent/secret.json" };
+		for (let level = 0; level < MAX_FIELD_DEPTH * 3; level += 1) nested = { nested };
+		const redacted = redactHostLogField(nested) as Record<string, unknown>;
+		let cursor: unknown = redacted;
+		let depth = 0;
+		while (
+			cursor &&
+			typeof cursor === "object" &&
+			"nested" in (cursor as Record<string, unknown>)
+		) {
+			cursor = (cursor as Record<string, unknown>).nested;
+			depth += 1;
+		}
+		expect(depth).toBeLessThanOrEqual(MAX_FIELD_DEPTH);
+		expect(cursor).toBe(FIELD_BOUND_PLACEHOLDER);
+		expect(JSON.stringify(redacted)).not.toContain("/var/lib");
+	});
+
+	test("caps per-collection entries in a redacted field", () => {
+		const wide = Array.from(
+			{ length: MAX_COLLECTION_ENTRIES + 5 },
+			(_, index) => `/var/lib/${index}`,
+		);
+		const redacted = redactHostLogField(wide) as unknown[];
+		expect(redacted.length).toBe(MAX_COLLECTION_ENTRIES + 1);
+		expect(redacted.at(-1)).toBe(FIELD_BOUND_PLACEHOLDER);
+		expect(JSON.stringify(redacted)).not.toContain("/var/lib");
+	});
+
 	test("describes errors without retaining stacks", () => {
 		const error = new Error("cannot read /home/operator/secret.json");
 		error.stack = "Error: cannot read /home/operator/secret.json\n    at /home/operator/app.ts:1:1";
@@ -65,6 +112,24 @@ describe("secret-safe host logging", () => {
 		expect(buffer.lines().at(-1)).toBe("token=[redacted]");
 		buffer.clear();
 		expect(buffer.lines()).toEqual([]);
+	});
+
+	test("bounds the length of one oversized stderr line", () => {
+		const buffer = new BoundedStderrBuffer(1);
+		buffer.append("warning ".repeat(MAX_STDERR_LINE_LENGTH * 4));
+		const [line] = buffer.lines();
+		expect(line.length).toBeLessThanOrEqual(MAX_STDERR_LINE_LENGTH);
+		expect(line.endsWith(FIELD_BOUND_PLACEHOLDER)).toBe(true);
+	});
+
+	test("redacts a secret inside an oversized stderr line before truncating", () => {
+		const secret = "s".repeat(32);
+		const buffer = new BoundedStderrBuffer(1, [secret]);
+		buffer.append(`token=${secret} ${"warning ".repeat(MAX_STDERR_LINE_LENGTH * 4)}`);
+		const [line] = buffer.lines();
+		expect(line.length).toBeLessThanOrEqual(MAX_STDERR_LINE_LENGTH);
+		expect(line).not.toContain(secret);
+		expect(line).toContain("[redacted]");
 	});
 
 	test("redacts labelled credentials, bracketed paths and UNC shares", () => {

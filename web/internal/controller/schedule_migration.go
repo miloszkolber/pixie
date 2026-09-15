@@ -18,7 +18,7 @@ const ScheduleMigrationHelperVersion = 1
 const (
 	ScheduleMigrationPhasePrepared  = "prepared"
 	ScheduleMigrationPhaseMigrating = "migrating"
-	scheduleLedgerVersion            = 2
+	scheduleLedgerVersion           = 2
 )
 
 // decodeScheduleLedger accepts the pre-ledger map and the v1 ledger only to

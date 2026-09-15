@@ -143,8 +143,8 @@ func TestPiAdminUsesReleaseMatchedExtensionsAndGenericPreferenceRemoval(t *testi
 				mu.Unlock()
 			case "pi.preferences.read":
 				result = map[string]any{"values": []any{
-					map[string]any{"key": "compactionReserveTokens", "value": nil},
-					map[string]any{"key": "piThinkingEffort", "value": "max"},
+					map[string]any{"key": "compactionReserveTokens", "value": nil, "writable": false, "source": "read-only"},
+					map[string]any{"key": "piThinkingEffort", "value": "max", "writable": true, "source": "pi"},
 				}}
 			}
 			if writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}) != nil {
@@ -172,6 +172,21 @@ func TestPiAdminUsesReleaseMatchedExtensionsAndGenericPreferenceRemoval(t *testi
 	if err != nil || preferences.PiThinkingEffort == nil || *preferences.PiThinkingEffort != "max" {
 		t.Fatalf("maximum thinking effort was not preserved: %#v, %v", preferences, err)
 	}
+	if len(preferences.Keys) != 2 {
+		t.Fatalf("preference projection omitted writability metadata: %#v", preferences.Keys)
+	}
+	for _, descriptor := range preferences.Keys {
+		switch descriptor.Key {
+		case "piThinkingEffort":
+			if !descriptor.Writable || descriptor.Source != "pi" {
+				t.Fatalf("thinking effort writability = %#v", descriptor)
+			}
+		case "compactionReserveTokens":
+			if descriptor.Writable || descriptor.Source != "read-only" {
+				t.Fatalf("compaction reserve writability = %#v", descriptor)
+			}
+		}
+	}
 	maxThinking := "max"
 	if _, err := admin.SavePreferences(ctx, controller.PiPreferences{PiThinkingEffort: &maxThinking}); err != nil {
 		t.Fatal(err)
@@ -181,13 +196,128 @@ func TestPiAdminUsesReleaseMatchedExtensionsAndGenericPreferenceRemoval(t *testi
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if strings.Join(removed, ",") != "compactionReserveTokens,piThinkingEffort" {
+	// The read-only reserve has no stored value, so its reset is a tolerated
+	// no-op and only the writable key reaches Pi.
+	if strings.Join(removed, ",") != "piThinkingEffort" {
 		t.Fatalf("removed keys = %v", removed)
 	}
 	for _, method := range methods {
 		if method == "pi.extensions.available" || method == "pi.preferences.remove" {
 			t.Fatalf("called removed Pi method %s", method)
 		}
+	}
+}
+
+func TestPiAdminPreferencesTolerateUnchangedReadOnlyKeyAndFailClosedOnChange(t *testing.T) {
+	var mu sync.Mutex
+	var savedValues [][]any
+	var resetKeys [][]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+				Params map[string]any  `json:"params"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil {
+				return
+			}
+			var result any = map[string]any{}
+			switch rpc.Method {
+			case "runtime.hello":
+				result = piInitializeResponse()
+			case "pi.preferences.read":
+				result = map[string]any{"values": []any{
+					map[string]any{"key": "compactionReserveTokens", "value": 16384, "writable": false, "source": "read-only"},
+					map[string]any{"key": "piThinkingEffort", "value": "high", "writable": true, "source": "pi"},
+				}}
+			case "pi.preferences.save":
+				mu.Lock()
+				if values, ok := rpc.Params["values"].([]any); ok {
+					savedValues = append(savedValues, values)
+				}
+				mu.Unlock()
+			case "pi.preferences.reset":
+				mu.Lock()
+				if keys, ok := rpc.Params["keys"].([]any); ok {
+					resetKeys = append(resetKeys, keys)
+				}
+				mu.Unlock()
+			}
+			if writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}) != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", nil)
+	defer client.Close()
+	admin := controller.NewPiAdmin(client, controller.NewSettings(persist.Store{Dir: t.TempDir()}, nil))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	current, err := admin.ReadPreferences(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.CompactionReserveTokens == nil || *current.CompactionReserveTokens != 16384 {
+		t.Fatalf("stored reserve was not projected: %#v", current)
+	}
+	if len(current.Keys) != 2 {
+		t.Fatalf("projection omitted writability metadata: %#v", current.Keys)
+	}
+
+	reserve := 16384.0
+	thinking := "high"
+	// An unchanged read-only value must not fail and must not reach Pi.
+	if _, err := admin.SavePreferences(ctx, controller.PiPreferences{CompactionReserveTokens: &reserve, PiThinkingEffort: &thinking}); err != nil {
+		t.Fatalf("unchanged read-only preference was rejected: %v", err)
+	}
+	mu.Lock()
+	if len(savedValues) != 1 {
+		t.Fatalf("save calls = %#v", savedValues)
+	}
+	for _, entry := range savedValues[0] {
+		if entry.(map[string]any)["key"] == "compactionReserveTokens" {
+			t.Fatalf("read-only key reached Pi: %#v", entry)
+		}
+	}
+	mu.Unlock()
+
+	// A changed read-only value must fail closed before any save reaches Pi.
+	changed := 2048.0
+	if _, err := admin.SavePreferences(ctx, controller.PiPreferences{CompactionReserveTokens: &changed}); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("changed read-only preference was not rejected: %v", err)
+	}
+	mu.Lock()
+	if len(savedValues) != 1 {
+		t.Fatalf("changed read-only preference reached Pi: %#v", savedValues)
+	}
+	mu.Unlock()
+
+	// Resetting a read-only key that currently has a stored value must fail closed.
+	if _, err := admin.ResetPreferences(ctx, []string{"compactionReserveTokens"}); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("stored read-only reset was not rejected: %v", err)
+	}
+	// Resetting the writable key still reaches Pi.
+	if _, err := admin.ResetPreferences(ctx, []string{"piThinkingEffort"}); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(resetKeys) != 1 || len(resetKeys[0]) != 1 || resetKeys[0][0] != "piThinkingEffort" {
+		t.Fatalf("reset keys = %#v", resetKeys)
 	}
 }
 

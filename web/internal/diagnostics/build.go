@@ -1,6 +1,7 @@
 package diagnostics
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -42,8 +43,21 @@ func normalizeBuildValue(value, fallback string) string {
 	return string(runes)
 }
 
+// NewLogger builds a JSON logger for one component. Every message, string
+// attribute and error value is redacted through SanitizeDiagnosticText before
+// it is encoded, including values nested in groups and slog.Any.
 func NewLogger(component string, build BuildInfo) *slog.Logger {
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With(
+	return NewLoggerWithWriter(os.Stderr, component, build)
+}
+
+// NewLoggerWithWriter is NewLogger with an explicit sink. It keeps the same
+// redaction contract and lets a caller or test capture the encoded output.
+func NewLoggerWithWriter(writer io.Writer, component string, build BuildInfo) *slog.Logger {
+	if writer == nil {
+		writer = io.Discard
+	}
+	handler := newRedactingHandler(slog.NewJSONHandler(writer, nil))
+	logger := slog.New(handler).With(
 		"component", component,
 		"version", build.Version,
 		"revision", build.Revision,

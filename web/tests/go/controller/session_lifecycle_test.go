@@ -17,6 +17,27 @@ import (
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
 
+// The Bun host negotiates no archive route, so unarchive must fail closed
+// without dispatching a host method or emitting an unarchived event.
+func TestUnarchiveFailsClosedWithoutHostDispatch(t *testing.T) {
+	recorder := &deletionMethodRecorder{}
+	events := make(chan publishedEvent, 8)
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, bunHostInitializeResponse(), func(channel string, data any) {
+		events <- publishedEvent{channel: channel, data: data}
+	}, recorder.observe)
+	if err := manager.Unarchive(t.Context(), project.ID, "chat"); err == nil || !strings.Contains(err.Error(), "controller-owned") {
+		t.Fatalf("unarchive did not fail closed: %v", err)
+	}
+	if recorder.saw("pi.session.unarchive") || recorder.saw("session.unarchive") {
+		t.Fatal("failed unarchive dispatched a host archive route")
+	}
+	select {
+	case published := <-events:
+		t.Fatalf("failed unarchive emitted a lifecycle event: %#v", published)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 // Uncertain journal tombstones must surface for reconciliation even before
 // restart recovery quarantines them, and reading them must never clear them.
 func TestDeletionReconciliationSurfacesUncertainJournal(t *testing.T) {

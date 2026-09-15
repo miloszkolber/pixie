@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	deriveDoctorScenarioConfig,
+	fatalServeMessage,
 	normalizeAssistantHostValue,
 	pairedAssistantPortNote,
 	piVersionError,
@@ -36,7 +37,9 @@ describe("assistant serve port/host parity", () => {
 		expect(deployment).toContain("config `port`");
 		expect(deployment).toContain("PIXIE_PI_PORT");
 		expect(deployment).toContain("must match");
-		expect(deployment).not.toContain("PIXIE_ASSISTANT_PORT");
+		// The retired variable may be named, but only as rejected, never as a
+		// setting an operator should use.
+		expect(deployment).toMatch(/Rejected or retired[^\n]*PIXIE_ASSISTANT_PORT/);
 	});
 
 	test("rejects the deprecated assistant port environment in favor of config port", () => {
@@ -53,6 +56,23 @@ describe("assistant serve port/host parity", () => {
 		expect(stderr).toContain("config port");
 		expect(stderr).toContain("PIXIE_PI_PORT");
 		expect(stderr).not.toContain("3285");
+	});
+
+	test("redacts a top-level serve error before it reaches stderr", () => {
+		const error = new Error(
+			"could not start https://pi.example.test/pi with Bearer abcdef0123456789 at /home/operator/.pi/agent",
+		);
+		const message = fatalServeMessage(error);
+		expect(message).not.toContain("abcdef0123456789");
+		expect(message).not.toContain("https://pi.example.test");
+		expect(message).not.toContain("/home/operator");
+		expect(message).toContain("[redacted]");
+		expect(message).toContain("[url]");
+		expect(message).toContain("[path]");
+		// The executable's uncaught path must use the redacting formatter.
+		const source = readFileSync(join(import.meta.dir, "../src/serve.ts"), "utf8");
+		expect(source).toContain("fatalServeMessage(error)");
+		expect(source).not.toMatch(/pixie_assistant: \$\{errorMessage\(error\)\}/);
 	});
 });
 

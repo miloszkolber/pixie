@@ -16,11 +16,12 @@ import {
 	type AgentDraft,
 	agentNameError,
 	compactionReserveTokensValue,
+	compactionReserveWritable,
 	defaultModelSuggestions,
 	defaultProviderChoices,
 	defaultProviderSelectable,
 	emptyAgent,
-	parseCompactionReserveTokens,
+	preferenceSavePayload,
 	shouldClearAgentEditorAfterMutation,
 	THINKING_EFFORTS,
 	unavailableDefaultProviderOption,
@@ -62,6 +63,7 @@ let selectedDefaultProviderAvailable = $derived(
 let currentUnavailableProvider = $derived(
 	unavailableDefaultProviderOption(defaults.providerId, providers),
 );
+let reserveWritable = $derived(compactionReserveWritable(preferences));
 let defaultSuggestions = $derived(defaultModelSuggestions(models, defaults.providerId));
 
 function notifyError(error: unknown, title: string): void {
@@ -149,25 +151,16 @@ $effect(() => {
 async function savePreferences(): Promise<void> {
 	if (!preferencesReady || busy) return;
 	actionError = null;
-	const threshold = parseCompactionReserveTokens(reserveTokens);
-	if (!threshold.valid) {
-		appStoreApi.getState().pushToast({
-			variant: "error",
-			message: "Enter a whole number from 1,024 to 1,000,000 tokens.",
-			title: "Invalid reserve tokens",
-		});
+	const result = preferenceSavePayload(preferences, reserveTokens, reserveWritable);
+	if (!result.ok) {
+		actionError = result.error;
 		return;
 	}
 	busy = true;
 	try {
 		if (thinkingReset)
 			await getTransport().request("pi.preferencesReset", { keys: ["piThinkingEffort"] });
-		const saved = await getTransport().request("pi.preferencesSave", {
-			...(threshold.value !== undefined ? { compactionReserveTokens: threshold.value } : {}),
-			...(preferences.piThinkingEffort !== undefined
-				? { piThinkingEffort: preferences.piThinkingEffort }
-				: {}),
-		});
+		const saved = await getTransport().request("pi.preferencesSave", result.payload);
 		applyPreferences(saved);
 	} catch (error) {
 		notifyError(error, "Couldn't save Pi preferences");
@@ -178,6 +171,7 @@ async function savePreferences(): Promise<void> {
 
 async function resetPreference(key: "compactionReserveTokens" | "piThinkingEffort"): Promise<void> {
 	if (busy || !preferencesReady) return;
+	if (key === "compactionReserveTokens" && !reserveWritable) return;
 	actionError = null;
 	busy = true;
 	try {
@@ -349,7 +343,12 @@ function changeDraftProject(projectId: string): void {
 			<label class="u-flex u-flex-col u-gap-xs">
 				Compaction reserve tokens
 				<span class="u-text-text-muted tr-text-metadata">
-					Tokens Pi reserves for a response before compacting. Clearing the field keeps the saved value; reset restores Pi’s default.
+					Tokens Pi reserves for a response before compacting.
+					{#if reserveWritable}
+						Clearing the field keeps the saved value; reset restores Pi’s default.
+					{:else}
+						This Pi exposes no public setter, so the value is read-only here. Change it in native Pi configuration.
+					{/if}
 				</span>
 				<input
 					data-testid="auto-compact-threshold"
@@ -358,7 +357,7 @@ function changeDraftProject(projectId: string): void {
 					max="1000000"
 					step="1"
 					bind:value={reserveTokens}
-					disabled={busy || !preferencesReady}
+					disabled={busy || !preferencesReady || !reserveWritable}
 					class="u-rounded u-border u-border-border-default u-bg-control-bg u-px-sm u-py-xs"
 				/>
 			</label>
@@ -366,7 +365,7 @@ function changeDraftProject(projectId: string): void {
 				<Button
 					size="sm"
 					variant="outline"
-					disabled={busy || !preferencesReady}
+					disabled={busy || !preferencesReady || !reserveWritable}
 					onclick={() => void resetPreference("compactionReserveTokens")}
 				>
 					<Icon name="rotate-ccw" size={14} />

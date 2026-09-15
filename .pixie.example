@@ -12,6 +12,13 @@ PIXIE_DATA_PATH=/absolute/path/to/pixie-data
 PIXIE_PI_PORT=3284
 PIXIE_PI_SECRET_KEY=replace-with-a-random-pi-secret
 
+# Opt-in host protocol negotiation. Unset or `v1` keeps the default legacy
+# handshake; `auto` offers protocol versions [2,1] and accepts a v1 host; `v2`
+# requires the negotiated version to be 2. The controller and the assistant
+# host read the same value and an invalid value fails startup. Version 2 is not
+# the default; live and credentialed v2 behavior is unverified.
+# PIXIE_PI_PROTOCOL=v2
+
 # Required: a strong private token authenticating the in-process MCP publisher
 # (module catalog and built-in MCP servers). The controller refuses to start
 # without it, and it must differ from PIXIE_TOKEN.

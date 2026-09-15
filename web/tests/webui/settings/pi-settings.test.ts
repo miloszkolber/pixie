@@ -3,10 +3,12 @@ import type { ProviderStatus, WireModel } from "@pixie/shared";
 import {
 	agentNameError,
 	compactionReserveTokensValue,
+	compactionReserveWritable,
 	defaultModelSuggestions,
 	defaultProviderChoices,
 	defaultProviderSelectable,
 	parseCompactionReserveTokens,
+	preferenceSavePayload,
 	shouldClearAgentEditorAfterMutation,
 	THINKING_EFFORTS,
 	unavailableDefaultProviderOption,
@@ -84,6 +86,44 @@ test("reconciles a cleared threshold with the canonical save response", () => {
 	expect(compactionReserveTokensValue({})).toBeUndefined();
 });
 
+test("the compaction reserve is read-only unless the projection marks it writable", () => {
+	expect(compactionReserveWritable({ compactionReserveTokens: 16384 })).toBe(false);
+	expect(compactionReserveWritable({})).toBe(false);
+	expect(
+		compactionReserveWritable({
+			keys: [{ key: "compactionReserveTokens", writable: false, source: "read-only" }],
+		}),
+	).toBe(false);
+	expect(
+		compactionReserveWritable({
+			keys: [{ key: "compactionReserveTokens", writable: true, source: "pi" }],
+		}),
+	).toBe(true);
+});
+
+test("a writable compaction reserve joins the save payload once parsed and bounded", () => {
+	expect(preferenceSavePayload({ piThinkingEffort: "low" }, 16384, true)).toEqual({
+		ok: true,
+		payload: { piThinkingEffort: "low", compactionReserveTokens: 16384 },
+	});
+	// A cleared field omits the key so the saved value stands.
+	expect(preferenceSavePayload({}, undefined, true)).toEqual({ ok: true, payload: {} });
+	// Out-of-range input fails visibly instead of being dropped.
+	expect(preferenceSavePayload({}, 512, true)).toEqual({
+		ok: false,
+		error: "Compaction reserve tokens must be a whole number between 1024 and 1000000.",
+	});
+	expect(preferenceSavePayload({}, 100.5, true).ok).toBe(false);
+	expect(preferenceSavePayload({}, Number.NaN, true).ok).toBe(false);
+});
+
+test("a read-only compaction reserve never joins the save payload", () => {
+	expect(preferenceSavePayload({ compactionReserveTokens: 16384 }, 32768, false)).toEqual({
+		ok: true,
+		payload: {},
+	});
+});
+
 test("validates agent names by UTF-8 bytes and path separators before submitting", () => {
 	expect(agentNameError("Reviewer")).toBeNull();
 	expect(agentNameError("bad/name")).toContain("80 UTF-8 bytes");
@@ -116,4 +156,10 @@ test("the Svelte editor retains the default and agent form contracts", async () 
 		"disabled={busy || loading || !defaultsReady || !selectedDefaultProviderAvailable}",
 	);
 	expect(source).toContain("applyPreferences(saved)");
+	// The reserve control is enabled only for a writable projection, and the
+	// builder output (never the raw input) is what reaches the save request.
+	expect(source).toContain("disabled={busy || !preferencesReady || !reserveWritable}");
+	expect(source).toContain("preferenceSavePayload(preferences, reserveTokens, reserveWritable)");
+	expect(source).toContain("actionError = result.error");
+	expect(source).toContain('getTransport().request("pi.preferencesSave", result.payload)');
 });
