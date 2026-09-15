@@ -83,6 +83,19 @@ function jsonNumberCost(value: number): number {
 export const MAX_STDERR_LINE_LENGTH = 4096;
 const STDERR_TRUNCATION_MARKER = FIELD_BOUND_PLACEHOLDER;
 
+/**
+ * Maximum input length that reaches redaction patterns. Every pattern is a
+ * global regexp, and an unanchored prefix such as `[A-Za-z0-9_-]{40,256}\/`
+ * makes the engine retry at each offset, so a long single-token string (with
+ * no `/`) costs super-linear time. The redactor runs synchronously on the host
+ * event loop and is reachable from an oversized client frame or native error
+ * text, so the input is cut before any pattern runs. Pattern work is therefore
+ * bounded for any input size; placeholder substitution can still grow the
+ * result, but only by a small constant factor of this budget.
+ */
+export const MAX_REDACTED_TEXT_LENGTH = 16 * 1024;
+const TEXT_TRUNCATION_MARKER = FIELD_BOUND_PLACEHOLDER;
+
 // Absolute POSIX paths (at least two segments) become a placeholder. A bare
 // "/" or a short relative fragment is left alone so ordinary prose survives.
 const ABSOLUTE_PATH = /(?<![\w.])\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]*/g;
@@ -90,8 +103,10 @@ const ABSOLUTE_PATH = /(?<![\w.])\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]*/g;
 // `${"A".repeat(60)}/home/operator/secret.json`: the delimiter lookbehind in
 // ABSOLUTE_PATH excludes a preceding word character, so the opaque run is
 // consumed together with the path. Bounded at the same 40-character minimum
-// used by OPAQUE_TOKEN; replacing the whole match also hides the token.
-const GLUED_ABSOLUTE_PATH = /[A-Za-z0-9_-]{40,}\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]*/g;
+// used by OPAQUE_TOKEN; replacing the whole match also hides the token. The
+// upper repetition bound keeps the greedy prefix from scanning the whole input
+// at every offset when the required `/` never arrives.
+const GLUED_ABSOLUTE_PATH = /[A-Za-z0-9_-]{40,256}\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]*/g;
 const BEARER_TOKEN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const HTTP_URL = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
 const CREDENTIAL_PREFIX = /\b(?:sk|pk|ghp|gho|ghs|glpat|xox[baprs])-[A-Za-z0-9._-]{6,}\b/g;
@@ -103,12 +118,34 @@ const CREDENTIAL_LABEL =
 	/\b(?:token|api[-_ ]?key|access[-_ ]?token|bearer[-_ ]?token|secret|password)\s*[:=]?\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const UNC_PATH = /\\\\[^\s"'<>]+/g;
 
-/** Replace secrets, credentials, URLs and absolute paths with placeholders. */
-export function redactHostLogText(text: string, secrets: readonly string[] = []): string {
+/** Replace configured secrets with the placeholder. Split/join is linear. */
+function redactConfiguredSecrets(text: string, secrets: readonly string[]): string {
 	let out = text;
 	for (const secret of secrets) {
 		if (secret.length >= MIN_SECRET_LENGTH) out = out.split(secret).join("[redacted]");
 	}
+	return out;
+}
+
+/**
+ * Cut one text value to the redaction budget and remove configured secrets
+ * before any pattern runs. The retained prefix plus one budget of lookahead is
+ * scanned for secrets, so a secret that straddles the cut is replaced instead
+ * of being kept as a partial prefix; the lookahead is capped at one budget, so
+ * the work stays fixed for any input size. The truncation marker replaces the
+ * tail so the bounded result still shows that text was dropped.
+ */
+function boundRedactionInput(text: string, secrets: readonly string[]): string {
+	if (text.length <= MAX_REDACTED_TEXT_LENGTH) return redactConfiguredSecrets(text, secrets);
+	const keep = MAX_REDACTED_TEXT_LENGTH - TEXT_TRUNCATION_MARKER.length;
+	const scanLength = Math.min(text.length, MAX_REDACTED_TEXT_LENGTH * 2);
+	const head = redactConfiguredSecrets(text.slice(0, scanLength), secrets);
+	return `${head.slice(0, keep)}${TEXT_TRUNCATION_MARKER}`;
+}
+
+/** Replace secrets, credentials, URLs and absolute paths with placeholders. */
+export function redactHostLogText(text: string, secrets: readonly string[] = []): string {
+	let out = boundRedactionInput(text, secrets);
 	out = out.replace(BEARER_TOKEN, "Bearer [redacted]");
 	out = out.replace(HTTP_URL, "[url]");
 	out = out.replace(CREDENTIAL_LABEL, "[redacted]");

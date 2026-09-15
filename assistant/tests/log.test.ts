@@ -7,6 +7,7 @@ import {
 	MAX_COLLECTION_ENTRIES,
 	MAX_FIELD_DEPTH,
 	MAX_MATERIALIZED_BYTES,
+	MAX_REDACTED_TEXT_LENGTH,
 	MAX_STDERR_LINE_LENGTH,
 	redactHostLogField,
 	redactHostLogText,
@@ -62,6 +63,71 @@ describe("secret-safe host logging", () => {
 		expect(keys).not.toContain(opaque);
 		expect(JSON.stringify(keyed)).not.toContain("/home/operator");
 		expect(Object.values(keyed)).toEqual(["benign"]);
+	});
+
+	test("bounds redaction work and output for a 256 KB single-token input", () => {
+		const size = 256 * 1024;
+		const cases: ReadonlyArray<readonly [string, string, string]> = [
+			["token-like", "A".repeat(size), "A".repeat(64)],
+			["hex", "abcdef0123456789".repeat(size / 16), "abcdef0123456789".repeat(8)],
+		];
+		for (const [label, input, needle] of cases) {
+			const started = performance.now();
+			const redacted = redactHostLogText(input);
+			const elapsed = performance.now() - started;
+			// The unbounded greedy prefix took tens of seconds here, so a
+			// one-second bound still catches the regression on any host.
+			expect({ label, withinBound: elapsed < 1000 }).toEqual({ label, withinBound: true });
+			expect(redacted.length).toBeLessThanOrEqual(MAX_REDACTED_TEXT_LENGTH);
+			expect(redacted).not.toContain(needle);
+			expect(redacted).toContain("[redacted]");
+			expect(redacted).toContain(FIELD_BOUND_PLACEHOLDER);
+		}
+	});
+
+	test("completes every redaction pattern family on an oversized input", () => {
+		const size = 256 * 1024;
+		const inputs = [
+			"A".repeat(size),
+			"abcdef0123456789".repeat(size / 16),
+			`Bearer ${"A".repeat(size)}`,
+			`https://example.test/${"A".repeat(size)}`,
+			`token ${"A".repeat(size)}`,
+			`sk-${"A".repeat(size)}`,
+			`\\\\server\\share\\${"A".repeat(size)}`,
+			"/a/".repeat(Math.ceil(size / 3)),
+		];
+		const started = performance.now();
+		for (const input of inputs) {
+			const redacted = redactHostLogText(input);
+			// Placeholder substitution can grow a 3-character path match into
+			// "[path]", so the bound is a small constant multiple of the budget.
+			expect(redacted.length).toBeLessThanOrEqual(3 * MAX_REDACTED_TEXT_LENGTH);
+		}
+		expect(performance.now() - started).toBeLessThan(2000);
+	});
+
+	test("redacts a configured secret that straddles the oversized truncation cut", () => {
+		const secret = "SUPERSECRETVALUE1234567890";
+		const cut = MAX_REDACTED_TEXT_LENGTH - FIELD_BOUND_PLACEHOLDER.length;
+		const input = `${"x".repeat(cut - 5)}${secret}${"y".repeat(256 * 1024)}`;
+		const redacted = redactHostLogText(input, [secret]);
+		expect(redacted).not.toContain(secret);
+		expect(redacted).not.toContain(secret.slice(0, 5));
+		expect(redacted.length).toBeLessThanOrEqual(MAX_REDACTED_TEXT_LENGTH);
+	});
+
+	test("leaves ordinary-length input untruncated and still redacts it", () => {
+		const secret = "s".repeat(32);
+		const text =
+			`failed for ${secret} at https://pi.example.test/x using sk-live-abcdef123456 ` +
+			"path /home/operator/.pi/agents/secret.md";
+		const redacted = redactHostLogText(text, [secret]);
+		expect(redacted).not.toContain(secret);
+		expect(redacted).not.toContain("https://pi.example.test");
+		expect(redacted).not.toContain("sk-live-abcdef123456");
+		expect(redacted).not.toContain("/home/operator");
+		expect(redacted).not.toContain(FIELD_BOUND_PLACEHOLDER);
 	});
 
 	test("redacts an explicit secret wherever it appears", () => {
@@ -215,6 +281,28 @@ describe("secret-safe host logging", () => {
 		expect(entries.length).toBe(3);
 		expect(entries.map((entry) => entry.event)).toEqual(["event-3", "event-4", "event-5"]);
 		for (const entry of entries) expect(JSON.stringify(entry)).not.toContain("/var/lib");
+	});
+
+	test("bounds a hostile request method in an error log entry", () => {
+		// The v1 host logs `{ method }` and the error message for a failed
+		// request, so a client can drive this path with a frame-sized method.
+		const logger = createHostLogger({ capacity: 1, secrets: ["s".repeat(32)] });
+		const method = "A".repeat(256 * 1024);
+		const started = performance.now();
+		logger.error(
+			"host.request.failed",
+			new Error(`unknown host method ${JSON.stringify(method)}`),
+			{
+				method,
+			},
+		);
+		expect(performance.now() - started).toBeLessThan(1000);
+
+		const [entry] = logger.entries();
+		const serialized = JSON.stringify(entry);
+		expect(serialized.length).toBeLessThanOrEqual(MAX_MATERIALIZED_BYTES + 4096);
+		expect(serialized).not.toContain("A".repeat(64));
+		expect(serialized).toContain("[truncated]");
 	});
 
 	test("bounds and redacts retained child stderr", () => {

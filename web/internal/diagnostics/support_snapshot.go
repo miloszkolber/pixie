@@ -29,6 +29,19 @@ const (
 	maxSupportDetailBytes = 256
 	maxSupportCount       = 1_000_000
 
+	// diagnosticInputFactor and diagnosticInputFloorBytes bound the raw value
+	// the sanitizer feeds to its regexes. RE2 has no catastrophic backtracking,
+	// but a bounded repetition such as the glued-path pattern still costs a
+	// per-state step, so an unbounded input stalls the caller (a 32 MiB host
+	// error could block for minutes). The factor keeps redaction context while
+	// making the work proportional to the requested output limit instead of the
+	// attacker-controlled input length.
+	diagnosticInputFactor     = 4
+	diagnosticInputFloorBytes = 4096
+	// diagnosticTruncationMarker is appended when the raw value is cut at the
+	// input bound so a removed tail is explicit rather than silently dropped.
+	diagnosticTruncationMarker = " [truncated]"
+
 	supportRequestFailedCode                 = "request.failed"
 	supportRequestCanceledCode               = "request.canceled"
 	supportRequestTimedOutCode               = "request.timed_out"
@@ -70,7 +83,7 @@ var (
 	// together with its absolute path, though any prefix beyond the bound is
 	// left in place. The path portion reuses the same terminal class as the
 	// delimiter-based pattern.
-	supportGluedUnixPathPattern = regexp.MustCompile(`[A-Za-z0-9._~+=-]{40,1000}/[^\s'"<>,;:)\]}]+`)
+	supportGluedUnixPathPattern = regexp.MustCompile(`[A-Za-z0-9._~+=-]{40,256}/[^\s'"<>,;:)\]}]+`)
 	supportWindowsPathPattern   = regexp.MustCompile(`(?i)\b[A-Z]:\\(?:[^\s'"<>,;:)\]}]+)`)
 	supportUNCPattern           = regexp.MustCompile(`\\\\[^\s'"<>,;:)\]}]+`)
 	// Support snapshots retain build identity only when it is a known release
@@ -197,7 +210,10 @@ func SanitizeDiagnosticDetail(value string) string {
 // redaction as SanitizeDiagnosticDetail with an explicit bound. It is exported
 // for bounded diagnostic surfaces such as retained child stderr; the result is
 // never a shareable guarantee for arbitrary text, only a best-effort redaction.
+// The raw value is truncated at the top so no regex ever scans attacker-sized
+// input; the requested limit still governs the returned length.
 func SanitizeDiagnosticText(value string, limit int) string {
+	value = boundDiagnosticInput(value, limit)
 	value = normalizeDiagnosticText(value)
 	if value == "" {
 		return ""
@@ -215,6 +231,25 @@ func SanitizeDiagnosticText(value string, limit int) string {
 	value = supportUNCPattern.ReplaceAllString(value, "[redacted path]")
 	value = supportWindowsPathPattern.ReplaceAllString(value, "[redacted path]")
 	return truncateUTF8(strings.TrimSpace(value), limit)
+}
+
+// boundDiagnosticInput cuts a raw diagnostic value before normalization or any
+// regex run. The cut is a small multiple of the requested output limit with a
+// floor for small limits, so the sanitizer's total work depends on the caller's
+// limit rather than on an unbounded host-provided string.
+func boundDiagnosticInput(value string, limit int) string {
+	bound := limit * diagnosticInputFactor
+	if bound < diagnosticInputFloorBytes {
+		bound = diagnosticInputFloorBytes
+	}
+	if len(value) <= bound {
+		return value
+	}
+	end := bound
+	for end > 0 && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return value[:end] + diagnosticTruncationMarker
 }
 
 func normalizeDiagnosticText(value string) string {
