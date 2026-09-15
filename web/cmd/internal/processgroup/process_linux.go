@@ -6,8 +6,10 @@
 package processgroup
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"syscall"
@@ -26,7 +28,24 @@ type Invocation struct {
 	Args        []string
 	Environment []string
 	Directory   string
+	// Stderr receives the child's standard error. A nil Stderr inherits
+	// os.Stderr so the native Pi command boundary is unchanged. A launcher may
+	// supply a line-buffering sink when it needs per-line handling.
+	Stderr io.Writer
+	// Ready, when set, is probed after the child starts and before Run begins
+	// its normal wait. It must return promptly once ctx is canceled; Run
+	// cancels ctx when the child exits or a signal arrives, and drains the
+	// child group when Ready returns an error.
+	Ready func(ctx context.Context) error
 }
+
+// ReadyError reports that a managed child started but never became ready. It is
+// distinct from the child's own exit status so a launcher can fail closed with
+// remediation instead of mirroring an opaque signal.
+type ReadyError struct{ Err error }
+
+func (err ReadyError) Error() string { return err.Err.Error() }
+func (err ReadyError) Unwrap() error { return err.Err }
 
 type child struct {
 	cmd  *exec.Cmd
@@ -43,7 +62,11 @@ func Run(invocation Invocation, signals <-chan os.Signal) (int, error) {
 	command.Dir = invocation.Directory
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
+	if invocation.Stderr != nil {
+		command.Stderr = invocation.Stderr
+	} else {
+		command.Stderr = os.Stderr
+	}
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		return 0, err
@@ -53,6 +76,28 @@ func Run(invocation Invocation, signals <-chan os.Signal) (int, error) {
 		started.err = command.Wait()
 		close(started.done)
 	}()
+	if invocation.Ready != nil {
+		readyCtx, cancelReady := context.WithCancel(context.Background())
+		ready := make(chan error, 1)
+		go func() { ready <- invocation.Ready(readyCtx) }()
+		select {
+		case err := <-ready:
+			cancelReady()
+			if err != nil {
+				_ = drain(started, syscall.SIGTERM)
+				return exitCode(command), ReadyError{Err: err}
+			}
+		case <-started.done:
+			cancelReady()
+			return exitCode(command), started.err
+		case received := <-signals:
+			cancelReady()
+			if err := drain(started, operatorSignal(received)); err != nil {
+				return exitCode(command), err
+			}
+			return exitCode(command), started.err
+		}
+	}
 	select {
 	case <-started.done:
 		return exitCode(command), started.err

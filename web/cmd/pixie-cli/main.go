@@ -3,12 +3,17 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -21,6 +26,24 @@ import (
 )
 
 const bundledPiPackageEnvironment = "PIXIE_BUNDLED_PI_PACKAGE"
+
+const (
+	// assistantSecretMinimum mirrors the assistant's own startup floor.
+	assistantSecretMinimum = 32
+	// assistantReadyTimeout bounds the /readyz handshake. It matches the full
+	// supervisor so both launchers fail on the same schedule.
+	assistantReadyTimeout = 25 * time.Second
+)
+
+// assistantEndpoint is the loopback readiness surface of the hosted assistant.
+type assistantEndpoint struct {
+	host string
+	port int
+}
+
+func (endpoint assistantEndpoint) readyURL() string {
+	return "http://" + net.JoinHostPort(endpoint.host, strconv.Itoa(endpoint.port)) + "/readyz"
+}
 
 // Release identity, injected with
 // `-X main.version=<release-id> -X main.revision=<source-commit>` so the host
@@ -118,6 +141,13 @@ func run(parsed arguments, inherited []string) (int, error) {
 		return 0, err
 	}
 	defer lock.Close()
+	secret, err := requireAssistantSecret(lookup)
+	if err != nil {
+		return 0, err
+	}
+	// The launcher owns the child stderr boundary, so it records the configured
+	// credentials before the assistant can write any diagnostic.
+	diagnostics.ConfigureSanitizerSecrets(secret, parent["PIXIE_TOKEN"], parent["PIXIE_MCP_TOKEN"])
 	executable, err := os.Executable()
 	if err != nil {
 		return 0, errors.New("could not resolve the pixie_cli executable")
@@ -126,16 +156,116 @@ func run(parsed arguments, inherited []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// A start is recorded only by the lock owner, so the bounded ledger has a
+	// single writer. The restart window expires old starts on its own.
+	recordRestartBudget(agentDir)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
+	stderr := assistantStderrSink(os.Stderr)
 	invocation := assistantInvocation(paths, parsed, parent)
 	invocation.Environment = withRunIdentity(invocation.Environment, identity)
+	// Child stderr is line-buffered through one redaction sink, and the host
+	// must answer /readyz before the launcher reports success.
+	invocation.Stderr = stderr
+	endpoint := assistantReadinessEndpoint(config)
+	invocation.Ready = func(ctx context.Context) error {
+		return waitForAssistantReady(ctx, endpoint, secret, assistantReadyTimeout)
+	}
 	code, err := processgroup.Run(invocation, signals)
+	stderr.Flush()
+	var readyErr processgroup.ReadyError
+	if errors.As(err, &readyErr) {
+		return 0, readyErr.Err
+	}
 	if err != nil && code == 0 {
 		return 0, errors.New("could not run bundled pixie_assistant")
 	}
 	return code, nil
+}
+
+// requireAssistantSecret fails closed before the child starts when the shared
+// bearer secret is absent, so the operator gets remediation instead of an
+// opaque readiness timeout.
+func requireAssistantSecret(lookup func(string) (string, bool)) (string, error) {
+	value, ok := lookup("PIXIE_PI_SECRET_KEY")
+	secret := strings.TrimSpace(value)
+	if !ok || len(secret) < assistantSecretMinimum {
+		return "", fmt.Errorf("PIXIE_PI_SECRET_KEY must be inherited and contain at least %d characters before the bundled assistant can start", assistantSecretMinimum)
+	}
+	return secret, nil
+}
+
+// assistantReadinessEndpoint derives the loopback /readyz surface from the same
+// v2 configuration the hosted assistant was given.
+func assistantReadinessEndpoint(config assistantconfig.Config) assistantEndpoint {
+	return assistantEndpoint{host: config.Host, port: config.Port}
+}
+
+// waitForAssistantReady polls the authenticated /readyz endpoint until it
+// answers 200, the deadline expires or ctx ends. It mirrors the full
+// supervisor's handshake and never includes the bearer secret in its error.
+func waitForAssistantReady(ctx context.Context, endpoint assistantEndpoint, secret string, timeout time.Duration) error {
+	client := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("bundled assistant readiness was aborted before it became ready")
+		default:
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return fmt.Errorf("bundled assistant did not become ready within %s; verify PIXIE_PI_SECRET_KEY and the configured assistant host and port", timeout)
+		}
+		requestTimeout := remaining
+		if requestTimeout > time.Second {
+			requestTimeout = time.Second
+		}
+		requestContext, cancel := context.WithTimeout(ctx, requestTimeout)
+		request, err := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint.readyURL(), nil)
+		if err == nil {
+			request.Header.Set("Authorization", "Bearer "+secret)
+			response, requestErr := client.Do(request)
+			if response != nil {
+				response.Body.Close()
+			}
+			if requestErr == nil && response.StatusCode == http.StatusOK {
+				cancel()
+				return nil
+			}
+		}
+		cancel()
+		pause := 100 * time.Millisecond
+		if remaining < pause {
+			pause = remaining
+		}
+		timer := time.NewTimer(pause)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return errors.New("bundled assistant readiness was aborted before it became ready")
+		case <-timer.C:
+		}
+	}
+}
+
+// recordRestartBudget appends this start to the bounded, self-expiring ledger
+// shared with the full supervisor and returns the starts inside the window.
+func recordRestartBudget(agentDir string) int {
+	ledger := diagnostics.NewStartLedger(filepath.Join(agentDir, "pixie", "restarts.json"))
+	return ledger.Record()
+}
+
+// assistantStderrSink builds one line-buffering, redacting sink for the hosted
+// assistant's stderr. Partial lines are held until a newline or Flush so a
+// fragment cannot bypass the same boundary as a complete line.
+func assistantStderrSink(console io.Writer) *diagnostics.StderrRing {
+	return diagnostics.NewStderrRingWithConsole(console)
 }
 
 func assistantInvocation(paths archivePaths, parsed arguments, parent map[string]string) processgroup.Invocation {

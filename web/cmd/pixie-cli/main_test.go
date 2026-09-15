@@ -1,14 +1,23 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/miloszkolber/pixie/cmd/internal/assistantconfig"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/ownerlock"
 )
@@ -176,6 +185,132 @@ func TestPixieCLIInjectsOpaqueRunIdentityAndRejectsHostileValues(t *testing.T) {
 	if _, present := environmentMap(hostile)[diagnostics.BootIdentityEnvironment]; present {
 		t.Fatalf("hostile identity was exported: %#v", hostile)
 	}
+}
+
+func TestAssistantReadinessEndpointUsesConfiguredHostAndPort(t *testing.T) {
+	endpoint := assistantReadinessEndpoint(assistantconfig.Config{Host: "localhost", Port: 3284})
+	if got, want := endpoint.readyURL(), "http://localhost:3284/readyz"; got != want {
+		t.Fatalf("readyURL() = %q, want %q", got, want)
+	}
+}
+
+func TestWaitForAssistantReadyAcceptsReadyAndRequiresBearer(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/readyz" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+secret {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	endpoint := assistantEndpointForTest(t, server.URL)
+	if err := waitForAssistantReady(context.Background(), endpoint, secret, time.Second); err != nil {
+		t.Fatalf("waitForAssistantReady() = %v", err)
+	}
+}
+
+func TestWaitForAssistantReadyFailsClosedWhenNeverReady(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	endpoint := assistantEndpointForTest(t, server.URL)
+	err := waitForAssistantReady(context.Background(), endpoint, strings.Repeat("s", 32), 150*time.Millisecond)
+	if err == nil {
+		t.Fatal("a never-ready assistant was accepted")
+	}
+	if !strings.Contains(err.Error(), "ready") {
+		t.Fatalf("readiness error = %q, want actionable readiness text", err)
+	}
+	if strings.Contains(err.Error(), strings.Repeat("s", 32)) {
+		t.Fatalf("readiness error leaked the bearer secret: %q", err)
+	}
+}
+
+func TestWaitForAssistantReadyHonorsAbort(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	endpoint := assistantEndpointForTest(t, server.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	started := time.Now()
+	if err := waitForAssistantReady(ctx, endpoint, strings.Repeat("s", 32), 10*time.Second); err == nil {
+		t.Fatal("a cancelled readiness wait returned nil")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("a cancelled readiness wait blocked for %s", elapsed)
+	}
+}
+
+func TestRequireAssistantSecretRejectsMissingOrShort(t *testing.T) {
+	if _, err := requireAssistantSecret(func(string) (string, bool) { return "", false }); err == nil {
+		t.Fatal("missing secret was accepted")
+	}
+	if _, err := requireAssistantSecret(func(string) (string, bool) { return strings.Repeat("x", 31), true }); err == nil {
+		t.Fatal("short secret was accepted")
+	}
+	secret := strings.Repeat("x", 32)
+	if got, err := requireAssistantSecret(func(string) (string, bool) { return secret, true }); err != nil || got != secret {
+		t.Fatalf("requireAssistantSecret() = %q, %v", got, err)
+	}
+}
+
+// A partial line from the hosted assistant is buffered until a newline or
+// Flush, so a fragment cannot bypass the one stderr boundary or be lost on exit.
+func TestAssistantStderrSinkBuffersPartialLinesUntilFlush(t *testing.T) {
+	var console bytes.Buffer
+	sink := assistantStderrSink(&console)
+	if _, err := io.WriteString(sink, "assistant booting"); err != nil {
+		t.Fatal(err)
+	}
+	if console.Len() != 0 {
+		t.Fatalf("partial line reached the console before a newline or flush: %q", console.String())
+	}
+	sink.Flush()
+	if !strings.Contains(console.String(), "assistant booting") {
+		t.Fatalf("flushed line = %q", console.String())
+	}
+}
+
+// The CLI records its start in the same bounded ledger pixie_full uses, and the
+// ledger expires starts outside the restart window so a long-lived host is not
+// permanently over budget.
+func TestRecordRestartBudgetResetsOutsideWindow(t *testing.T) {
+	agentDir := t.TempDir()
+	ledgerPath := filepath.Join(agentDir, "pixie", "restarts.json")
+	if err := os.MkdirAll(filepath.Dir(ledgerPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stale := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	if err := os.WriteFile(ledgerPath, []byte(`["`+stale+`"]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if starts := recordRestartBudget(agentDir); starts != 1 {
+		t.Fatalf("stale start counted toward the budget: %d", starts)
+	}
+	if starts := recordRestartBudget(agentDir); starts != 2 {
+		t.Fatalf("recent start was not counted: %d", starts)
+	}
+}
+
+func assistantEndpointForTest(t *testing.T, raw string) assistantEndpoint {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return assistantEndpoint{host: parsed.Hostname(), port: port}
 }
 
 func writeArchiveFile(t *testing.T, path string) {

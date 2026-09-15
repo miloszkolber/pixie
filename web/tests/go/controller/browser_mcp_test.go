@@ -129,7 +129,7 @@ func (f *fakeBrowserMCPHost) handler() http.HandlerFunc {
 			var result any
 			switch rpc.Method {
 			case "runtime.hello":
-				hello := piInitializeResponse()
+				hello := bunHostInitializeResponse()
 				operations, _ := hello["operationSet"].(map[string]bool)
 				for _, method := range []string{"pi.mcp.servers.read", "pi.mcp.servers.upsert", "pi.mcp.servers.remove", "pi.mcp.servers.probe"} {
 					operations[method] = true

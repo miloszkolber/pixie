@@ -51,8 +51,8 @@ void assertMapCoversWsValues;
 test("exhaustive catalog covers every WS_METHODS value", () => {
 	const values = Object.values(WS_METHODS);
 	const catalogMethods = [...CONTROLLER_METHODS];
-	expect(values.length).toBe(101);
-	expect(catalogMethods.length).toBe(101);
+	expect(values.length).toBe(102);
+	expect(catalogMethods.length).toBe(102);
 	expect(new Set(values).size).toBe(values.length);
 	expect(new Set(catalogMethods).size).toBe(catalogMethods.length);
 	expect(new Set(catalogMethods)).toEqual(new Set(values));
@@ -235,7 +235,7 @@ test("generated binding check matches Go handler cases both directions", async (
 	]);
 	const wsValues = new Set<string>(Object.values(WS_METHODS));
 	const catalogMethods = new Set<string>(CONTROLLER_METHODS);
-	expect(handlerMethods.size).toBe(101);
+	expect(handlerMethods.size).toBe(102);
 	expect(handlerMethods).toEqual(wsValues);
 	expect(handlerMethods).toEqual(catalogMethods);
 });

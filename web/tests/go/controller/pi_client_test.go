@@ -54,7 +54,7 @@ func TestPiClientFramesPiAndOrdersNotifications(t *testing.T) {
 					serverErrors <- errors.New("invalid Pi initialization")
 					return
 				}
-				if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": piInitializeResponse()}); err != nil {
+				if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": legacyCompatibilityHostResponse()}); err != nil {
 					serverErrors <- err
 					return
 				}
@@ -151,7 +151,7 @@ func TestPiClientV1HelloBytesUnchanged(t *testing.T) {
 			ID json.RawMessage `json:"id"`
 		}
 		_ = json.Unmarshal(payload, &rpc)
-		_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": piInitializeResponse()})
+		_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": bunHostInitializeResponse()})
 		for {
 			if _, _, err := connection.Read(context.Background()); err != nil {
 				return
@@ -198,7 +198,7 @@ func TestPiClientDrainsCreateReplyAfterRequestCancellation(t *testing.T) {
 			}
 			switch rpc.Method {
 			case "runtime.hello":
-				if err := writeRPC(connection, map[string]any{"id": rpc.ID, "result": piInitializeResponse()}); err != nil {
+				if err := writeRPC(connection, map[string]any{"id": rpc.ID, "result": bunHostInitializeResponse()}); err != nil {
 					return
 				}
 			case "session.create":
@@ -354,7 +354,7 @@ func TestPiClientV2RejectsInconsistentPeer(t *testing.T) {
 			if json.Unmarshal(payload, &rpc) != nil {
 				return
 			}
-			result := piInitializeResponse()
+			result := bunHostInitializeResponse()
 			result["supportedProtocolVersions"] = []int{2, 1}
 			_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result})
 		}
@@ -388,7 +388,7 @@ func TestPiClientStrictV2RejectsV1Host(t *testing.T) {
 			if json.Unmarshal(payload, &rpc) != nil {
 				return
 			}
-			_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": piInitializeResponse()})
+			_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": bunHostInitializeResponse()})
 		}
 	}))
 	defer server.Close()
@@ -557,7 +557,7 @@ func TestPiClientAdministrationRequiresMinimalOperationSet(t *testing.T) {
 			if json.Unmarshal(payload, &rpc) != nil || rpc.Method != "runtime.hello" {
 				return
 			}
-			result := piInitializeResponse()
+			result := bunHostInitializeResponse()
 			operations := result["operationSet"].(map[string]bool)
 			delete(operations, "pi.preferences.read")
 			if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}); err != nil {
@@ -659,7 +659,7 @@ func TestPiClientSharesCancellableSetupAndReconnectsAfterReset(t *testing.T) {
 	}
 	respond := func(request setupRequest, version int) {
 		t.Helper()
-		response := piInitializeResponse()
+		response := bunHostInitializeResponse()
 		response["protocolVersion"] = version
 		if err := writeRPC(request.connection, map[string]any{"jsonrpc": "2.0", "id": request.id, "result": response}); err != nil {
 			t.Fatal(err)

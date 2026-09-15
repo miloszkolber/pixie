@@ -358,7 +358,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		SupportSnapshotAuthEnabled: authConfig.Enabled,
 		SupportSnapshot: func(ctx context.Context) (json.RawMessage, error) {
 			report := runtimeDiagnosticsSnapshot(healthRing, sessions, statusProvider, runtimePiStatus(ctx, client))
-			return diagnostics.MarshalSupportSnapshot(supportSnapshotRuntime(build, report), events.Snapshot())
+			return diagnostics.MarshalSupportSnapshot(supportSnapshotRuntime(build, report, sessions.SessionSchemaSummary()), events.Snapshot())
 		},
 		ControllerEvents: events,
 		MCPRegistry:      mcpRegistry,
@@ -647,8 +647,10 @@ func applicationHealthState(report RuntimeDiagnosticsReport) string {
 // supportSnapshotRuntime maps the broader authenticated diagnostics report to
 // the narrow support-export allowlist. In particular, retained deletion
 // records and agent capability payloads never cross this boundary because they
-// can carry identifiers or host-provided free text.
-func supportSnapshotRuntime(build diagnostics.BuildInfo, report RuntimeDiagnosticsReport) diagnostics.SupportSnapshotRuntime {
+// can carry identifiers or host-provided free text. The AUX-12 session-schema
+// degradation summary is sampled from the session manager so the snapshot
+// accessor is actually observed; nil means no resident session degraded.
+func supportSnapshotRuntime(build diagnostics.BuildInfo, report RuntimeDiagnosticsReport, sessionSchema *diagnostics.SessionSchemaSummary) diagnostics.SupportSnapshotRuntime {
 	return diagnostics.SupportSnapshotRuntime{
 		Build: build,
 		Host: diagnostics.SupportSnapshotHost{
@@ -664,6 +666,7 @@ func supportSnapshotRuntime(build diagnostics.BuildInfo, report RuntimeDiagnosti
 			State:  report.Schedule.State,
 			Reason: report.Schedule.Reason,
 		},
+		SessionSchema:     sessionSchema,
 		HealthTransitions: supportHealthTransitions(report.Health.Transitions),
 	}
 }

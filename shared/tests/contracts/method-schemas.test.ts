@@ -64,6 +64,24 @@ test("method schemas declare allowed field types and catalogued methods", () => 
 	}
 });
 
+test("session.fork accepts an optional entry identity for edit-from-here", () => {
+	// AUX-14: a new-file fork omits entryId; an in-file branch supplies the
+	// native entry id. The parameter is optional on both the browser and host
+	// direction so the existing fork contract stays compatible.
+	expect(
+		validateWsMethodParams("session.fork", { projectId: "p", sessionId: "s" }),
+	).toBeUndefined();
+	expect(
+		validateWsMethodParams("session.fork", { projectId: "p", sessionId: "s", entryId: "entry-1" }),
+	).toBeUndefined();
+	expect(
+		validateWsMethodParams("session.fork", { projectId: "p", sessionId: "s", entryId: 4 }),
+	).toBe("session.fork params field entryId must be string");
+	const hostFork = HOST_METHOD_SCHEMAS.find((entry) => entry.name === "session.fork");
+	const hostEntry = hostFork?.params.find((field) => field.name === "entryId");
+	expect(hostEntry).toMatchObject({ name: "entryId", type: "string", optional: true });
+});
+
 test("method parameter validation rejects malformed payloads and keeps additive fields", () => {
 	expect(validateWsMethodParams("session.prompt", { sessionId: "s", text: "hi" })).toBeUndefined();
 	expect(validateWsMethodParams("session.prompt", { sessionId: "s" })).toBe(

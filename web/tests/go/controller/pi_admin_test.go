@@ -48,7 +48,7 @@ func TestPiAdminModelsRequireUsableProviderInventory(t *testing.T) {
 			}
 			var result any = map[string]any{}
 			if rpc.Method == "runtime.hello" {
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			} else if rpc.Method == "pi.providers.list" {
 				result = map[string]any{"entries": providers}
 			} else if rpc.Method == "pi.defaults.save" {
@@ -132,7 +132,7 @@ func TestPiAdminUsesReleaseMatchedExtensionsAndGenericPreferenceRemoval(t *testi
 			var result any = map[string]any{}
 			switch rpc.Method {
 			case "runtime.hello":
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			case "pi.config.extensions.list":
 				result = map[string]any{"extensions": []any{}, "warnings": []any{}}
 			case "pi.preferences.reset":
@@ -235,7 +235,7 @@ func TestPiAdminPreferencesTolerateUnchangedReadOnlyKeyAndFailClosedOnChange(t *
 			var result any = map[string]any{}
 			switch rpc.Method {
 			case "runtime.hello":
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			case "pi.preferences.read":
 				result = map[string]any{"values": []any{
 					map[string]any{"key": "compactionReserveTokens", "value": 16384, "writable": false, "source": "read-only"},
@@ -345,7 +345,7 @@ func TestPiAdminRefreshModelsWaitsForInventoryCompletion(t *testing.T) {
 			var result any = map[string]any{}
 			switch rpc.Method {
 			case "runtime.hello":
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			case "pi.providers.inventory.refresh":
 				result = map[string]any{"started": []string{"dynamic"}}
 			case "pi.providers.list":
@@ -395,7 +395,7 @@ func TestPiAdminRefreshModelsRejectsMissingRefreshingProvider(t *testing.T) {
 			}
 			var result any = map[string]any{}
 			if rpc.Method == "runtime.hello" {
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			} else if rpc.Method == "pi.providers.inventory.refresh" {
 				result = map[string]any{"started": []string{"removed"}}
 			} else if rpc.Method == "pi.providers.list" {
@@ -443,7 +443,7 @@ func TestPiAdminRefreshModelsReportsIncompleteCanonicalMetadata(t *testing.T) {
 			}
 			var result any = map[string]any{}
 			if rpc.Method == "runtime.hello" {
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			} else if rpc.Method == "pi.providers.inventory.refresh" {
 				result = map[string]any{"started": []string{}}
 			} else if rpc.Method == "pi.providers.list" {
@@ -492,7 +492,7 @@ func TestPiAdminRefreshModelsRejectsAbortedRefresh(t *testing.T) {
 			}
 			var result any = map[string]any{}
 			if rpc.Method == "runtime.hello" {
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			} else if rpc.Method == "pi.providers.inventory.refresh" {
 				result = map[string]any{"aborted": true, "started": []string{}, "failed": []any{}}
 			} else if rpc.Method == "pi.providers.list" {
@@ -537,7 +537,7 @@ func TestPiAdminRefreshModelsReportsPartialFailures(t *testing.T) {
 			}
 			var result any = map[string]any{}
 			if rpc.Method == "runtime.hello" {
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			} else if rpc.Method == "pi.providers.inventory.refresh" {
 				result = map[string]any{
 					"aborted": false,
@@ -599,7 +599,7 @@ func TestPiAdminSaveDefaultsRejectsUnknownModel(t *testing.T) {
 			var result any = map[string]any{}
 			switch rpc.Method {
 			case "runtime.hello":
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			case "pi.providers.list":
 				result = map[string]any{"entries": []any{map[string]any{
 					"providerId": "available", "configured": true, "available": true,
@@ -654,7 +654,7 @@ func TestPiAdminCreateReleasesOrphanOnConfigureFailure(t *testing.T) {
 			}
 			switch rpc.Method {
 			case "runtime.hello":
-				_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": piInitializeResponse()})
+				_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": bunHostInitializeResponse()})
 			case "session.create":
 				cwd, _ := rpc.Params["cwd"].(string)
 				mu.Lock()

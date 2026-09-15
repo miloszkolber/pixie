@@ -359,6 +359,7 @@
 			"fs.readFile",
 			"git.status",
 			"git.diffFile",
+			"git.turnDiff",
 			"git.listBranches",
 			"git.listCommits",
 			"directory.list",
@@ -583,6 +584,13 @@
 		},
 		{
 			"method": "git.diffFile",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:git"
+		},
+		{
+			"method": "git.turnDiff",
 			"fc": "FC30",
 			"owner": "workspace",
 			"profile": "controller-local",
@@ -1316,6 +1324,11 @@
 					{
 						"name": "sessionId",
 						"type": "string"
+					},
+					{
+						"name": "entryId",
+						"type": "string",
+						"optional": true
 					}
 				],
 				"result": [
@@ -1967,6 +1980,11 @@
 					{
 						"name": "sessionId",
 						"type": "string"
+					},
+					{
+						"name": "entryId",
+						"type": "string",
+						"optional": true
 					}
 				],
 				"result": []

@@ -23,6 +23,27 @@ func (h *countingHandler) Handle(_ context.Context, _ string, raw json.RawMessag
 	return map[string]any{"call": h.calls.Add(1), "params": json.RawMessage(append([]byte(nil), raw...))}, nil
 }
 
+// waitForBrowserSocket waits until ServeHTTP has registered the upgraded
+// socket. The upgrade response can reach the client before the identity is
+// registered, so a test that publishes immediately after Dial would otherwise
+// race registration; production clients sync from the first snapshot frame.
+func waitForBrowserSocket(t *testing.T, server *WebSocketServer, clientKey string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		server.mu.Lock()
+		socket, ok := server.sockets[clientKey]
+		server.mu.Unlock()
+		if ok && socket.connection != nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("browser socket %q was not registered", clientKey)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // blockHandler holds one admitted request so the socket's queue can fill.
 type blockHandler struct {
 	started chan struct{}
@@ -165,6 +186,7 @@ func TestWebSocketPublishAllowlistDropsUnknownChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer connection.CloseNow()
+	waitForBrowserSocket(t, server, "allow")
 	if err := server.Publish(ctx, "internal.secret", map[string]any{"value": 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +232,7 @@ func TestWebSocketEventBackpressureCapsQueuedFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer connection.CloseNow()
+	waitForBrowserSocket(t, server, "slow")
 	// Block the read loop so published frames stay queued.
 	if err := connection.Write(ctx, websocket.MessageText, []byte(`{"id":"block","method":"block","params":{}}`)); err != nil {
 		t.Fatal(err)

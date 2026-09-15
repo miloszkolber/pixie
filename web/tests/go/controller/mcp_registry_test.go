@@ -138,7 +138,7 @@ func TestMCPAdapterStatusProjectsBridgeAndStaysFailOpen(t *testing.T) {
 			result := any(map[string]any{})
 			switch rpc.Method {
 			case "runtime.hello":
-				result = piInitializeResponse()
+				result = adapterStatusHostResponse()
 			case "adapter.status":
 				result = map[string]any{
 					"engine": "pi-mcp-adapter", "version": "2.32.1", "bunCompat": "unknown",

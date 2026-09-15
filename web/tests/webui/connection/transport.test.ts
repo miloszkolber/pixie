@@ -500,3 +500,101 @@ describe("AUX-16 delta reassembly", () => {
 		transport.stop();
 	});
 });
+
+describe("AUX-34 method validation", () => {
+	test("rejects a malformed outgoing method payload before it reaches the socket", async () => {
+		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
+		transport.connect();
+		const socket = TestWebSocket.instances[0];
+		if (!socket) throw new Error("socket was not created");
+		socket.open();
+		const before = requestsIn(socket.sent).length;
+
+		// session.prompt requires text; the generated validator must reject the
+		// payload at the browser boundary instead of sending it.
+		const request = transport.request("session.prompt", { sessionId: "s" } as never);
+		await expect(request).rejects.toThrow("session.prompt params is missing text");
+		expect(requestsIn(socket.sent)).toHaveLength(before);
+		transport.stop();
+	});
+
+	test("keeps additive unknown fields in an outgoing method payload", async () => {
+		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
+		transport.connect();
+		const socket = TestWebSocket.instances[0];
+		if (!socket) throw new Error("socket was not created");
+		socket.open();
+
+		const request = transport.request("session.fork", {
+			projectId: "p",
+			sessionId: "s",
+			entryId: "entry-42",
+			futureField: { nested: true },
+		} as never);
+		const frame = requestsIn(socket.sent)[0];
+		expect(frame?.method).toBe("session.fork");
+		const sent = JSON.parse(
+			socket.sent.find((candidate) => parse(candidate).method === "session.fork") ?? "{}",
+		) as { params?: Record<string, unknown> };
+		expect(sent.params?.futureField).toEqual({ nested: true });
+		socket.message(JSON.stringify({ id: frame?.id, ok: true, result: {} }));
+		await request;
+		transport.stop();
+	});
+
+	test("rejects a result that violates the generated method schema", async () => {
+		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
+		transport.connect();
+		const socket = TestWebSocket.instances[0];
+		if (!socket) throw new Error("socket was not created");
+		socket.open();
+
+		const request = transport.request("model.clampThinking", {
+			sessionId: "s",
+			level: "medium",
+		});
+		const id = requestsIn(socket.sent)[0]?.id;
+		// model.clampThinking requires a level in its result.
+		socket.message(JSON.stringify({ id, ok: true, result: {} }));
+		await expect(request).rejects.toThrow("invalid model.clampThinking result");
+		transport.stop();
+	});
+
+	test("accepts a result with additive unknown fields", async () => {
+		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
+		transport.connect();
+		const socket = TestWebSocket.instances[0];
+		if (!socket) throw new Error("socket was not created");
+		socket.open();
+
+		const request = transport.request("model.clampThinking", {
+			sessionId: "s",
+			level: "medium",
+		});
+		const id = requestsIn(socket.sent)[0]?.id;
+		socket.message(
+			JSON.stringify({ id, ok: true, result: { level: "medium", futureField: true } }),
+		);
+		const result = (await request) as { level: string; futureField?: boolean };
+		expect(result.level).toBe("medium");
+		expect(result.futureField).toBe(true);
+		transport.stop();
+	});
+
+	test("still rejects a valid error envelope with its typed code", async () => {
+		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
+		transport.connect();
+		const socket = TestWebSocket.instances[0];
+		if (!socket) throw new Error("socket was not created");
+		socket.open();
+
+		const request = transport.request("model.clampThinking", {
+			sessionId: "s",
+			level: "medium",
+		});
+		const id = requestsIn(socket.sent)[0]?.id;
+		socket.message(JSON.stringify({ id, ok: false, error: "boom", errorCode: "UNKNOWN_COMMIT" }));
+		await expect(request).rejects.toThrow("boom");
+		transport.stop();
+	});
+});

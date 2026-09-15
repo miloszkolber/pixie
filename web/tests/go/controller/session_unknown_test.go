@@ -80,7 +80,7 @@ func TestRefreshFromDiskReloadsNonStreamingSession(t *testing.T) {
 		t,
 		nil,
 		nil,
-		piInitializeResponse(),
+		bunHostInitializeResponse(),
 		nil,
 		func(method string, _ map[string]any) {
 			switch method {

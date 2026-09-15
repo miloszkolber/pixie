@@ -23,7 +23,7 @@ import {
 	HOST_OPERATION_REASONS,
 	HOST_OPERATIONS,
 } from "../../shared/src/generated/protocol-catalog.ts";
-import { createHostLogger, type HostLogger } from "./log.ts";
+import { createHostLogger, type HostLogger, redactHostLogText } from "./log.ts";
 import { loadVerifiedPiPublicApi, type VerifiedPiPackage } from "./probe.ts";
 import { type SteeringBinding, SteeringRegistry } from "./steering.ts";
 
@@ -693,6 +693,21 @@ function encode(value: unknown): string {
 	} catch {
 		throw new HostError("host response could not be serialized");
 	}
+}
+
+// AUX-32: a browser reply never carries raw native/SDK error text, which can
+// embed absolute paths, URLs or credentials. The message is redacted through
+// the same boundary as retained logs and bounded. The typed code/reason still
+// identifies the failure class, and the redacted cause is logged separately.
+const MAX_HOST_ERROR_MESSAGE_LENGTH = 512;
+
+function safeHostErrorMessage(error: unknown, secrets: readonly string[] = []): string {
+	const raw = error instanceof Error ? error.message : "operation failed";
+	const redacted = redactHostLogText(raw, secrets);
+	if (redacted === "") return "operation failed";
+	return redacted.length > MAX_HOST_ERROR_MESSAGE_LENGTH
+		? redacted.slice(0, MAX_HOST_ERROR_MESSAGE_LENGTH)
+		: redacted;
 }
 
 function defaultServerFactory(): BunServerFactory {
@@ -4362,9 +4377,11 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				},
 				(error: unknown) => {
 					if (!connection.active.has(request.id)) return;
+					// The redacted cause is retained in the bounded log; only the
+					// bounded, secret-free message crosses to the browser.
 					logger.error("host.request.failed", error, { method: request.method });
 					finish();
-					const message = error instanceof Error ? error.message : "operation failed";
+					const message = safeHostErrorMessage(error, [secret]);
 					if (connection.protocolVersion === 2) {
 						if (error instanceof CapabilityError)
 							v2Error(connection, request.id, -32004, "capability_unavailable", message);

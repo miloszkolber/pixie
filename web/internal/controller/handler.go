@@ -262,6 +262,21 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, fmt.Errorf("malformed Git request")
 		}
 		return h.Git.DiffFile(ctx, request.ProjectID, request.Repository, request.Path, request.Scope)
+	case "git.turnDiff":
+		var request struct {
+			ProjectID  string                 `json:"projectId"`
+			Repository string                 `json:"repository"`
+			ToolName   string                 `json:"toolName"`
+			Path       string                 `json:"path"`
+			Scope      workspace.GitDiffScope `json:"scope"`
+		}
+		if h.Git == nil || decodeParams(raw, &request) != nil {
+			return nil, fmt.Errorf("malformed Git request")
+		}
+		// A Git execution failure is a bounded unavailable result, so the
+		// browser renders a turn diff instead of a failed request. A containment
+		// denial stays typed and fails closed.
+		return h.Git.TurnDiffForTool(ctx, request.ProjectID, request.Repository, request.ToolName, request.Path, request.Scope)
 	case "git.listCommits":
 		var request struct {
 			ProjectID  string `json:"projectId"`

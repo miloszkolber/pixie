@@ -1,5 +1,11 @@
-import type { WsMethodName, WsParams, WsResult, WsServerMessage } from "@pixie/shared";
-import { isWsServerMessage, WS_CHANNELS } from "@pixie/shared";
+import type { WsMethodName, WsParams, WsResult } from "@pixie/shared";
+import {
+	isWsMethodResult,
+	isWsRequest,
+	isWsServerMessage,
+	validateWsMethodParams,
+	WS_CHANNELS,
+} from "@pixie/shared";
 import { randomId } from "../lib";
 import { RequestError } from "./request-error";
 import { StreamGuard } from "./stream-guard";
@@ -94,6 +100,7 @@ export interface RequestOptions {
 
 interface PendingRequest {
 	frame: string;
+	method: string;
 	resolve: (value: unknown) => void;
 	reject: (error: Error) => void;
 	timer: ReturnType<typeof setTimeout>;
@@ -216,7 +223,16 @@ export class WsTransport {
 	): Promise<WsResult<M>> {
 		const { sessionId, signal, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
 		const id = `trpi_${++requestSequence}`;
-		const frame = JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) });
+		const envelope = { id, method, params, ...(sessionId ? { sessionId } : {}) };
+		// AUX-34: a malformed method payload fails at the browser boundary before
+		// it creates a pending request or reaches the socket. The generated
+		// validator checks required fields only, so additive unknown keys remain
+		// compatible with an older or newer controller.
+		if (!isWsRequest(envelope)) {
+			const reason = validateWsMethodParams(method, params);
+			return Promise.reject(new Error(reason ?? `invalid ${method} request payload`));
+		}
+		const frame = JSON.stringify(envelope);
 		return new Promise<WsResult<M>>((resolve, reject) => {
 			if (signal?.aborted) {
 				reject(requestAborted(signal));
@@ -227,6 +243,7 @@ export class WsTransport {
 			}, timeoutMs);
 			const entry: PendingRequest = {
 				frame,
+				method,
 				// SAFETY: the shared WsResult<M> is assignable to a handler that
 				// receives the decoded response envelope and the pending-error
 				// type is identical, so the widening is unreachable in practice.
@@ -339,6 +356,13 @@ export class WsTransport {
 		this.queueAck(parsed.id);
 		const entry = this.takePending(parsed.id);
 		if (!entry) return;
+		// AUX-34: check the reply against the generated schema for the method
+		// that is waiting on this id. Additive unknown result fields stay
+		// compatible; a malformed result is rejected before it can reach UI state.
+		if (!isWsMethodResult(entry.method, parsed)) {
+			entry.reject(new Error(`invalid ${entry.method} result`));
+			return;
+		}
 		if (parsed.ok) {
 			entry.resolve(parsed.result);
 			return;

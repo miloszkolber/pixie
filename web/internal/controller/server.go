@@ -623,6 +623,12 @@ func (h *HTTPHandler) serveProjectImage(response http.ResponseWriter, request *h
 	}
 	opened, info, file, err := h.Files.OpenRegularFileInRoot(root, relative, projectImageMaxBytes)
 	if err != nil {
+		// A containment denial is an authority decision, not a missing file:
+		// report 403 so a symlink escape is never disguised as a 404.
+		if workspace.IsTraversal(err) {
+			http.Error(response, "forbidden", http.StatusForbidden)
+			return
+		}
 		http.NotFound(response, request)
 		return
 	}

@@ -52,7 +52,7 @@ func TestNativePiSnapshotAndToolEventsProjectBeforeRPCCompletes(t *testing.T) {
 			if json.Unmarshal(raw, &req) != nil {
 				return
 			}
-			result := any(piInitializeResponse())
+			result := any(bunHostInitializeResponse())
 			if req.Method == "session.load" {
 				if writeRPC(ws, map[string]any{"method": "session.history", "params": map[string]any{"sessionId": "native", "messages": []any{map[string]any{"role": "user", "messageId": "u1", "content": "Inspect"}}}}) != nil {
 					return

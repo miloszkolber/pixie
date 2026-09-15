@@ -34,7 +34,7 @@ func TestNativeInventoryProjectionOmitsSecretsAndRejectsWrongReader(t *testing.T
 					if json.Unmarshal(payload, &rpc) != nil {
 						return
 					}
-					result := any(piInitializeResponse())
+					result := any(bunHostInitializeResponse())
 					if rpc.Method == "pi.extensions.list" {
 						result = map[string]any{
 							"version": 1, "context": map[string]any{"cwd": "/agent", "sessionId": nil, "reader": reader},

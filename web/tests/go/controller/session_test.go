@@ -23,7 +23,7 @@ import (
 )
 
 func newSessionManager(t *testing.T, loadUpdates []map[string]any, promptRequests chan<- map[string]any) (*controller.SessionManager, *controller.PiClient, workspace.Project, persist.Store) {
-	return newSessionManagerWithInitialize(t, loadUpdates, promptRequests, piInitializeResponse())
+	return newSessionManagerWithInitialize(t, loadUpdates, promptRequests, bunHostInitializeResponse())
 }
 
 func newSessionManagerWithInitialize(t *testing.T, loadUpdates []map[string]any, promptRequests chan<- map[string]any, initialize map[string]any) (*controller.SessionManager, *controller.PiClient, workspace.Project, persist.Store) {
@@ -31,7 +31,7 @@ func newSessionManagerWithInitialize(t *testing.T, loadUpdates []map[string]any,
 }
 
 func newSessionManagerWithPublisher(t *testing.T, publish controller.SessionPublisher) (*controller.SessionManager, *controller.PiClient, workspace.Project, persist.Store) {
-	return newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), publish)
+	return newSessionManagerWithInitializeAndPublisher(t, nil, nil, bunHostInitializeResponse(), publish)
 }
 
 func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map[string]any, promptRequests chan<- map[string]any, initialize map[string]any, publish controller.SessionPublisher, observers ...func(string, map[string]any)) (*controller.SessionManager, *controller.PiClient, workspace.Project, persist.Store) {
@@ -233,7 +233,7 @@ func TestCreateRejectsMissingThinkingProjectionAndReleasesTheNativeSession(t *te
 		t,
 		nil,
 		nil,
-		piInitializeResponse(),
+		bunHostInitializeResponse(),
 		nil,
 		sessionFixtureBehavior{configure: func(params map[string]any) (any, bool) {
 			if params["configId"] == "thinking" {
@@ -345,7 +345,7 @@ func TestIdleSessionReleaseRevokesLiveNativeMCPRegistration(t *testing.T) {
 }
 
 func TestLowerLevelIdleReleaseRetainsResidenceOnNativeRejection(t *testing.T) {
-	initialize := piInitializeResponse()
+	initialize := bunHostInitializeResponse()
 	initialize["operationSet"].(map[string]bool)["session.release"] = false
 	var loads atomic.Int32
 	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, initialize, nil, func(method string, _ map[string]any) {
@@ -516,7 +516,7 @@ func TestReattachedSettledRunClearsStreamingAndAdmitsFollowUp(t *testing.T) {
 			writeMu.Lock()
 			switch rpc.Method {
 			case "runtime.hello":
-				_ = writeRPC(socket, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": piInitializeResponse()})
+				_ = writeRPC(socket, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": bunHostInitializeResponse()})
 			case "session.load":
 				_ = writeRPC(socket, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": map[string]any{"sessionId": "chat", "capabilities": map[string]any{"sessions": 1}, "runId": "native-1", "messages": []any{}}})
 				go func() {
@@ -645,7 +645,7 @@ func TestPiUsageUpdateProjectsCumulativeTokenStats(t *testing.T) {
 
 func TestPromptEmbedsBoundedTextResourcesWithImages(t *testing.T) {
 	requests := make(chan map[string]any, 1)
-	manager, _, project, _ := newSessionManager(t, nil, requests)
+	manager, _, project, _ := newSessionManagerWithInitialize(t, nil, requests, promptResourceHostResponse())
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client"); err != nil {
@@ -698,6 +698,30 @@ func TestPromptRejectsUnsupportedAndInvalidTextResources(t *testing.T) {
 	}
 }
 
+// AUX-25: the real Bun host advertises no text-resource route, so a resource
+// prompt must fail closed without dispatching session.prompt to the host.
+func TestPromptRejectsTextResourcesWithoutHostRoute(t *testing.T) {
+	requests := make(chan map[string]any, 1)
+	recorder := &deletionMethodRecorder{}
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, bunHostInitializeResponse(), nil, recorder.observe)
+	ctx := t.Context()
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client"); err != nil {
+		t.Fatal(err)
+	}
+	resources := []controller.TextResourceAttachment{{Type: "text", Name: "review.ts", MimeType: "text/x-typescript", Text: "const hidden = true\n"}}
+	if err := manager.Prompt(ctx, "chat", "Review", nil, resources); err == nil || !strings.Contains(err.Error(), "session.prompt.resource") {
+		t.Fatalf("resource prompt was not rejected by the real host profile: %v", err)
+	}
+	select {
+	case request := <-requests:
+		t.Fatalf("unsupported resource prompt reached the host: %#v", request)
+	default:
+	}
+	if recorder.saw("session.prompt") {
+		t.Fatal("unsupported resource prompt dispatched session.prompt")
+	}
+}
+
 func TestTextResourceReplayProjectsOnlyBoundedAttachmentMarkers(t *testing.T) {
 	oversized := strings.Repeat("x", 1024*1024+1)
 	manager, _, project, _ := newSessionManager(t, []map[string]any{
@@ -736,7 +760,7 @@ func TestTextResourceReplayProjectsOnlyBoundedAttachmentMarkers(t *testing.T) {
 
 func TestTextResourceEchoDoesNotDuplicateOptimisticMarkers(t *testing.T) {
 	requests := make(chan map[string]any, 1)
-	manager, _, project, _ := newSessionManager(t, nil, requests)
+	manager, _, project, _ := newSessionManagerWithInitialize(t, nil, requests, promptResourceHostResponse())
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client"); err != nil {
@@ -895,7 +919,7 @@ func TestRuntimeResumesDurableFollowUpsAfterRestart(t *testing.T) {
 			}
 			result := any(map[string]any{})
 			if rpc.Method == "runtime.hello" {
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			}
 			if rpc.Method == "session.prompt" {
 				requests <- map[string]any{"connection": connection, "id": rpc.ID, "params": rpc.Params}
@@ -1046,7 +1070,7 @@ func newModelSwitchManager(t *testing.T, loads [][]any, results []modelSwitchCon
 			var rpcErr string
 			switch rpc.Method {
 			case "runtime.hello":
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			case "session.load":
 				agent.mu.Lock()
 				index := min(agent.load, len(agent.loads)-1)

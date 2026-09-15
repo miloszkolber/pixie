@@ -59,7 +59,9 @@ func TestProjectImageReadsInternalSymlinksAndRejectsSwaps(t *testing.T) {
 	if err := os.Symlink(filepath.Join(outside, "secret.png"), filepath.Join(root, "preview.png")); err != nil {
 		t.Fatal(err)
 	}
-	if response := request(); response.Code != http.StatusNotFound || response.Body.String() == "secret" {
+	// AUX-21 maps the path-swapped symlink escape to 403, never a disguised
+	// missing file, and the outside bytes must not be served.
+	if response := request(); response.Code != http.StatusForbidden || response.Body.String() == "secret" {
 		t.Fatalf("path-swapped image symlink: status=%d body=%q", response.Code, response.Body.String())
 	}
 }

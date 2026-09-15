@@ -322,7 +322,18 @@ func runControllerWithConfig(ctx context.Context, build diagnostics.BuildInfo, c
 	return serveController(ctx, runtime)
 }
 
-func serveController(ctx context.Context, runtime *controller.Runtime) error {
+// controllerRuntime is the subset of *controller.Runtime the controller-only
+// entrypoint owns. The interface keeps the update/rollback drain contract
+// independently testable without a live listener.
+type controllerRuntime interface {
+	Start() (string, error)
+	Errors() <-chan error
+	BeginDrain()
+	WaitForDrain(ctx context.Context)
+	Shutdown(ctx context.Context) error
+}
+
+func serveController(ctx context.Context, runtime controllerRuntime) error {
 	endpoint, err := runtime.Start()
 	if err != nil {
 		return err
@@ -331,13 +342,34 @@ func serveController(ctx context.Context, runtime *controller.Runtime) error {
 	select {
 	case err = <-runtime.Errors():
 	case <-ctx.Done():
+		// The service manager stops the process for an update or rollback, or
+		// the full supervisor reloads it. Enter the AUX-19 admission gate so
+		// quiesce is reachable in production before the listener closes.
+		drainForUpdate(runtime, controllerQuiesceTimeout)
 	}
 	shutdownContext, release := context.WithTimeout(context.Background(), applicationDrainTimeout)
 	defer release()
 	return errors.Join(err, runtime.Shutdown(shutdownContext))
 }
 
+// drainForUpdate requests the AUX-19 quiesce and waits boundedly for admitted
+// work to settle. New prompts, forks and resume-style session creation are
+// refused immediately; the process reports quiescing rather than an error while
+// in-flight runs finish.
+func drainForUpdate(runtime controllerRuntime, timeout time.Duration) {
+	runtime.BeginDrain()
+	slog.Info("controller quiescing", "state", "draining")
+	drainContext, release := context.WithTimeout(context.Background(), timeout)
+	defer release()
+	runtime.WaitForDrain(drainContext)
+}
+
 const applicationDrainTimeout = 25 * time.Second
+
+// controllerQuiesceTimeout bounds the update/rollback drain. The packaged
+// systemd units allow 30s between SIGTERM and SIGKILL, so quiesce is kept short
+// enough that the existing 25s shutdown budget still fits inside that window.
+const controllerQuiesceTimeout = 5 * time.Second
 
 // rejectControllerAssistantSettings keeps controller-only mode from
 // accidentally accepting settings that would select or configure a local Pi.

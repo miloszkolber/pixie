@@ -117,7 +117,7 @@ func TestArchiveFailsClosedWithoutDismissingPendingDialogs(t *testing.T) {
 
 func TestDeleteDismissesPendingDialogs(t *testing.T) {
 	events := make(chan publishedEvent, 32)
-	manager, _, project, _ := newSessionManagerWithPublisher(t, func(channel string, data any) {
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), func(channel string, data any) {
 		events <- publishedEvent{channel: channel, data: data}
 	})
 	ctx := t.Context()

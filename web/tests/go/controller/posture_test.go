@@ -272,17 +272,24 @@ func TestPostureTraversalContainmentInFileReads(t *testing.T) {
 				"%2e%2e/secret.png",
 				"%2e%2e%2fsecret.png",
 				"subdir/../../secret.png",
-				"..%252fsecret.png",
 				"evil.png",
 				"%65vil.png",
 			} {
 				response := doGet(traversal)
-				if response.Code != http.StatusNotFound {
-					t.Fatalf("traversal %q returned %d, want %d", traversal, response.Code, http.StatusNotFound)
+				// AUX-21 maps a containment or symlink-escape denial to 403 so an
+				// escape is never disguised as a missing file.
+				if response.Code != http.StatusForbidden {
+					t.Fatalf("containment denial %q returned %d, want %d", traversal, response.Code, http.StatusForbidden)
 				}
 				if strings.Contains(response.Body.String(), "top-secret-bytes") {
 					t.Fatalf("traversal %q leaked outside bytes", traversal)
 				}
+			}
+			// A double-encoded separator is a literal in-root filename, not a
+			// traversal, so it stays an ordinary miss instead of an authority
+			// denial.
+			if response := doGet("..%252fsecret.png"); response.Code != http.StatusNotFound {
+				t.Fatalf("double-encoded miss returned %d, want %d", response.Code, http.StatusNotFound)
 			}
 		})
 	}

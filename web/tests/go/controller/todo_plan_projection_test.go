@@ -85,7 +85,7 @@ func TestUpstreamTodoResultsProjectOntoPlan(t *testing.T) {
 			if json.Unmarshal(raw, &req) != nil {
 				return
 			}
-			if writeRPC(ws, map[string]any{"id": req.ID, "result": piInitializeResponse()}) != nil {
+			if writeRPC(ws, map[string]any{"id": req.ID, "result": bunHostInitializeResponse()}) != nil {
 				return
 			}
 		}
@@ -159,7 +159,7 @@ func TestUpstreamTodoReplayProjectsOntoPlan(t *testing.T) {
 			if json.Unmarshal(raw, &req) != nil {
 				return
 			}
-			result := any(piInitializeResponse())
+			result := any(bunHostInitializeResponse())
 			if req.Method == "session.load" {
 				result = map[string]any{"sessionId": "todo-replay-session", "messages": []any{toolMessage}, "commands": []any{}}
 			}

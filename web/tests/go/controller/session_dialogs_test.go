@@ -191,7 +191,7 @@ func TestDialogResolveValidatesAnswerShapes(t *testing.T) {
 func TestDialogTimeoutDismissesBrowsersAndHost(t *testing.T) {
 	forwarded := make(chan map[string]any, 4)
 	events := make(chan publishedEvent, 16)
-	manager, _, _, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), func(channel string, data any) {
+	manager, _, _, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, bunHostInitializeResponse(), func(channel string, data any) {
 		events <- publishedEvent{channel: channel, data: data}
 	}, func(method string, params map[string]any) {
 		if method == "session.uiCancel" {
@@ -274,7 +274,7 @@ func TestInvalidDialogRequestsAreDropped(t *testing.T) {
 
 func TestDialogResolveForwardsAnswersToThePiHost(t *testing.T) {
 	forwarded := make(chan map[string]any, 4)
-	manager, _, _, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, func(method string, params map[string]any) {
+	manager, _, _, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, bunHostInitializeResponse(), nil, func(method string, params map[string]any) {
 		if method == piwire.UiResponseMethod {
 			forwarded <- params
 		}
@@ -347,7 +347,7 @@ func TestNativeCancellationDoesNotBlockTheRpcReceiveLoop(t *testing.T) {
 	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, []map[string]any{
 		{"__native": map[string]any{"type": "pixie:ui:request", "requestId": "native", "primitive": "select", "title": "Choose", "options": []any{"Red"}}},
 		{"__native": map[string]any{"type": "pixie:ui:cancel", "requestId": "native"}},
-	}, nil, piInitializeResponse(), func(channel string, data any) { events <- publishedEvent{channel: channel, data: data} })
+	}, nil, bunHostInitializeResponse(), func(channel string, data any) { events <- publishedEvent{channel: channel, data: data} })
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	snapshot, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "browser")
@@ -388,7 +388,7 @@ func TestReconnectRemovesRequestsAbsentFromTheNativeSnapshot(t *testing.T) {
 		"sessionId": "chat", "requestId": "old-runtime", "primitive": "input", "title": "Name",
 	}}}
 	loads := 0
-	manager, client, project, _ := newSessionManagerWithInitializeAndPublisher(t, []map[string]any{{"__snapshot": nativeSnapshot}}, requests, piInitializeResponse(), nil, func(method string, _ map[string]any) {
+	manager, client, project, _ := newSessionManagerWithInitializeAndPublisher(t, []map[string]any{{"__snapshot": nativeSnapshot}}, requests, bunHostInitializeResponse(), nil, func(method string, _ map[string]any) {
 		if method == "session.load" {
 			loads++
 			if loads > 1 {

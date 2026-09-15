@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"sync"
@@ -14,7 +15,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/coder/websocket"
+	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/identifier"
+	piwire "github.com/miloszkolber/pixie/shared/piprotocol"
 )
 
 // Browser transport bounds for LIMIT-01/X07-X08.
@@ -100,6 +103,37 @@ const (
 var socketEventBackpressure = 256
 
 var clientKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+// browserErrorMaxBytes bounds one browser-visible failure message. Native error
+// text is never a shareable guarantee, so the message is both mapped and cut.
+const browserErrorMaxBytes = 512
+
+// browserErrorMessage normalizes a handler error for a browser reply. A host
+// or SDK error is never echoed: its typed host code maps to a fixed message. A
+// controller-owned error keeps its redacted, bounded message so existing typed
+// codes remain actionable. The raw cause is logged separately and never
+// returned.
+func browserErrorMessage(err error) string {
+	if code, ok := hostErrorCode(err); ok {
+		return piwire.BrowserErrorMessageForHostCode(code)
+	}
+	message := diagnostics.SanitizeDiagnosticText(err.Error(), browserErrorMaxBytes)
+	if message == "" {
+		return "Request failed."
+	}
+	return message
+}
+
+// hostErrorCode extracts the typed code from a host error anywhere in the chain
+// so diagnostics retain the failure class even though the browser message is
+// normalized.
+func hostErrorCode(err error) (int, bool) {
+	var hostErr *piwire.RequestError
+	if errors.As(err, &hostErr) {
+		return hostErr.Code, true
+	}
+	return 0, false
+}
 
 // reconnectState is the process-local reconnect budget for one client key. It
 // is only recorded while the identity is tracked, so the map stays bounded by
@@ -698,7 +732,15 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 			}
 			result, handleErr := s.Handler.Handle(requestContext, method, params, clientKey)
 			if handleErr != nil {
-				failure := map[string]any{"id": id, "ok": false, "error": handleErr.Error()}
+				// AUX-32: the browser reply carries only a bounded, secret-free
+				// message; the raw cause is logged redacted. A typed host error is
+				// mapped by code so native text can never be reflected.
+				attributes := []any{"method", method, "cause", diagnostics.SanitizeDiagnosticText(handleErr.Error(), browserErrorMaxBytes)}
+				if code, ok := hostErrorCode(handleErr); ok {
+					attributes = append(attributes, "hostCode", code)
+				}
+				slog.Error("controller request failed", attributes...)
+				failure := map[string]any{"id": id, "ok": false, "error": browserErrorMessage(handleErr)}
 				var coded interface{ ErrorCode() string }
 				if errors.As(handleErr, &coded) {
 					failure["errorCode"] = coded.ErrorCode()

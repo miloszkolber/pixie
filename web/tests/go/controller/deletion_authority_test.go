@@ -54,7 +54,7 @@ func (r *deletionMethodRecorder) saw(method string) bool {
 }
 
 func TestDeletionAuthorityPairedAuthorizesRequestedRecord(t *testing.T) {
-	manager, _, project, store := newSessionManager(t, nil, nil)
+	manager, _, project, store := newSessionManagerWithInitialize(t, nil, nil, deletionAuthorityHostResponse())
 	storageKey, err := persist.DerivePairingStorageKey(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestDeletionAuthorityPairedAuthorizesRequestedRecord(t *testing.T) {
 
 func TestDeletionAuthorityPairedV2BindingForOtherSessionQuarantines(t *testing.T) {
 	recorder := &deletionMethodRecorder{}
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, recorder.observe)
 	storageKey, err := persist.DerivePairingStorageKey(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestDeletionAuthorityPairedV2BindingForOtherSessionQuarantines(t *testing.T
 
 func TestDeletionAuthorityPairedLegacyBindingQuarantinesAndNeverDispatches(t *testing.T) {
 	recorder := &deletionMethodRecorder{}
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, recorder.observe)
 	storageKey, err := persist.DerivePairingStorageKey(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestDeletionAuthorityPairedLegacyBindingQuarantinesAndNeverDispatches(t *te
 
 func TestDeletionAuthorityPairedWithoutPairingQuarantinesAndNeverDispatches(t *testing.T) {
 	recorder := &deletionMethodRecorder{}
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, recorder.observe)
 	manager.SetDeletionAuthority(controller.DeletionAuthorityPaired, "agent-dir-unpaired")
 	if err := controller.NewSessionDeletions(store).Request(project.ID, "chat", fixtureDeletionAgentBinding(t)); err != nil {
 		t.Fatal(err)
@@ -177,7 +177,7 @@ func TestDeletionAuthorityPairedWithoutPairingQuarantinesAndNeverDispatches(t *t
 }
 
 func TestDeletionAuthorityAutoWithoutPairingKeepsLegacyMatch(t *testing.T) {
-	manager, _, project, store := newSessionManager(t, nil, nil)
+	manager, _, project, store := newSessionManagerWithInitialize(t, nil, nil, deletionAuthorityHostResponse())
 	manager.SetDeletionAuthority(controller.DeletionAuthorityAuto, "")
 	if err := controller.NewSessionDeletions(store).Request(project.ID, "chat", fixtureDeletionAgentBinding(t)); err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestDeletionAuthorityAutoWithoutPairingKeepsLegacyMatch(t *testing.T) {
 }
 
 func TestDeletionAuthorityAutoRequiresPairingWhenRecordExists(t *testing.T) {
-	manager, _, project, store := newSessionManager(t, nil, nil)
+	manager, _, project, store := newSessionManagerWithInitialize(t, nil, nil, deletionAuthorityHostResponse())
 	if _, err := controller.PairAuthority(store, "pi:some-other-host", "agent-dir-other", pairingSecret('o')); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestDeletionAuthorityAutoRequiresPairingWhenRecordExists(t *testing.T) {
 }
 
 func TestDeletionAuthorityAutoWithPairingRequiresV2SessionBinding(t *testing.T) {
-	manager, _, project, store := newSessionManager(t, nil, nil)
+	manager, _, project, store := newSessionManagerWithInitialize(t, nil, nil, deletionAuthorityHostResponse())
 	storageKey, err := persist.DerivePairingStorageKey(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +250,7 @@ func TestDeletionAuthorityAutoWithPairingRequiresV2SessionBinding(t *testing.T) 
 }
 
 func TestDeletionAuthorityAutoWithPairingQuarantinesLegacyBinding(t *testing.T) {
-	manager, _, project, store := newSessionManager(t, nil, nil)
+	manager, _, project, store := newSessionManagerWithInitialize(t, nil, nil, deletionAuthorityHostResponse())
 	storageKey, err := persist.DerivePairingStorageKey(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -422,7 +422,7 @@ func TestDeletePersistsV2BindingWhenPaired(t *testing.T) {
 		t.Fatal(err)
 	}
 	capture := &deletionBindingCapture{}
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, capture.observer)
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, capture.observer)
 	capture.setStore(store)
 	manager.SetDeletionAuthority(controller.DeletionAuthorityPaired, storageKey)
 	pairing, err := controller.PairAuthority(store, "pi:fixture-runtime", storageKey, pairingSecret('a'))
@@ -450,7 +450,7 @@ func TestDeletePersistsV2BindingWhenPaired(t *testing.T) {
 // binding is still stored so unpaired auto and legacy recovery keep working.
 func TestDeletePersistsLegacyBindingWithoutPairing(t *testing.T) {
 	capture := &deletionBindingCapture{}
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, capture.observer)
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, capture.observer)
 	capture.setStore(store)
 	manager.SetDeletionAuthority(controller.DeletionAuthorityAuto, "")
 	ctx := t.Context()

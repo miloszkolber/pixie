@@ -152,11 +152,42 @@ func TestSupportSnapshotCarriesBoundedHealthTransitions(t *testing.T) {
 		{At: time.Now().UTC().Format(time.RFC3339), Component: "agent", From: "unreachable", To: "ready"},
 		{At: time.Now().UTC().Format(time.RFC3339), Component: "schedule", To: "degraded"},
 	}}}
-	raw, err := diagnostics.MarshalSupportSnapshot(supportSnapshotRuntime(diagnostics.BuildInfo{}, report), nil)
+	raw, err := diagnostics.MarshalSupportSnapshot(supportSnapshotRuntime(diagnostics.BuildInfo{}, report, nil), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(raw), `"healthTransitions"`) || !strings.Contains(string(raw), `"agent"`) || !strings.Contains(string(raw), `"schedule"`) {
 		t.Fatalf("support snapshot dropped health transitions: %s", raw)
+	}
+}
+
+// AUX-12 wiring: the sampling closure must forward the session manager's
+// bounded degradation summary. A summary reaches the support export as
+// sessionSchema counters, and no session text or path crosses the boundary.
+func TestSupportSnapshotCarriesSessionSchemaSummary(t *testing.T) {
+	report := RuntimeDiagnosticsReport{}
+	schema := &diagnostics.SessionSchemaSummary{
+		WrittenByNewerRuntime: true,
+		Version:               9,
+		UnknownRecords:        3,
+		InvalidRecords:        1,
+		RepairedToolCalls:     2,
+	}
+	raw, err := diagnostics.MarshalSupportSnapshot(supportSnapshotRuntime(diagnostics.BuildInfo{}, report, schema), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot diagnostics.SupportSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	got := snapshot.Runtime.SessionSchema
+	if got == nil || !got.WrittenByNewerRuntime || got.Version != 9 || got.UnknownRecords != 3 || got.InvalidRecords != 1 || got.RepairedToolCalls != 2 {
+		t.Fatalf("session schema summary not projected: %#v", got)
+	}
+	if raw, err := diagnostics.MarshalSupportSnapshot(supportSnapshotRuntime(diagnostics.BuildInfo{}, report, nil), nil); err != nil {
+		t.Fatal(err)
+	} else if strings.Contains(string(raw), "sessionSchema") {
+		t.Fatalf("nil session schema was exported as a healthy zero: %s", raw)
 	}
 }

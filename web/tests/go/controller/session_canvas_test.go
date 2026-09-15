@@ -51,7 +51,7 @@ func observeCanvasAttachments(t *testing.T, registry *mcpserver.Registry) (*cont
 	t.Helper()
 	attachments := make(chan map[string]any, 8)
 	manager, client, project, store := newSessionManagerWithInitializeAndPublisher(
-		t, nil, nil, piInitializeResponse(), nil,
+		t, nil, nil, canvasHostResponse(), nil,
 		func(method string, params map[string]any) {
 			if method == "mcp.attach" {
 				attachments <- params

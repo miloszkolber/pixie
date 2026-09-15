@@ -26,7 +26,7 @@ func waitPromptRequest(t *testing.T, requests chan map[string]any) map[string]an
 func TestStopFreezesDispatchAndRetainsPausedOutbox(t *testing.T) {
 	events := make(chan publishedEvent, 64)
 	requests := make(chan map[string]any, 4)
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, requests, piInitializeResponse(), func(channel string, data any) {
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, requests, bunHostInitializeResponse(), func(channel string, data any) {
 		events <- publishedEvent{channel: channel, data: data}
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -96,7 +96,7 @@ func TestStopFreezesDispatchAndRetainsPausedOutbox(t *testing.T) {
 func TestStopQuiescenceUncertainOnTimeout(t *testing.T) {
 	events := make(chan publishedEvent, 64)
 	requests := make(chan map[string]any, 4)
-	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, piInitializeResponse(), func(channel string, data any) {
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, bunHostInitializeResponse(), func(channel string, data any) {
 		events <- publishedEvent{channel: channel, data: data}
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -143,7 +143,7 @@ func TestStopQuiescenceUncertainOnTimeout(t *testing.T) {
 func TestOutboxDrainStaysPausedAfterStop(t *testing.T) {
 	events := make(chan publishedEvent, 64)
 	requests := make(chan map[string]any, 4)
-	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, piInitializeResponse(), func(channel string, data any) {
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, bunHostInitializeResponse(), func(channel string, data any) {
 		events <- publishedEvent{channel: channel, data: data}
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -189,7 +189,7 @@ func TestOutboxDrainStaysPausedAfterStop(t *testing.T) {
 func TestIdleReleaseOnlyForEligibleSettledResidents(t *testing.T) {
 	events := make(chan publishedEvent, 64)
 	requests := make(chan map[string]any, 4)
-	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, piInitializeResponse(), func(channel string, data any) {
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, requests, bunHostInitializeResponse(), func(channel string, data any) {
 		events <- publishedEvent{channel: channel, data: data}
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

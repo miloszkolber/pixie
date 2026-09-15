@@ -2,10 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestParseModeDefaultsToController(t *testing.T) {
@@ -215,5 +219,145 @@ func TestControllerDoctorFlagsDialPortMismatch(t *testing.T) {
 	}
 	if facts.PortMismatch == nil || *facts.PortMismatch {
 		t.Fatalf("matching ports reported a mismatch: %#v", facts.PortMismatch)
+	}
+}
+
+// fakeControllerRuntime records the entrypoint's shutdown ordering so the test
+// can prove drain precedes shutdown and is bounded.
+type fakeControllerRuntime struct {
+	mu           sync.Mutex
+	events       []string
+	errors       chan error
+	started      chan struct{}
+	drainEntered chan struct{}
+	releaseDrain chan struct{}
+	startOnce    sync.Once
+	drainOnce    sync.Once
+	bounded      bool
+}
+
+func (fake *fakeControllerRuntime) record(event string) {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.events = append(fake.events, event)
+}
+
+func (fake *fakeControllerRuntime) snapshot() []string {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	return append([]string(nil), fake.events...)
+}
+
+func (fake *fakeControllerRuntime) hasEvent(event string) bool {
+	for _, recorded := range fake.snapshot() {
+		if recorded == event {
+			return true
+		}
+	}
+	return false
+}
+
+func (fake *fakeControllerRuntime) Start() (string, error) {
+	fake.record("start")
+	fake.startOnce.Do(func() {
+		if fake.started != nil {
+			close(fake.started)
+		}
+	})
+	return "http://127.0.0.1:0", nil
+}
+
+func (fake *fakeControllerRuntime) Errors() <-chan error { return fake.errors }
+
+func (fake *fakeControllerRuntime) BeginDrain() { fake.record("beginDrain") }
+
+func (fake *fakeControllerRuntime) WaitForDrain(ctx context.Context) {
+	fake.record("waitForDrain")
+	if _, ok := ctx.Deadline(); ok {
+		fake.mu.Lock()
+		fake.bounded = true
+		fake.mu.Unlock()
+	}
+	fake.drainOnce.Do(func() {
+		if fake.drainEntered != nil {
+			close(fake.drainEntered)
+		}
+	})
+	if fake.releaseDrain != nil {
+		select {
+		case <-fake.releaseDrain:
+		case <-ctx.Done():
+			fake.record("waitForDrainExpired")
+			return
+		}
+	}
+	fake.record("drained")
+}
+
+func (fake *fakeControllerRuntime) Shutdown(context.Context) error {
+	fake.record("shutdown")
+	return nil
+}
+
+// A service-manager stop (the update/rollback path) must request quiesce, wait
+// for in-flight work, and only then shut down. Shutdown must not race the drain.
+func TestServeControllerDrainsOnSignalBeforeShutdown(t *testing.T) {
+	fake := &fakeControllerRuntime{
+		errors:       make(chan error),
+		started:      make(chan struct{}),
+		drainEntered: make(chan struct{}),
+		releaseDrain: make(chan struct{}),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- serveController(ctx, fake) }()
+	select {
+	case <-fake.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("controller runtime was never started")
+	}
+	cancel()
+	select {
+	case <-fake.drainEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain was not requested after the stop signal")
+	}
+	if fake.hasEvent("shutdown") {
+		t.Fatal("shutdown ran before the drain settled")
+	}
+	close(fake.releaseDrain)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serveController() = %v, want a clean quiesce", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serveController did not return after the drain settled")
+	}
+	want := []string{"start", "beginDrain", "waitForDrain", "drained", "shutdown"}
+	if got := fake.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("shutdown sequence = %v, want %v", got, want)
+	}
+}
+
+// A drain that does not settle must remain bounded and must not turn a normal
+// update/rollback stop into an error.
+func TestDrainForUpdateIsBounded(t *testing.T) {
+	blocked := make(chan struct{})
+	fake := &fakeControllerRuntime{errors: make(chan error), releaseDrain: blocked}
+	started := time.Now()
+	drainForUpdate(fake, 100*time.Millisecond)
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("bounded drain blocked for %s", elapsed)
+	}
+	if !fake.bounded {
+		t.Fatal("drain wait did not receive a deadline")
+	}
+	if !fake.hasEvent("beginDrain") || !fake.hasEvent("waitForDrain") {
+		t.Fatalf("drain sequence = %v", fake.snapshot())
+	}
+	if !fake.hasEvent("waitForDrainExpired") {
+		t.Fatalf("drain did not report bounded expiry: %v", fake.snapshot())
 	}
 }

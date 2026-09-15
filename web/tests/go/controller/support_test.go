@@ -36,72 +36,20 @@ func (e *recordingEvents) snapshot() []string {
 	return append([]string(nil), e.methods...)
 }
 
-// piInitializeResponse is a deliberately broad LEGACY test double.
-//
-// It keeps advertising routes (session.delete, mcp.attach, adapter.status,
-// session.prompt.resource, ...) that the shared catalog marks absent or
-// unavailable so the individual projection tests that predate AUX-25 keep
-// exercising their handler paths. It is not an installed-host contract and must
-// never be used to claim route support. New tests use bunHostInitializeResponse
-// (exactly the generated available set) or a purpose-built profile.
-//
-// The explicit allowlist below records every file still permitted to call it.
-// TestLegacyFixtureUsageIsAllowlisted fails when a file outside the allowlist
-// adopts the legacy fixture, so route support cannot re-enter through a
-// fixture-only success.
-func piInitializeResponse() map[string]any {
-	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}, "operationSet": map[string]bool{
-		"session.list": true, "session.create": true, "session.load": true, "session.prompt": true, "session.cancel": true,
-		"session.delete": true, "session.fork": true, "session.prompt.image": true, "session.prompt.resource": true,
-		"session.steer": true, "session.rename": true, "session.configure": true,
-		"session.release": true, "runtime.release": true, "runtime.releaseToTui": true,
-		"session.uiResponse": true, "session.uiCancel": true, "mcp.attach": true,
-		"pi.session.info": true, "pi.session.rename": true, "pi.session.steer": true,
-		"pi.tools.list": true, "runtime.capabilities": true, "pi.slash-commands.list": true,
-		"pi.providers.list": true, "pi.providers.canonical-model-info": true, "pi.providers.inventory.refresh": true, "pi.providers.readiness.check": true,
-		"provider.loginStart": true, "provider.loginBegin": true, "provider.loginReply": true, "provider.loginCancel": true,
-		"pi.providers.config.read": true, "pi.providers.config.delete": true, "pi.defaults.read": true, "pi.defaults.save": true, "pi.defaults.clear": true,
-		"pi.preferences.read": true, "pi.preferences.save": true, "pi.preferences.reset": true, "pi.extensions.list": true, "pi.extensions.configure": true,
-		"pi.sources.list": true, "pi.sources.create": true, "pi.sources.update": true, "pi.sources.delete": true, "pi.agent-mentions.list": true,
-		"pi.todo.plan": true, "pi.config.extensions.list": true, "pi.config.extensions.add": true, "pi.config.extensions.set-enabled": true,
-		"pi.config.extensions.remove": true, "pi.session.extensions.list": true, "pi.session.extensions.add": true, "pi.session.extensions.remove": true,
-		"adapter.status": true, "adapter.registerBrowser": true, "adapter.session.forget": true,
-	}}
-}
-
-// legacyFixtureAllowlist is the AUX-25 migration record for the broad legacy
-// hello double. Each entry names the test file and the action that removes it
-// from this list. The session and deletion projection files are owned by other
-// workers: they are recorded here, not migrated, so this change does not
-// collide with their edits. A stale entry is harmless; a new file that calls
-// piInitializeResponse without an entry fails the guard test.
-var legacyFixtureAllowlist = map[string]string{
-	"browser_mcp_test.go":          "stub runtime.hello with bunHostInitializeResponse; keep the unavailable adapter routes as explicit fail-closed cases",
-	"deletion_authority_test.go":   "stub runtime.hello with bunHostInitializeResponse and drive deletion through the controller-owned recoverable path",
-	"life_stop_test.go":            "stub runtime.hello with bunHostInitializeResponse; the broad release/stop routes are not host routes",
-	"mcp_registry_test.go":         "stub runtime.hello with bunHostInitializeResponse; the live mcp.attach route is unavailable",
-	"pi_admin_test.go":             "stub runtime.hello with bunHostInitializeResponse; provider routes already exist in the generated available set",
-	"pi_client_test.go":            "stub runtime.hello with bunHostInitializeResponse; move the broad DeleteSession/HTTPMCP/Administration compatibility assertion to a purpose-built legacy profile",
-	"pi_events_test.go":            "stub runtime.hello with bunHostInitializeResponse before asserting the event projection",
-	"pi_native_extensions_test.go": "stub runtime.hello with bunHostInitializeResponse; the generic native-extension route is unavailable",
-	"session_canvas_test.go":       "stub runtime.hello with bunHostInitializeResponse; canvas is controller-owned",
-	"session_dialogs_test.go":      "stub runtime.hello with bunHostInitializeResponse before driving the UI dialog projection",
-	"session_lifecycle_test.go":    "stub runtime.hello with bunHostInitializeResponse; migrate the shared newSessionManager* helper first",
-	"session_test.go":              "stub runtime.hello with bunHostInitializeResponse; migrate the shared newSessionManager/newSessionManagerWithPublish helpers first",
-	"session_unknown_test.go":      "stub runtime.hello with bunHostInitializeResponse before feeding unknown records",
-	"todo_plan_projection_test.go": "stub runtime.hello with bunHostInitializeResponse; plan state is controller-owned with no host route",
-}
-
-// TestLegacyFixtureUsageIsAllowlisted fails when a new test file adopts the
-// broad legacy hello fixture. Only the recorded migration set may reference it.
-func TestLegacyFixtureUsageIsAllowlisted(t *testing.T) {
+// AUX-25 removed the broad legacy piInitializeResponse double. Every
+// controller fixture now uses bunHostInitializeResponse (the generated
+// available set) or one of the narrowly named purpose-built profiles declared
+// below. This guard keeps the broad double from re-entering, so a route-support
+// claim can never come from a fixture-only success.
+func TestNoBroadLegacyHostFixture(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatalf("read controller test directory: %v", err)
 	}
-	var unexpected []string
+	var offenders []string
 	for _, entry := range entries {
 		name := entry.Name()
+		// support_test.go declares the fixtures; the guard is about their use.
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || name == "support_test.go" {
 			continue
 		}
@@ -109,16 +57,60 @@ func TestLegacyFixtureUsageIsAllowlisted(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
-		if !strings.Contains(string(source), "piInitializeResponse(") {
-			continue
-		}
-		if _, allowed := legacyFixtureAllowlist[name]; !allowed {
-			unexpected = append(unexpected, name)
+		if strings.Contains(string(source), "piInitializeResponse(") {
+			offenders = append(offenders, name)
 		}
 	}
-	sort.Strings(unexpected)
-	if len(unexpected) > 0 {
-		t.Fatalf("broad legacy piInitializeResponse used without an allowlist entry: %s", strings.Join(unexpected, ", "))
+	sort.Strings(offenders)
+	if len(offenders) > 0 {
+		t.Fatalf("broad legacy host fixture reintroduced in: %s", strings.Join(offenders, ", "))
+	}
+}
+
+// purposeBuiltProfileOverrides is the AUX-25 justification table for the
+// purpose-built test profiles below. A profile may only advertise a host route
+// the generated catalog marks absent or unavailable when that exact route is
+// declared here. This replaces the per-file broad-fixture allowlist with a
+// per-route justification: a profile cannot silently grow broader.
+var purposeBuiltProfileOverrides = map[string]map[string]bool{
+	"legacyCompatibilityHostResponse": {
+		"session.delete":       true,
+		"session.prompt.image": true,
+		"mcp.attach":           true,
+	},
+	"deletionAuthorityHostResponse": {"session.delete": true},
+	"promptResourceHostResponse":    {"session.prompt.resource": true},
+	"adapterStatusHostResponse":     {"adapter.status": true},
+	"canvasHostResponse": {
+		"mcp.attach":     true,
+		"session.delete": true,
+	},
+}
+
+// TestPurposeBuiltProfilesStayJustified fails when a purpose-built host
+// profile advertises an absent or unavailable route that is not declared in
+// purposeBuiltProfileOverrides, so fixture-only support cannot re-enter.
+func TestPurposeBuiltProfilesStayJustified(t *testing.T) {
+	profiles := map[string]map[string]any{
+		"legacyCompatibilityHostResponse": legacyCompatibilityHostResponse(),
+		"deletionAuthorityHostResponse":   deletionAuthorityHostResponse(),
+		"promptResourceHostResponse":      promptResourceHostResponse(),
+		"adapterStatusHostResponse":       adapterStatusHostResponse(),
+		"canvasHostResponse":              canvasHostResponse(),
+	}
+	for name, response := range profiles {
+		operations, ok := response["operationSet"].(map[string]bool)
+		if !ok {
+			t.Fatalf("%s has no operationSet", name)
+		}
+		for method, advertised := range operations {
+			if !advertised || piwire.CatalogHostOperationIsAvailable(method) {
+				continue
+			}
+			if !purposeBuiltProfileOverrides[name][method] {
+				t.Fatalf("%s advertises %q without a declared justification", name, method)
+			}
+		}
 	}
 }
 
@@ -166,16 +158,81 @@ func bunHostInitializeResponse() map[string]any {
 }
 
 // piInitializeV2Response is the negotiation-aware hello result. It keeps the
-// same operation set and capabilities as the v1 fixture so profile projection
-// is exercised identically.
+// same operation set and capabilities as the real host profile so profile
+// projection is exercised identically.
 func piInitializeV2Response() map[string]any {
-	response := piInitializeResponse()
+	response := bunHostInitializeResponse()
 	delete(response, "runtimeId")
 	delete(response, "version")
 	response["protocolVersion"] = 2
 	response["supportedProtocolVersions"] = []int{2, 1}
 	response["hostIdentity"] = "v2-runtime"
 	response["nativeVersion"] = "0.85.1"
+	return response
+}
+
+// legacyCompatibilityHostResponse is a purpose-built pre-Bun host profile for
+// the compatibility projection test. It adds only the retired routes that
+// assertion inspects (delete, image and HTTP MCP) on top of the real host set,
+// so the broad legacy double is not needed. It is not a general-purpose
+// fixture and must not be used to claim live route support.
+func legacyCompatibilityHostResponse() map[string]any {
+	response := bunHostInitializeResponse()
+	operations := response["operationSet"].(map[string]bool)
+	operations["session.delete"] = true
+	operations["session.prompt.image"] = true
+	operations["mcp.attach"] = true
+	return response
+}
+
+// deletionAuthorityHostResponse is a purpose-built test profile for the
+// controller-owned deletion authority/recovery tests. The real Bun host marks
+// session.delete absent (deletion is controller-owned), so
+// bunHostInitializeResponse never advertises it. This profile enables exactly
+// that one route so the paired/legacy/auto binding rules stay executable, and
+// it advertises no other non-available route.
+func deletionAuthorityHostResponse() map[string]any {
+	response := bunHostInitializeResponse()
+	response["operationSet"].(map[string]bool)["session.delete"] = true
+	return response
+}
+
+// promptResourceHostResponse is a purpose-built test profile for the text
+// resource embedding and projection tests. The real Bun host marks
+// session.prompt.resource unavailable, so bunHostInitializeResponse never
+// advertises it. This profile enables exactly that one route so the embedding
+// wire shape stays covered; the real-host fail-closed behavior is asserted
+// separately.
+func promptResourceHostResponse() map[string]any {
+	response := bunHostInitializeResponse()
+	response["operationSet"].(map[string]bool)["session.prompt.resource"] = true
+	return response
+}
+
+// adapterStatusHostResponse is a purpose-built test profile for the legacy
+// pi-mcp-adapter bridge projection. The real Bun host removed adapter.status,
+// so bunHostInitializeResponse never advertises it. This profile enables
+// exactly that one route so the compatibility projection stays covered; the
+// real-host fail-open behavior is asserted separately by
+// TestMCPAdapterStatusFailsOpenOnBunHostWithoutAdapterRoute.
+func adapterStatusHostResponse() map[string]any {
+	response := bunHostInitializeResponse()
+	response["operationSet"].(map[string]bool)["adapter.status"] = true
+	return response
+}
+
+// canvasHostResponse is a purpose-built test profile for the optional Canvas
+// attach path. The real Bun host marks mcp.attach unavailable, so
+// bunHostInitializeResponse never advertises it and canvas stays off. This
+// profile enables exactly that route (plus session.delete, which the
+// controller-owned deletion path needs to revoke Canvas authority) so the
+// controller-owned attachment lifecycle stays covered; ordinary chat and the
+// real-host absence of Canvas are unaffected.
+func canvasHostResponse() map[string]any {
+	response := bunHostInitializeResponse()
+	operations := response["operationSet"].(map[string]bool)
+	operations["mcp.attach"] = true
+	operations["session.delete"] = true
 	return response
 }
 

@@ -26,6 +26,7 @@ import type {
 	GitDiffScope,
 	GitRepository,
 	GitRepositoryList,
+	GitTurnDiff,
 	HistoryScope,
 	HistorySearchResult,
 	LoginFrame,
@@ -93,6 +94,7 @@ export const WS_METHODS = {
 	fsReadFile: "fs.readFile",
 	gitStatus: "git.status",
 	gitDiffFile: "git.diffFile",
+	gitTurnDiff: "git.turnDiff",
 	gitListBranches: "git.listBranches",
 	gitListCommits: "git.listCommits",
 	directoryList: "directory.list",
@@ -288,6 +290,16 @@ export interface WsMethodMap {
 		params: { projectId: string; repository: string; path: string; scope?: GitDiffScope };
 		result: GitDiffFile;
 	};
+	"git.turnDiff": {
+		params: {
+			projectId: string;
+			repository: string;
+			toolName: "write" | "edit";
+			path: string;
+			scope?: GitDiffScope;
+		};
+		result: GitTurnDiff;
+	};
 	"git.listBranches": {
 		params: { projectId: string; repository: string };
 		result: { branches: GitBranchRef[]; truncated: boolean };
@@ -311,7 +323,7 @@ export interface WsMethodMap {
 		};
 	};
 	"session.fork": {
-		params: { projectId: string; sessionId: string };
+		params: { projectId: string; sessionId: string; entryId?: string };
 		result: SessionSummary;
 	};
 	"session.prompt": {
@@ -663,7 +675,8 @@ export type WsErrorCode =
 	| "GIT_BRANCHES_UNAVAILABLE"
 	| "UNSUPPORTED_AGENT_CAPABILITY"
 	| "STALE_TRANSCRIPT_PROJECTION"
-	| "SUPPORT_SNAPSHOT_AUTH_REQUIRED";
+	| "SUPPORT_SNAPSHOT_AUTH_REQUIRED"
+	| "PATH_ESCAPES_PROJECT_ROOT";
 
 export interface WsResponse {
 	id: string;

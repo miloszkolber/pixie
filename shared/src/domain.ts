@@ -514,6 +514,26 @@ export interface GitDiffFile {
 	message?: string;
 }
 
+/**
+ * A read-only per-turn diff for a `write`/`edit` tool call. An unavailable
+ * entry is a result, not an error, so the browser renders the bounded message
+ * instead of a failed request. Raw Git stderr never crosses this boundary.
+ */
+export interface GitTurnDiff {
+	path: string;
+	repository: string;
+	original?: string;
+	modified?: string;
+	patch?: string;
+	originalPath?: string;
+	comparisonId?: string;
+	available: boolean;
+	fallback?: boolean;
+	binary?: boolean;
+	tooLarge?: boolean;
+	message?: string;
+}
+
 export interface GitCommit {
 	sha: string;
 	shortSha: string;

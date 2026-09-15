@@ -32,6 +32,12 @@ jobs:
         with:
           go-version-file: web/go.mod
           cache-dependency-path: web/go.sum
+      # AUX-35: refuse to trust source checks unless the pinned Bun runtime, a
+      # writable bounded temporary workspace and the Go/CGO toolchains are
+      # present. An unsupported runtime or exhausted storage exits 3 and fails
+      # this job instead of being reported as a green result.
+      - run: bun run check:runtime
+        working-directory: web
       - name: Cache bun install
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:

@@ -65,7 +65,7 @@ func TestArchiveUnavailableKeepsListReconciledWithoutMarker(t *testing.T) {
 // leave it revocable, while the legacy path revoked it up front.
 func TestDeleteUnsupportedCapabilityLeavesNativeAuthorityIntact(t *testing.T) {
 	registry := readyCanvasRegistry(t, true)
-	initialize := piInitializeResponse()
+	initialize := bunHostInitializeResponse()
 	initialize["operationSet"].(map[string]bool)["session.delete"] = false
 	recorder := &deletionMethodRecorder{}
 	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, initialize, nil, recorder.observe)
@@ -114,7 +114,7 @@ func TestDeleteProfileFailureLeavesNativeAuthorityIntact(t *testing.T) {
 func TestDeleteJournalFailureLeavesNativeAuthorityIntact(t *testing.T) {
 	registry := readyCanvasRegistry(t, true)
 	recorder := &deletionMethodRecorder{}
-	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, recorder.observe)
 	manager.SetMCPRegistry(registry)
 	manager.SetDeletionPublishFaults(persist.PublishFaults{FailPrimary: errors.New("injected journal failure")})
 	if _, err := registry.AttachCanvas("chat", 1); err != nil {
@@ -137,7 +137,7 @@ func TestDeleteJournalFailureLeavesNativeAuthorityIntact(t *testing.T) {
 func TestDeleteAfterDurableAdmissionRevokesAndDispatches(t *testing.T) {
 	registry := readyCanvasRegistry(t, true)
 	recorder := &deletionMethodRecorder{}
-	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, recorder.observe)
 	manager.SetMCPRegistry(registry)
 	if _, err := registry.AttachCanvas("chat", 1); err != nil {
 		t.Fatal(err)
@@ -178,7 +178,7 @@ func TestCreateDuplicateRegistrationIsTypedConflict(t *testing.T) {
 func TestSessionForkHandlerForwardsEntryIdToHost(t *testing.T) {
 	var mu sync.Mutex
 	var forkParams map[string]any
-	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, func(method string, params map[string]any) {
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, bunHostInitializeResponse(), nil, func(method string, params map[string]any) {
 		if method != "session.fork" {
 			return
 		}
@@ -235,7 +235,7 @@ func TestForkRecordsARootWithoutControllerParentLink(t *testing.T) {
 // AUX-14: an edit request must fail closed when the host cannot serve a fork
 // route at all, rather than silently producing an independent session.
 func TestBranchFailsClosedWhenHostLacksForkRoute(t *testing.T) {
-	initialize := piInitializeResponse()
+	initialize := bunHostInitializeResponse()
 	initialize["operationSet"].(map[string]bool)["session.fork"] = false
 	manager, _, project, _ := newSessionManagerWithInitialize(t, nil, nil, initialize)
 	ctx := t.Context()
@@ -407,7 +407,7 @@ func TestRequestedDeletionRecoveryQuarantinesInvalidSessionAssociationBeforeHost
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := &deletionMethodRecorder{}
-			manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+			manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, recorder.observe)
 			records := controller.NewSessionRecords(store)
 			if err := test.mutate(records, project.ID, project.Roots[0]); err != nil {
 				t.Fatal(err)
@@ -438,7 +438,7 @@ func TestRequestedDeletionRecoveryQuarantinesInvalidSessionAssociationBeforeHost
 // live native Pi currently supports session.delete.
 func TestRequestedDeletionRecoveryDispatchesOnlyAfterExactCWDReadmission(t *testing.T) {
 	recorder := &deletionMethodRecorder{}
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, recorder.observe)
 	if err := controller.NewSessionDeletions(store).Request(project.ID, "chat", fixtureDeletionAgentBinding(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestRequestedDeletionRecoveryDispatchesOnlyAfterExactCWDReadmission(t *test
 
 func TestRequestedDeletionRecoveryReplaysValidUngroupedAssociation(t *testing.T) {
 	recorder := &deletionMethodRecorder{}
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, deletionAuthorityHostResponse(), nil, recorder.observe)
 	if err := controller.NewSessionRecords(store).Record(controller.ProjectSessionRecord{ProjectID: "", SessionID: "ungrouped", CWD: project.Roots[0]}); err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func TestRequestedDeletionRecoveryReplaysValidUngroupedAssociation(t *testing.T)
 
 func TestConfirmedExternalDeletionCompletesLocalCleanupWithoutCWDAdmission(t *testing.T) {
 	recorder := &deletionMethodRecorder{}
-	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, bunHostInitializeResponse(), nil, recorder.observe)
 	if err := controller.NewSessionRecords(store).Record(controller.ProjectSessionRecord{
 		ProjectID: project.ID,
 		SessionID: "chat",
