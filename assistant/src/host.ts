@@ -288,6 +288,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+const MAX_REFRESH_FAILURES = 64;
+
+// Project the SDK refresh result onto the wire shape. An SDK error message can
+// echo credentials, URLs and absolute paths, so failures cross the boundary as
+// a bounded, providerId-sorted {providerId, reason} list without the message.
+function refreshOutcome(value: unknown): {
+	aborted: boolean;
+	failed: Array<{ providerId: string; reason: "refresh_failed" }>;
+} {
+	const record = isRecord(value) ? value : {};
+	const errors = record.errors;
+	const providerIds = new Set<string>();
+	if (errors && typeof (errors as ReadonlyMap<string, unknown>).keys === "function") {
+		for (const providerId of (errors as ReadonlyMap<string, unknown>).keys()) {
+			if (typeof providerId === "string" && providerId !== "") providerIds.add(providerId);
+		}
+	}
+	const failed = [...providerIds]
+		.sort()
+		.slice(0, MAX_REFRESH_FAILURES)
+		.map((providerId) => ({ providerId, reason: "refresh_failed" as const }));
+	return { aborted: record.aborted === true, failed };
+}
+
 interface SessionModelProjection {
 	readonly id: string;
 	readonly name: string;
@@ -2927,11 +2951,11 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			}
 			case "pi.providers.inventory.refresh": {
 				const runtime = await sdkModelRuntime();
-				await runtime.refresh({
+				const result = await runtime.refresh({
 					allowNetwork: true,
 					signal: AbortSignal.timeout(PROVIDER_REFRESH_TIMEOUT_MS),
 				});
-				return { started: [], skipped: [] };
+				return { started: [], skipped: [], ...refreshOutcome(result) };
 			}
 			case "pi.providers.canonical-model-info": {
 				const runtime = await sdkModelRuntime();

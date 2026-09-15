@@ -203,6 +203,7 @@ send:
 }
 
 func (a *PiAdmin) RefreshModels(ctx context.Context) (map[string]any, error) {
+	const maxRefreshFailures = 64
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	// Refreshes must not join an inventory request made before the mutation.
@@ -214,11 +215,19 @@ func (a *PiAdmin) RefreshModels(ctx context.Context) (map[string]any, error) {
 			ProviderID string `json:"providerId"`
 			Reason     string `json:"reason"`
 		} `json:"skipped"`
+		Aborted bool `json:"aborted"`
+		Failed  []struct {
+			ProviderID string `json:"providerId"`
+			Reason     string `json:"reason"`
+		} `json:"failed"`
 	}
 	if err := a.call(ctx, "pi.providers.inventory.refresh", map[string]any{"providerIds": []string{}}, &refresh); err != nil {
 		return nil, err
 	}
 	a.invalidateProviderInventory()
+	if refresh.Aborted {
+		return nil, fmt.Errorf("Pi model refresh aborted")
+	}
 	started := make(map[string]bool, len(refresh.Started))
 	for _, providerID := range refresh.Started {
 		started[providerID] = true
@@ -257,7 +266,14 @@ func (a *PiAdmin) RefreshModels(ctx context.Context) (map[string]any, error) {
 	}
 	a.invalidateProviderInventory()
 	models, metadataComplete, err := a.models(ctx)
-	return map[string]any{"models": models, "complete": metadataComplete}, err
+	failed := make([]map[string]any, 0, len(refresh.Failed))
+	for index, entry := range refresh.Failed {
+		if index >= maxRefreshFailures {
+			break
+		}
+		failed = append(failed, map[string]any{"providerId": entry.ProviderID, "reason": entry.Reason})
+	}
+	return map[string]any{"models": models, "complete": metadataComplete, "failed": failed}, err
 }
 
 func (a *PiAdmin) SetModelVisibility(ctx context.Context, provider, id string, hidden bool) ([]WireModel, error) {

@@ -470,6 +470,112 @@ func TestPiAdminRefreshModelsReportsIncompleteCanonicalMetadata(t *testing.T) {
 	}
 }
 
+func TestPiAdminRefreshModelsRejectsAbortedRefresh(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil {
+				return
+			}
+			var result any = map[string]any{}
+			if rpc.Method == "runtime.hello" {
+				result = piInitializeResponse()
+			} else if rpc.Method == "pi.providers.inventory.refresh" {
+				result = map[string]any{"aborted": true, "started": []string{}, "failed": []any{}}
+			} else if rpc.Method == "pi.providers.list" {
+				result = map[string]any{"entries": []any{}}
+			}
+			if writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}) != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", nil)
+	defer client.Close()
+	admin := controller.NewPiAdmin(client, controller.NewSettings(persist.Store{Dir: t.TempDir()}, nil))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := admin.RefreshModels(ctx); err == nil || !strings.Contains(err.Error(), "aborted") {
+		t.Fatalf("aborted refresh was not rejected: %v", err)
+	}
+}
+
+func TestPiAdminRefreshModelsReportsPartialFailures(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil {
+				return
+			}
+			var result any = map[string]any{}
+			if rpc.Method == "runtime.hello" {
+				result = piInitializeResponse()
+			} else if rpc.Method == "pi.providers.inventory.refresh" {
+				result = map[string]any{
+					"aborted": false,
+					"started": []string{},
+					"failed":  []any{map[string]any{"providerId": "provider", "reason": "refresh_failed"}},
+				}
+			} else if rpc.Method == "pi.providers.list" {
+				result = map[string]any{"entries": []any{map[string]any{"providerId": "provider", "configured": true, "available": false, "models": []any{map[string]any{"id": "model"}}}}}
+			}
+			if writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}) != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", nil)
+	defer client.Close()
+	admin := controller.NewPiAdmin(client, controller.NewSettings(persist.Store{Dir: t.TempDir()}, nil))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := admin.RefreshModels(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	models, ok := result["models"].([]controller.WireModel)
+	if !ok || len(models) != 1 || models[0].ID != "model" {
+		t.Fatalf("partial refresh dropped models: %#v", result["models"])
+	}
+	failed, ok := result["failed"].([]map[string]any)
+	if !ok || len(failed) != 1 || failed[0]["providerId"] != "provider" || failed[0]["reason"] != "refresh_failed" {
+		t.Fatalf("partial refresh failures = %#v", result["failed"])
+	}
+	if result["complete"] != true {
+		t.Fatalf("partial refresh completion = %#v", result["complete"])
+	}
+}
+
 func TestPiAdminSaveDefaultsRejectsUnknownModel(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		connection, err := websocket.Accept(response, request, nil)

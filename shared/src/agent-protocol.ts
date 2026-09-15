@@ -114,9 +114,16 @@ export interface WireModel {
 	hidden: boolean;
 }
 
+export interface RefreshFailure {
+	providerId: string;
+	reason: string;
+}
+
 export interface RefreshedModels {
 	models: WireModel[];
 	complete: boolean;
+	// Bounded, secret-free per-provider refresh failures. Absent from older hosts.
+	failed?: RefreshFailure[];
 }
 export interface AgentSettlement {
 	stopReason: string;
