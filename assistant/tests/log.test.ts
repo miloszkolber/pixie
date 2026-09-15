@@ -46,6 +46,24 @@ describe("secret-safe host logging", () => {
 		expect(redacted).toContain("[path]");
 	});
 
+	test("redacts an absolute path glued to a long opaque token", () => {
+		const opaque = "A".repeat(60);
+		const gluedPath = `${opaque}/home/operator/.pi/agent/secret.json`;
+
+		const value = redactHostLogText(`cannot read ${gluedPath}`);
+		expect(value).not.toContain("/home/operator");
+		expect(value).not.toContain(opaque);
+		expect(value).toContain("[redacted]");
+
+		// The same glued form must be redacted when it is used as a record key.
+		const keyed = redactHostLogField({ [gluedPath]: "benign" }) as Record<string, unknown>;
+		const keys = Object.keys(keyed).join(" ");
+		expect(keys).not.toContain("/home/operator");
+		expect(keys).not.toContain(opaque);
+		expect(JSON.stringify(keyed)).not.toContain("/home/operator");
+		expect(Object.values(keyed)).toEqual(["benign"]);
+	});
+
 	test("redacts an explicit secret wherever it appears", () => {
 		const secret = "s".repeat(48);
 		expect(redactHostLogText(`token=${secret}`, [secret])).not.toContain(secret);

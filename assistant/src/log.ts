@@ -86,6 +86,12 @@ const STDERR_TRUNCATION_MARKER = FIELD_BOUND_PLACEHOLDER;
 // Absolute POSIX paths (at least two segments) become a placeholder. A bare
 // "/" or a short relative fragment is left alone so ordinary prose survives.
 const ABSOLUTE_PATH = /(?<![\w.])\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]*/g;
+// An absolute path glued directly to a long opaque token, e.g.
+// `${"A".repeat(60)}/home/operator/secret.json`: the delimiter lookbehind in
+// ABSOLUTE_PATH excludes a preceding word character, so the opaque run is
+// consumed together with the path. Bounded at the same 40-character minimum
+// used by OPAQUE_TOKEN; replacing the whole match also hides the token.
+const GLUED_ABSOLUTE_PATH = /[A-Za-z0-9_-]{40,}\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]*/g;
 const BEARER_TOKEN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const HTTP_URL = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi;
 const CREDENTIAL_PREFIX = /\b(?:sk|pk|ghp|gho|ghs|glpat|xox[baprs])-[A-Za-z0-9._-]{6,}\b/g;
@@ -108,6 +114,7 @@ export function redactHostLogText(text: string, secrets: readonly string[] = [])
 	out = out.replace(CREDENTIAL_LABEL, "[redacted]");
 	out = out.replace(CREDENTIAL_PREFIX, "[redacted]");
 	out = out.replace(UNC_PATH, "[path]");
+	out = out.replace(GLUED_ABSOLUTE_PATH, "[redacted]");
 	out = out.replace(ABSOLUTE_PATH, "[path]");
 	out = out.replace(OPAQUE_TOKEN, "[redacted]");
 	return out;

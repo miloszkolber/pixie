@@ -58,9 +58,21 @@ var (
 	// filesystem location in a normal error message or assignment. The path is
 	// matched after any delimiter that is not a word, dot or slash so bracketed
 	// and quoted locations are redacted too.
-	supportUnixPathPattern    = regexp.MustCompile(`(^|[^\w./])/(?:[^\s'"<>,;:)\]}]+)`)
-	supportWindowsPathPattern = regexp.MustCompile(`(?i)\b[A-Z]:\\(?:[^\s'"<>,;:)\]}]+)`)
-	supportUNCPattern         = regexp.MustCompile(`\\\\[^\s'"<>,;:)\]}]+`)
+	supportUnixPathPattern = regexp.MustCompile(`(^|[^\w./])/(?:[^\s'"<>,;:)\]}]+)`)
+	// A long opaque run (a credential, digest or identifier) can be glued
+	// directly to an absolute path with no delimiter, for example a token
+	// followed immediately by /home/operator/.pi/agent/secret.json. The
+	// delimiter-based pattern above cannot see that leading slash because the
+	// preceding byte is a word character. The run itself is sensitive, so it is
+	// consumed along with the path. The run is limited to token characters and
+	// a bounded width so ordinary prose and relative paths that merely contain
+	// a slash are unaffected; a run wider than the bound is still redacted
+	// together with its absolute path, though any prefix beyond the bound is
+	// left in place. The path portion reuses the same terminal class as the
+	// delimiter-based pattern.
+	supportGluedUnixPathPattern = regexp.MustCompile(`[A-Za-z0-9._~+=-]{40,1000}/[^\s'"<>,;:)\]}]+`)
+	supportWindowsPathPattern   = regexp.MustCompile(`(?i)\b[A-Z]:\\(?:[^\s'"<>,;:)\]}]+)`)
+	supportUNCPattern           = regexp.MustCompile(`\\\\[^\s'"<>,;:)\]}]+`)
 	// Support snapshots retain build identity only when it is a known release
 	// format. Arbitrary linker values could otherwise carry credentials or IDs.
 	supportBuildVersionPattern  = regexp.MustCompile(`^(?:0\.0\.0-dev|sha-[0-9a-f]{12}|v?[0-9]+\.[0-9]+\.[0-9]+)$`)
@@ -199,6 +211,7 @@ func SanitizeDiagnosticText(value string, limit int) string {
 	value = supportIdentifierPattern.ReplaceAllString(value, "[redacted identifier]")
 	value = supportIdentifierMentionPattern.ReplaceAllString(value, "[redacted identifier]")
 	value = supportUnixPathPattern.ReplaceAllString(value, "$1[redacted path]")
+	value = supportGluedUnixPathPattern.ReplaceAllString(value, "[redacted path]")
 	value = supportUNCPattern.ReplaceAllString(value, "[redacted path]")
 	value = supportWindowsPathPattern.ReplaceAllString(value, "[redacted path]")
 	return truncateUTF8(strings.TrimSpace(value), limit)

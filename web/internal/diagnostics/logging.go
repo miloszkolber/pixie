@@ -125,9 +125,17 @@ func (h redactingHandler) Handle(ctx context.Context, record slog.Record) error 
 	redacted := slog.NewRecord(record.Time, record.Level, redactLogText(record.Message), record.PC)
 	// One budget for the whole record: every attribute is charged against it,
 	// so repeating a shared graph across many attributes cannot multiply the
-	// work or the emitted size.
+	// work or the emitted size. Iteration stops once the budget is spent and
+	// emits at most maxLogCollectionItems attributes, mirroring the bounded
+	// group branch; otherwise every remaining attribute would still serialize a
+	// key and placeholder and grow the output linearly with the attribute count.
 	state := newLogConversion()
+	emitted := 0
 	record.Attrs(func(attr slog.Attr) bool {
+		if emitted >= maxLogCollectionItems || state.spent() {
+			return false
+		}
+		emitted++
 		redacted.AddAttrs(redactLogAttr(attr, 0, state))
 		return true
 	})
@@ -139,11 +147,17 @@ func (h redactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		return h
 	}
 	// Bound the batch at creation time, since the stored attributes are reused
-	// by every later record without being converted again.
+	// by every later record without being converted again. As in Handle, the
+	// loop stops once the shared budget is spent and never emits more than
+	// maxLogCollectionItems attributes, so a wide or repeated batch cannot grow
+	// the stored output without bound.
 	state := newLogConversion()
-	redacted := make([]slog.Attr, len(attrs))
-	for index, attr := range attrs {
-		redacted[index] = redactLogAttr(attr, 0, state)
+	redacted := make([]slog.Attr, 0, boundedLogItems(len(attrs)))
+	for _, attr := range attrs {
+		if len(redacted) >= maxLogCollectionItems || state.spent() {
+			break
+		}
+		redacted = append(redacted, redactLogAttr(attr, 0, state))
 	}
 	return redactingHandler{next: h.next.WithAttrs(redacted)}
 }

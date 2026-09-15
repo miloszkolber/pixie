@@ -13,6 +13,29 @@ import {
 	validateAssistantConfig,
 } from "../src/serve.ts";
 
+// Verbs that assign or recommend a setting, on either side of the retired
+// variable name. Direct assignment (`=`) and a colon default (`:`) are covered
+// separately.
+const RETIRED_PORT_ACTION =
+	"set|sets|setting|configure|configures|configured|configuring|export|exports|exported|exporting|define|defines|defined|defining|use|uses|used|using|rely|relies|relied|relying|assign|assigns|assigned|assigning|recommend|recommends|recommended|recommending";
+
+const RETIRED_PORT_ASSIGNMENT = new RegExp(
+	`PIXIE_ASSISTANT_PORT\\s*[:=]|\\b(?:${RETIRED_PORT_ACTION})\\b[^\\n]*\\bPIXIE_ASSISTANT_PORT\\b|\\bPIXIE_ASSISTANT_PORT\\b[^\\n]*\\b(?:${RETIRED_PORT_ACTION})\\b`,
+	"i",
+);
+
+/**
+ * A doc line may name the retired `PIXIE_ASSISTANT_PORT` only to say it does
+ * nothing. A line that also assigns it (`=`, `:`) or uses a
+ * set/configure/export/define/use/rely verb on either side of the name is
+ * recommending it and must be rejected.
+ */
+function isRetiredAssistantPortNotice(line: string): boolean {
+	if (!line.includes("PIXIE_ASSISTANT_PORT")) return false;
+	if (!/reject|retired|ignored|not supported|unsupported/i.test(line)) return false;
+	return !RETIRED_PORT_ASSIGNMENT.test(line);
+}
+
 describe("assistant serve port/host parity", () => {
 	test("accepts localhost as an alias for 127.0.0.1", () => {
 		expect(normalizeAssistantHostValue("localhost")).toBe("127.0.0.1");
@@ -46,11 +69,24 @@ describe("assistant serve port/host parity", () => {
 		for (const line of retiredMentions) {
 			expect(line).toMatch(/reject|retired|ignored|not supported|unsupported/i);
 			// A rejection sentence must never also assign or recommend the
-			// variable, e.g. "PIXIE_ASSISTANT_PORT=3284 still works" or
-			// "set PIXIE_ASSISTANT_PORT to ...".
-			expect(line).not.toMatch(/PIXIE_ASSISTANT_PORT\s*=/);
-			expect(line).not.toMatch(/\bset(?:ting)?\b[^.\n]*\bPIXIE_ASSISTANT_PORT\b/i);
-			expect(line).not.toMatch(/\bPIXIE_ASSISTANT_PORT\b[^.\n]*\bset(?:ting)?\b[^.\n]*\bto\b/i);
+			// variable, e.g. "PIXIE_ASSISTANT_PORT=3284 still works",
+			// "may be exported as 3284" or "configure it as 3284".
+			expect(isRetiredAssistantPortNotice(line)).toBe(true);
+		}
+	});
+
+	test("rejects doc phrasings that assign or recommend the retired assistant port", () => {
+		// Test-local bypass fixtures. These must never live in the real doc, so
+		// the guard is exercised against a private string instead.
+		const bypasses = [
+			"The retired `PIXIE_ASSISTANT_PORT` may be exported as 3284 in the environment.",
+			"Although PIXIE_ASSISTANT_PORT is unsupported, configure it as 3284",
+			"The ignored PIXIE_ASSISTANT_PORT: 3284 still applies.",
+			"Set PIXIE_ASSISTANT_PORT to 3284 if the config port is busy.",
+			"PIXIE_ASSISTANT_PORT=3284 remains supported.",
+		];
+		for (const line of bypasses) {
+			expect(isRetiredAssistantPortNotice(line)).toBe(false);
 		}
 	});
 

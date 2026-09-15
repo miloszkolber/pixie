@@ -638,6 +638,111 @@ func TestLoggerBoundsSharedGraphAcrossRecordAttributes(t *testing.T) {
 	}
 }
 
+// TestLoggerBoundsSharedGraphAcrossManyRecordAttributes is the regression for
+// the record-budget bypass: tens of thousands of attributes all holding the
+// same shared DAG must stop at the shared record budget instead of emitting a
+// key and placeholder for every remaining attribute. The encoded size must
+// stay near maxLogConvertedBytes (1<<18) rather than growing linearly with the
+// attribute count.
+func TestLoggerBoundsSharedGraphAcrossManyRecordAttributes(t *testing.T) {
+	const (
+		attributeCount = 60_000
+		// maxLogConvertedBytes is 1<<18, the handler's aggregate byte budget
+		// for one record conversion. Staying at or below it is the bounded
+		// contract; before the fix the same input emitted roughly two megabytes
+		// of key and placeholder pairs.
+		maxOutput = 1 << 18
+	)
+	graph := buildSharedDAG(6)
+	args := make([]any, 0, attributeCount*2)
+	for index := 0; index < attributeCount; index++ {
+		args = append(args, fmt.Sprintf("graph-%05d", index), graph)
+	}
+
+	var output bytes.Buffer
+	logger := diagnostics.NewLoggerWithWriter(&output, "controller", diagnostics.NormalizeBuild("v1.2.3", "unknown"))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		logger.Warn("many shared graph attributes", args...)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("many-attribute shared graph conversion did not complete within 5s")
+	}
+
+	if size := output.Len(); size > maxOutput {
+		t.Fatalf("many-attribute shared graph output was not bounded: %d bytes", size)
+	}
+	record := decodeLogRecord(t, strings.TrimSpace(output.String()))
+	graphAttributes := 0
+	for key := range record {
+		if strings.HasPrefix(key, "graph-") {
+			graphAttributes++
+		}
+	}
+	if graphAttributes == 0 || graphAttributes > 256 {
+		t.Fatalf("record emitted %d graph attributes past the item cap", graphAttributes)
+	}
+}
+
+// TestLoggerBoundsSharedGraphAcrossManyWithAttrs is the WithAttrs companion to
+// the record regression: one batch of tens of thousands of attributes that all
+// hold the same shared DAG must be bounded when the stored attributes are
+// converted, rather than storing a key and placeholder for every attribute.
+func TestLoggerBoundsSharedGraphAcrossManyWithAttrs(t *testing.T) {
+	const (
+		attributeCount = 60_000
+		maxOutput      = 1 << 18
+	)
+	graph := buildSharedDAG(6)
+	args := make([]any, 0, attributeCount*2)
+	for index := 0; index < attributeCount; index++ {
+		args = append(args, fmt.Sprintf("graph-%05d", index), graph)
+	}
+
+	var output bytes.Buffer
+	logger := diagnostics.NewLoggerWithWriter(&output, "controller", diagnostics.NormalizeBuild("v1.2.3", "unknown"))
+	logger.With(args...).Warn("with-attrs shared graph attributes")
+
+	if size := output.Len(); size > maxOutput {
+		t.Fatalf("with-attrs shared graph output was not bounded: %d bytes", size)
+	}
+	if !strings.Contains(output.String(), "graph-00000") {
+		t.Fatalf("leading with-attrs attribute did not survive: %s", output.String())
+	}
+}
+
+// TestLoggerRedactsGluedAbsolutePathValueAndKey is the regression for the
+// glued-path bypass: a long opaque run directly followed by an absolute path
+// has no delimiter before the leading slash. The whole glued sequence must be
+// redacted when it is an attribute value and when it is an attribute key.
+func TestLoggerRedactsGluedAbsolutePathValueAndKey(t *testing.T) {
+	glued := strings.Repeat("A", 60) + "/home/operator/.pi/agent/secret.json"
+
+	var output bytes.Buffer
+	logger := diagnostics.NewLoggerWithWriter(&output, "controller", diagnostics.NormalizeBuild("v1.2.3", "unknown"))
+	logWithoutPanic(t, func() {
+		logger.Warn("glued path", "value", glued, slog.String(glued, "benign"))
+	})
+
+	encoded := strings.TrimSpace(output.String())
+	for _, forbidden := range []string{"/home/operator", "secret.json", strings.Repeat("A", 60)} {
+		if strings.Contains(encoded, forbidden) {
+			t.Fatalf("glued path leaked %q: %s", forbidden, encoded)
+		}
+	}
+	record := decodeLogRecord(t, encoded)
+	if record["value"] != "[redacted path]" {
+		t.Fatalf("glued path value was not redacted: %#v", record["value"])
+	}
+	if record["[redacted path]"] != "benign" {
+		t.Fatalf("glued path key was not redacted in place: %#v", record)
+	}
+}
+
 func assertRedactedString(t *testing.T, value any, label string) {
 	t.Helper()
 	text, ok := value.(string)
