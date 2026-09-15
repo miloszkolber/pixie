@@ -307,7 +307,7 @@ func validateStoredQueues(value storedSessionQueues) error {
 	}
 	seen := make(map[string]bool, len(value.Records))
 	for _, record := range value.Records {
-		if err := validateIdentity(record.ProjectID, "Project id"); err != nil {
+		if err := validateDurableProjectID(record.ProjectID); err != nil {
 			return err
 		}
 		if err := validatePiSessionID(record.SessionID); err != nil {

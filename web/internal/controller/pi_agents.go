@@ -30,7 +30,21 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 		}
 	}
 	if method == "pi.capabilities" {
-		return a.objectCall(ctx, "runtime.capabilities", map[string]any{"projectDir": projectDir})
+		// runtime.hello is the negotiated host capability surface. Pi 0.85.1
+		// exposes no runtime.capabilities operation, so never add an unsupported
+		// host request merely to decide whether source management is available.
+		_, profile, err := a.client.Profile(ctx)
+		if err != nil {
+			return nil, err
+		}
+		capabilities := make(map[string]int, len(profile.Capabilities))
+		for key, value := range profile.Capabilities {
+			capabilities[key] = value
+		}
+		if !agentOperationsAvailable(profile) {
+			delete(capabilities, "agents")
+		}
+		return capabilities, nil
 	}
 	if method == "pi.agentList" {
 		sources, warnings, err := a.agentSources(ctx, projectDir)
@@ -142,6 +156,31 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 		return nil, fmt.Errorf("Pi returned an invalid agent")
 	}
 	return entry, nil
+}
+
+// agentOperationsAvailable treats the hello group as an assertion about the
+// source and mention routes it enables. A negotiated host with any missing
+// route is unavailable to the UI rather than surfacing controls that will fail
+// after the user starts editing.
+func agentOperationsAvailable(profile AgentProfile) bool {
+	if profile.Capabilities["agents"] != 1 {
+		return false
+	}
+	if !profile.operationSetNegotiated {
+		return true
+	}
+	for _, method := range []string{
+		"pi.sources.list",
+		"pi.sources.create",
+		"pi.sources.update",
+		"pi.sources.delete",
+		"pi.agent-mentions.list",
+	} {
+		if !profile.OperationSet[method] {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *PiAdmin) agentSources(ctx context.Context, projectDir string) ([]piAgentSource, []any, error) {

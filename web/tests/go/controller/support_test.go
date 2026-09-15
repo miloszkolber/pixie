@@ -33,6 +33,10 @@ func (e *recordingEvents) snapshot() []string {
 }
 
 func piInitializeResponse() map[string]any {
+	// Controller unit tests that exercise an individual legacy projection opt
+	// into only the operations they need. Bun-host boundary tests use
+	// bunHostInitializeResponse below instead of treating this broad fixture as
+	// an installed Pi host contract.
 	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}, "operationSet": map[string]bool{
 		"session.list": true, "session.create": true, "session.load": true, "session.prompt": true, "session.cancel": true,
 		"session.delete": true, "session.fork": true, "session.prompt.image": true, "session.prompt.resource": true,
@@ -50,6 +54,22 @@ func piInitializeResponse() map[string]any {
 		"pi.config.extensions.remove": true, "pi.session.extensions.list": true, "pi.session.extensions.add": true, "pi.session.extensions.remove": true,
 		"adapter.status": true, "adapter.registerBrowser": true, "adapter.session.forget": true,
 	}}
+}
+
+func bunHostInitializeResponse() map[string]any {
+	// Keep controller fakes on the Bun host contract. In particular, do not
+	// revive legacy per-session info, steering-run, tool, delete/archive, or Pi
+	// RPC routes just because an individual test does not exercise them.
+	operations := map[string]bool{}
+	for _, method := range piwire.CatalogHostOperations {
+		operations[method] = false
+	}
+	for _, method := range []string{
+		"session.list", "session.create", "session.load", "session.prompt", "session.cancel", "session.configure", "session.fork", "session.rename", "session.release", "runtime.release", "session.prompt.image", "session.uiResponse", "session.uiCancel", "pi.slash-commands.list", "pi.providers.list", "pi.providers.canonical-model-info", "pi.providers.inventory.refresh", "pi.providers.readiness.check", "provider.loginStart", "provider.loginBegin", "provider.loginReply", "provider.loginCancel", "pi.providers.config.delete", "pi.defaults.read", "pi.defaults.save", "pi.defaults.clear", "pi.preferences.read", "pi.preferences.save", "pi.preferences.reset", "pi.extensions.list", "pi.extensions.configure", "pi.sources.list", "pi.sources.create", "pi.sources.update", "pi.sources.delete", "pi.agent-mentions.list", "pi.config.extensions.list", "pi.config.extensions.add", "pi.config.extensions.set-enabled", "pi.config.extensions.remove", "pi.session.extensions.list", "pi.session.extensions.add", "pi.session.extensions.remove", "pi.mcp.servers.read", "pi.mcp.servers.upsert", "pi.mcp.servers.remove", "pi.mcp.servers.probe", "session.clone", "session.compact", "session.commands", "session.followUp", "session.clearQueue", "session.getMessages", "session.stats", "session.switch",
+	} {
+		operations[method] = true
+	}
+	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "agents": 1}, "operationSet": operations}
 }
 
 // piInitializeV2Response is the negotiation-aware hello result. It keeps the

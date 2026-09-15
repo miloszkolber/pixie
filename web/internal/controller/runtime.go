@@ -2,7 +2,9 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -56,6 +58,9 @@ type RuntimeConfig struct {
 	// Canvas/Design helpers from PATH or substitutes an unrestricted fallback.
 	CanvasConfig *canvas.Config
 	DesignConfig *design.Config
+	// ScheduleRuntime is parsed by the entrypoint when supplied. Nil keeps
+	// embedded/test callers on the process environment policy.
+	ScheduleRuntime *ScheduleRuntimePolicy
 }
 
 type Runtime struct {
@@ -110,6 +115,14 @@ func resolvePairingStorageKey(mode DeletionAuthorityMode, agentDir string, geten
 func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	if config.Getenv == nil {
 		config.Getenv = os.Getenv
+	}
+	scheduleRuntime := config.ScheduleRuntime
+	if scheduleRuntime == nil {
+		parsed, err := ParseScheduleRuntimePolicy(config.Getenv)
+		if err != nil {
+			return nil, err
+		}
+		scheduleRuntime = &parsed
 	}
 	// Destructive-recovery authority is resolved before any listener, store or
 	// client is created so an invalid selection fails startup.
@@ -202,7 +215,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		}
 	}
 	projects.SetPublisher(func(project workspace.Project) { publish("project.updated", project) })
-	settings := NewSettings(store, func(value AppConfig) { publish("settings.changed", value) })
+	settings := NewSettings(store, func(value AppConfig) { publish("settings.changed", browserAppConfig(value)) })
 	sessions := NewSessionManager(projects, config.Policy, records, queues, objectives, publish)
 	sessions.SetDeletionAuthority(deletionAuthority, pairingStorageKey)
 	sessions.SetMCPRegistry(mcpRegistry)
@@ -218,10 +231,11 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	sessions.SetClient(client)
 	sessions.SetSettings(settings)
 	sessions.SetObjectiveURL("http://127.0.0.1:" + strconv.Itoa(config.Port) + "/mcp/objective")
-	schedules, err := NewSchedules(store, projects.AssertRoot, sessions.runSchedule)
+	schedules, err := NewSchedulesWithRuntime(store, projects.AssertRoot, sessions.runSchedule, *scheduleRuntime)
 	if err != nil {
 		return nil, fmt.Errorf("load schedules: %w", err)
 	}
+	schedules.SetCancellationHandler(sessions.cancelScheduleRun)
 	admin := NewPiAdmin(client, settings)
 	admin.sessions = sessions
 	admin.publish = publish
@@ -234,9 +248,23 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	git := workspace.NewGit(projects, config.Policy)
 	watches := workspace.NewProjectWatches(projects, git, publish)
 	requests := &diagnostics.RequestCounter{}
+	events := diagnostics.NewControllerEventRing()
 	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig, mcpRegistry)
 	statusProvider.schedules = schedules
-	handler := CoreHandler{Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Settings: settings, Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot, MCPRegistry: mcpRegistry}
+	handler := CoreHandler{
+		Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Settings: settings,
+		Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot,
+		RuntimeDiagnostics: func(ctx context.Context) RuntimeDiagnosticsReport {
+			return runtimeDiagnosticsSnapshot(sessions, statusProvider, runtimePiStatus(ctx, client))
+		},
+		SupportSnapshotAuthEnabled: authConfig.Enabled,
+		SupportSnapshot: func(ctx context.Context) (json.RawMessage, error) {
+			report := runtimeDiagnosticsSnapshot(sessions, statusProvider, runtimePiStatus(ctx, client))
+			return diagnostics.MarshalSupportSnapshot(supportSnapshotRuntime(build, report), events.Snapshot())
+		},
+		ControllerEvents: events,
+		MCPRegistry:      mcpRegistry,
+	}
 	welcome := func(ctx context.Context) (any, error) {
 		recent, err := projects.List(true)
 		if err != nil {
@@ -259,13 +287,14 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 				health[key] = value
 			}
 		}
-		result := map[string]any{"protocolVersion": BrowserProtocolVersion, "projects": open, "recentProjects": recent, "config": appConfig, "piStatus": health}
+		result := map[string]any{"protocolVersion": BrowserProtocolVersion, "projects": open, "recentProjects": recent, "config": browserAppConfig(appConfig), "piStatus": health}
 		if profile, ok := status["agentProfile"]; ok {
 			result["agentProfile"] = profile
 		}
 		if recoveries := sessions.DeletionRecoveryStatus(); len(recoveries) > 0 {
 			result["deletionRecovery"] = recoveries
 		}
+		result["diagnostics"] = runtimeDiagnosticsSnapshot(sessions, statusProvider, status)
 		if config.AppVersion != "" {
 			result["appVersion"] = config.AppVersion
 		}
@@ -281,22 +310,16 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	}
 	ready := func(response http.ResponseWriter, request *http.Request) {
 		status := runtimePiStatus(request.Context(), client)
-		localReady, localDetail := statusProvider.localReady()
-		status["applicationReady"] = localReady
-		if !localReady {
-			status["applicationError"] = localDetail
-		}
-		if recoveries := sessions.DeletionRecoveryStatus(); len(recoveries) > 0 {
-			// Retained tombstones are surfaced for operator reconciliation but do
-			// not by themselves make the application unready.
-			status["deletionRecovery"] = recoveries
-		}
+		localReady, _ := statusProvider.localReady()
 		code := http.StatusOK
 		profile, _ := status["agentProfile"].(AgentProfile)
 		if !localReady || status["configured"] != true || status["reachable"] != true || !profile.Compatible {
 			code = http.StatusServiceUnavailable
 		}
-		writeAuthJSON(response, code, status)
+		// /readyz remains usable by unauthenticated service managers. It is a
+		// minimal readiness bit, never an operator diagnostics or project/session
+		// recovery endpoint.
+		writeAuthJSON(response, code, map[string]bool{"ready": code == http.StatusOK})
 	}
 	httpHandler, err := NewHTTPHandler(socket, ObjectiveHandler{Sessions: sessions, Schedules: schedules}, projects, files, authConfig, config.StaticDir, ready)
 	if err != nil {
@@ -402,6 +425,161 @@ func runtimePiStatus(ctx context.Context, client *PiClient) map[string]any {
 		status["error"] = "Connected agent is missing required capabilities: " + strings.Join(profile.MissingRequired, ", ")
 	}
 	return status
+}
+
+// runtimeDiagnosticsSnapshot projects the authenticated operator diagnostics
+// surface from already-collected status. It never includes secrets, endpoints,
+// or filesystem roots, and it never dispatches or clears tombstones.
+func runtimeDiagnosticsSnapshot(sessions *SessionManager, status *runtimeStatusProvider, piStatus map[string]any) RuntimeDiagnosticsReport {
+	report := RuntimeDiagnosticsReport{
+		Capabilities:           RuntimeDiagnosticsCapabilities{},
+		Host:                   RuntimeDiagnosticsHost{},
+		Runs:                   RuntimeDiagnosticsRuns{},
+		DeletionReconciliation: RuntimeDiagnosticsDeletionReconciliation{},
+		Schedule:               RuntimeDiagnosticsSchedule{State: "unknown"},
+		Remediation:            []string{},
+	}
+	if configured, ok := piStatus["configured"].(bool); ok {
+		report.Host.Configured = boolPointer(configured)
+	}
+	if reachable, ok := piStatus["reachable"].(bool); ok {
+		report.Host.Reachable = boolPointer(reachable)
+	}
+	if reason, ok := piStatus["error"].(string); ok && reason != "" {
+		report.Host.Reason = diagnostics.SanitizeDiagnosticDetail(reason)
+	}
+	if profile, ok := piStatus["agentProfile"].(AgentProfile); ok {
+		compatible := profile.Compatible
+		operations := profile.Operations
+		report.Capabilities.Compatible = &compatible
+		report.Capabilities.MissingRequired = append([]string{}, profile.MissingRequired...)
+		report.Capabilities.Operations = &operations
+		report.Capabilities.Capabilities = maps.Clone(profile.Capabilities)
+		report.Capabilities.OperationSet = cloneBoolMap(profile.OperationSet)
+	}
+	if status != nil {
+		localReady, localDetail := status.localReady()
+		report.Host.ApplicationReady = boolPointer(localReady)
+		if !localReady {
+			report.Host.ApplicationReason = diagnostics.SanitizeDiagnosticDetail(localDetail)
+		}
+		if status.schedules != nil {
+			report.Schedule.State = "healthy"
+			if issue := status.schedules.Health(); issue != "" {
+				report.Schedule.State = "degraded"
+				report.Schedule.Reason = diagnostics.SanitizeDiagnosticDetail(issue)
+			}
+		}
+	}
+	if sessions != nil {
+		activeCount := countActiveSessionRuns(sessions)
+		reconciled := sessions.DeletionReconciliationStatus()
+		reconciliationCount := len(reconciled)
+		report.Runs.ActiveCount = &activeCount
+		report.DeletionReconciliation.Count = &reconciliationCount
+		report.DeletionReconciliation.Records = reconciled
+	}
+	report.Remediation = runtimeRemediationHints(report)
+	return report
+}
+
+// supportSnapshotRuntime maps the broader authenticated diagnostics report to
+// the narrow support-export allowlist. In particular, retained deletion
+// records and agent capability payloads never cross this boundary because they
+// can carry identifiers or host-provided free text.
+func supportSnapshotRuntime(build diagnostics.BuildInfo, report RuntimeDiagnosticsReport) diagnostics.SupportSnapshotRuntime {
+	return diagnostics.SupportSnapshotRuntime{
+		Build: build,
+		Host: diagnostics.SupportSnapshotHost{
+			Configured:        report.Host.Configured,
+			Reachable:         report.Host.Reachable,
+			ApplicationReady:  report.Host.ApplicationReady,
+			Reason:            report.Host.Reason,
+			ApplicationReason: report.Host.ApplicationReason,
+		},
+		ActiveRunCount:        report.Runs.ActiveCount,
+		RetainedDeletionCount: report.DeletionReconciliation.Count,
+		Schedule: diagnostics.SupportSnapshotSchedule{
+			State:  report.Schedule.State,
+			Reason: report.Schedule.Reason,
+		},
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+// countActiveSessionRuns counts residents with an accepted run identity. View
+// lifetime never owns execution, so this is a read-only projection for the
+// diagnostics current-run slot.
+func countActiveSessionRuns(sessions *SessionManager) int {
+	sessions.mu.Lock()
+	defer sessions.mu.Unlock()
+	count := 0
+	for _, entry := range sessions.sessions {
+		entry.state.Lock()
+		if entry.streaming || entry.promptActive || entry.runID != "" {
+			count++
+		}
+		entry.state.Unlock()
+	}
+	return count
+}
+
+// runtimeRemediationHints turns typed host health and pending uncertainty into
+// actionable operator guidance. Hints never contain secrets or paths, and a
+// healthy "No action needed" hint appears only when every prerequisite is known.
+func runtimeRemediationHints(report RuntimeDiagnosticsReport) []string {
+	hints := []string{}
+	configured, reachable := report.Host.Configured, report.Host.Reachable
+	if configured == nil {
+		hints = append(hints, "Assistant-host configuration is unknown: refresh diagnostics before changing host settings.")
+	} else if !*configured {
+		hints = append(hints, "Configure PIXIE_PI_SECRET_KEY so the controller can dial the assistant host over loopback.")
+	} else if reachable == nil {
+		hints = append(hints, "Assistant-host reachability is unknown: refresh diagnostics and verify the host service is running.")
+	} else if !*reachable {
+		hints = append(hints, "Assistant host is unreachable: verify pixie_cli is serving on its configured loopback port and that config port and PIXIE_PI_PORT match.")
+	}
+	if configured != nil && *configured && reachable != nil && *reachable && report.Capabilities.Compatible == nil {
+		hints = append(hints, "Assistant capabilities are unknown: reconnect to a compatible host before using optional operations.")
+	}
+	if configured != nil && *configured && reachable != nil && *reachable && report.Capabilities.Compatible != nil && !*report.Capabilities.Compatible {
+		missing := strings.Join(report.Capabilities.MissingRequired, ", ")
+		if missing == "" {
+			missing = "required capabilities"
+		}
+		hints = append(hints, "Connected agent is missing "+missing+": restore a compatible Pi host before creating or resuming chats.")
+	}
+	if configured != nil && *configured && reachable != nil && *reachable && report.Capabilities.Compatible != nil && *report.Capabilities.Compatible && report.Capabilities.Operations != nil && !report.Capabilities.Operations.DeleteSession {
+		hints = append(hints, "Connected agent has no session.delete support: retain deletion records instead of confirming new deletions.")
+	}
+	if report.Host.ApplicationReady == nil {
+		hints = append(hints, "Controller readiness is unknown: refresh diagnostics before relying on local state.")
+	} else if !*report.Host.ApplicationReady {
+		detail := report.Host.ApplicationReason
+		if detail == "" {
+			detail = "application state is unavailable"
+		}
+		hints = append(hints, "Controller application is not ready ("+detail+"): check project storage and the embedded web bundle, then retry.")
+	}
+	if report.Schedule.State == "unknown" {
+		hints = append(hints, "Schedule health is unknown: refresh diagnostics before relying on scheduled work.")
+	} else if report.Schedule.State == "degraded" {
+		detail := report.Schedule.Reason
+		if detail == "" {
+			detail = "a degraded state"
+		}
+		hints = append(hints, "Schedules report "+detail+"; paused or failing schedules do not block chats but need operator review.")
+	}
+	if report.DeletionReconciliation.Count == nil {
+		hints = append(hints, "Deletion reconciliation is unknown: refresh diagnostics before confirming or retaining a tombstone.")
+	} else if *report.DeletionReconciliation.Count > 0 {
+		hints = append(hints, "There are retained deletion tombstones: confirm each one only after verifying the native session is gone, or retain to keep the tombstone in place. Tombstones are never cleared automatically.")
+	}
+	if len(hints) == 0 && configured != nil && *configured && reachable != nil && *reachable && report.Capabilities.Compatible != nil && *report.Capabilities.Compatible && report.Host.ApplicationReady != nil && *report.Host.ApplicationReady && report.Schedule.State == "healthy" && report.DeletionReconciliation.Count != nil && *report.DeletionReconciliation.Count == 0 {
+		hints = append(hints, "No action needed: host is reachable, capabilities are negotiated and no uncertain work is pending.")
+	}
+	return hints
 }
 
 func (m *SessionManager) shutdown(ctx context.Context) {

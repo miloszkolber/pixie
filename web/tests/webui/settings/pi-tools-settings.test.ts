@@ -5,6 +5,7 @@ import {
 	extensionWarningText,
 	isSessionInventoryCurrent,
 	registryModuleStatusLabel,
+	toolInventoryAvailable,
 } from "@/settings/sections/pi-tools-settings";
 import {
 	resolveSettingsSection,
@@ -118,6 +119,11 @@ test("session controls are current only after the active target finishes loading
 	expect(isSessionInventoryCurrent("project-a\0chat-a", "project-a\0chat-a", true)).toBe(false);
 });
 
+test("tool inventory requests require the negotiated complete-inventory capability", () => {
+	expect(toolInventoryAvailable({ sessions: 1, agents: 1 })).toBe(false);
+	expect(toolInventoryAvailable({ sessions: 1, tools: 1 })).toBe(true);
+});
+
 test("vanilla Pi exposes core settings and hides unavailable extension surfaces", () => {
 	const profile: AgentProfile = {
 		name: "Pi",
@@ -147,6 +153,7 @@ test("vanilla Pi exposes core settings and hides unavailable extension surfaces"
 		"Browser",
 		"Schedules",
 		"System",
+		"Diagnostics",
 	]);
 	const extended = { ...profile, capabilities: { ...profile.capabilities, mcp: 1 } };
 	expect(settingsTabs(false, false, extended).map((t) => t.label)).not.toContain("Automation");

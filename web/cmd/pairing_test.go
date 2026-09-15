@@ -140,6 +140,31 @@ func TestPairingCLIRevokeBlocksRecovery(t *testing.T) {
 	}
 }
 
+func TestPairingCLITextNamesControllerBinary(t *testing.T) {
+	dataDir := t.TempDir()
+	agentDir := t.TempDir()
+	writePairingHostIdentity(t, agentDir, pairingTestIdentity)
+
+	pairOut := runPairingCLI(t, "pair", "--data-dir", dataDir, "--agent-dir", agentDir)
+	if !strings.Contains(pairOut, "pixie_web pair: paired deletion authority") {
+		t.Fatalf("pair output must identify the controller binary: %q", pairOut)
+	}
+	if strings.Contains(pairOut, "pixie pair:") {
+		t.Fatalf("pair output must not name the combined supervisor: %q", pairOut)
+	}
+
+	revokeOut := runPairingCLI(t, "revoke-pairing", "--data-dir", dataDir, "--agent-dir", agentDir)
+	if !strings.Contains(revokeOut, "pixie_web revoke-pairing: revoked deletion authority") {
+		t.Fatalf("revocation output must identify the controller binary: %q", revokeOut)
+	}
+	if !strings.Contains(revokeOut, "`pixie_web pair`") {
+		t.Fatalf("revocation recovery instruction must name the controller pair command: %q", revokeOut)
+	}
+	if strings.Contains(revokeOut, "pixie revoke-pairing") || strings.Contains(revokeOut, "`pixie pair`") {
+		t.Fatalf("revocation output must not name the combined supervisor: %q", revokeOut)
+	}
+}
+
 func TestPairingCLIRotateChangesVerifier(t *testing.T) {
 	dataDir := t.TempDir()
 	agentDir := t.TempDir()

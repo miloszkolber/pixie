@@ -2,7 +2,7 @@
 
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 const SOURCE_EXTENSIONS = new Set([".go", ".js", ".jsx", ".mjs", ".ts", ".tsx"]);
 const IGNORED_DIRECTORIES = new Set([".git", "coverage", "dist", "node_modules", "vendor"]);
@@ -17,6 +17,14 @@ const FORBIDDEN_ASSISTANT_IMPORT_SUBSTRINGS = [
 	"/pi/",
 	"/pixie/",
 ] as const;
+// Removed with the Go host and the administration bridge sidecar. Any source
+// reappearing under these prefixes fails the composition check.
+const REMOVED_ASSISTANT_PREFIXES = [
+	"assistant/host/",
+	"assistant/cmd/",
+	"assistant/bridge/",
+] as const;
+const REMOVED_ASSISTANT_MODULE = "github.com/miloszkolber/pixie/assistant";
 
 export interface CompositionInput {
 	assistantSources: Readonly<Record<string, string>>;
@@ -26,24 +34,25 @@ export interface CompositionInput {
 	packageWebuiSources?: Readonly<Record<string, string>>;
 	/** Files present beneath web/webui/dist in a checked-out/build tree. */
 	embeddedUiFiles?: readonly string[];
-	/** Optional result from actually running the combined host artifact. */
-	fullHostArtifactEvidence?: {
+	/** Optional result from actually running the controller artifact. */
+	controllerArtifactEvidence?: {
 		binaryPath: string;
 		uiEmbedded: boolean;
-		facadeRuntime: boolean;
 	};
 	assistantGoModText?: string;
 	packageGoModText?: string;
 	dockerfileText?: string;
+	composeFileText?: string;
+	/** Release runtime staging source used to verify the pinned Bun download. */
+	releaseRuntimeText?: string;
+	systemdUnitSources?: Readonly<Record<string, string>>;
+	systemdConfigSources?: Readonly<Record<string, string>>;
 }
 
-export interface FullHostCompositionFacts {
-	facadeStart: boolean;
-	controllerUsesFacadeEndpoint: boolean;
-	privateTransport: boolean;
-	durableAuthority: boolean;
+export interface ControllerCompositionFacts {
+	controllerDefault: boolean;
+	rejectsLocalAssistant: boolean;
 	uiEmbed: boolean;
-	modeSwitch: boolean;
 	drain: boolean;
 }
 
@@ -52,14 +61,40 @@ export interface DockerCompositionFacts {
 	explicitControllerEntrypoint: boolean;
 	effectiveInit: boolean;
 	noAssistantRuntime: boolean;
+	fullSuiteBuild: boolean;
+	fullServiceEntrypoint: boolean;
+	fullRuntimeClosure: boolean;
+	/** The full runtime stages a verified pinned Bun instead of Node. */
+	pinnedBunRuntime: boolean;
+	/** No Node runtime payload or staging helper survives in the container topology. */
+	noNodeRuntime: boolean;
+	noRootPixieService: boolean;
+}
+
+export interface DeploymentCompositionFacts {
+	composeUsesWebImage: boolean;
+	composeUsesFullImage: boolean;
+	composeTopologiesAreExclusive: boolean;
+	composeHasSeparatePiState: boolean;
+	composePiStateInitIsBounded: boolean;
+	composeFullServiceIsNonRoot: boolean;
+	composeFullWaitsForPiStateInit: boolean;
+	composeHasNoFixedContainerNames: boolean;
+	archiveServiceUsesInternalFullCommand: boolean;
+	cliServiceUsesStandaloneCommand: boolean;
+	noPublicAssistantUnit: boolean;
+	ownerLockDoesNotRestart: boolean;
+	secretsInherited: boolean;
+	absoluteConfigPaths: boolean;
+	noShellInterpolation: boolean;
 }
 
 export interface CompositionFacts {
 	bunServeCount: number;
 	supervisorOwners: readonly string[];
-	publicFacadeImport: string | null;
-	fullHost: FullHostCompositionFacts;
+	controller: ControllerCompositionFacts;
 	docker: DockerCompositionFacts;
+	deployment?: DeploymentCompositionFacts;
 	missingLiveEvidence: readonly string[];
 }
 
@@ -130,25 +165,28 @@ function extractImportSpecifiers(path: string, source: string): string[] {
 		: extractTypeScriptImportSpecifiers(source);
 }
 
-function modulePath(goMod: string | undefined): string | null {
-	return goMod?.match(/^\s*module\s+(\S+)\s*$/m)?.[1] ?? null;
-}
-
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function composeListValues(service: string, key: string): string[] {
+	const match = service.match(
+		new RegExp(`^ {8}${escapeRegExp(key)}:\\n((?: {12}-[^\\n]*(?:\\n|$))*)`, "m"),
+	);
+	const values = match?.[1];
+	if (values === undefined) return [];
+	return [...values.matchAll(/^ {12}-\s*(.*?)\s*$/gm)].map((entry) => entry[1] ?? "");
+}
+
+function sameValues(actual: readonly string[], expected: readonly string[]): boolean {
+	return (
+		actual.length === expected.length && actual.every((value, index) => value === expected[index])
+	);
 }
 
 function hasGoRequire(goMod: string, module: string): boolean {
 	const escaped = escapeRegExp(module);
 	return new RegExp(`^\\s*(?:require\\s+)?${escaped}\\s+\\S+`, "m").test(goMod);
-}
-
-function hasExactLocalReplace(goMod: string, module: string): boolean {
-	const escaped = escapeRegExp(module);
-	return new RegExp(
-		`^\\s*replace\\s+${escaped}(?:\\s+\\S+)?\\s*=>\\s*\\.\\.?/assistant(?:\\s|$)`,
-		"m",
-	).test(goMod);
 }
 
 function sourceOwner(path: string): string {
@@ -167,14 +205,18 @@ function hasSupervisorImplementation(path: string, source: string): boolean {
 	return pathLooksLikeSupervisor || sourceDeclaresSupervisor;
 }
 
-function finalDockerStage(dockerfile: string): string {
-	const stages = [...dockerfile.matchAll(/^\s*FROM\b.*$/gm)];
-	const last = stages.at(-1);
-	return last?.index === undefined ? "" : dockerfile.slice(last.index);
+function dockerStage(dockerfile: string, name: string): string {
+	const stage = new RegExp(`^\\s*FROM\\s+[^\\n]+\\s+AS\\s+${escapeRegExp(name)}\\s*$`, "gmi");
+	const match = stage.exec(dockerfile);
+	if (match?.index === undefined) return "";
+	const next = /^\s*FROM\b.*$/gim;
+	next.lastIndex = match.index + match[0].length;
+	const nextMatch = next.exec(dockerfile);
+	return dockerfile.slice(match.index, nextMatch?.index);
 }
 
-function hasAssistantRuntimeCopy(dockerfile: string): boolean {
-	for (const match of dockerfile.matchAll(/^\s*COPY\s+(?:--from=\S+\s+)?(\S+)/gm)) {
+function hasAssistantRuntimeCopy(stage: string): boolean {
+	for (const match of stage.matchAll(/^\s*COPY\s+(?:--from=\S+\s+)?(\S+)/gm)) {
 		const source = match[1];
 		if (source?.startsWith("assistant/") && source !== "assistant/package.json") {
 			return true;
@@ -187,12 +229,19 @@ function checkDockerfile(
 	dockerfile: string | undefined,
 	violations: string[],
 	strictChecks = true,
+	releaseRuntimeText?: string,
 ): DockerCompositionFacts {
 	const missing: DockerCompositionFacts = {
 		controllerOnlyBuild: false,
 		explicitControllerEntrypoint: false,
 		effectiveInit: false,
 		noAssistantRuntime: false,
+		fullSuiteBuild: false,
+		fullServiceEntrypoint: false,
+		fullRuntimeClosure: false,
+		pinnedBunRuntime: false,
+		noNodeRuntime: false,
+		noRootPixieService: false,
 	};
 	if (dockerfile === undefined) {
 		violations.push(
@@ -201,11 +250,14 @@ function checkDockerfile(
 		return missing;
 	}
 
-	missing.noAssistantRuntime = !hasAssistantRuntimeCopy(dockerfile);
+	const controller = dockerStage(dockerfile, "pixie_web");
+	if (controller === "") {
+		violations.push("web/Dockerfile: pixie_web controller image stage is missing");
+		return missing;
+	}
+	missing.noAssistantRuntime = !hasAssistantRuntimeCopy(controller);
 	if (!missing.noAssistantRuntime) {
-		violations.push(
-			"web/Dockerfile: runtime image must not copy assistant source or host-facade packages",
-		);
+		violations.push("web/Dockerfile: controller-only runtime image must not copy assistant source");
 	}
 	const hasBuildRecipe = strictChecks;
 	if (hasBuildRecipe) {
@@ -224,12 +276,7 @@ function checkDockerfile(
 		missing.controllerOnlyBuild = true;
 	}
 
-	const final = finalDockerStage(dockerfile);
-	if (final === "") {
-		violations.push("web/Dockerfile: final application stage is missing");
-		return missing;
-	}
-	const launch = [...final.matchAll(/^\s*(?:ENTRYPOINT|CMD)\b.*$/gm)]
+	const launch = [...controller.matchAll(/^\s*(?:ENTRYPOINT|CMD)\b.*$/gm)]
 		.map((match) => match[0])
 		.join("\n");
 	if (launch === "") {
@@ -238,15 +285,15 @@ function checkDockerfile(
 		);
 		return missing;
 	}
-	if (!/\/app\/pixie\b/.test(launch)) {
-		violations.push("web/Dockerfile: final entrypoint must run the Pixie controller binary");
+	if (!/\/app\/pixie_web\b/.test(launch)) {
+		violations.push("web/Dockerfile: final entrypoint must run the pixie_web controller binary");
 	}
 	missing.explicitControllerEntrypoint = /\bserve\b[\s,"']+.*--mode[=\s,"']+controller\b/i.test(
 		launch,
 	);
 	if (!missing.explicitControllerEntrypoint) {
 		violations.push(
-			"web/Dockerfile: final entrypoint must explicitly run `pixie serve --mode controller`",
+			"web/Dockerfile: final entrypoint must explicitly run `pixie_web serve --mode controller`",
 		);
 	}
 	missing.effectiveInit = /(?:^|[\s,"'])\/usr\/bin\/tini(?:[\s,"']|$)/.test(launch);
@@ -255,15 +302,456 @@ function checkDockerfile(
 			"web/Dockerfile: final entrypoint must run under tini for effective descendant reaping",
 		);
 	}
-	if (hasBuildRecipe && !/COPY\s+--from=web-build\s+[^\n]+\s+\/app\/web\b/i.test(final)) {
+	if (hasBuildRecipe && !/COPY\s+--from=web-build\s+[^\n]+\s+\/app\/web\b/i.test(controller)) {
 		violations.push("web/Dockerfile: final controller image must include the built UI bundle");
 	}
-	if (/\b(?:pixie-assistant|pi)\s+(?:serve|--)/i.test(final)) {
+	if (
+		/(?:\/app\/runtime\b|node_modules|@earendil-works\/pi-coding-agent|\bbun\b|\bnode\b|pixie_assistant|\/app\/libexec\/pixie)/i.test(
+			controller,
+		)
+	) {
 		violations.push(
-			"web/Dockerfile: final entrypoint must not start an assistant or local Pi process",
+			"web/Dockerfile: pixie_web runtime must contain no Bun, Node, Pi package, assistant, or Pi launcher",
 		);
 	}
+	if (!hasBuildRecipe) return missing;
+
+	const full = dockerStage(dockerfile, "pixie");
+	if (full === "") {
+		violations.push("web/Dockerfile: pixie full-suite image stage is missing");
+		return missing;
+	}
+	missing.fullSuiteBuild =
+		/\bgo\s+build\b[^\n]*-o\s+\/out\/pixie\s+\.\/cmd\/pixie\b/i.test(dockerfile) &&
+		/\bgo\s+build\b[^\n]*-o\s+\/out\/pixie_full\s+\.\/cmd\/pixie-full\b/i.test(dockerfile) &&
+		/\bbun\s+build\s+--target=bun\b[^\n]*\/out\/pixie_assistant\.js\b/i.test(dockerfile);
+	if (!missing.fullSuiteBuild) {
+		violations.push(
+			"web/Dockerfile: pixie must build the native Pi launcher, internal full launcher, and portable Bun assistant bundle",
+		);
+	}
+	missing.fullRuntimeClosure =
+		/COPY\s+web\/scripts\/release-runtime\.ts\s+web\/scripts\/release-runtime\.ts/i.test(
+			dockerfile,
+		) &&
+		/\bstageBundledPiRuntime\b/.test(dockerfile) &&
+		/\bverifyBundledPiRuntime\b/.test(dockerfile) &&
+		/COPY\s+--from=pi-build\s+\/out\/runtime\s+\/app\/runtime\b/i.test(full) &&
+		/COPY\s+--from=pi-build\s+\/out\/pixie_assistant\.js\s+\/app\/libexec\/pixie_assistant\.js\b/i.test(
+			full,
+		) &&
+		/COPY\s+--from=go-build\s+\/out\/pixie\s+\/app\/pixie\b/i.test(full) &&
+		/COPY\s+--from=go-build\s+\/out\/pixie_full\s+\/app\/libexec\/pixie_full\b/i.test(full) &&
+		/COPY\s+--from=go-build\s+\/out\/pixie_web\s+\/app\/libexec\/pixie_web\b/i.test(full) &&
+		/test\s+!\s+-e\s+\/app\/runtime\/node_modules\/\.bin\b/i.test(full) &&
+		/\*rpc-entry\*/i.test(full) &&
+		/\/app\/runtime\/node_modules\/@earendil-works\/pi-coding-agent\/dist\/bun\/cli\.js/i.test(
+			full,
+		) &&
+		/test\s+-f\s+\/app\/libexec\/pixie_assistant\.js\b/i.test(full);
+	if (!missing.fullRuntimeClosure) {
+		violations.push(
+			"web/Dockerfile: pixie must stage the verified release runtime with the Pi closure, the portable assistant bundle, and no RPC/.bin entrypoints",
+		);
+	}
+	const dockerfileStagesPinnedBun =
+		/test\s+-x\s+\/out\/runtime\/bin\/bun\b/.test(dockerfile) &&
+		/test\s+-x\s+\/app\/runtime\/bin\/bun\b/.test(full) &&
+		/\/out\/runtime\/node_modules\/@earendil-works\/pi-coding-agent\/dist\/bun\/cli\.js/.test(
+			dockerfile,
+		) &&
+		/\bbun\s+build\s+--target=bun\b/.test(dockerfile) &&
+		/\bstageBundledPiRuntime\b/.test(dockerfile) &&
+		/\bverifyBundledPiRuntime\b/.test(dockerfile);
+	const releasePinsVerifiedBun =
+		releaseRuntimeText === undefined
+			? true
+			: /BUNDLED_BUN_VERSION\s*=\s*"1\.4\.0"/.test(releaseRuntimeText) &&
+				/\bstageBundledBunRuntime\b/.test(releaseRuntimeText) &&
+				/\bstageVerifiedBunArchive\b/.test(releaseRuntimeText) &&
+				/archive:\s*"bun-linux-x64\.zip"/.test(releaseRuntimeText) &&
+				/2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452/.test(
+					releaseRuntimeText,
+				) &&
+				/archive:\s*"bun-linux-aarch64\.zip"/.test(releaseRuntimeText) &&
+				/4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e/.test(releaseRuntimeText);
+	missing.pinnedBunRuntime = dockerfileStagesPinnedBun && releasePinsVerifiedBun;
+	if (!missing.pinnedBunRuntime) {
+		violations.push(
+			"web/Dockerfile: full runtime must stage and verify pinned Bun 1.4.0 at runtime/bin/bun",
+		);
+	}
+	const nodeRuntimeMarkers = [
+		/\bruntime\/node\/bin\/node\b/,
+		/\bruntime\/node\b/,
+		/\bnode-v\d+\.\d+\.\d+\b/i,
+		/\bBUNDLED_NODE_VERSION\b/,
+		/\bstageBundledNodeRuntime\b/,
+		/\bparseVerifiedNodeArchive\b/,
+		/\bstageVerifiedNodeArchive\b/,
+	];
+	missing.noNodeRuntime =
+		!nodeRuntimeMarkers.some((marker) => marker.test(dockerfile)) &&
+		(releaseRuntimeText === undefined ||
+			!nodeRuntimeMarkers.some((marker) => marker.test(releaseRuntimeText)));
+	if (!missing.noNodeRuntime) {
+		violations.push(
+			"web/Dockerfile: the Pi-bearing runtime must not reintroduce a bundled Node runtime",
+		);
+	}
+	const fullLaunch = [...full.matchAll(/^\s*(?:ENTRYPOINT|CMD)\b.*$/gm)]
+		.map((match) => match[0])
+		.join("\n");
+	missing.fullServiceEntrypoint =
+		/ENTRYPOINT\s+\["\/usr\/bin\/tini",\s*"-s",\s*"--",\s*"\/app\/libexec\/pixie_full"\]/.test(
+			fullLaunch,
+		) &&
+		/CMD\s+\["serve",\s*"--assistant-config",\s*"\/etc\/pixie\/assistant\.json",\s*"--web-config",\s*"\/etc\/pixie\/pixie\.json"\]/.test(
+			fullLaunch,
+		);
+	if (!missing.fullServiceEntrypoint) {
+		violations.push(
+			"web/Dockerfile: pixie default service must run /app/libexec/pixie_full with absolute mounted configs",
+		);
+	}
+	missing.noRootPixieService = !/\/app\/pixie["'\s,]*[,\s]*["']serve\b/i.test(fullLaunch);
+	if (!missing.noRootPixieService) {
+		violations.push("web/Dockerfile: pixie service must never run root `pixie serve`");
+	}
 	return missing;
+}
+
+function sourceByBasename(
+	sources: Readonly<Record<string, string>> | undefined,
+	name: string,
+): string | undefined {
+	return Object.entries(sources ?? {}).find(([path]) => path.split("/").at(-1) === name)?.[1];
+}
+
+function execStart(source: string | undefined): string | undefined {
+	return source?.match(/^\s*ExecStart=(.+?)\s*$/m)?.[1];
+}
+
+function isSystemdAbsolutePath(value: string): boolean {
+	return (value.startsWith("/") || value.startsWith("%h/")) && !/[`$~]/.test(value);
+}
+
+function isLiteralAbsolutePath(value: unknown): value is string {
+	return typeof value === "string" && isAbsolute(value) && !/[`$~]/.test(value);
+}
+
+function isLiteralLoopback(value: unknown): boolean {
+	return value === "127.0.0.1" || value === "localhost";
+}
+
+function isPort(value: unknown): boolean {
+	return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
+function configObject(
+	name: string,
+	source: string | undefined,
+	violations: string[],
+): Record<string, unknown> | undefined {
+	if (source === undefined) {
+		violations.push(`web/systemd: missing ${name} configuration example`);
+		return undefined;
+	}
+	try {
+		const config: unknown = JSON.parse(source);
+		if (config === null || typeof config !== "object" || Array.isArray(config)) {
+			violations.push(`${name}: configuration example must be a JSON object`);
+			return undefined;
+		}
+		return config as Record<string, unknown>;
+	} catch {
+		violations.push(`${name}: configuration example is not valid JSON`);
+		return undefined;
+	}
+}
+
+function inspectDeploymentComposition(
+	input: CompositionInput,
+	violations: string[],
+): DeploymentCompositionFacts | undefined {
+	if (
+		input.composeFileText === undefined &&
+		input.systemdUnitSources === undefined &&
+		input.systemdConfigSources === undefined
+	) {
+		return undefined;
+	}
+
+	const facts: DeploymentCompositionFacts = {
+		composeUsesWebImage: false,
+		composeUsesFullImage: false,
+		composeTopologiesAreExclusive: false,
+		composeHasSeparatePiState: false,
+		composePiStateInitIsBounded: false,
+		composeFullServiceIsNonRoot: false,
+		composeFullWaitsForPiStateInit: false,
+		composeHasNoFixedContainerNames: false,
+		archiveServiceUsesInternalFullCommand: false,
+		cliServiceUsesStandaloneCommand: false,
+		noPublicAssistantUnit: false,
+		ownerLockDoesNotRestart: false,
+		secretsInherited: false,
+		absoluteConfigPaths: false,
+		noShellInterpolation: false,
+	};
+
+	const compose = input.composeFileText;
+	if (compose === undefined) {
+		violations.push(
+			"docker-compose.yaml: compose source is required for deployment composition checks",
+		);
+	} else {
+		const service = (name: string): string => {
+			const match = compose.match(
+				new RegExp(
+					`^ {4}${escapeRegExp(name)}:\\n[\\s\\S]*?(?=^ {4}[A-Za-z0-9_-]+:|^configs:|^volumes:|(?![\\s\\S]))`,
+					"m",
+				),
+			);
+			return match?.[0] ?? "";
+		};
+		const web = service("pixie_web");
+		const init = service("pixie_pi_state_init");
+		const full = service("pixie");
+		const webImage = web.match(/^\s*image:\s*["']?\$\{PIXIE_IMAGE:-([^}"']+)\}["']?\s*$/m)?.[1];
+		const fullImage = full.match(
+			/^\s*image:\s*["']?\$\{PIXIE_FULL_IMAGE:-([^}"']+)\}["']?\s*$/m,
+		)?.[1];
+		const initImage = init.match(
+			/^\s*image:\s*["']?\$\{PIXIE_FULL_IMAGE:-([^}"']+)\}["']?\s*$/m,
+		)?.[1];
+		facts.composeUsesWebImage =
+			webImage !== undefined && /^ghcr\.io\/[^/]+\/pixie_web:sha-[0-9a-f]{12}$/.test(webImage);
+		facts.composeUsesFullImage =
+			fullImage !== undefined && /^ghcr\.io\/[^/]+\/pixie:sha-[0-9a-f]{12}$/.test(fullImage);
+		if (!facts.composeUsesWebImage) {
+			violations.push(
+				"docker-compose.yaml: pixie_web must default to an immutable GHCR pixie_web image",
+			);
+		}
+		if (!facts.composeUsesFullImage) {
+			violations.push(
+				"docker-compose.yaml: pixie must default to an immutable GHCR pixie full-suite image",
+			);
+		}
+		const imageLines = [...compose.matchAll(/^\s*image:\s*([^\n]+)$/gm)].map(
+			(match) => match[1] ?? "",
+		);
+		const configuredImages = new Set(imageLines);
+		if (
+			imageLines.length !== 3 ||
+			configuredImages.size !== 2 ||
+			/^\s*build\s*:/m.test(compose) ||
+			imageLines.some(
+				(image) =>
+					!image.includes("ghcr.io/") ||
+					!image.includes(":sha-") ||
+					/\b(?:latest|main|edge)\b/i.test(image),
+			)
+		) {
+			violations.push(
+				"docker-compose.yaml: only the two immutable GHCR Pixie product images may be configured (the full image may also run its state initializer; no build or unpinned image)",
+			);
+		}
+		facts.composeHasNoFixedContainerNames = !/^\s*container_name\s*:/m.test(compose);
+		if (!facts.composeHasNoFixedContainerNames) {
+			violations.push("docker-compose.yaml: fixed container_name values are not allowed");
+		}
+		facts.composeTopologiesAreExclusive =
+			/^\s*profiles:\s*\["web"\]\s*$/m.test(web) &&
+			/^\s*profiles:\s*\["full"\]\s*$/m.test(full) &&
+			/^\s*network_mode:\s*host\s*$/m.test(web) &&
+			/^\s*network_mode:\s*host\s*$/m.test(full) &&
+			web.includes("${PIXIE_DATA_PATH}:/var/lib/pixie/data") &&
+			full.includes("${PIXIE_DATA_PATH}:/var/lib/pixie/data") &&
+			web.includes('PIXIE_CONTROLLER_PORT: "${PIXIE_CONTROLLER_PORT:-7312}"') &&
+			full.includes('PIXIE_CONTROLLER_PORT: "${PIXIE_CONTROLLER_PORT:-7312}"');
+		if (!facts.composeTopologiesAreExclusive) {
+			violations.push(
+				"docker-compose.yaml: split and full host-network topologies must use distinct web/full profiles and declare their shared controller port and data collision",
+			);
+		}
+		facts.composeHasSeparatePiState =
+			full.includes('PI_CODING_AGENT_DIR: "/var/lib/pixie/pi"') &&
+			full.includes("pixie-pi-state:/var/lib/pixie/pi") &&
+			!web.includes("PI_CODING_AGENT_DIR") &&
+			!web.includes("pixie-pi-state");
+		if (!facts.composeHasSeparatePiState) {
+			violations.push(
+				"docker-compose.yaml: pixie must mount PI_CODING_AGENT_DIR separately and pixie_web must not mount Pi state",
+			);
+		}
+		const initHasOnlyExpectedMount = sameValues(composeListValues(init, "volumes"), [
+			"pixie-pi-state:/var/lib/pixie/pi",
+		]);
+		const initHasOnlyExpectedSecurityOptions = sameValues(composeListValues(init, "security_opt"), [
+			"no-new-privileges:true",
+		]);
+		const initHasOnlyExpectedDroppedCapabilities = sameValues(composeListValues(init, "cap_drop"), [
+			"ALL",
+		]);
+		const initHasOnlyExpectedCapabilities = sameValues(composeListValues(init, "cap_add"), [
+			"CHOWN",
+			"FOWNER",
+		]);
+		facts.composePiStateInitIsBounded =
+			/^\s*profiles:\s*\["full"\]\s*$/m.test(init) &&
+			initImage !== undefined &&
+			initImage === fullImage &&
+			/^\s*restart:\s*["']no["']\s*$/m.test(init) &&
+			/^\s*network_mode:\s*none\s*$/m.test(init) &&
+			/^\s*user:\s*["']0:0["']\s*$/m.test(init) &&
+			/^\s*read_only:\s*true\s*$/m.test(init) &&
+			/^\s*entrypoint:\s*\["\/usr\/bin\/tini",\s*"-s",\s*"--",\s*"\/usr\/bin\/install"\]\s*$/m.test(
+				init,
+			) &&
+			/^\s*command:\s*\["-d",\s*"-m",\s*"0700",\s*"-o",\s*"1000",\s*"-g",\s*"1000",\s*"\/var\/lib\/pixie\/pi"\]\s*$/m.test(
+				init,
+			) &&
+			initHasOnlyExpectedMount &&
+			initHasOnlyExpectedSecurityOptions &&
+			initHasOnlyExpectedDroppedCapabilities &&
+			initHasOnlyExpectedCapabilities &&
+			/^\s*pids_limit:\s*16\s*$/m.test(init) &&
+			/^\s*mem_limit:\s*64m\s*$/m.test(init) &&
+			/^\s*cpus:\s*0\.25\s*$/m.test(init) &&
+			!/^\s*(?:environment|env_file|configs|privileged|devices|pid):/m.test(init);
+		if (!facts.composePiStateInitIsBounded) {
+			violations.push(
+				"docker-compose.yaml: pixie_pi_state_init must be a bounded root-only, no-network Pi-state initializer with only CHOWN/FOWNER and no shell command",
+			);
+		}
+		facts.composeFullServiceIsNonRoot = /^\s*user:\s*["']1000:1000["']\s*$/m.test(full);
+		if (!facts.composeFullServiceIsNonRoot) {
+			violations.push("docker-compose.yaml: pixie full service must remain UID/GID 1000");
+		}
+		facts.composeFullWaitsForPiStateInit =
+			/^ {8}depends_on:\n {12}pixie_pi_state_init:\n {16}condition:\s*service_completed_successfully\n {16}required:\s*true\s*$/m.test(
+				full,
+			) && !/\bpixie_pi_state_init\b/.test(web);
+		if (!facts.composeFullWaitsForPiStateInit) {
+			violations.push(
+				"docker-compose.yaml: only pixie must require successful pixie_pi_state_init completion before startup",
+			);
+		}
+	}
+
+	const combinedUnit = sourceByBasename(input.systemdUnitSources, "pixie.service");
+	const cliUnit = sourceByBasename(input.systemdUnitSources, "pixie_cli.service");
+	const combinedCommand = execStart(combinedUnit);
+	const cliCommand = execStart(cliUnit);
+	const combinedMatch = combinedCommand?.match(
+		/^%h\/\.local\/bin\/libexec\/pixie_full\s+serve\s+--assistant-config\s+(\S+)\s+--web-config\s+(\S+)$/,
+	);
+	const cliMatch = cliCommand?.match(/^%h\/\.local\/bin\/pixie_cli\s+serve\s+--config\s+(\S+)$/);
+	facts.archiveServiceUsesInternalFullCommand =
+		combinedMatch !== undefined &&
+		combinedMatch !== null &&
+		isSystemdAbsolutePath(combinedMatch[1] ?? "") &&
+		isSystemdAbsolutePath(combinedMatch[2] ?? "");
+	if (!facts.archiveServiceUsesInternalFullCommand) {
+		violations.push(
+			"pixie.service: full archive must run `libexec/pixie_full serve --assistant-config ABS --web-config ABS` directly",
+		);
+	}
+	facts.cliServiceUsesStandaloneCommand =
+		cliMatch !== undefined && cliMatch !== null && isSystemdAbsolutePath(cliMatch[1] ?? "");
+	if (!facts.cliServiceUsesStandaloneCommand) {
+		violations.push(
+			"pixie_cli.service: standalone bundled host must run `pixie_cli serve --config ABS` directly",
+		);
+	}
+	if (combinedCommand?.match(/(?:^|\s)%h\/\.local\/bin\/pixie\s+serve\b/)) {
+		violations.push(
+			"pixie.service: root pixie is the interactive TUI and must not run the background service",
+		);
+	}
+	const staleAssistantUnits = Object.keys(input.systemdUnitSources ?? {}).filter((path) =>
+		/(?:^|\/)(?:pixie_assistant|pixie-assistant)\.service$/.test(path),
+	);
+	facts.noPublicAssistantUnit = staleAssistantUnits.length === 0;
+	if (!facts.noPublicAssistantUnit) {
+		violations.push(
+			`web/systemd: public pixie_assistant service unit is removed (${staleAssistantUnits.join(", ")})`,
+		);
+	}
+
+	const units = [combinedUnit, cliUnit];
+	facts.secretsInherited = units.every(
+		(unit) => unit?.includes("EnvironmentFile=%h/.config/pixie/pixie.env") === true,
+	);
+	if (!facts.secretsInherited) {
+		violations.push("web/systemd: both service units must inherit secrets from pixie.env");
+	}
+	facts.ownerLockDoesNotRestart = units.every(
+		(unit) =>
+			unit?.includes("Restart=on-failure") === true &&
+			unit.includes("RestartForceExitStatus=75") &&
+			unit.includes("RestartPreventExitStatus=73") &&
+			unit.includes("Environment=PI_CODING_AGENT_DIR=%h/") &&
+			!unit.includes("Restart=always"),
+	);
+	if (!facts.ownerLockDoesNotRestart) {
+		violations.push(
+			"web/systemd: pixie and pixie_cli must not restart owner-lock exit 73 while retaining restart exit 75",
+		);
+	}
+	facts.noShellInterpolation = [combinedCommand, cliCommand].every(
+		(command) =>
+			command !== undefined && !/(?:^|\s)(?:\/bin\/)?(?:sh|bash)\s+-c\b|[`$]/.test(command),
+	);
+	if (!facts.noShellInterpolation) {
+		violations.push("web/systemd: service commands must not use a shell or shell interpolation");
+	}
+
+	const assistantConfig = configObject(
+		"assistant.json",
+		sourceByBasename(input.systemdConfigSources, "assistant.json"),
+		violations,
+	);
+	const webConfig = configObject(
+		"pixie.json",
+		sourceByBasename(input.systemdConfigSources, "pixie.json"),
+		violations,
+	);
+	const validAssistantConfig =
+		assistantConfig !== undefined &&
+		assistantConfig.schemaVersion === 2 &&
+		isLiteralLoopback(assistantConfig.host) &&
+		isPort(assistantConfig.port) &&
+		isLiteralAbsolutePath(assistantConfig.agentDir) &&
+		assistantConfig.allowSelfRestart === true &&
+		assistantConfig.piPackage === undefined;
+	if (!validAssistantConfig) {
+		violations.push(
+			"assistant.json: schemaVersion 2, host/port, absolute agentDir, allowSelfRestart, and no public piPackage are required",
+		);
+	}
+	const validWebConfig =
+		webConfig !== undefined &&
+		isLiteralLoopback(webConfig.host) &&
+		isPort(webConfig.port) &&
+		isLiteralAbsolutePath(webConfig.dataDir) &&
+		webConfig.agentDir === undefined &&
+		webConfig.piPackage === undefined &&
+		webConfig.piExecutable === undefined;
+	if (!validWebConfig) {
+		violations.push(
+			"pixie.json: controller host/port and absolute dataDir are required; assistant settings are not allowed",
+		);
+	}
+	facts.absoluteConfigPaths =
+		facts.archiveServiceUsesInternalFullCommand &&
+		facts.cliServiceUsesStandaloneCommand &&
+		validAssistantConfig &&
+		validWebConfig;
+
+	return facts;
 }
 
 function sourceText(
@@ -276,20 +764,17 @@ function sourceText(
 		.join("\n");
 }
 
-function inspectFullHostComposition(
+function inspectControllerComposition(
 	input: CompositionInput,
 	violations: string[],
-): FullHostCompositionFacts {
+): ControllerCompositionFacts {
 	const hasExtendedSourceEvidence =
 		input.packageWebuiSources !== undefined || input.embeddedUiFiles !== undefined;
 	if (!hasExtendedSourceEvidence) {
 		return {
-			facadeStart: true,
-			controllerUsesFacadeEndpoint: true,
-			privateTransport: true,
-			durableAuthority: true,
+			controllerDefault: true,
+			rejectsLocalAssistant: true,
 			uiEmbed: true,
-			modeSwitch: true,
 			drain: true,
 		};
 	}
@@ -297,67 +782,45 @@ function inspectFullHostComposition(
 		input.packageCommandSources,
 		(path) => path.endsWith("/main.go") || path.endsWith("/runtime.go"),
 	);
-	const controllerSources = sourceText(input.productionSources, (path) =>
-		path.includes("internal/controller/"),
-	);
 	const webuiSources = sourceText(
 		input.packageWebuiSources,
 		(path) => path.endsWith("/webui.go") || path === "webui.go",
 	);
 	const uiFiles = input.embeddedUiFiles ?? [];
-	const facts: FullHostCompositionFacts = {
-		facadeStart: /\b[A-Za-z_]\w*\.Start\s*\(\s*ctx\b/.test(command),
-		controllerUsesFacadeEndpoint: /\bPiURL\s*:\s*[A-Za-z_]\w*\.Endpoint\s*\(\s*\)/.test(command),
-		privateTransport:
-			/\bHost\s*:\s*"127\.0\.0\.1"/.test(command) && /\bPort\s*:\s*0\b/.test(command),
-		durableAuthority:
-			/pairing_authority\.go/.test(Object.keys(input.productionSources).join("\n")) ||
-			/authorityBindingId/.test(controllerSources),
+	const facts: ControllerCompositionFacts = {
+		// web/cmd is controller-only: it defaults to controller mode and
+		// rejects every other serve mode.
+		controllerDefault:
+			/mode\s*:?=\s*modeController/.test(command) &&
+			/mode\s*!=\s*modeController/.test(command) &&
+			/func\s+parseMode/.test(command),
+		// The controller never selects a local Pi: agentDir/piExecutable
+		// settings are rejected explicitly instead of starting anything.
+		rejectsLocalAssistant:
+			/rejectControllerAssistantSettings/.test(command) &&
+			/rejectControllerConfigAssistantSettings/.test(command),
 		uiEmbed:
 			/go:embed\s+all:dist/.test(webuiSources) &&
 			uiFiles.some((path) => /(?:^|\/)dist\/index\.html$/.test(path)),
-		modeSwitch:
-			/modeFullHost/.test(command) &&
-			/modeController/.test(command) &&
-			/func\s+parseMode/.test(command),
+		// The controller entrypoint drains through the runtime shutdown
+		// before the process exits.
 		drain:
-			/func\s+\(r \*Runtime\) Shutdown\s*\(/.test(controllerSources) &&
-			/\.sessions\.shutdown\s*\(/.test(controllerSources) &&
-			/\.client\.Close\s*\(/.test(controllerSources) &&
-			/\.work\.Wait\s*\(/.test(controllerSources) &&
-			/\.server\.Shutdown\s*\(/.test(controllerSources) &&
-			/context\.WithTimeout\s*\(/.test(command) &&
-			/\.Close\s*\(context\.Background\(\)\)|\.Close\s*\(shutdownContext\)/.test(command),
+			/func\s+serveController/.test(command) &&
+			/\.Shutdown\s*\(/.test(command) &&
+			/context\.WithTimeout\s*\(/.test(command),
 	};
 
-	if (!facts.facadeStart) {
-		violations.push(
-			"web/cmd: full-host entrypoint must start the assistant through the public facade",
-		);
+	if (!facts.controllerDefault) {
+		violations.push("web/cmd: controller-only entrypoint must default to controller mode");
 	}
-	if (!facts.controllerUsesFacadeEndpoint) {
-		violations.push(
-			"web/cmd: full-host controller must use the private endpoint returned by the facade",
-		);
-	}
-	if (!facts.privateTransport) {
-		violations.push(
-			"web/cmd: full-host assistant transport must be private loopback with an ephemeral port",
-		);
-	}
-	if (!facts.durableAuthority) {
-		violations.push(
-			"web/internal/controller: combined mode must retain durable pairing/ownership authority",
-		);
+	if (!facts.rejectsLocalAssistant) {
+		violations.push("web/cmd: controller mode must explicitly reject local assistant settings");
 	}
 	if (!facts.uiEmbed) {
-		violations.push("web/webui: full-host build must embed a real dist/index.html bundle");
-	}
-	if (!facts.modeSwitch) {
-		violations.push("web/cmd: full-host/controller mode switching must remain explicit");
+		violations.push("web/webui: controller build must embed a real dist/index.html bundle");
 	}
 	if (!facts.drain) {
-		violations.push("web/cmd: whole-composition shutdown must drain controller and assistant work");
+		violations.push("web/cmd: controller shutdown must drain runtime work");
 	}
 	return facts;
 }
@@ -365,56 +828,48 @@ function inspectFullHostComposition(
 export function inspectComposition(input: CompositionInput): CompositionReport {
 	const violations: string[] = [];
 	const missingLiveEvidence: string[] = [];
-	const packageModule = modulePath(input.packageGoModText);
-	const assistantModule = modulePath(input.assistantGoModText);
-	const publicFacadeImport = assistantModule ? `${assistantModule}/host` : null;
 
-	if (assistantModule === null) {
-		violations.push("assistant/go.mod: separate assistant Go module is required");
+	// The assistant is Bun-only: the Go assistant module, its host facade,
+	// entrypoint and administration bridge were removed. Any of them
+	// reappearing fails the composition check.
+	if (input.assistantGoModText !== undefined) {
+		violations.push(
+			"assistant/go.mod: assistant Go module was removed; the Bun host in assistant/src owns Pi interaction",
+		);
 	}
-	if (packageModule === null) {
-		violations.push("web/go.mod: controller Go module declaration is required");
-	}
-	if (assistantModule !== null && packageModule !== null) {
-		if (!hasGoRequire(input.packageGoModText ?? "", assistantModule)) {
-			violations.push(`web/go.mod: must require the assistant module ${assistantModule}`);
-		}
-		if (!hasExactLocalReplace(input.packageGoModText ?? "", assistantModule)) {
+	if (input.packageGoModText !== undefined) {
+		if (hasGoRequire(input.packageGoModText, REMOVED_ASSISTANT_MODULE)) {
 			violations.push(
-				`web/go.mod: assistant module must use the exact local replacement => ../assistant`,
+				`web/go.mod: must not require the removed assistant Go module ${REMOVED_ASSISTANT_MODULE}`,
 			);
 		}
+		if (/=>\s*\.\.\/assistant(?:\s|$)/m.test(input.packageGoModText)) {
+			violations.push("web/go.mod: must not replace a module with the removed ../assistant tree");
+		}
 	}
 
-	const assistantHostFiles = Object.keys(input.assistantSources).filter(
-		(path) => path.startsWith("assistant/host/") && path.endsWith(".go"),
+	const assistantGoSources = Object.keys(input.assistantSources).filter((path) =>
+		path.endsWith(".go"),
 	);
-	if (assistantHostFiles.length === 0) {
-		violations.push("assistant/host: public assistant host facade package is missing");
+	if (assistantGoSources.length > 0) {
+		violations.push(
+			`assistant/: Go sources were removed with the Go host (${assistantGoSources.length} remain); Pi interaction lives in assistant/src`,
+		);
+	}
+	for (const prefix of REMOVED_ASSISTANT_PREFIXES) {
+		const remaining = Object.keys(input.assistantSources).filter((path) => path.startsWith(prefix));
+		if (remaining.length > 0) {
+			violations.push(
+				`${prefix}: removed assistant tree must not reappear (${remaining.length} file(s))`,
+			);
+		}
 	}
 
 	const commandImports = Object.entries(input.packageCommandSources).flatMap(([path, source]) =>
 		extractImportSpecifiers(path, source),
 	);
-	if (publicFacadeImport === null || !commandImports.includes(publicFacadeImport)) {
-		violations.push(
-			`web/cmd: full-host entrypoint must import the public assistant facade${publicFacadeImport ? ` ${publicFacadeImport}` : ""}`,
-		);
-	}
-
-	const assistantCommandFiles = Object.entries(input.assistantSources).filter(
-		([path]) => path.startsWith("assistant/cmd/") && path.endsWith(".go"),
-	);
-	if (
-		publicFacadeImport !== null &&
-		assistantCommandFiles.length > 0 &&
-		!assistantCommandFiles.some(([path, source]) =>
-			extractImportSpecifiers(path, source).includes(publicFacadeImport),
-		)
-	) {
-		violations.push(
-			`assistant/cmd: assistant entrypoint must use the same public facade ${publicFacadeImport}`,
-		);
+	if (commandImports.some((specifier) => specifier.includes("/pixie/assistant"))) {
+		violations.push("web/cmd: must not import the removed assistant Go module");
 	}
 
 	for (const [path, source] of Object.entries(input.assistantSources)) {
@@ -430,10 +885,9 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 			continue;
 		}
 		for (const specifier of specifiers) {
-			const isOwnAssistantImport =
-				assistantModule !== null &&
-				(specifier === assistantModule || specifier.startsWith(`${assistantModule}/`));
-			if (specifier.includes("/internal/") && !isOwnAssistantImport) {
+			// The assistant is Bun-only, so no Go source under assistant/
+			// may reach into another module's internals.
+			if (specifier.includes("/internal/")) {
 				violations.push(
 					`${path}: forbidden controller-internal import ${JSON.stringify(specifier)}`,
 				);
@@ -460,33 +914,28 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 		);
 	}
 
-	const fullHost = inspectFullHostComposition(input, violations);
+	const controller = inspectControllerComposition(input, violations);
 	const hasExtendedSourceEvidence =
 		input.packageWebuiSources !== undefined || input.embeddedUiFiles !== undefined;
-	const docker = checkDockerfile(input.dockerfileText, violations, hasExtendedSourceEvidence);
-	if (input.fullHostArtifactEvidence === undefined) {
-		missingLiveEvidence.push("full-host binary execution on a supported host");
+	const docker = checkDockerfile(
+		input.dockerfileText,
+		violations,
+		hasExtendedSourceEvidence,
+		input.releaseRuntimeText,
+	);
+	const deployment = inspectDeploymentComposition(input, violations);
+	// Static composition never proves live execution. The controller artifact
+	// result is optional evidence a live run can supply; without it the gap
+	// stays reported rather than passing silently.
+	if (input.controllerArtifactEvidence === undefined) {
+		missingLiveEvidence.push("controller binary execution on a supported host");
 	} else {
-		if (!/(?:^|\/)pixie$/.test(input.fullHostArtifactEvidence.binaryPath)) {
-			missingLiveEvidence.push("full-host artifact uses the standalone pixie executable");
+		if (!/(?:^|\/)pixie_web$/.test(input.controllerArtifactEvidence.binaryPath)) {
+			missingLiveEvidence.push("controller artifact uses the pixie_web executable");
 		}
-		if (!input.fullHostArtifactEvidence.uiEmbedded) {
-			missingLiveEvidence.push("full-host artifact contains the real embedded UI bundle");
+		if (!input.controllerArtifactEvidence.uiEmbedded) {
+			missingLiveEvidence.push("controller artifact contains the real embedded UI bundle");
 		}
-		if (!input.fullHostArtifactEvidence.facadeRuntime) {
-			missingLiveEvidence.push("full-host artifact starts a working assistant facade");
-		}
-	}
-	const facadeSource = Object.entries(input.assistantSources)
-		.filter(([path]) => path.startsWith("assistant/host/") && path.endsWith(".go"))
-		.map(([, source]) => source)
-		.join("\n");
-	if (
-		/return\s+nil\s*,\s*ErrUnavailable\b|native engine is unavailable|capabilities["']?\s*:\s*map\[string\]int\{\}/.test(
-			facadeSource,
-		)
-	) {
-		missingLiveEvidence.push("assistant host facade has a live native engine implementation");
 	}
 	return {
 		ok: violations.length === 0,
@@ -494,9 +943,9 @@ export function inspectComposition(input: CompositionInput): CompositionReport {
 		facts: {
 			bunServeCount: bunServeLocations.length,
 			supervisorOwners: [...supervisorOwners].sort(),
-			publicFacadeImport,
-			fullHost,
+			controller,
 			docker,
+			...(deployment === undefined ? {} : { deployment }),
 			missingLiveEvidence,
 		},
 	};
@@ -581,19 +1030,56 @@ export async function collectCompositionInput(
 	const dockerfileText = await readFile(resolve(repositoryRoot, "web/Dockerfile"), "utf8").catch(
 		() => undefined,
 	);
-	// The legacy Bun assistant tree is removed. Production-source checks (single
-	// Bun.serve, single supervisor owner) apply to the retained Go assistant and
-	// the controller/UI sources; the deleted TypeScript tree is not collected.
+	const composeFileText = await readFile(
+		resolve(repositoryRoot, "docker-compose.yaml"),
+		"utf8",
+	).catch(() => undefined);
+	const releaseRuntimeText = await readFile(
+		resolve(repositoryRoot, "web/scripts/release-runtime.ts"),
+		"utf8",
+	).catch(() => undefined);
+	const systemdRoot = resolve(repositoryRoot, "web/systemd");
+	const systemdFiles = await readdir(systemdRoot, { withFileTypes: true })
+		.then((entries) =>
+			Promise.all(
+				entries
+					.filter((entry) => entry.isFile())
+					.map(
+						async (entry) =>
+							[
+								`web/systemd/${entry.name}`,
+								await readFile(resolve(systemdRoot, entry.name), "utf8"),
+							] as const,
+					),
+			),
+		)
+		.catch(() => [] as const);
+	const systemdUnits: Record<string, string> = {};
+	const systemdConfigs: Record<string, string> = {};
+	for (const [path, source] of systemdFiles) {
+		if (source === undefined) continue;
+		if (path.endsWith(".service")) systemdUnits[path] = source;
+		if (path.endsWith(".json")) systemdConfigs[path] = source;
+	}
+	// The Go assistant tree is removed. Production-source checks (single
+	// Bun.serve, single supervisor owner) apply to the Bun assistant in
+	// assistant/src and the controller/UI sources.
 	const assistantProductionSources = Object.fromEntries(
-		Object.entries(assistantSources).filter(([path]) => path.endsWith(".go")),
+		Object.entries(assistantSources).filter(([path]) => !path.endsWith(".go")),
 	);
 	const optional: Pick<
 		CompositionInput,
-		"assistantGoModText" | "packageGoModText" | "dockerfileText"
+		| "assistantGoModText"
+		| "packageGoModText"
+		| "dockerfileText"
+		| "composeFileText"
+		| "releaseRuntimeText"
 	> = {};
 	if (assistantGoModText !== undefined) optional.assistantGoModText = assistantGoModText;
 	if (packageGoModText !== undefined) optional.packageGoModText = packageGoModText;
 	if (dockerfileText !== undefined) optional.dockerfileText = dockerfileText;
+	if (composeFileText !== undefined) optional.composeFileText = composeFileText;
+	if (releaseRuntimeText !== undefined) optional.releaseRuntimeText = releaseRuntimeText;
 	return {
 		assistantSources,
 		packageCommandSources,
@@ -605,6 +1091,8 @@ export async function collectCompositionInput(
 		},
 		packageWebuiSources,
 		embeddedUiFiles,
+		systemdUnitSources: systemdUnits,
+		systemdConfigSources: systemdConfigs,
 		...optional,
 	};
 }
@@ -612,7 +1100,7 @@ export async function collectCompositionInput(
 export function formatCompositionReport(report: CompositionReport): string {
 	if (report.ok) {
 		const output =
-			`check-composition: OK (static facade ${report.facts.publicFacadeImport}, ` +
+			`check-composition: OK (Bun-only assistant, ` +
 			`Bun.serve ${report.facts.bunServeCount}, supervisor owners ${report.facts.supervisorOwners.length})`;
 		if (report.facts.missingLiveEvidence.length === 0) return output;
 		return [

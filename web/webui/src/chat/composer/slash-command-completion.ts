@@ -1,4 +1,5 @@
 import type { SlashCommandInfo } from "@pixie/shared";
+import { completionNavigationIndex } from "./composer-state";
 
 const MAX_MATCHES = 8;
 
@@ -50,10 +51,8 @@ export function slashCompletionKeyAction(
 ): SlashCompletionKeyAction {
 	if (!open || matchCount === 0) return { type: "none" };
 	const visibleIndex = clampedSlashActiveIndex(activeIndex, matchCount);
-	if (key === "ArrowDown") return { type: "move", index: (visibleIndex + 1) % matchCount };
-	if (key === "ArrowUp") {
-		return { type: "move", index: (visibleIndex - 1 + matchCount) % matchCount };
-	}
+	const navigation = completionNavigationIndex(key, visibleIndex, matchCount);
+	if (navigation !== null) return { type: "move", index: navigation };
 	if (key === "Enter" || key === "Tab") return { type: "select", index: visibleIndex };
 	if (key === "Escape") return { type: "dismiss" };
 	return { type: "none" };

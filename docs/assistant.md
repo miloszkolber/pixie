@@ -1,31 +1,11 @@
-# Assistant
+# Assistant host
 
-The assistant is the `pixie_assistant` process. It owns Pi interaction for Pixie: it starts or resumes Pi sessions, projects transcripts and dialogs, and exposes the private loopback service the `pixie_web` controller consumes.
+`pixie_assistant` is the archive-internal host bundle `libexec/pixie_assistant.js`, built from `assistant/src/serve.ts` and run by the pinned Bun `1.4.0` runtime `runtime/bin/bun`. It is not a compiled executable or a public product, command, systemd unit, or archive entrypoint. No Node runtime is bundled.
 
-## Target runtime
+The host runs Pi sessions in-process through the archive's bundled `@earendil-works/pi-coding-agent` SDK. It exposes a private authenticated loopback protocol to the controller and does not start `pi --mode rpc`, discover an external Pi executable, or use an administration bridge sidecar.
 
-The target `pixie_assistant` is a Bun host that runs Pi sessions in-process through the operator's installed Pi SDK. It resolves the SDK from the operator's Pi installation at runtime and never bundles or forks Pi. This replaces the interim Go host's `pi --mode rpc` child processes and the separate Bun administration bridge: there is no Pi RPC child model and no bridge sidecar. The separate `pixie_web` process consumes a narrow authenticated loopback host event protocol; it is not a Pi execution fallback.
+`pixie_cli serve --config ABS` starts the standalone host. Full-suite service mode is `libexec/pixie_full serve --assistant-config ABS --web-config ABS`; it starts the internal host and controller without taking Pi's `pixie` command namespace.
 
-The first Bun host preserves the current controller wire contract as a compatibility boundary. It is not session pairing or a second execution path: Pi calls remain direct SDK calls in the host. Controller protocol simplification happens only in a coordinated controller migration after the Bun host is live.
+Pi owns execution, transcripts, credentials, models, settings, tools, extensions, and trust. The host projects supported native behavior to the web controller; it does not intercept tools, replace prompts, silently install packages, or establish a second model or MCP policy.
 
-The `cli/` build flavor ships the assistant plus a bundled Pi for users who do not already have one. It is a packaging variant of the same assistant source, not a separate supervisor.
-
-Pi still owns execution, transcripts, native credentials, models, settings, tools, extensions and trust. The assistant projects that native behavior for the web controller; it does not intercept tools, replace prompts, install packages silently or implement a second model or MCP policy.
-
-## Interim host
-
-Until the Bun host lands, `assistant/` also contains the interim Go `pixie_assistant` in `assistant/cmd`. It supervises the selected public `pi` executable over native RPC and exposes the same private loopback service. The Go host is production-replacement work in progress: its remaining parity, lifecycle and real-Pi gaps are tracked in the [roadmap](../roadmap/roadmap.md). Do not replace a working deployment merely because the Go binary builds.
-
-`assistant/bridge/` holds the opt-in administration bridge sidecar used by the interim Go host. It runs under Bun, resolves exactly one selected Pi installation through that installation's public SDK entrypoint and is not part of the Go binary. The bridge is retired together with the RPC child model once the in-process Bun host covers its operations.
-
-## Build and run
-
-Build the interim Go assistant from the repository root:
-
-```sh
-bun run build:assistant
-```
-
-The service reads an absolute private JSON configuration file that selects the literal loopback host, port, Pi agent directory and optional Pi executable. Provider authentication, model selection and extension configuration remain native Pi operations. Install and start the service as described in [deployment](deployment.md).
-
-The shared wire contracts live in `shared/`; see [architecture](architecture.md) and [Pi integration](pi.md) for the current protocol and projection behavior.
+The host requires literal-loopback configuration, an absolute agent directory, and a `PIXIE_PI_SECRET_KEY` of at least 32 characters. It reports its negotiated operation set at `runtime.hello`; callers must use that result instead of assuming optional operations are present. See [Pi integration](pi.md) and [SDK coverage](sdk-coverage.md).

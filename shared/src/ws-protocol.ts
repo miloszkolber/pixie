@@ -40,9 +40,11 @@ import type {
 	PiToolSummary,
 	Project,
 	ProviderStatusReport,
+	RuntimeDiagnosticsReport,
 	RuntimeStatusReport,
 	Schedule,
 	SessionGoal,
+	SupportSnapshot,
 	TextResourceAttachment,
 } from "./domain";
 
@@ -71,6 +73,8 @@ export interface ServerWelcome {
 	config: AppConfig;
 	piStatus?: { configured: boolean; reachable: boolean; error?: string; version?: string };
 	/** Authenticated, bounded snapshot used to restore outstanding approvals after reconnecting. */
+	diagnostics?: RuntimeDiagnosticsReport;
+	deletionRecovery?: DeletionRecovery[];
 }
 
 export interface SessionDeletedPayload {
@@ -105,6 +109,7 @@ export const WS_METHODS = {
 	sessionDelete: "session.delete",
 	sessionDeletionRecovery: "session.deletionRecovery",
 	sessionConfirmExternalDeletion: "session.confirmExternalDeletion",
+	sessionRetainExternalDeletion: "session.retainExternalDeletion",
 	sessionRename: "session.rename",
 	sessionArchive: "session.archive",
 	sessionUnarchive: "session.unarchive",
@@ -158,6 +163,8 @@ export const WS_METHODS = {
 	scheduleStop: "schedule.stop",
 	piStatus: "pi.status",
 	runtimeStatus: "runtime.status",
+	runtimeDiagnostics: "runtime.diagnostics",
+	runtimeSupportSnapshot: "runtime.supportSnapshot",
 	mcpRegistryCatalog: "mcpRegistry.catalog",
 	mcpRegistryModuleSetEnabled: "mcpRegistry.moduleSetEnabled",
 	mcpRegistryModuleRestart: "mcpRegistry.moduleRestart",
@@ -214,17 +221,17 @@ export interface DeletionRecovery {
 // MCP traffic.
 export interface BrowserMCPStatus {
 	name: string;
-	url: string;
 	enabled: boolean;
 	registered: boolean;
 	layer?: string;
 	path?: string;
 	disabled: boolean;
-	definition?: Record<string, unknown>;
 	reachable: boolean;
-	serverInfo?: Record<string, unknown>;
+	/** Narrow display metadata from the probe; arbitrary probe fields are never exposed. */
+	serverInfo?: { name?: string; version?: string };
 	protocolVersion?: string;
 	tools: string[];
+	/** A fixed recovery message, never an adapter diagnostic. */
 	error?: string;
 }
 
@@ -342,6 +349,10 @@ export interface WsMethodMap {
 	"session.delete": { params: { projectId: string; sessionId: string }; result: Ack };
 	"session.deletionRecovery": { params: Record<string, never>; result: DeletionRecovery[] };
 	"session.confirmExternalDeletion": {
+		params: { projectId: string; sessionId: string };
+		result: Ack;
+	};
+	"session.retainExternalDeletion": {
 		params: { projectId: string; sessionId: string };
 		result: Ack;
 	};
@@ -502,6 +513,8 @@ export interface WsMethodMap {
 			cron: string;
 			timezone?: string;
 			model?: { provider: string; id: string };
+			/** Null or "off" persists unlimited rather than applying the default. */
+			maxRuntimeSeconds?: number | null | "off";
 		};
 		result: Schedule;
 	};
@@ -514,6 +527,8 @@ export interface WsMethodMap {
 			timezone?: string;
 			prompt?: string;
 			paused?: boolean;
+			/** Null or "off" persists unlimited rather than leaving the value unchanged. */
+			maxRuntimeSeconds?: number | null | "off";
 		};
 		result: Schedule;
 	};
@@ -527,7 +542,8 @@ export interface WsMethodMap {
 	};
 	"schedule.stop": {
 		params: { projectId: string; scheduleId: string; mutationId?: string };
-		result: Ack;
+		/** accepted only means durable cancellation admission; settled is native confirmation. */
+		result: Ack & { status?: "cancelling" | "settled"; accepted?: boolean; settled?: boolean };
 	};
 	"pi.status": {
 		params: Record<string, never>;
@@ -542,6 +558,14 @@ export interface WsMethodMap {
 	"runtime.status": {
 		params: Record<string, never>;
 		result: RuntimeStatusReport;
+	};
+	"runtime.diagnostics": {
+		params: Record<string, never>;
+		result: RuntimeDiagnosticsReport;
+	};
+	"runtime.supportSnapshot": {
+		params: Record<string, never>;
+		result: SupportSnapshot;
 	};
 	"mcpRegistry.catalog": {
 		params: Record<string, never>;
@@ -638,7 +662,8 @@ export type WsErrorCode =
 	| "NO_MERGE_BASE"
 	| "GIT_BRANCHES_UNAVAILABLE"
 	| "UNSUPPORTED_AGENT_CAPABILITY"
-	| "STALE_TRANSCRIPT_PROJECTION";
+	| "STALE_TRANSCRIPT_PROJECTION"
+	| "SUPPORT_SNAPSHOT_AUTH_REQUIRED";
 
 export interface WsResponse {
 	id: string;

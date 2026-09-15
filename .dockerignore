@@ -20,6 +20,8 @@
 !web/tests/ui/**
 !assistant/
 !assistant/package.json
+!assistant/src/
+!assistant/src/**
 !shared/
 !shared/package.json
 !shared/go.mod
@@ -36,6 +38,8 @@
 !web/webui/dist/
 web/webui/dist/*
 !web/webui/dist/.gitkeep
+!web/scripts/
+!web/scripts/release-runtime.ts
 **/.build
 **/*_test.go
 **/*.test.ts

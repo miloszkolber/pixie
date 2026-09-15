@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // MigrationApplyVersion versions the additive MIG-01 staged-conversion engine.
@@ -19,6 +21,48 @@ const MigrationApplyVersion = 1
 // leaves primaries visible but unacknowledged, which stays
 // durability-uncertain until the validated primaries are reconciled.
 const MigrationReceiptName = "migration-receipt.json"
+
+// managedMigrationLedgerFiles is the closed set of controller-ledger
+// primaries migration may read, stage, back up, publish, or restore. Migration
+// receives file names from plans and maps, so callers never extend this set.
+var managedMigrationLedgerFiles = map[string]struct{}{
+	"config.json":                 {},
+	"projects.json":               {},
+	"pi-project-sessions.json":    {},
+	"pi-session-queues.json":      {},
+	"schedules.json":              {},
+	"pi-session-deletions.json":   {},
+	"pi-pairing-authority.json":   {},
+	"project-root-migration.json": {},
+	"mcp-modules.json":            {},
+}
+
+// validateMigrationFile rejects user-controlled paths before migration joins
+// them to its data directory. Managed ledgers are flat, exact file names.
+func validateMigrationFile(name string) error {
+	if name == "" {
+		return fmt.Errorf("migration file name is required")
+	}
+	if filepath.IsAbs(name) {
+		return fmt.Errorf("migration file name must be relative")
+	}
+	if name == "." || name == ".." || filepath.Base(name) != name || strings.Contains(name, "\\") {
+		return fmt.Errorf("migration file name must be a flat file name")
+	}
+	if _, ok := managedMigrationLedgerFiles[name]; !ok {
+		return fmt.Errorf("migration file is not a managed ledger: %s", name)
+	}
+	return nil
+}
+
+func validateMigrationFiles(files []string) error {
+	for _, name := range files {
+		if err := validateMigrationFile(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // MigrationCheckpoint names one staged-conversion checkpoint in the defined
 // order: inventory, backup with hashes, staging, primary, sync, receipt. One
@@ -65,13 +109,18 @@ func ValidateMigrationCheckpoint(checkpoint MigrationCheckpoint) error {
 // durability-uncertain with the visible primaries left for reconciliation.
 // They never authorize restoring an old backup over a visible primary.
 type MigrationFaults struct {
-	FailBeforeInventory  error
-	FailAfterInventory   error
-	FailBeforeBackup     error
-	FailAfterBackup      error
-	FailBeforeStaging    error
-	FailAfterStaging     error
-	FailBeforePrimary    error
+	FailBeforeInventory error
+	FailAfterInventory  error
+	FailBeforeBackup    error
+	FailAfterBackup     error
+	FailBeforeStaging   error
+	FailAfterStaging    error
+	FailBeforePrimary   error
+	// FailPrimaryAt and FailPrimary inject a failed primary rename before the
+	// one-based file position. A failure after an earlier primary was published
+	// is durability-uncertain, not a failed-no-change result.
+	FailPrimaryAt        int
+	FailPrimary          error
 	FailAfterPrimary     error
 	FailBeforeSync       error
 	FailAfterSync        error
@@ -135,6 +184,9 @@ func InspectStagedMigration(sourceDir, targetDir, sourceIdentity, targetSchema s
 	if sourceIdentity == "" || targetSchema == "" {
 		return MigrationInspection{}, fmt.Errorf("migration inspect requires source identity and target schema")
 	}
+	if err := validateMigrationFiles(files); err != nil {
+		return MigrationInspection{}, err
+	}
 	redactedSource, redactedTarget := RedactedMigrationRoots(sourceDir, targetDir)
 	inspection := MigrationInspection{
 		RedactedSource: redactedSource,
@@ -189,15 +241,30 @@ type BackupRecord struct {
 // the caller. Backups use 0600; the directory uses 0700. It never restores a
 // backup over a primary and never touches unknown files.
 func BackupMigrationInputs(dir string, files []string) ([]BackupRecord, error) {
+	if err := validateMigrationFiles(files); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	var records []BackupRecord
+	type backupInput struct {
+		name string
+		raw  []byte
+	}
+	inputs := make([]backupInput, 0, len(files))
 	for _, name := range files {
 		raw, _, err := ReadFile(filepath.Join(dir, name))
-		if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
+		if err != nil {
+			return nil, fmt.Errorf("read migration primary %s: %w", name, err)
+		}
+		inputs = append(inputs, backupInput{name: name, raw: raw})
+	}
+	var records []BackupRecord
+	for _, input := range inputs {
+		name, raw := input.name, input.raw
 		digest := sha256.Sum256(raw)
 		record := BackupRecord{File: name, Hash: hex.EncodeToString(digest[:]), Size: int64(len(raw))}
 		if err := AtomicReplace(filepath.Join(dir, name+".bak"), raw, 0o600); err != nil {
@@ -213,11 +280,13 @@ func BackupMigrationInputs(dir string, files []string) ([]BackupRecord, error) {
 // are never read as authority; only validated primaries are.
 func stagedName(name string) string { return name + ".migration-staged" }
 
-// StageConvertedFiles validates converted bytes and stages them on the
-// destination filesystem with restrictive permissions. It checks the shared
-// 16 MiB bound, requires valid JSON for .json primaries, and refuses to stage
-// unknown paths outside the declared file set. Staging never publishes.
-func StageConvertedFiles(dir string, staged map[string][]byte, declared []string) error {
+// validateConvertedFiles checks the entire declared staging batch before the
+// first staging or backup write. A malformed later member must not leave an
+// earlier staged file or backup that looks like a prepared conversion.
+func validateConvertedFiles(staged map[string][]byte, declared []string) ([]string, error) {
+	if err := validateMigrationFiles(declared); err != nil {
+		return nil, err
+	}
 	allowed := make(map[string]bool, len(declared))
 	for _, name := range declared {
 		allowed[name] = true
@@ -228,16 +297,34 @@ func StageConvertedFiles(dir string, staged map[string][]byte, declared []string
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		if err := validateMigrationFile(name); err != nil {
+			return nil, err
+		}
 		if !allowed[name] {
-			return fmt.Errorf("refusing to stage undeclared file %s", name)
+			return nil, fmt.Errorf("refusing to stage undeclared file %s", name)
 		}
 		data := staged[name]
 		if len(data) > maxJSONBytes {
-			return fmt.Errorf("staged %s exceeds the %d-byte limit", name, maxJSONBytes)
+			return nil, fmt.Errorf("staged %s exceeds the %d-byte limit", name, maxJSONBytes)
 		}
 		if filepath.Ext(name) == ".json" && !json.Valid(data) {
-			return fmt.Errorf("staged %s is not valid JSON", name)
+			return nil, fmt.Errorf("staged %s is not valid JSON", name)
 		}
+	}
+	return names, nil
+}
+
+// StageConvertedFiles validates converted bytes and stages them on the
+// destination filesystem with restrictive permissions. It checks the shared
+// 16 MiB bound, requires valid JSON for .json primaries, and refuses to stage
+// unknown paths outside the declared file set. Staging never publishes.
+func StageConvertedFiles(dir string, staged map[string][]byte, declared []string) error {
+	names, err := validateConvertedFiles(staged, declared)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		data := staged[name]
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o700); err != nil {
 			return err
 		}
@@ -248,18 +335,42 @@ func StageConvertedFiles(dir string, staged map[string][]byte, declared []string
 	return nil
 }
 
-// currentInputHashes fingerprints the declared primaries without writing.
-func currentInputHashes(dir string, files []string) map[string]string {
+// currentInputHashes fingerprints the declared primaries without writing. A
+// missing primary is absent input only when no backup entry exists. A retained
+// or unreadable backup means a prior publication may be unresolved, so it
+// blocks migration before backup, staging, or primary publication.
+func currentInputHashes(dir string, files []string) (map[string]string, error) {
+	if err := validateMigrationFiles(files); err != nil {
+		return nil, err
+	}
 	hashes := make(map[string]string, len(files))
 	for _, name := range files {
 		raw, _, err := ReadFile(filepath.Join(dir, name))
-		if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			backupPath := filepath.Join(dir, name+".bak")
+			_, _, backupErr := ReadFile(backupPath)
+			if backupErr == nil {
+				return nil, fmt.Errorf("migration recovery conflict: primary %s is missing while a backup remains; re-audit validated state before migration", name)
+			}
+			if !errors.Is(backupErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("migration recovery conflict: primary %s is missing while backup is unreadable; re-audit validated state before migration: %w", name, backupErr)
+			}
+			// ReadFile follows symlinks, so distinguish an absent backup from a
+			// retained dangling link. Either can name unresolved publication.
+			if _, lstatErr := os.Lstat(backupPath); lstatErr == nil {
+				return nil, fmt.Errorf("migration recovery conflict: primary %s is missing while backup is unreadable; re-audit validated state before migration", name)
+			} else if !errors.Is(lstatErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("migration recovery conflict: primary %s is missing while backup is unreadable; re-audit validated state before migration: %w", name, lstatErr)
+			}
 			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read migration primary %s: %w", name, err)
 		}
 		digest := sha256.Sum256(raw)
 		hashes[name] = hex.EncodeToString(digest[:])
 	}
-	return hashes
+	return hashes, nil
 }
 
 func syncDir(dir string) error {
@@ -293,10 +404,16 @@ func ApplyStagedMigration(dir string, plan StagedPlan, staged map[string][]byte,
 		declared = append(declared, name)
 	}
 	sort.Strings(declared)
+	if _, err := validateConvertedFiles(staged, declared); err != nil {
+		return failure(StageValidate, OutcomeKnownUncommitted, false, false, err)
+	}
 	if faults.FailBeforeInventory != nil {
 		return failure(StageValidate, OutcomeKnownUncommitted, false, false, fmt.Errorf("migration inventory interrupted: %w", faults.FailBeforeInventory))
 	}
-	current := currentInputHashes(dir, declared)
+	current, err := currentInputHashes(dir, declared)
+	if err != nil {
+		return failure(StageValidate, OutcomeKnownUncommitted, false, false, err)
+	}
 	// Idempotent repeat: identical inputs proceed; changed inputs conflict.
 	// An empty plan hash set with non-empty staged content is a fresh plan and
 	// proceeds; otherwise compare against the declared inputs.
@@ -334,14 +451,25 @@ func ApplyStagedMigration(dir string, plan StagedPlan, staged map[string][]byte,
 		return failure(StagePrimary, OutcomeKnownUncommitted, false, false, fmt.Errorf("migration primary interrupted: %w", faults.FailBeforePrimary))
 	}
 	outputHashes := make(map[string]string, len(staged))
-	for _, name := range declared {
+	published := false
+	primaryFailure := func(err error) (MigrationReceipt, PublishOutcome, error) {
+		if published {
+			return failure(StagePrimary, OutcomeDurabilityUncertain, true, true, err)
+		}
+		return failure(StagePrimary, OutcomeKnownUncommitted, false, false, err)
+	}
+	for index, name := range declared {
 		raw, _, err := ReadFile(filepath.Join(dir, stagedName(name)))
 		if err != nil {
-			return failure(StagePrimary, OutcomeDurabilityUncertain, true, true, fmt.Errorf("migration staging is partial; reconcile the validated primaries: %w", err))
+			return primaryFailure(fmt.Errorf("migration staging is partial; reconcile the validated primaries: %w", err))
+		}
+		if faults.FailPrimary != nil && faults.FailPrimaryAt == index+1 {
+			return primaryFailure(fmt.Errorf("migration primary for %s: %w", name, faults.FailPrimary))
 		}
 		if err := AtomicReplace(filepath.Join(dir, name), raw, 0o600); err != nil {
-			return failure(StagePrimary, OutcomeKnownUncommitted, false, false, fmt.Errorf("migration primary for %s: %w", name, err))
+			return primaryFailure(fmt.Errorf("migration primary for %s: %w", name, err))
 		}
+		published = true
 		digest := sha256.Sum256(raw)
 		outputHashes[name] = hex.EncodeToString(digest[:])
 	}
@@ -426,6 +554,9 @@ type RollbackPlan struct {
 // from runnable restore; dispatch stays disabled until explicit ledger
 // reconciliation. Unknown files are never included.
 func PlanMigrationRollback(dir string, files []string) (RollbackPlan, error) {
+	if err := validateMigrationFiles(files); err != nil {
+		return RollbackPlan{}, err
+	}
 	sorted := append([]string(nil), files...)
 	sort.Strings(sorted)
 	plan := RollbackPlan{
@@ -483,16 +614,20 @@ type RollbackReceipt struct {
 	RequiresReconciliation bool
 }
 
-// ApplyMigrationRollback restores backups in the defined file order with
-// required synchronization. Authority ledgers stay blocked from runnable
-// restore unless allowAuthorityRestore is true and the caller has reconciled
-// later effects through the controller ledger guards; even then dispatch
-// stays disabled until explicit resume. It never rewinds monotonic claims by
-// silently discarding the visible primary: blocked ledgers are left untouched
-// and reported as unresolved. A no-backup rollback is a no-op success.
-func ApplyMigrationRollback(dir string, files []string, faults MigrationRollbackFaults, allowAuthorityRestore bool) (RollbackReceipt, PublishOutcome, error) {
+// ApplyMigrationRollback restores non-authority backups in the defined file
+// order with required synchronization. Authority ledger backups are never
+// restored: a Boolean caller assertion cannot prove that a later schedule run
+// was not dispatched or a later deletion was not confirmed. The final Boolean
+// is retained for source compatibility and is intentionally ignored. It never
+// rewinds monotonic claims by silently discarding the visible primary: blocked
+// ledgers are left untouched and reported as unresolved. A no-backup rollback
+// is a no-op success.
+func ApplyMigrationRollback(dir string, files []string, faults MigrationRollbackFaults, _ bool) (RollbackReceipt, PublishOutcome, error) {
 	failure := func(stage PublishStage, kind OutcomeKind, visible, reconcile bool, receipt RollbackReceipt, err error) (RollbackReceipt, PublishOutcome, error) {
 		return receipt, PublishOutcome{Kind: kind, Stage: stage, PrimaryVisible: visible, MustReconcile: reconcile}, err
+	}
+	if err := validateMigrationFiles(files); err != nil {
+		return failure(StageValidate, OutcomeKnownUncommitted, false, false, RollbackReceipt{}, err)
 	}
 	plan, err := PlanMigrationRollback(dir, files)
 	if err != nil {
@@ -510,14 +645,13 @@ func ApplyMigrationRollback(dir string, files []string, faults MigrationRollback
 	if faults.FailBeforeRestore != nil {
 		return failure(StageBackup, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback restore interrupted: %w", faults.FailBeforeRestore))
 	}
-	if len(plan.AuthorityBlocked) > 0 && !allowAuthorityRestore {
-		return failure(StageValidate, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback refuses to restore older queue/schedule/deletion snapshots as runnable authority; reconcile explicitly first"))
+	if len(plan.AuthorityBlocked) > 0 {
+		return failure(StageValidate, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback refuses to restore older queue/schedule/deletion snapshots; retain the current authority and reconcile it explicitly"))
 	}
-	sorted := append([]string(nil), files...)
-	sort.Strings(sorted)
+	sorted := append([]string(nil), plan.Files...)
 	restored := []string{}
 	for _, name := range sorted {
-		if AuthorityLedgerFiles[name] && !allowAuthorityRestore {
+		if AuthorityLedgerFiles[name] {
 			continue
 		}
 		backup, _, err := ReadFile(filepath.Join(dir, name+".bak"))
@@ -528,6 +662,10 @@ func ApplyMigrationRollback(dir string, files []string, faults MigrationRollback
 			return failure(StageBackup, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback backup for %s exceeds the %d-byte limit", name, maxJSONBytes))
 		}
 		if err := AtomicReplace(filepath.Join(dir, name), backup, 0o600); err != nil {
+			if len(restored) > 0 {
+				receipt.RestoredFiles = append([]string(nil), restored...)
+				return failure(StagePrimary, OutcomeDurabilityUncertain, true, true, receipt, fmt.Errorf("rollback restore for %s: %w", name, err))
+			}
 			return failure(StagePrimary, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback restore for %s: %w", name, err))
 		}
 		restored = append(restored, name)
@@ -555,16 +693,6 @@ func ApplyMigrationRollback(dir string, files []string, faults MigrationRollback
 	receipt.RestoredFiles = restored
 	if len(restored) == 0 {
 		receipt.RetainedEffects = append(receipt.RetainedEffects, "no-op rollback; no backup generation was restored")
-	}
-	// Authority restores always keep dispatch disabled until explicit resume,
-	// even with caller reconciliation. Only declared regenerable cache may be
-	// discarded automatically; durable data never is.
-	for _, name := range restored {
-		if AuthorityLedgerFiles[name] {
-			receipt.DispatchDisabled = true
-			receipt.RequiresReconciliation = true
-			receipt.RetainedEffects = append(receipt.RetainedEffects, fmt.Sprintf("%s restored only as quarantined history; dispatch stays disabled until explicit ledger reconciliation", name))
-		}
 	}
 	if faults.FailAfterReceipt != nil {
 		return failure(StageAcknowledge, OutcomeDurabilityUncertain, true, true, receipt, fmt.Errorf("rollback receipt interrupted: %w", faults.FailAfterReceipt))

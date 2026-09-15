@@ -43,7 +43,8 @@ const (
 
 // PublishOutcome carries enough internal outcome information for callers to
 // distinguish a known pre-publication failure from an installed-but-
-// unconfirmed result.
+// unconfirmed result. PrimaryVisible means this operation published the new
+// primary; false means it is known not to have done so.
 type PublishOutcome struct {
 	Kind           OutcomeKind
 	Stage          PublishStage

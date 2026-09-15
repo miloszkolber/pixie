@@ -8,14 +8,13 @@ export const RELEASE_ID_PATTERN = /^sha-[0-9a-f]{12}$/;
 export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 export const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
-export const RELEASE_ARCHIVES = [
-	"pixie-assistant-{releaseId}-linux-amd64.tar.gz",
-	"pixie-assistant-{releaseId}-linux-arm64.tar.gz",
-	"pixie-{releaseId}-linux-amd64.tar.gz",
-	"pixie-{releaseId}-linux-arm64.tar.gz",
-] as const;
+export const RELEASE_PRODUCTS = ["pixie_web", "pixie_cli", "pixie"] as const;
+export const RELEASE_ARCHIVES = RELEASE_PRODUCTS.flatMap((product) => [
+	`${product}-{releaseId}-linux-amd64.tar.gz`,
+	`${product}-{releaseId}-linux-arm64.tar.gz`,
+]);
 
-const RELEASE_VARIANTS = ["assistant", "host"] as const;
+const RELEASE_VARIANTS = RELEASE_PRODUCTS;
 const RELEASE_ARCHITECTURES = ["amd64", "arm64"] as const;
 type ReleaseVariant = (typeof RELEASE_VARIANTS)[number];
 type ReleaseArchitecture = (typeof RELEASE_ARCHITECTURES)[number];
@@ -95,6 +94,11 @@ export interface RetryEvidence {
 export interface ReleaseIdentityInput {
 	sourceCommit?: string;
 	releaseId?: string;
+	/**
+	 * Repository owner supplied by the release caller (normally
+	 * GITHUB_REPOSITORY_OWNER). When present, the controller image must use it.
+	 */
+	repositoryOwner?: string;
 	tag?: TagEvidence;
 	release?: ReleaseEvidence;
 	archives?: readonly ArchiveEvidence[];
@@ -257,13 +261,16 @@ function inspectWorkflowEvidence(
 	if (!/RELEASE_ID\s*=\s*["']?sha-[^\n]*(?:SOURCE_COMMIT|cut\s+-c1-12)/i.test(releaseText)) {
 		addMissing(violations, missing, "workflow", "full source SHA to RELEASE_ID derivation");
 	}
-	if (
-		!/pixie-assistant[^\n]*linux-amd64/i.test(releaseText) ||
-		!/pixie-assistant[^\n]*linux-arm64/i.test(releaseText) ||
-		!/\bpixie-(?!assistant-)[^\n]*linux-amd64/i.test(releaseText) ||
-		!/\bpixie-(?!assistant-)[^\n]*linux-arm64/i.test(releaseText)
-	) {
-		addMissing(violations, missing, "workflow", "complete four-archive staging");
+	for (const product of RELEASE_PRODUCTS) {
+		for (const architecture of RELEASE_ARCHITECTURES) {
+			if (new RegExp(`${product}[^\\n]*linux-${architecture}`, "i").test(releaseText)) continue;
+			addMissing(
+				violations,
+				missing,
+				"workflow",
+				`staged ${product} linux-${architecture} archive`,
+			);
+		}
 	}
 	if (!/collision|same.*full|existing.*tag|mismatch/i.test(releaseText)) {
 		addMissing(violations, missing, "workflow", "short-ID collision handling");
@@ -347,7 +354,13 @@ function inspectArchives(
 			violations.push(`archive ${name}: release ID must be ${expectedReleaseId}`);
 		}
 		checkArtifactHash(archive.sha256, `archive ${name}`, violations);
-		const expectedBinary = name.startsWith("pixie-assistant-") ? "pixie-assistant" : "pixie";
+		const expectedBinary = RELEASE_PRODUCTS.find((product) =>
+			name.startsWith(`${product}-${expectedReleaseId}-linux-`),
+		);
+		if (expectedBinary === undefined) {
+			violations.push(`archive ${name}: product identity is invalid`);
+			continue;
+		}
 		if (archive.binaryName !== expectedBinary) {
 			violations.push(`archive ${name}: contained binary must be ${expectedBinary}`);
 		}
@@ -368,7 +381,7 @@ function inspectBinaries(
 		const key = expectedBinaryKey(binary.variant, binary.architecture);
 		if (byKey.has(key)) violations.push(`binary ${key}: duplicate artifact evidence`);
 		byKey.set(key, binary);
-		const expectedName = binary.variant === "assistant" ? "pixie-assistant" : "pixie";
+		const expectedName = binary.variant;
 		if (binary.name !== expectedName)
 			violations.push(`binary ${key}: binary name must be ${expectedName}`);
 	}
@@ -396,6 +409,7 @@ function inspectDocker(
 	docker: DockerEvidence | undefined,
 	expectedReleaseId: string,
 	expectedSource: string,
+	repositoryOwner: string | undefined,
 	violations: string[],
 	missing: string[],
 ): void {
@@ -408,8 +422,14 @@ function inspectDocker(
 		);
 		return;
 	}
-	const expectedTag = `ghcr.io/miloszkolber/pixie:${expectedReleaseId}`;
-	if (docker.tag !== expectedTag) violations.push(`Docker tag must be ${expectedTag}`);
+	const expectedTag = `ghcr.io/${repositoryOwner ?? "<GITHUB_REPOSITORY_OWNER>"}/pixie_web:${expectedReleaseId}`;
+	const dynamicOwnerTag = new RegExp(`^ghcr\\.io/[^/:@\\s]+/pixie_web:${expectedReleaseId}$`);
+	if (
+		(repositoryOwner === undefined && !dynamicOwnerTag.test(docker.tag)) ||
+		(repositoryOwner !== undefined && docker.tag !== expectedTag)
+	) {
+		violations.push(`Docker tag must be ${expectedTag}`);
+	}
 	if (docker.version !== expectedReleaseId)
 		violations.push("Docker OCI version label must be the release ID");
 	checkFullSha(docker.revision, "Docker OCI revision label", expectedSource, violations);
@@ -459,7 +479,9 @@ function inspectManifest(
 	if (!manifest.cleanSourceTree)
 		violations.push("release-manifest.json: clean source tree must be recorded");
 	if (!manifest.completeSet)
-		violations.push("release-manifest.json: complete four-archive/image set is not recorded");
+		violations.push(
+			"release-manifest.json: complete three-product/six-archive image set is not recorded",
+		);
 	const archiveHashes = manifest.archiveHashes ?? {};
 	for (const archive of requiredArchives)
 		checkArtifactHash(
@@ -605,7 +627,7 @@ export function inspectReleaseIdentity(input: ReleaseIdentityInput): ReleaseIden
 			violations,
 			missingArtifactEvidence,
 			"artifact",
-			"four commit-named archives, four binary records, Docker index/platform digests and release manifest",
+			"six commit-named archives, six binary records, Docker index/platform digests and release manifest",
 		);
 		inspectWorkflowEvidence(input.workflowSources, violations, missingWorkflowEvidence);
 		return {
@@ -669,6 +691,7 @@ export function inspectReleaseIdentity(input: ReleaseIdentityInput): ReleaseIden
 		input.docker,
 		expectedReleaseId,
 		verifiedSourceCommit,
+		input.repositoryOwner,
 		violations,
 		missingArtifactEvidence,
 	);
@@ -748,10 +771,12 @@ export async function collectReleaseIdentityInput(
 ): Promise<ReleaseIdentityInput> {
 	const sourceCommit = await gitRevision(repositoryRoot);
 	const manifest = await readManifest(repositoryRoot);
+	const repositoryOwner = process.env.GITHUB_REPOSITORY_OWNER;
 	return {
 		workflowSources: await readWorkflowSources(repositoryRoot),
 		...(sourceCommit === undefined ? {} : { sourceCommit }),
 		...(manifest === undefined ? {} : { manifest }),
+		...(repositoryOwner === undefined ? {} : { repositoryOwner }),
 	};
 }
 

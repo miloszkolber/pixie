@@ -32,6 +32,7 @@ let connectionGeneration = $derived($appStore.connectionGeneration);
 let unavailable = $derived(!connected || failed);
 let recoveryPendingKey = $state<string | null>(null);
 let recoveryError = $state<string | null>(null);
+let recoveryAnnouncement = $state<string | null>(null);
 let recoveryRecords = $derived($appStore.deletionRecovery);
 
 async function load(generation = connectionGeneration): Promise<void> {
@@ -78,19 +79,27 @@ async function loadDeletionRecovery(generation = connectionGeneration): Promise<
 	}
 }
 
+function refresh(generation = connectionGeneration): void {
+	void load(generation);
+	void loadDeletionRecovery(generation);
+}
+
 async function confirmDeletion(record: DeletionRecovery): Promise<void> {
 	const key = deletionRecoveryKey(record);
 	const generation = connectionGeneration;
 	recoveryPendingKey = key;
 	recoveryError = null;
+	recoveryAnnouncement = null;
 	try {
 		await getTransport().request(
 			"session.confirmExternalDeletion",
 			{ projectId: record.projectId, sessionId: record.sessionId },
 			{ timeoutMs: 10_000 },
 		);
-		if (appStoreApi.getState().connectionGeneration === generation)
+		if (appStoreApi.getState().connectionGeneration === generation) {
 			appStoreApi.getState().removeDeletionRecovery(record.projectId, record.sessionId);
+			recoveryAnnouncement = `Confirmed deletion record for ${record.sessionId}.`;
+		}
 	} catch (cause) {
 		recoveryError = errorText(cause);
 	} finally {
@@ -98,8 +107,28 @@ async function confirmDeletion(record: DeletionRecovery): Promise<void> {
 	}
 }
 
-function retainDeletion(): void {
-	// Retaining is an explicit no-op: it never mutates the tombstone or server.
+async function retainDeletion(record: DeletionRecovery): Promise<void> {
+	const key = deletionRecoveryKey(record);
+	const generation = connectionGeneration;
+	recoveryPendingKey = key;
+	recoveryError = null;
+	recoveryAnnouncement = null;
+	try {
+		await getTransport().request(
+			"session.retainExternalDeletion",
+			{ projectId: record.projectId, sessionId: record.sessionId },
+			{ timeoutMs: 10_000 },
+		);
+		if (appStoreApi.getState().connectionGeneration === generation) {
+			// A retain acknowledgement validates the existing record but never
+			// removes it. Keep the keyed row mounted so keyboard focus remains.
+			recoveryAnnouncement = `Retained deletion record for ${record.sessionId}.`;
+		}
+	} catch (cause) {
+		recoveryError = errorText(cause);
+	} finally {
+		if (recoveryPendingKey === key) recoveryPendingKey = null;
+	}
 }
 
 $effect(() => {
@@ -112,8 +141,7 @@ $effect(() => {
 	}
 	if (loadedGeneration === connectionGeneration) return;
 	loadedGeneration = connectionGeneration;
-	void load(connectionGeneration);
-	void loadDeletionRecovery(connectionGeneration);
+	void refresh(connectionGeneration);
 });
 
 onDestroy(() => {
@@ -225,7 +253,7 @@ onDestroy(() => {
 			size="sm"
 			data-testid="system-refresh"
 			disabled={!connected || loading}
-			onclick={() => void load()}
+			onclick={() => refresh()}
 		>
 			<Icon name="refresh-cw" size={14} class={loading ? "system-refresh-icon" : ""} />
 			{loading ? "Refreshing…" : "Refresh"}
@@ -259,8 +287,9 @@ onDestroy(() => {
 		records={recoveryRecords}
 		pendingKey={recoveryPendingKey}
 		error={recoveryError}
+		announcement={recoveryAnnouncement}
 		onConfirm={(record) => void confirmDeletion(record)}
-		onRetain={retainDeletion}
+		onRetain={(record) => void retainDeletion(record)}
 	/>
 </div>
 

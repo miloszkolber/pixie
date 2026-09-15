@@ -147,7 +147,7 @@ func (s *SessionRecords) filter(keep func(ProjectSessionRecord) bool) error {
 }
 
 func validateSessionRecord(record ProjectSessionRecord) error {
-	if record.ProjectID == "" || validatePiSessionID(record.SessionID) != nil || record.CWD == "" || containsNUL(record.ProjectID) || containsNUL(record.CWD) {
+	if validatePiSessionID(record.SessionID) != nil || record.CWD == "" || containsNUL(record.ProjectID) || containsNUL(record.CWD) {
 		return fmt.Errorf("invalid project session record")
 	}
 	if record.ParentSessionID != "" && (validatePiSessionID(record.ParentSessionID) != nil || record.ParentSessionID == record.SessionID) {
@@ -288,7 +288,7 @@ func (o *Objectives) Forget(projectID, sessionID string) error {
 	// Session IDs are opaque Pi values. Unlike user-entered objective IDs,
 	// deletion cleanup can safely accept the broader persisted-record contract
 	// because objective filenames are SHA-256 keys rather than raw IDs.
-	if projectID == "" || sessionID == "" || containsNUL(projectID) || containsNUL(sessionID) {
+	if sessionID == "" || containsNUL(projectID) || containsNUL(sessionID) {
 		return fmt.Errorf("invalid session objective target")
 	}
 	o.mu.Lock()
@@ -432,10 +432,20 @@ func validatePiSessionID(value string) error {
 }
 
 func validateDurableSessionTarget(projectID, sessionID string) error {
-	if err := validateIdentity(projectID, "Project id"); err != nil {
+	if err := validateDurableProjectID(projectID); err != nil {
 		return err
 	}
 	return validatePiSessionID(sessionID)
+}
+
+// validateDurableProjectID retains the explicit empty project key for
+// ungrouped durable session state. Non-empty project identifiers keep the
+// existing project-id contract.
+func validateDurableProjectID(projectID string) error {
+	if projectID == "" {
+		return nil
+	}
+	return validateIdentity(projectID, "Project id")
 }
 
 func objectiveKey(projectID, sessionID string) string {

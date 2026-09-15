@@ -51,8 +51,10 @@ jobs:
       - run: bun run typecheck
         working-directory: web
       # Build first: several tests inspect the embedded web bundle and the
-      # full-host binary, and `go test` requires webui/dist for //go:embed.
+      # controller-only binary, and `go test` requires webui/dist for //go:embed.
       - run: bun run build
+        working-directory: web
+      - run: bun scripts/check-composition.ts
         working-directory: web
       - name: Run tests
         working-directory: web
@@ -77,18 +79,11 @@ jobs:
         env:
           CGO_ENABLED: "0"
         working-directory: web
-      - name: Test Go assistant module
-        run: go test -count=1 ./...
-        env:
-          CGO_ENABLED: "0"
-        working-directory: assistant
       - name: Test shared contracts module
         run: bun test tests && go test -count=1 ./...
         env:
           CGO_ENABLED: "0"
         working-directory: shared
-      - name: Test administration bridge
-        run: bun test assistant/bridge
       - name: Test Bun assistant SDK probe
         run: bun run --cwd assistant test
   ui:

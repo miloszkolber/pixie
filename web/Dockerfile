@@ -41,9 +41,9 @@ FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS go-source
 WORKDIR /work/web
 COPY web/go.mod web/go.sum ./
 COPY shared/go.mod /work/shared/go.mod
-# The published image is deliberately controller-only. Drop the optional
-# full-host facade requirement in this isolated build context so Docker never
-# needs to copy or compile assistant sources.
+# The controller image is deliberately isolated from the assistant module. Drop
+# the removed Go module requirement in this isolated build context so it never
+# copies or compiles assistant sources.
 RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     go mod edit \
         -droprequire=github.com/miloszkolber/pixie/assistant \
@@ -53,12 +53,8 @@ COPY web/cmd/ cmd/
 COPY web/internal/ internal/
 COPY shared/piprotocol/ /work/shared/piprotocol/
 COPY web/webui/*.go webui/
-# Never COPY anything from web/webui/dist/ here: `bun run build` wipes that
-# directory (including the tracked .gitkeep), which used to break every container
-# build after a local web build with a missing-.gitkeep checksum error. The Go
-# `//go:embed all:dist` directive needs the directory to exist with at least one
-# file, so synthesize the placeholder instead. The real bundle arrives later via
-# COPY --from=web-build; this placeholder only feeds the disk-fallback path.
+# Never COPY web/webui/dist here: a local frontend build removes the tracked
+# placeholder. The Go binary uses the copied disk bundle in each runtime image.
 RUN mkdir -p webui/dist && touch webui/dist/.gitkeep
 
 FROM go-source AS go-build
@@ -72,7 +68,9 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     set -eu; \
     mkdir -p /out/licenses/pixie/go; \
     cp /usr/local/go/LICENSE /out/licenses/pixie/go/LICENSE; \
-    go build -trimpath -tags=controller -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie ./cmd; \
+    go build -trimpath -tags=controller -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie_web ./cmd; \
+    go build -trimpath -ldflags='-s -w' -o /out/pixie ./cmd/pixie; \
+    go build -trimpath -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie_full ./cmd/pixie-full; \
     go list -tags=controller -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd \
         > /tmp/modules.unsorted; \
     sort -u /tmp/modules.unsorted > /tmp/modules; \
@@ -84,6 +82,34 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
             -exec cp '{}' "/out/licenses/pixie/$module/" \;; \
     done < /tmp/modules
 
+# Build the full runtime on the target architecture. The same release-runtime
+# helper used by archives downloads and verifies pinned Bun 1.4.0, copies the
+# installed Pi closure and verifies that the retained TUI bundle/chunks remain
+# complete while Pi RPC and package-manager entrypoints are absent. The Debian
+# base image is glibc, so the release helper stages the glibc Bun build.
+FROM --platform=$TARGETPLATFORM ${BUN_IMAGE} AS pi-build
+WORKDIR /work
+COPY package.json bun.lock bunfig.toml ./
+COPY web/package.json web/package.json
+COPY web/webui/package.json web/webui/package.json
+COPY shared/package.json shared/package.json
+COPY assistant/package.json assistant/package.json
+RUN --mount=type=cache,id=pi-bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
+    bun install --frozen-lockfile
+COPY assistant/src/ assistant/src/
+COPY shared/src/ shared/src/
+COPY web/scripts/release-runtime.ts web/scripts/release-runtime.ts
+RUN --mount=type=cache,id=pi-bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
+    set -eu; \
+    mkdir -p /out; \
+    bun build --target=bun --outfile /out/pixie_assistant.js assistant/src/serve.ts; \
+    bun -e 'const runtime = await import("./web/scripts/release-runtime.ts"); const architecture = process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : (() => { throw new Error(`unsupported runtime architecture ${process.arch}`); })(); await runtime.stageBundledPiRuntime({ repositoryRoot: process.cwd(), directory: "/out/runtime", architecture }); await runtime.verifyBundledPiRuntime("/out/runtime", architecture); await Bun.write("/out/THIRD_PARTY_NOTICES.md", await runtime.bundledRuntimeNotices("/out/runtime", architecture));'; \
+    test -f /out/pixie_assistant.js; \
+    test -x /out/runtime/bin/bun; \
+    test -f /out/runtime/bun/LICENSE.md; \
+    test -f /out/runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js; \
+    test -f /out/THIRD_PARTY_NOTICES.md
+
 FROM go-source AS ui-test-build
 COPY web/tests/ui/fixture/ tests/ui/fixture/
 ARG TARGETOS
@@ -93,8 +119,8 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags='-s -w' -o /out/pixie-ui-fixture ./tests/ui/fixture
 
-# Preserve Chainguard Git's dependency closure, but remove the shells and local
-# server entry points that Pixie does not use.
+# The browser stages support the explicit UI-acceptance target only. Neither
+# runnable Pixie product includes Chromium or agent-browser.
 FROM ${DEBIAN_IMAGE} AS agent-browser-fetch
 ARG AGENT_BROWSER_VERSION
 ARG TARGETARCH
@@ -172,11 +198,6 @@ RUN chmod 0755 /app/run-ui-acceptance \
 USER 1000:1000
 CMD ["/app/run-ui-acceptance"]
 
-# The published controller image is the only application image. Browser
-# automation is an external MCP server the selected Pi calls directly, so the
-# controller ships no Chromium or agent-browser runtime; the browser-automation
-# and ui-acceptance stages above remain only for the UI acceptance target.
-# Keep the application last: a build without --target produces only Pixie.
 FROM ${DEBIAN_IMAGE} AS controller-runtime
 RUN --mount=type=cache,id=controller-runtime-apt,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=controller-runtime-apt-lists,target=/var/lib/apt/lists,sharing=locked \
@@ -190,14 +211,13 @@ RUN --mount=type=cache,id=controller-runtime-apt,target=/var/cache/apt,sharing=l
 COPY LICENSE NOTICE.md /app/legal/
 ENV HOME=/home/pixie
 WORKDIR /app
-ENTRYPOINT ["/usr/bin/tini", "-s", "--"]
 
-FROM controller-runtime AS pixie
+FROM controller-runtime AS pixie_web
 ARG VERSION
 ARG REVISION
 ARG SOURCE_URL
 ARG CREATED
-LABEL org.opencontainers.image.title="Pixie" \
+LABEL org.opencontainers.image.title="pixie_web" \
     org.opencontainers.image.version="${VERSION}" \
     org.opencontainers.image.revision="${REVISION}" \
     org.opencontainers.image.source="${SOURCE_URL}" \
@@ -208,17 +228,56 @@ ENV HOME=/home/pixie \
     GOGC=200
 WORKDIR /app
 COPY LICENSE NOTICE.md /app/legal/
+COPY --from=go-build /out/pixie_web /app/pixie_web
+COPY --from=go-build /out/licenses/pixie /app/licenses
+COPY --from=web-build /work/web/webui/dist /app/web
+COPY --from=web-build /out/licenses /app/licenses
+RUN test -x /app/pixie_web && command -v git
+USER 1000:1000
+EXPOSE 7312
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/app/pixie_web", "healthcheck"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie_web", "serve", "--mode", "controller"]
+
+FROM controller-runtime AS pixie
+ARG VERSION
+ARG REVISION
+ARG SOURCE_URL
+ARG CREATED
+LABEL org.opencontainers.image.title="pixie" \
+    org.opencontainers.image.version="${VERSION}" \
+    org.opencontainers.image.revision="${REVISION}" \
+    org.opencontainers.image.source="${SOURCE_URL}" \
+    org.opencontainers.image.created="${CREATED}"
+ENV HOME=/home/pixie \
+    PATH=/app/runtime/bin:/usr/local/bin:/usr/bin:/bin \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    PI_CODING_AGENT_DIR=/var/lib/pixie/pi \
+    GOGC=200
+WORKDIR /app
+COPY LICENSE NOTICE.md /app/legal/
+COPY --from=pi-build /out/THIRD_PARTY_NOTICES.md /app/legal/THIRD_PARTY_NOTICES.md
 COPY --from=go-build /out/pixie /app/pixie
+COPY --from=go-build /out/pixie_full /app/libexec/pixie_full
+COPY --from=go-build /out/pixie_web /app/libexec/pixie_web
+COPY --from=pi-build /out/pixie_assistant.js /app/libexec/pixie_assistant.js
+COPY --from=pi-build /out/runtime /app/runtime
 COPY --from=go-build /out/licenses/pixie /app/licenses
 COPY --from=web-build /work/web/webui/dist /app/web
 COPY --from=web-build /out/licenses /app/licenses
 RUN test -x /app/pixie \
-    && command -v git
+    && test -x /app/libexec/pixie_full \
+    && test -f /app/libexec/pixie_assistant.js \
+    && test -x /app/libexec/pixie_web \
+    && test -x /app/runtime/bin/bun \
+    && test -f /app/runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js \
+    && test ! -e /app/runtime/node_modules/.bin \
+    && ! find /app/runtime/node_modules/@earendil-works/pi-coding-agent -iname '*rpc-entry*' -print -quit | grep -q .
+# Pi has host-user authority. Read-only roots and dropped capabilities are
+# defense in depth, not a sandbox for untrusted Canvas or Openfig content.
 USER 1000:1000
-EXPOSE 7312
+EXPOSE 3284 7312
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["/app/pixie", "healthcheck"]
-# Run under tini so PID 1 reaps orphaned managed-group descendants (Git
-# helpers) instead of leaving zombies. The intermediate stages already use
-# tini; the final stage must keep it.
-ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie", "serve", "--mode", "controller"]
+    CMD ["/app/libexec/pixie_web", "healthcheck"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/libexec/pixie_full"]
+CMD ["serve", "--assistant-config", "/etc/pixie/assistant.json", "--web-config", "/etc/pixie/pixie.json"]

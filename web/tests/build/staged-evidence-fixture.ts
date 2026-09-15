@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { productArchiveLayout, RELEASE_PRODUCTS } from "../../scripts/build-release.ts";
 import { writeDeterministicTarGz } from "../../scripts/deterministic-tar.ts";
 import {
 	buildEvidenceBundle,
@@ -10,20 +11,20 @@ import {
 
 /**
  * Shared synthetic exact-commit staging fixtures for the release evidence
- * gates. They create the four commit-named archives, the staged local manifest
+ * gates. They create the six commit-named public archives, the merged local manifest
  * and either a docker-save or OCI controller image tar. No registry, tag or
  * lifecycle value is synthesized.
  */
 
-export const FIXTURE_VARIANTS = ["assistant", "host"] as const;
+export const FIXTURE_PRODUCTS = RELEASE_PRODUCTS;
 export const FIXTURE_ARCHITECTURES = ["amd64", "arm64"] as const;
 
 export function fixtureSha256(value: Uint8Array): string {
 	return createHash("sha256").update(value).digest("hex");
 }
 
-export function fixtureBinaryName(variant: (typeof FIXTURE_VARIANTS)[number]): string {
-	return variant === "assistant" ? "pixie-assistant" : "pixie";
+export function fixtureBinaryName(product: (typeof FIXTURE_PRODUCTS)[number]): string {
+	return product;
 }
 
 export interface StagedFixture {
@@ -69,9 +70,9 @@ export function writeFixtureTar(entries: readonly { name: string; content: Buffe
 }
 
 /**
- * Stage the four commit-named archives plus the staged local manifest. The
- * manifest carries real archive hashes; publication fields (complete set, SBOM,
- * provenance, image digests) are explicitly false/absent.
+ * Stage the six commit-named archives plus the merged local manifest. The
+ * manifest carries real archive and entrypoint hashes; publication fields
+ * (SBOM, provenance and image digests) are explicitly false/absent.
  */
 export async function stageArtifacts(
 	root: string,
@@ -85,24 +86,54 @@ export async function stageArtifacts(
 	await mkdir(staging, { recursive: true });
 	const archiveSha256 = new Map<string, string>();
 	const binarySha256 = new Map<string, string>();
-	for (const variant of FIXTURE_VARIANTS) {
+	const artifacts: {
+		product: (typeof FIXTURE_PRODUCTS)[number];
+		architecture: (typeof FIXTURE_ARCHITECTURES)[number];
+		entrypoint: string;
+		archive: string;
+		entrypointSha256: string;
+		archiveSha256: string;
+		entries: readonly string[];
+	}[] = [];
+	for (const product of FIXTURE_PRODUCTS) {
 		for (const architecture of FIXTURE_ARCHITECTURES) {
-			if (!includeAll && !(variant === "assistant" && architecture === "amd64")) continue;
-			const binary = fixtureBinaryName(variant);
-			const unit = `${binary}.service`;
-			const config = variant === "assistant" ? "assistant.json" : "pixie.json";
-			const directory = join(staging, `${variant}-${architecture}`);
+			if (!includeAll && !(product === "pixie_web" && architecture === "amd64")) continue;
+			const binary = fixtureBinaryName(product);
+			const directory = join(staging, `${product}-${architecture}`);
 			await mkdir(directory, { recursive: true });
-			const files = [
-				{ name: binary, content: `binary-${variant}-${architecture}`, mode: 0o755 },
-				{ name: unit, content: "[Unit]\n", mode: 0o644 },
-				{ name: config, content: "{}\n", mode: 0o644 },
-				{ name: "INSTALL.md", content: "install\n", mode: 0o644 },
-				{ name: "LICENSE", content: "license\n", mode: 0o644 },
-				{ name: "NOTICE.md", content: "notice\n", mode: 0o644 },
-			];
-			for (const file of files) await writeFile(join(directory, file.name), file.content);
-			const archiveName = `${binary}-${releaseId}-linux-${architecture}.tar.gz`;
+			const runtime =
+				product === "pixie_cli" || product === "pixie"
+					? [
+							"runtime/manifest.json",
+							"runtime/bin/bun",
+							"runtime/bun/LICENSE.md",
+							"runtime/node_modules/@earendil-works/pi-coding-agent/package.json",
+							"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js",
+							"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/chunks/tui.js",
+						]
+					: [];
+			const executable = new Set(
+				product === "pixie_web"
+					? ["pixie_web"]
+					: product === "pixie_cli"
+						? ["pixie", "pixie_cli"]
+						: ["pixie", "libexec/pixie_full", "libexec/pixie_web"],
+			);
+			const files = productArchiveLayout(product, runtime).map((name) => ({
+				name,
+				content: executable.has(name)
+					? `binary-${product}-${architecture}-${name}`
+					: name.endsWith("package.json")
+						? '{"name":"@earendil-works/pi-coding-agent","version":"0.85.1"}\n'
+						: `${name}\n`,
+				mode: executable.has(name) ? 0o755 : 0o644,
+			}));
+			for (const file of files) {
+				const path = join(directory, file.name);
+				await mkdir(dirname(path), { recursive: true });
+				await writeFile(path, file.content);
+			}
+			const archiveName = `${product}-${releaseId}-linux-${architecture}.tar.gz`;
 			const archivePath = join(artifactsDir, archiveName);
 			await writeDeterministicTarGz(
 				archivePath,
@@ -116,19 +147,38 @@ export async function stageArtifacts(
 			archiveSha256.set(archiveName, fixtureSha256(await readFile(archivePath)));
 			binarySha256.set(
 				archiveName,
-				fixtureSha256(Buffer.from(`binary-${variant}-${architecture}`)),
+				fixtureSha256(Buffer.from(`binary-${product}-${architecture}-${binary}`)),
 			);
+			artifacts.push({
+				product,
+				architecture,
+				entrypoint: binary,
+				archive: archiveName,
+				entrypointSha256: binarySha256.get(archiveName) ?? "",
+				archiveSha256: archiveSha256.get(archiveName) ?? "",
+				entries: files.map((file) => file.name).sort(),
+			});
 		}
 	}
+	await writeFile(
+		join(artifactsDir, "checksums.txt"),
+		`${[...archiveSha256.entries()]
+			.map(([name, digest]) => `${digest}  ${name}`)
+			.sort()
+			.join("\n")}\n`,
+	);
 	await writeFile(
 		join(artifactsDir, "release-manifest.json"),
 		`${JSON.stringify(
 			{
-				schemaVersion: 1,
+				schemaVersion: 2,
 				releaseId,
 				sourceCommit,
 				cleanSourceTree: true,
-				completeSet: false,
+				completeSet: includeAll,
+				architectures: includeAll ? [...FIXTURE_ARCHITECTURES] : ["amd64"],
+				products: [...FIXTURE_PRODUCTS],
+				artifacts,
 				archiveHashes: Object.fromEntries(archiveSha256),
 				checksumsPresent: true,
 				sbomPresent: false,
@@ -234,7 +284,7 @@ export async function writeOciTar(
 }
 
 export interface ProbeBinaryOptions {
-	name: "pixie-assistant" | "pixie";
+	name: (typeof FIXTURE_PRODUCTS)[number];
 	releaseId: string;
 	sourceCommit: string;
 	doctor?: boolean;

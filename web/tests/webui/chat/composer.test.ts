@@ -7,6 +7,7 @@ import {
 	agentMentionTypeLabel,
 	clampedMentionActiveIndex,
 	clipboardImageName,
+	completionNavigationIndex,
 	composerEnterBehavior,
 	insertedMention,
 	insertImageTags,
@@ -79,6 +80,36 @@ test("shrinking completion candidates clamps selection to a visible entry", () =
 	expect(mentionCompletionKeyAction("Tab", true, 4, 1)).toEqual({ type: "select", index: 0 });
 	expect(clampedSlashActiveIndex(4, 1)).toBe(0);
 	expect(slashCompletionKeyAction("Enter", true, 4, 1)).toEqual({ type: "select", index: 0 });
+});
+
+test("completion menus share Home, End, PageUp and PageDown navigation", () => {
+	expect(completionNavigationIndex("Home", 3, 5)).toBe(0);
+	expect(completionNavigationIndex("End", 0, 5)).toBe(4);
+	expect(completionNavigationIndex("PageUp", 4, 8)).toBe(0);
+	expect(completionNavigationIndex("PageDown", 0, 8)).toBe(4);
+	expect(completionNavigationIndex("ArrowDown", 4, 5)).toBe(0);
+	expect(completionNavigationIndex("ArrowUp", 0, 5)).toBe(4);
+	expect(completionNavigationIndex("Enter", 0, 5)).toBeNull();
+	expect(completionNavigationIndex("ArrowDown", 0, 0)).toBeNull();
+	expect(completionNavigationIndex("End", 0, 0)).toBeNull();
+	expect(mentionCompletionKeyAction("Home", true, 3, 5)).toEqual({ type: "move", index: 0 });
+	expect(mentionCompletionKeyAction("End", true, 0, 5)).toEqual({ type: "move", index: 4 });
+	expect(mentionCompletionKeyAction("PageUp", true, 4, 8)).toEqual({
+		type: "move",
+		index: 0,
+	});
+	expect(mentionCompletionKeyAction("PageDown", true, 0, 8)).toEqual({
+		type: "move",
+		index: 4,
+	});
+	expect(slashCompletionKeyAction("Home", true, 2, 4)).toEqual({ type: "move", index: 0 });
+	expect(slashCompletionKeyAction("End", true, 0, 4)).toEqual({ type: "move", index: 3 });
+	expect(slashCompletionKeyAction("PageDown", true, 0, 8)).toEqual({
+		type: "move",
+		index: 4,
+	});
+	expect(mentionCompletionKeyAction("Home", false, 0, 5)).toEqual({ type: "none" });
+	expect(slashCompletionKeyAction("End", true, 0, 0)).toEqual({ type: "none" });
 });
 
 test("streaming shortcuts preserve steer, queue, interrupt, and IME boundaries", () => {

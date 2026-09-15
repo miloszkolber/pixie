@@ -386,6 +386,17 @@ func TestDeletionPlanQuarantinesUnverifiedRecoveryBlocked(t *testing.T) {
 	}
 }
 
+func TestDeletionPlanPreservesUngroupedTombstone(t *testing.T) {
+	tombstones := []controller.DeletionTombstone{{ProjectID: "", SessionID: "s1", Binding: "sha256:" + strings.Repeat("a", 64), Phase: "requested"}}
+	decisions, err := controller.PlanDeletionMigration(tombstones, nil, nil, nil)
+	if err != nil || len(decisions) != 1 {
+		t.Fatalf("plan ungrouped tombstone: %#v %v", decisions, err)
+	}
+	if decisions[0].Decision != controller.DeletionDecisionPreserve || decisions[0].ProjectID != "" {
+		t.Fatalf("ungrouped tombstone was not preserved: %#v", decisions[0])
+	}
+}
+
 func TestArchiveAssociationsStayVisibleWithoutSynthesizedTranscripts(t *testing.T) {
 	dir := t.TempDir()
 	store := persist.Store{Dir: dir}
@@ -434,5 +445,60 @@ func TestArchiveAssociationsStayVisibleWithoutSynthesizedTranscripts(t *testing.
 	}
 	if !diagnosed {
 		t.Fatalf("newer association schema must stay diagnosable: %#v", reportAfter.Files)
+	}
+}
+
+func TestUngroupedDurableSessionStatePreservesTheExplicitEmptyProjectID(t *testing.T) {
+	store := persist.Store{Dir: t.TempDir()}
+	const sessionID = "agent/session/ungrouped"
+	records := controller.NewSessionRecords(store)
+	if err := records.Record(controller.ProjectSessionRecord{ProjectID: "", SessionID: sessionID, CWD: "/ungrouped"}); err != nil {
+		t.Fatalf("record ungrouped session: %v", err)
+	}
+	sessionPath := filepath.Join(store.Dir, "pi-project-sessions.json")
+	beforeSession, err := os.ReadFile(sessionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed, err := controller.NewSessionRecords(store).List(); err != nil || len(listed) != 1 || listed[0].ProjectID != "" || listed[0].SessionID != sessionID {
+		t.Fatalf("ungrouped session record was not retained: %#v %v", listed, err)
+	}
+	afterSession, err := os.ReadFile(sessionPath)
+	if err != nil || string(afterSession) != string(beforeSession) || !strings.Contains(string(afterSession), `"version": 2`) || !strings.Contains(string(afterSession), `"projectId": ""`) {
+		t.Fatalf("session-store v2 rewrote the ungrouped association: %q %v", afterSession, err)
+	}
+
+	deletions := controller.NewSessionDeletions(store)
+	binding := "sha256:" + strings.Repeat("a", 64)
+	if err := deletions.Request("", sessionID, binding); err != nil {
+		t.Fatalf("record ungrouped deletion: %v", err)
+	}
+	journalPath := filepath.Join(store.Dir, "pi-session-deletions.json")
+	beforeJournal, err := os.ReadFile(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed, err := controller.NewSessionDeletions(store).List(); err != nil || len(listed) != 1 || listed[0].ProjectID != "" {
+		t.Fatalf("ungrouped deletion journal was not retained: %#v %v", listed, err)
+	}
+	afterJournal, err := os.ReadFile(journalPath)
+	if err != nil || string(afterJournal) != string(beforeJournal) || !strings.Contains(string(afterJournal), `"version": 1`) || !strings.Contains(string(afterJournal), `"projectId": ""`) {
+		t.Fatalf("deletion journal v1 rewrote the ungrouped tombstone: %q %v", afterJournal, err)
+	}
+
+	goal := "preserve ungrouped objective"
+	if objective, err := controller.NewObjectives(store).Update("", sessionID, &goal, nil); err != nil || objective.ProjectID != "" || objective.Goal == nil || *objective.Goal != goal {
+		t.Fatalf("ungrouped objective was not retained: %#v %v", objective, err)
+	}
+
+	queueJSON := `{"version":1,"engine":"pi","records":[{"projectId":"","sessionId":"agent/session/ungrouped","revision":"r1","followUp":[],"handled":[]}]}`
+	if err := os.WriteFile(filepath.Join(store.Dir, "pi-session-queues.json"), []byte(queueJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if queueRecords, err := controller.NewSessionQueues(store).List(); err != nil || len(queueRecords) != 1 {
+		t.Fatalf("ungrouped queue was rejected: %#v %v", queueRecords, err)
+	}
+	if err := controller.NewSessionQueues(store).Forget("", sessionID); err != nil {
+		t.Fatalf("forget ungrouped queue: %v", err)
 	}
 }

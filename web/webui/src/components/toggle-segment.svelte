@@ -13,7 +13,6 @@ let { testid, label, active, onclick }: Props = $props();
 	type="button"
 	class="toggle"
 	data-testid={testid}
-	data-active={active}
 	aria-pressed={active}
 	{onclick}
 >

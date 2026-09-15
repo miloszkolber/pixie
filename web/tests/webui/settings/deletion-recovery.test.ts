@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import type { DeletionRecovery } from "@pixie/shared";
 import {
+	deletionProjectLabel,
+	deletionReconciliationKey,
+	normalizeDeletionReconciliation,
+} from "@/session/deletion-reconciliation";
+import {
 	deletionRecoveryKey,
 	dropDeletionRecovery,
 	normalizeDeletionRecovery,
@@ -16,8 +21,8 @@ const first: DeletionRecovery = {
 const second: DeletionRecovery = {
 	projectId: "project-b",
 	sessionId: "chat-b",
-	phase: "quarantined",
-	reason: "binding did not match the host identity",
+	phase: "confirmed",
+	reason: "local cleanup is pending",
 };
 const records: DeletionRecovery[] = [first, second];
 
@@ -40,7 +45,47 @@ test("a confirmed tombstone drops exactly one identity", () => {
 	expect(dropDeletionRecovery(records, "project-z", "chat-z")).toEqual(records);
 });
 
-test("the recovery list renders project, session, phase, reason and exactly two actions", async () => {
+test("ungrouped reconciliation uses the explicit empty project key and rejects malformed rows", () => {
+	const ungrouped: DeletionRecovery = {
+		projectId: "",
+		sessionId: "chat-a",
+		phase: "requested",
+		reason: "native outcome is uncertain",
+	};
+	expect(deletionReconciliationKey(ungrouped)).toBe("\0chat-a");
+	expect(deletionProjectLabel(ungrouped)).toBe("Ungrouped");
+	expect(
+		normalizeDeletionReconciliation([
+			ungrouped,
+			{ ...ungrouped, projectId: "\0invalid" },
+			{ ...ungrouped, sessionId: "" },
+			{ ...ungrouped, phase: "quarantined" },
+			{ ...ungrouped, reason: " " },
+			ungrouped,
+		]),
+	).toEqual([ungrouped]);
+});
+
+test("the recovery list labels an explicit empty project as ungrouped", async () => {
+	const markup = await renderSvelte("src/settings/sections/deletion-recovery.svelte", {
+		records: [
+			{
+				projectId: "",
+				sessionId: "chat-a",
+				phase: "requested",
+				reason: "native outcome is uncertain",
+			},
+		],
+		pendingKey: null,
+		error: null,
+		onConfirm: () => {},
+		onRetain: () => {},
+	});
+	expect(markup).toContain('data-project-id=""');
+	expect(markup).toContain("Ungrouped");
+});
+
+test("the recovery list renders reconciliation state and exactly two native actions", async () => {
 	const markup = await renderSvelte("src/settings/sections/deletion-recovery.svelte", {
 		records,
 		pendingKey: null,
@@ -57,13 +102,15 @@ test("the recovery list renders project, session, phase, reason and exactly two 
 		"native delete is unsupported",
 		"project-b",
 		"chat-b",
-		"quarantined",
-		"binding did not match the host identity",
+		"confirmed",
+		"local cleanup is pending",
 	]) {
 		expect(markup).toContain(value);
 	}
 	expect(markup).toContain("Confirm deletion happened");
 	expect(markup).toContain("Retain record");
+	expect(markup).toContain("Outcome is uncertain");
+	expect(markup).toContain("Confirmed; local cleanup may remain");
 	expect(markup.match(/deletion-recovery-confirm/g)).toHaveLength(2);
 	expect(markup.match(/deletion-recovery-retain/g)).toHaveLength(2);
 	expect(markup).not.toMatch(/clear/i);
@@ -83,12 +130,13 @@ test("the empty recovery list never invents a record or a clear control", async 
 	expect(markup).not.toContain("Retain record");
 });
 
-test("confirm reconciles through the server; retain never mutates", async () => {
+test("confirm and retain reconcile through explicit server operations", async () => {
 	const source = await Bun.file(
 		new URL("../../../webui/src/settings/sections/deletion-recovery.svelte", import.meta.url),
 	).text();
 	expect(source).toContain("onclick={() => onConfirm(record)}");
 	expect(source).toContain("onclick={() => onRetain(record)}");
+	expect(source).toMatch(/<button\s+type="button"/);
 	// Exactly the two explicit actions, and no blind clear entry point.
 	expect(source.match(/data-testid="deletion-recovery-(?:confirm|retain)"/g)).toHaveLength(2);
 	expect(source).not.toMatch(/data-testid="[^"]*clear/i);
@@ -97,9 +145,13 @@ test("confirm reconciles through the server; retain never mutates", async () => 
 		new URL("../../../webui/src/settings/sections/system-settings.svelte", import.meta.url),
 	).text();
 	expect(system).toContain('"session.confirmExternalDeletion"');
+	expect(system).toContain('"session.retainExternalDeletion"');
 	expect(system).toContain('"session.deletionRecovery"');
 	expect(system).toContain("removeDeletionRecovery");
-	const retainBody = system.match(/function retainDeletion\(\): void \{([\s\S]*?)\n\}/)?.[1] ?? "";
-	expect(retainBody).not.toContain("request");
+	expect(system).toContain("Retained deletion record for");
+	const retainBody = system.match(/async function retainDeletion[\s\S]*?\n\}/)?.[0] ?? "";
+	expect(retainBody).toContain("request");
+	expect(retainBody).not.toContain("removeDeletionRecovery");
 	expect(retainBody).not.toContain("confirmExternalDeletion");
+	expect(system).toContain("void refresh(connectionGeneration)");
 });

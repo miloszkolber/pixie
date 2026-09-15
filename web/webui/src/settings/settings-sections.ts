@@ -16,5 +16,6 @@ export const SETTINGS_SECTION_LOADERS: Partial<
 	models: () => import("./sections/models-settings.svelte"),
 	providers: () => import("./sections/providers-settings.svelte"),
 	system: () => import("./sections/system-settings.svelte"),
+	diagnostics: () => import("./sections/diagnostics-view.svelte"),
 	schedules: () => import("./sections/schedules-section.svelte"),
 };

@@ -44,6 +44,12 @@ test("the workspace schedules surface reuses backend ledger semantics", async ()
 		"scheduleSessionHref",
 		"Retry same action",
 		"Discard retry",
+		"Maximum runtime",
+		"Use controller default",
+		"Unlimited",
+		"Cancellation was accepted by Pixie",
+		"Pixie cannot confirm that Pi stopped.",
+		"Retry cancellation",
 		"Native Pi default",
 		"Open Pi session",
 	]) {

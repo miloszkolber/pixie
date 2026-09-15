@@ -4,6 +4,7 @@ import { appStore, appStoreApi } from "../store";
 import Icon from "./icon.svelte";
 
 const TOAST_DURATION_MS = 5000;
+const ERROR_TOAST_DURATION_MS = 8000;
 
 interface ToastTimer {
 	timeout: ReturnType<typeof setTimeout> | undefined;
@@ -67,10 +68,10 @@ $effect(() => {
 		}
 	}
 	for (const toast of currentToasts) {
-		if (toast.variant === "error" || timers.has(toast.id)) continue;
+		if (timers.has(toast.id)) continue;
 		const timer: ToastTimer = {
 			timeout: undefined,
-			remaining: TOAST_DURATION_MS,
+			remaining: toast.variant === "error" ? ERROR_TOAST_DURATION_MS : TOAST_DURATION_MS,
 			startedAt: 0,
 		};
 		timers.set(toast.id, timer);

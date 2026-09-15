@@ -28,7 +28,32 @@ interface SchedulesState {
 }
 
 export function activeExecution(job: Schedule) {
-	return job.runs.find((run) => run.status === "running");
+	return job.runs.find((run) =>
+		["running", "cancelling", "cancellation_unconfirmed"].includes(run.status),
+	);
+}
+
+export function scheduleRuntimeLabel(job: Schedule): string {
+	if (job.maxRuntimeSeconds == null) return "Unlimited";
+	const seconds = job.maxRuntimeSeconds;
+	if (seconds % 3600 === 0) return `${seconds / 3600} hour${seconds === 3600 ? "" : "s"}`;
+	if (seconds % 60 === 0) return `${seconds / 60} minutes`;
+	return `${seconds} seconds`;
+}
+
+export function scheduleRunStatusLabel(status: ScheduleRun["status"]): string {
+	switch (status) {
+		case "running":
+			return "Active execution";
+		case "cancelling":
+			return "Cancellation requested";
+		case "cancellation_unconfirmed":
+			return "Cancellation unconfirmed";
+		case "timed_out":
+			return "Timed out";
+		default:
+			return status;
+	}
 }
 
 export function scheduleSessionHref(projectId: string, run: ScheduleRun): string | null {
@@ -138,7 +163,16 @@ export class SchedulesModel {
 			const { method, params } = pending.mutation;
 			const result = await this.transport.request(method, params);
 			pendingByProject.delete(this.projectId);
-			this.state.setState({ pending: null, notice: pending.label, error: null });
+			let notice = pending.label;
+			if (method === "schedule.stop") {
+				const stop = result as WsResult<"schedule.stop">;
+				if (stop.status === "cancelling") {
+					notice = "Cancellation accepted. Pixie is waiting for native confirmation.";
+				} else if (stop.settled) {
+					notice = "No active cancellation remains. Refresh the ledger before dispatching again.";
+				}
+			}
+			this.state.setState({ pending: null, notice, error: null });
 			// Invalidate any read started before the mutation committed.
 			this.loadSequence++;
 			await this.loadPromise;

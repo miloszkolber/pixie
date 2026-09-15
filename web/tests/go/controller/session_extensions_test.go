@@ -93,6 +93,96 @@ func TestSessionCreateOmitsOptionalObjectiveMCPWhenAttachUnsupported(t *testing.
 	t.Fatal("session.create was not dispatched")
 }
 
+func TestSessionSteerRejectsAnUnavailableHostOperationBeforeDispatch(t *testing.T) {
+	server, calls := sessionExtensionPi(t, nil)
+	defer server.Close()
+	runtime, host, root := sessionExtensionRuntime(t, server.URL)
+	defer runtime.Shutdown(context.Background())
+	connection := dialRuntimeSocket(t, context.Background(), host, "client")
+	projectID := callBrowser(t, connection, "open", "project.open", map[string]any{"path": root})["result"].(map[string]any)["id"].(string)
+	created := callBrowser(t, connection, "create", "session.create", map[string]any{"projectId": projectID})
+	if created["ok"] != true {
+		t.Fatalf("session create failed: %#v", created)
+	}
+	calls.clear()
+	response := callBrowser(t, connection, "steer", "session.steer", map[string]any{"sessionId": "chat", "text": "continue"})
+	if response["ok"] != false {
+		t.Fatalf("unavailable steering was accepted: %#v", response)
+	}
+	if dispatched := calls.snapshot(); len(dispatched) != 0 {
+		t.Fatalf("unavailable steering dispatched to Pi: %#v", dispatched)
+	}
+}
+
+func TestSessionListReconcilesRecordedCWDWithoutLegacySessionInfo(t *testing.T) {
+	server, calls := sessionExtensionPiWithSessionList(t, nil, true, func(params map[string]any) any {
+		return map[string]any{"sessions": []any{map[string]any{"sessionId": "chat", "cwd": params["cwd"], "title": "Recorded chat"}}}
+	})
+	defer server.Close()
+	runtime, host, root := sessionExtensionRuntime(t, server.URL)
+	defer runtime.Shutdown(context.Background())
+	connection := dialRuntimeSocket(t, context.Background(), host, "client")
+	projectID := callBrowser(t, connection, "open", "project.open", map[string]any{"path": root})["result"].(map[string]any)["id"].(string)
+	created := callBrowser(t, connection, "create", "session.create", map[string]any{"projectId": projectID})
+	if created["ok"] != true {
+		t.Fatalf("session create failed: %#v", created)
+	}
+	calls.clear()
+	listed := callBrowser(t, connection, "list", "session.list", map[string]any{"projectId": projectID})
+	if listed["ok"] != true {
+		t.Fatalf("session list failed: %#v", listed)
+	}
+	if sessions, ok := listed["result"].([]any); !ok || len(sessions) != 1 {
+		t.Fatalf("session list did not project the recorded session: %#v", listed)
+	}
+	dispatched := calls.snapshot()
+	if len(dispatched) != 1 || dispatched[0].method != "session.list" || dispatched[0].params["cwd"] != root {
+		t.Fatalf("session list did not use the recorded cwd: %#v", dispatched)
+	}
+}
+
+func TestPiCapabilitiesProjectsNegotiatedAgentsWithoutRuntimeCapabilitiesRPC(t *testing.T) {
+	server, calls := sessionExtensionPi(t, nil)
+	defer server.Close()
+	runtime, host, _ := sessionExtensionRuntime(t, server.URL)
+	defer runtime.Shutdown(context.Background())
+	connection := dialRuntimeSocket(t, context.Background(), host, "client")
+	response := callBrowser(t, connection, "capabilities", "pi.capabilities", map[string]any{})
+	if response["ok"] != true {
+		t.Fatalf("Pi capabilities failed: %#v", response)
+	}
+	capabilities, ok := response["result"].(map[string]any)
+	if !ok || capabilities["agents"] != float64(1) {
+		t.Fatalf("agent source capability was not projected: %#v", response)
+	}
+	dispatched := calls.snapshot()
+	if len(dispatched) != 1 || dispatched[0].method != "runtime.hello" {
+		t.Fatalf("capability projection used an unsupported host RPC: %#v", dispatched)
+	}
+}
+
+func TestPiCapabilitiesHideAgentsWhenTheirNegotiatedSourceRoutesAreIncomplete(t *testing.T) {
+	server, calls := sessionExtensionPiWithProfile(t, nil, true, nil, func(profile map[string]any) {
+		profile["operationSet"].(map[string]bool)["pi.agent-mentions.list"] = false
+	})
+	defer server.Close()
+	runtime, host, _ := sessionExtensionRuntime(t, server.URL)
+	defer runtime.Shutdown(context.Background())
+	connection := dialRuntimeSocket(t, context.Background(), host, "client")
+	response := callBrowser(t, connection, "capabilities", "pi.capabilities", map[string]any{})
+	if response["ok"] != true {
+		t.Fatalf("Pi capabilities failed: %#v", response)
+	}
+	capabilities, ok := response["result"].(map[string]any)
+	if !ok || capabilities["agents"] != nil {
+		t.Fatalf("incomplete agent source routes remained available: %#v", response)
+	}
+	dispatched := calls.snapshot()
+	if len(dispatched) != 1 || dispatched[0].method != "runtime.hello" {
+		t.Fatalf("capability projection used an unsupported host RPC: %#v", dispatched)
+	}
+}
+
 type sessionExtensionCall struct {
 	method string
 	params map[string]any
@@ -115,11 +205,25 @@ func (c *sessionExtensionCalls) snapshot() []sessionExtensionCall {
 	return append([]sessionExtensionCall(nil), c.values...)
 }
 
+func (c *sessionExtensionCalls) clear() {
+	c.mu.Lock()
+	c.values = nil
+	c.mu.Unlock()
+}
+
 func sessionExtensionPi(t *testing.T, extensions []any) (*httptest.Server, *sessionExtensionCalls) {
 	return sessionExtensionPiProfile(t, extensions, true)
 }
 
 func sessionExtensionPiProfile(t *testing.T, extensions []any, mcp bool) (*httptest.Server, *sessionExtensionCalls) {
+	return sessionExtensionPiWithSessionList(t, extensions, mcp, nil)
+}
+
+func sessionExtensionPiWithSessionList(t *testing.T, extensions []any, mcp bool, list func(map[string]any) any) (*httptest.Server, *sessionExtensionCalls) {
+	return sessionExtensionPiWithProfile(t, extensions, mcp, list, nil)
+}
+
+func sessionExtensionPiWithProfile(t *testing.T, extensions []any, mcp bool, list func(map[string]any) any, updateProfile func(map[string]any)) (*httptest.Server, *sessionExtensionCalls) {
 	t.Helper()
 	calls := &sessionExtensionCalls{}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -145,16 +249,23 @@ func sessionExtensionPiProfile(t *testing.T, extensions []any, mcp bool) (*httpt
 			result := any(map[string]any{})
 			switch rpc.Method {
 			case "runtime.hello":
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
+				profile := result.(map[string]any)
 				if !mcp {
-					profile := result.(map[string]any)
 					profile["capabilities"].(map[string]any)["mcp"] = 0
 					profile["operationSet"].(map[string]bool)["mcp.attach"] = false
+				}
+				if updateProfile != nil {
+					updateProfile(profile)
 				}
 			case "pi.session.extensions.list":
 				result = map[string]any{"extensions": extensions}
 			case "session.list":
-				result = map[string]any{"sessions": []any{}}
+				if list != nil {
+					result = list(rpc.Params)
+				} else {
+					result = map[string]any{"sessions": []any{}}
+				}
 			case "session.create":
 				result = map[string]any{"sessionId": "chat"}
 			}

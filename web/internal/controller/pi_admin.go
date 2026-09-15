@@ -477,14 +477,30 @@ func (a *PiAdmin) SaveDefaults(ctx context.Context, providerID string, modelID *
 	if err != nil {
 		return PiProviderDefaults{}, err
 	}
-	valid := false
-	for _, provider := range providers {
-		if provider.ProviderID == providerID && boolDefault(provider.Configured, false) && providerRuntimeAvailable(provider) {
-			valid = true
+	var matched *piProvider
+	for index := range providers {
+		if providers[index].ProviderID == providerID {
+			matched = &providers[index]
+			break
 		}
 	}
-	if !valid {
+	if matched == nil {
 		return PiProviderDefaults{}, fmt.Errorf("selected default provider is unavailable")
+	}
+	if !boolDefault(matched.Configured, false) || !providerRuntimeAvailable(*matched) {
+		return PiProviderDefaults{}, fmt.Errorf("selected default provider is unavailable")
+	}
+	if modelID != nil {
+		found := false
+		for _, model := range matched.Models {
+			if model.ID == *modelID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return PiProviderDefaults{}, fmt.Errorf("unknown model: %s/%s", providerID, *modelID)
+		}
 	}
 	var response PiProviderDefaults
 	if err := a.call(ctx, "pi.defaults.save", map[string]any{"providerId": providerID, "modelId": modelID}, &response); err != nil {
@@ -557,7 +573,7 @@ func normalizePreferences(values []struct {
 			}
 			value, ok := entry.Value.(string)
 			if !ok || !map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}[value] {
-				return PiPreferences{}, fmt.Errorf("Pi thinking effort is invalid")
+				return PiPreferences{}, fmt.Errorf("Pi thinking effort is invalid: got %v, want one of off, minimal, low, medium, high, xhigh, max", entry.Value)
 			}
 			result.PiThinkingEffort = &value
 		default:
@@ -577,7 +593,7 @@ func preferenceValues(value PiPreferences) ([]map[string]any, error) {
 	}
 	if value.PiThinkingEffort != nil {
 		if !map[string]bool{"off": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}[*value.PiThinkingEffort] {
-			return nil, fmt.Errorf("malformed Pi preferences request")
+			return nil, fmt.Errorf("malformed Pi preferences request: piThinkingEffort must be one of off, minimal, low, medium, high, xhigh, max")
 		}
 		result = append(result, map[string]any{"key": "piThinkingEffort", "value": *value.PiThinkingEffort})
 	}

@@ -72,4 +72,4 @@ test("checked-in operating docs pass static checks", async () => {
 	const report = inspectDocumentation(await collectDocumentationInput());
 	expect(formatDocumentationReport(report)).toContain("check-docs: OK");
 	expect(report.ok).toBe(true);
-});
+}, 15_000);

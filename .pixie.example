@@ -3,7 +3,7 @@
 # docker-compose.yaml take precedence over values set here.
 
 # Existing host directory holding Pixie application state, owned by UID/GID 1000.
-# The container mounts it whole at /var/lib/pixie.
+# The container mounts it at /var/lib/pixie/data.
 PIXIE_DATA_PATH=/absolute/path/to/pixie-data
 
 # Shared with the Pi host service. Pi always runs on loopback on the host,
@@ -41,11 +41,10 @@ PIXIE_AUTH_ENABLED=false
 
 # Browser is not configured through the environment. Pixie stores one setting
 # under Settings -> Browser and registers it in Pi's MCP configuration; Pi
-# reaches the operator-chosen endpoint directly. The optional `pixie-browser`
-# Compose service is a separate deployment, not a `pixie` dependency.
+# reaches the operator-chosen external MCP endpoint directly.
 
 # Non-Docker runs only: the Compose service pins PIXIE_DATA_DIR to the
 # container layout below; plain binaries default to $XDG_DATA_HOME/pixie.
 # PIXIE_STATIC_DIR is a development-only override (release binaries embed the UI).
-# PIXIE_DATA_DIR=/var/lib/pixie
+# PIXIE_DATA_DIR=/var/lib/pixie/data
 # PIXIE_STATIC_DIR=/path/to/pixie/webui/dist

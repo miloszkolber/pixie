@@ -45,10 +45,10 @@ async function buildStagedBundle(
 	await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
 	const binariesDir = join(root, "binaries");
 	await mkdir(binariesDir, { recursive: true });
-	const assistant = join(binariesDir, "pixie-assistant");
-	const host = join(binariesDir, "pixie");
-	await writeProbeBinary(assistant, { name: "pixie-assistant", releaseId, sourceCommit });
-	await writeProbeBinary(host, { name: "pixie", releaseId, sourceCommit });
+	const cli = join(binariesDir, "pixie_cli");
+	const full = join(binariesDir, "pixie");
+	await writeProbeBinary(cli, { name: "pixie_cli", releaseId, sourceCommit });
+	await writeProbeBinary(full, { name: "pixie", releaseId, sourceCommit });
 	const bundlePath = join(root, "evidence.json");
 	// A second collector host contributes the non-native probes that the single
 	// bundle must carry for the four formerly-reduced version/doctor rows.
@@ -60,7 +60,7 @@ async function buildStagedBundle(
 			sourceCommit,
 			releaseId,
 			generatedAt,
-			binaries: [assistant, host],
+			binaries: [cli, full],
 		});
 	}
 	const bundle = await collectEvidence({
@@ -69,7 +69,7 @@ async function buildStagedBundle(
 		sourceCommit,
 		releaseId,
 		generatedAt,
-		binaryPaths: [assistant, host],
+		binaryPaths: [cli, full],
 		...(probeEvidencePath === undefined ? {} : { probeEvidencePath }),
 	});
 	await Bun.write(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
@@ -108,13 +108,10 @@ test("both gates pass with the committed manifest on a synthetic exact-commit st
 		});
 		expect(packageReport.violations).toEqual([]);
 		expect(packageReport.ok).toBe(true);
-		// The merged native probes fill both architectures and are real evidence,
-		// not reductions.
-		const reduced = packageReport.facts.reducedLiveEvidence.join("\n");
-		expect(reduced).not.toContain("--version");
-		expect(reduced).not.toContain(" doctor");
-		expect(packageReport.missingLiveEvidence.join("\n")).not.toContain("--version");
-		expect(packageReport.missingLiveEvidence.join("\n")).not.toContain(" doctor");
+		// The product archive contract is structural. Native probes remain in the
+		// frozen coverage/performance producers rather than adding package rows.
+		expect(packageReport.facts.reducedLiveEvidence).toEqual([]);
+		expect(packageReport.missingLiveEvidence).toEqual([]);
 
 		const gateInput = await collectReleaseGateInput(undefined, staged.bundlePath);
 		const gateReport = inspectReleaseGate({
@@ -134,7 +131,7 @@ test("both gates pass with the committed manifest on a synthetic exact-commit st
 	}
 });
 
-test("a bundle missing the non-native architecture's probes still fails closed", async () => {
+test("a bundle missing the non-native architecture's probes keeps archive validation structural", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pixie-gate-other-arch-missing-"));
 	try {
 		const staged = await buildStagedBundle(root, { otherArchProbe: false });
@@ -147,13 +144,8 @@ test("a bundle missing the non-native architecture's probes still fails closed",
 			base,
 		).input;
 		const report = inspectPackageArtifacts({ ...packageInput, reductions: packageReductions });
-		expect(report.ok).toBe(false);
-		const missing = report.missingLiveEvidence.join("\n");
-		// Only the native host ran probes; the other architecture's version and
-		// doctor rows are honestly absent and are no longer reduced.
-		expect(missing).toContain(`${otherArch} --version`);
-		expect(missing).toContain(`${otherArch} doctor`);
-		expect(report.facts.reducedLiveEvidence.join("\n")).not.toContain("--version");
+		expect(report.ok).toBe(true);
+		expect(report.missingLiveEvidence).toEqual([]);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -177,18 +169,8 @@ test("a reduced row is reported as reduced and never as passing", async () => {
 			reductions: packageReductions,
 		});
 		const reduced = packageReport.facts.reducedLiveEvidence.join("\n");
-		expect(reduced).toContain("start/stop/restart");
-		expect(reduced).toContain("uninstall");
-		expect(reduced).toContain("embedded UI");
-		expect(reduced).toContain("facade");
-		expect(reduced).toContain("readiness");
-		// The formerly-reduced arm64 version/doctor rows are now mandatory and
-		// filled from the merged non-native probe facts.
-		expect(reduced).not.toContain("--version");
-		expect(reduced).not.toContain(" doctor");
+		expect(reduced).toBe("");
 		expect(packageReport.missingLiveEvidence).toEqual([]);
-		// A reduced row is not a static pass.
-		expect(packageReport.facts.staticChecks.join("\n")).not.toContain("start/stop/restart");
 
 		const gateInput = await collectReleaseGateInput(undefined, staged.bundlePath);
 		const gateReport = inspectReleaseGate({
@@ -206,14 +188,14 @@ test("a reduced row is reported as reduced and never as passing", async () => {
 		expect(reducedInputs).toContain("provenance");
 		expect(reducedInputs).toContain("linux/arm64");
 		expect(reducedInputs).toContain("latest");
-		expect(reducedInputs).toContain("complete four-archive/image set");
+		expect(reducedInputs).toContain("complete-set evidence");
 		expect(gateReport.missingLiveInputs).toEqual([]);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
 });
 
-test("a dropped reduction sends a previously reduced row back to fail closed", async () => {
+test("unused legacy package reductions do not weaken the product archive contract", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pixie-gate-drop-reduction-"));
 	try {
 		const staged = await buildStagedBundle(root);
@@ -228,8 +210,8 @@ test("a dropped reduction sends a previously reduced row back to fail closed", a
 			base,
 		).input;
 		const report = inspectPackageArtifacts({ ...packageInput, reductions: packageReductions });
-		expect(report.ok).toBe(false);
-		expect(report.missingLiveEvidence.join("\n")).toContain("start/stop/restart");
+		expect(report.ok).toBe(true);
+		expect(report.missingLiveEvidence).toEqual([]);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

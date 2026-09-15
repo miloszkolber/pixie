@@ -506,6 +506,13 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	serve := func() {
 		var after func()
 		execute := func() ([]byte, error) {
+			// This transport boundary deliberately does not treat loopback as an
+			// export authorization mode. CoreHandler repeats the typed check so
+			// embeddings cannot bypass it by calling Handle directly.
+			if method == "runtime.supportSnapshot" && !s.Auth.Enabled {
+				denied := &SupportSnapshotAuthenticationRequiredError{}
+				return json.Marshal(map[string]any{"id": id, "ok": false, "error": denied.Error(), "errorCode": denied.ErrorCode()})
+			}
 			result, handleErr := s.Handler.Handle(requestContext, method, params, clientKey)
 			if handleErr != nil {
 				failure := map[string]any{"id": id, "ok": false, "error": handleErr.Error()}

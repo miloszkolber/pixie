@@ -2,7 +2,7 @@ node_modules/
 dist/
 .build/
 .turbo/
-/.tmp-work/
+.tmp-work/
 *.tsbuildinfo
 *.bun-build
 .pixie-runtime-gates-*/

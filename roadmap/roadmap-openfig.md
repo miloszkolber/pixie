@@ -2,7 +2,7 @@
 
 Openfig lets a user upload a local Figma Design `.fig` file and lets people and authorized agents inspect the same persistent document without Figma, an online renderer or a browser tab staying open. One document is active across the single-user Pixie instance. Openfig owns decoding and any eventual scene rendering; Pixie owns storage, bounded normalized queries, access control, shared focus, the UI and MCP publication.
 
-This plan is self-contained. The module is disabled by default and optional: missing dependencies or containment degrade Design only, and basic chat never depends on it. The stream is tracked in [roadmap.md](roadmap.md).
+This plan is self-contained. The module is disabled by default and optional: missing dependencies or containment degrade Design only, and basic chat never depends on it.
 
 ## Current state
 

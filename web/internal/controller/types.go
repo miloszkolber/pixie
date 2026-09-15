@@ -9,6 +9,7 @@ type AgentOperations struct {
 	Steer                 bool `json:"steer"`
 	RenameSession         bool `json:"renameSession"`
 	ArchiveSession        bool `json:"archiveSession"`
+	Administration        bool `json:"administration"`
 }
 
 type AgentProfile struct {
@@ -26,6 +27,50 @@ type AgentProfile struct {
 	OperationSet           map[string]bool `json:"operationSet,omitempty"`
 	operationSetNegotiated bool
 	identity               string
+}
+
+// RuntimeDiagnosticsReport is the authenticated, browser-safe operator
+// projection. Its optional facts stay absent when the controller cannot
+// establish them; clients must not turn absence into a healthy zero value.
+type RuntimeDiagnosticsReport struct {
+	Capabilities           RuntimeDiagnosticsCapabilities           `json:"capabilities"`
+	Host                   RuntimeDiagnosticsHost                   `json:"host"`
+	Runs                   RuntimeDiagnosticsRuns                   `json:"runs"`
+	DeletionReconciliation RuntimeDiagnosticsDeletionReconciliation `json:"deletionReconciliation"`
+	Schedule               RuntimeDiagnosticsSchedule               `json:"schedule"`
+	Remediation            []string                                 `json:"remediation"`
+}
+
+type RuntimeDiagnosticsCapabilities struct {
+	Compatible      *bool            `json:"compatible,omitempty"`
+	MissingRequired []string         `json:"missingRequired,omitempty"`
+	Operations      *AgentOperations `json:"operations,omitempty"`
+	Capabilities    map[string]int   `json:"capabilities,omitempty"`
+	OperationSet    map[string]bool  `json:"operationSet,omitempty"`
+}
+
+type RuntimeDiagnosticsHost struct {
+	Configured        *bool  `json:"configured,omitempty"`
+	Reachable         *bool  `json:"reachable,omitempty"`
+	ApplicationReady  *bool  `json:"applicationReady,omitempty"`
+	Reason            string `json:"reason,omitempty"`
+	ApplicationReason string `json:"applicationReason,omitempty"`
+}
+
+// RuntimeDiagnosticsRuns deliberately carries only an active count. It does
+// not imply an individual current run exists or identify one.
+type RuntimeDiagnosticsRuns struct {
+	ActiveCount *int `json:"activeCount,omitempty"`
+}
+
+type RuntimeDiagnosticsDeletionReconciliation struct {
+	Count   *int                     `json:"count,omitempty"`
+	Records []DeletionReconciliation `json:"records"`
+}
+
+type RuntimeDiagnosticsSchedule struct {
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type WireModel struct {

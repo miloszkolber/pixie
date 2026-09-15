@@ -51,5 +51,3 @@ export function numArg(args: Record<string, unknown>, key: string): number | nul
 	const v = args[key];
 	return typeof v === "number" ? v : null;
 }
-
-export { languageForPath as languageFromPath } from "../../lib/language";

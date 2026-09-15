@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import type { Schedule } from "@pixie/shared";
-import { scheduleTime } from "@/schedules/schedules-model";
+import {
+	activeExecution,
+	scheduleRunStatusLabel,
+	scheduleRuntimeLabel,
+	scheduleTime,
+} from "@/schedules/schedules-model";
 import {
 	filterSchedules,
 	resolveScheduleSelection,
@@ -114,4 +119,26 @@ test("schedule times reuse the IANA timezone and fall back without inventing a t
 	expect(warsaw).not.toBe(utc);
 	expect(scheduleTime(instant, "Not/AZone")).toBe(instant);
 	expect(scheduleTime("not-a-date", "UTC")).toBe("not-a-date");
+});
+
+test("schedule runtime and cancellation labels preserve unlimited and uncertain states", () => {
+	expect(scheduleRuntimeLabel(job("unlimited", { maxRuntimeSeconds: null }))).toBe("Unlimited");
+	expect(scheduleRuntimeLabel(job("budget", { maxRuntimeSeconds: 90 * 60 }))).toBe("90 minutes");
+	expect(scheduleRunStatusLabel("cancelling")).toBe("Cancellation requested");
+	expect(scheduleRunStatusLabel("cancellation_unconfirmed")).toBe("Cancellation unconfirmed");
+	expect(scheduleRunStatusLabel("timed_out")).toBe("Timed out");
+	const active = activeExecution(
+		job("uncertain", {
+			paused: true,
+			runs: [
+				{
+					id: "run",
+					status: "cancellation_unconfirmed",
+					startedAt: "2027-01-01T00:00:00Z",
+					cancellationReason: "deadline",
+				},
+			],
+		}),
+	);
+	expect(active?.status).toBe("cancellation_unconfirmed");
 });

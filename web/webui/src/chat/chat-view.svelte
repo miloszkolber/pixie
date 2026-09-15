@@ -206,10 +206,16 @@ $effect(() => {
 	const id = sessionId;
 	const streaming = isStreaming;
 	void streaming;
+	let cancelled = false;
 	void getTransport()
 		.request("session.getStats", { sessionId: id })
-		.then((stats) => appStoreApi.getState().setStats(id, stats))
+		.then((stats) => {
+			if (!cancelled) appStoreApi.getState().setStats(id, stats);
+		})
 		.catch(() => {});
+	return () => {
+		cancelled = true;
+	};
 });
 
 $effect(() => {

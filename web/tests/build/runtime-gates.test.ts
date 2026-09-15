@@ -27,72 +27,86 @@ function output(result: ReturnType<typeof run>): string {
 	return `${result.stdout}\n${result.stderr}`;
 }
 
-test("checked-in runtime composition has explicit controller-only and drain gates", async () => {
+test("checked-in runtime composition keeps the controller image and Pi-bearing archives distinct", async () => {
 	const dockerfile = await readFile(join(packageRoot, "Dockerfile"), "utf8");
-	const fullHostUnit = await readFile(join(packageRoot, "systemd/pixie.service"), "utf8");
-	const assistantUnit = await readFile(
-		join(packageRoot, "systemd/pixie-assistant.service"),
-		"utf8",
-	);
 	const runtime = await readFile(join(packageRoot, "cmd/runtime.go"), "utf8");
-	const controller = await readFile(join(packageRoot, "cmd/controller.go"), "utf8");
+	const main = await readFile(join(packageRoot, "cmd/main.go"), "utf8");
+	const tui = await readFile(join(packageRoot, "cmd/pixie/main.go"), "utf8");
+	const full = await readFile(join(packageRoot, "cmd/pixie-full/main.go"), "utf8");
+	const releaseRuntime = await readFile(join(packageRoot, "scripts/release-runtime.ts"), "utf8");
 
-	const finalStage = dockerfile.slice(dockerfile.lastIndexOf("FROM "));
+	const controllerStage = dockerfile.slice(
+		dockerfile.indexOf("FROM controller-runtime AS pixie_web"),
+		dockerfile.indexOf("FROM controller-runtime AS pixie\n"),
+	);
+	const fullStage = dockerfile.slice(dockerfile.indexOf("FROM controller-runtime AS pixie\n"));
 	expect(dockerfile).toContain("go build -trimpath -tags=controller");
 	expect(dockerfile).toContain("-droprequire=github.com/miloszkolber/pixie/assistant");
 	expect(dockerfile).toContain("-dropreplace=github.com/miloszkolber/pixie/assistant");
-	expect(finalStage).toContain(
-		'ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie", "serve", "--mode", "controller"]',
+	expect(controllerStage).toContain(
+		'ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie_web", "serve", "--mode", "controller"]',
 	);
-	expect(finalStage).toContain("COPY --from=web-build /work/web/webui/dist /app/web");
-	expect(finalStage).toContain("USER 1000:1000");
-	expect(finalStage).not.toMatch(/(?:pixie-assistant|\bpi\s+(?:serve|--))/i);
-
-	for (const unit of [fullHostUnit, assistantUnit]) {
-		expect(unit).toContain("Type=exec");
-		expect(unit).toContain("EnvironmentFile=%h/.config/pixie/pixie.env");
-		expect(unit).toContain("Restart=on-failure");
-		expect(unit).toContain("RestartForceExitStatus=75");
-		expect(unit).toContain("TimeoutStopSec=30");
-		expect(unit).toContain("KillMode=mixed");
-	}
-	expect(fullHostUnit).toContain("ExecStart=%h/.local/bin/pixie serve --config");
-	expect(fullHostUnit).not.toContain("Requires=pixie-assistant.service");
-	expect(assistantUnit).toContain("ExecStart=%h/.local/bin/pixie-assistant serve --config");
+	expect(controllerStage).toContain("COPY --from=web-build /work/web/webui/dist /app/web");
+	expect(controllerStage).toContain("USER 1000:1000");
+	expect(controllerStage).not.toMatch(
+		/(?:node_modules|\bbun\b|\bnode\b|pixie_assistant|\/app\/runtime)/i,
+	);
+	expect(fullStage).toContain("COPY --from=pi-build /out/runtime /app/runtime");
+	expect(fullStage).toContain(
+		"COPY --from=pi-build /out/pixie_assistant.js /app/libexec/pixie_assistant.js",
+	);
+	expect(fullStage).toContain("COPY --from=go-build /out/pixie /app/pixie");
+	expect(fullStage).toContain("COPY --from=go-build /out/pixie_full /app/libexec/pixie_full");
+	expect(fullStage).toContain(
+		'ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/libexec/pixie_full"]',
+	);
+	expect(fullStage).toContain(
+		'CMD ["serve", "--assistant-config", "/etc/pixie/assistant.json", "--web-config", "/etc/pixie/pixie.json"]',
+	);
+	expect(fullStage).not.toContain('"/app/pixie", "serve"');
 
 	expect(runtime).toContain("const applicationDrainTimeout = 25 * time.Second");
 	expect(runtime).toContain("rejectControllerAssistantSettings");
-	expect(controller).toContain("mode != modeController");
+	expect(main).toContain("mode != modeController");
+	expect(tui).toContain("runtime/bin/bun");
+	expect(tui).toContain("dist/bun/cli.js");
+	expect(tui).toContain("Pi self-update is disabled");
+	expect(full).toContain("usage: pixie_full serve --assistant-config ABS --web-config ABS");
+	expect(full).toContain("PIXIE_PI_SECRET_KEY must be inherited");
+	expect(releaseRuntime).toContain('BUNDLED_BUN_VERSION = "1.4.0"');
+	expect(releaseRuntime).not.toContain("BUNDLED_NODE_VERSION");
+	expect(releaseRuntime).toContain("stageBundledPiRuntime");
+	expect(releaseRuntime).toContain("runtime staging must not include a Pi RPC surface");
+	expect(releaseRuntime).toContain("runtime staging must not expose a package-manager executable");
 });
 
-test("controller and full-host executable fixtures exercise mode boundaries without live Pi claims", async () => {
+test("controller executable fixtures exercise mode boundaries without live Pi claims", async () => {
 	const temporary = await mkdtemp(join(repositoryRoot, ".pixie-runtime-gates-"));
 	try {
-		const fullHostBinary = join(temporary, "pixie");
-		const controllerBinary = join(temporary, "pixie-controller");
+		const controllerBinary = join(temporary, "pixie");
 		const buildEnvironment = {
 			CGO_ENABLED: "0",
 			GOCACHE: join(temporary, "go-build"),
 			GOTMPDIR: temporary,
 			TMPDIR: temporary,
 		};
-		const fullHostBuild = run(
-			["go", "build", "-trimpath", "-o", fullHostBinary, "./cmd"],
-			buildEnvironment,
-		);
-		expect(fullHostBuild.exitCode).toBe(0);
 		const controllerBuild = run(
 			["go", "build", "-trimpath", "-tags=controller", "-o", controllerBinary, "./cmd"],
 			buildEnvironment,
 		);
 		expect(controllerBuild.exitCode).toBe(0);
 
-		const version = run([fullHostBinary, "--version"]);
+		const version = run([controllerBinary, "--version"]);
 		expect(version.exitCode).toBe(0);
-		expect(version.stdout).toMatch(/^pixie \S+ \(revision \S+\)\s*$/);
-		const controllerVersion = run([controllerBinary, "--version"]);
-		expect(controllerVersion.exitCode).toBe(0);
-		expect(controllerVersion.stdout).toMatch(/^pixie \S+ \(revision \S+\)\s*$/);
+		expect(version.stdout).toMatch(/^pixie_web \S+ \(revision \S+\)\s*$/);
+		const doctor = run([controllerBinary, "doctor"]);
+		expect(doctor.exitCode).toBe(0);
+		expect(doctor.stdout).toBe("pixie_web doctor: configuration is readable ()\n");
+		const uninstall = run([controllerBinary, "uninstall"]);
+		expect(uninstall.exitCode).toBe(0);
+		expect(uninstall.stdout).toBe(
+			"pixie_web uninstall: stop and remove the selected user unit and binary\n",
+		);
 
 		const controllerRejectsFullHost = run([
 			controllerBinary,
@@ -102,7 +116,9 @@ test("controller and full-host executable fixtures exercise mode boundaries with
 			"/tmp/pixie.json",
 		]);
 		expect(controllerRejectsFullHost.exitCode).not.toBe(0);
-		expect(output(controllerRejectsFullHost)).toContain("controller-only build does not support");
+		expect(output(controllerRejectsFullHost)).toContain("unsupported serve mode");
+		expect(output(controllerRejectsFullHost)).toContain('"component":"pixie_web"');
+		expect(output(controllerRejectsFullHost)).not.toContain('"component":"pixie"');
 		const duplicateMode = run([
 			controllerBinary,
 			"serve",
@@ -119,17 +135,8 @@ test("controller and full-host executable fixtures exercise mode boundaries with
 			"controller-only mode rejects local assistant setting PI_CODING_AGENT_DIR",
 		);
 
-		const embeddedUi = text(await readFile(fullHostBinary));
+		const embeddedUi = text(await readFile(controllerBinary));
 		expect(embeddedUi).toContain("<title>pixie</title>");
-
-		// The shared assistant facade is intentionally unavailable in this checkout.
-		// Exercise that real failure rather than claiming a live full-host service.
-		const facade = await readFile(join(repositoryRoot, "assistant/host/host.go"), "utf8");
-		if (facade.includes("return nil, ErrUnavailable")) {
-			const unavailable = run([fullHostBinary, "serve"]);
-			expect(unavailable.exitCode).not.toBe(0);
-			expect(output(unavailable)).toContain("assistant engine is unavailable in this build");
-		}
 	} finally {
 		await rm(temporary, { recursive: true, force: true });
 	}

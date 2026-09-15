@@ -65,7 +65,7 @@
 }
 
 @media (prefers-color-scheme: light) {
-	:root {
+	:root:not(.dark) {
 		--accent: #2a7314;
 		--accent-hover: #59d915;
 		--accent-solid: #8dff4f;

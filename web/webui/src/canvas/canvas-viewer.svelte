@@ -37,7 +37,7 @@ let model = $derived(canvasViewerViewModel(state, { ready, pending }));
 				data-variant="outline"
 				data-size="sm"
 				data-testid="canvas-viewer-screenshot"
-				disabled={!model.availability.canScreenshot}
+				disabled={!onscreenshot || !model.availability.canScreenshot}
 				title={model.availability.screenshotReason ?? "Capture an exact-version raster screenshot"}
 				onclick={() => onscreenshot?.()}
 			>
@@ -49,7 +49,7 @@ let model = $derived(canvasViewerViewModel(state, { ready, pending }));
 				data-variant="outline"
 				data-size="sm"
 				data-testid="canvas-viewer-refresh"
-				disabled={!model.availability.canRefresh}
+				disabled={!onrefresh || !model.availability.canRefresh}
 				title={model.availability.refreshReason ?? "Refresh Canvas status and preview"}
 				onclick={() => onrefresh?.()}
 			>

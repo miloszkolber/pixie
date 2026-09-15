@@ -87,7 +87,7 @@ func TestSchedulesOwnPersistenceProjectIsolationAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobs := result.([]controller.Schedule)
-	if calls.Load() != 1 || len(jobs) != 1 || len(jobs[0].Runs) != 1 || jobs[0].Runs[0].SessionID != "native-session" || jobs[0].Runs[0].Status != "interrupted" {
+	if calls.Load() != 1 || len(jobs) != 1 || len(jobs[0].Runs) != 1 || jobs[0].Runs[0].SessionID != "native-session" || jobs[0].Runs[0].Status != "interrupted" || !jobs[0].Paused {
 		t.Fatalf("lost run state: %+v", jobs)
 	}
 }
@@ -148,7 +148,7 @@ func TestSchedulesClaimDueOccurrenceAndPauseAmbiguousRestart(t *testing.T) {
 	result, _ := restored.Handle(context.Background(), "schedule.list", map[string]any{"projectId": "project"})
 	raw, _ := json.Marshal(result)
 	got := result.([]controller.Schedule)[0]
-	if !got.Paused || got.Runs[0].Status != "interrupted" {
+	if !got.Paused || got.Runs[0].Status != "cancellation_unconfirmed" {
 		t.Fatalf("ambiguous run not paused: %s", raw)
 	}
 }

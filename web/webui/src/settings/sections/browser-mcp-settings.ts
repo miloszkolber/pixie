@@ -26,22 +26,32 @@ export interface BrowserMcpState {
 	notice: string | null;
 }
 
+// browserMcp.status intentionally excludes the endpoint URL because an
+// operator-owned endpoint can carry a credential in its query string. Retain a
+// URL only for this live browser view after its user supplied it; never recover
+// it from a status response or durable browser storage.
+const browserMcpDraftUrls = new Map<string, string>();
+
 export function emptyBrowserMcpDraft(): BrowserMcpDraft {
 	return { name: "pixie-browser", url: "http://127.0.0.1:3000/mcp", enabled: false };
 }
 
 export function browserMcpDraftFromStatus(status: BrowserMCPStatus): BrowserMcpDraft {
-	return { name: status.name, url: status.url, enabled: status.enabled };
+	return {
+		name: status.name,
+		url: browserMcpDraftUrls.get(status.name) ?? "",
+		enabled: status.enabled,
+	};
 }
 
 export function browserMcpNameError(value: string): string | null {
 	const name = value.trim();
 	if (name === "") return "Enter a name for the Pi MCP entry.";
 	if (new TextEncoder().encode(name).byteLength > 128)
-		return "Use a name of at most 128 UTF-8 bytes.";
+		return "Use an ASCII name of at most 128 characters.";
 	if (name.includes("\u0000")) return "The name cannot contain a NUL character.";
-	if (!/^[\p{L}\p{N}._-]+$/u.test(name))
-		return "Use letters, numbers, dots, underscores or hyphens.";
+	if (!/^[A-Za-z0-9._-]+$/.test(name))
+		return "Use ASCII letters, numbers, dots, underscores or hyphens.";
 	return null;
 }
 
@@ -59,6 +69,16 @@ export function browserMcpUrlError(value: string): string | null {
 	if (!parsed.host) return "Enter an absolute http(s) URL.";
 	if (parsed.username || parsed.password)
 		return "Credentials cannot be embedded in the URL; use per-deployment hardening instead.";
+	return null;
+}
+
+export function browserMcpRenameError(
+	status: BrowserMCPStatus | null,
+	draft: BrowserMcpDraft,
+): string | null {
+	if (status !== null && status.name !== draft.name.trim() && (status.enabled || draft.enabled)) {
+		return "To change the Browser MCP name, remove the enabled entry first. Then save the new name while disabled before registering it.";
+	}
 	return null;
 }
 
@@ -98,7 +118,22 @@ export class BrowserMcpModel {
 	constructor(private readonly transport: Pick<WsTransport, "request">) {}
 
 	async load(): Promise<BrowserMCPStatus | null> {
-		return this.run(this.transport.request("browserMcp.status", {}), { loading: true }, null);
+		const status = await this.run(
+			this.transport.request("browserMcp.status", {}),
+			{ loading: true },
+			null,
+		);
+		if (
+			status &&
+			!browserMcpDraftUrls.has(status.name) &&
+			this.state.getState().status === status
+		) {
+			this.state.setState({
+				notice:
+					"The configured endpoint URL is not shown for security. Enter it before registering an update.",
+			});
+		}
+		return status;
 	}
 
 	async save(draft: BrowserMcpDraft): Promise<BrowserMCPStatus | null> {
@@ -112,7 +147,13 @@ export class BrowserMcpModel {
 			this.state.setState({ error: urlError, notice: null });
 			return null;
 		}
-		return this.run(
+		const renameError = browserMcpRenameError(this.state.getState().status, draft);
+		if (renameError) {
+			this.state.setState({ error: renameError, notice: null });
+			return null;
+		}
+		const previousName = this.state.getState().status?.name;
+		const status = await this.run(
 			this.transport.request("browserMcp.configure", {
 				name: draft.name.trim(),
 				url: draft.url.trim(),
@@ -123,6 +164,11 @@ export class BrowserMcpModel {
 				? "Browser MCP registration saved in Pi."
 				: "Browser MCP entry removed from Pi.",
 		);
+		if (status) {
+			if (previousName && previousName !== status.name) browserMcpDraftUrls.delete(previousName);
+			browserMcpDraftUrls.set(status.name, draft.url.trim());
+		}
+		return status;
 	}
 
 	async remove(): Promise<BrowserMCPStatus | null> {

@@ -77,7 +77,7 @@ let model = $derived(canvasSidebarViewModel(state, { ready, pending }));
 			data-variant="outline"
 			data-size="sm"
 			data-testid="canvas-screenshot-button"
-			disabled={!model.availability.canScreenshot}
+			disabled={!onscreenshot || !model.availability.canScreenshot}
 			title={model.availability.screenshotReason ?? "Capture an exact-version raster screenshot"}
 			onclick={() => onscreenshot?.()}
 		>
@@ -89,7 +89,7 @@ let model = $derived(canvasSidebarViewModel(state, { ready, pending }));
 			data-variant="outline"
 			data-size="sm"
 			data-testid="canvas-refresh-button"
-			disabled={!model.availability.canRefresh}
+			disabled={!onrefresh || !model.availability.canRefresh}
 			title={model.availability.refreshReason ?? "Refresh Canvas status and preview"}
 			onclick={() => onrefresh?.()}
 		>
@@ -101,7 +101,7 @@ let model = $derived(canvasSidebarViewModel(state, { ready, pending }));
 			data-variant="destructive-outline"
 			data-size="sm"
 			data-testid="canvas-remove-button"
-			disabled={!model.availability.canRemove}
+			disabled={!onremove || !model.availability.canRemove}
 			title={model.availability.removalReason ?? "Remove this Canvas"}
 			onclick={() => onremove?.()}
 		>
@@ -132,7 +132,7 @@ let model = $derived(canvasSidebarViewModel(state, { ready, pending }));
 							data-variant="outline"
 							data-size="sm"
 							data-testid={`canvas-template-use-${template.id}`}
-							disabled={!ready}
+							disabled={!ready || !ontemplate}
 							onclick={() => ontemplate?.(template.id)}
 						>
 							Use {template.id}

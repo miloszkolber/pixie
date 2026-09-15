@@ -23,19 +23,17 @@ import {
 
 const base = import.meta.dir;
 const packageDir = resolve(base, "..", "..");
-const repositoryDir = resolve(packageDir, "..");
 const schema = loadProtocolCatalog(join(packageDir, SCHEMA_RELATIVE_PATH));
 
 /**
- * Reads the hand-maintained host allowlist from its Go source. The generated
- * schema must stay an order-accurate copy until that source is rewritten to
- * consume the generated catalog, so drift here is a real failure.
+ * Reads the Bun host's implemented-operation allowlist from its TypeScript
+ * source. The shared schema stays the single source of truth: the Bun host
+ * derives its advertised operationSet from the generated HOST_OPERATIONS
+ * catalog, so drift here is a real failure.
  */
-function extractNativeOperationSet(source: string): string[] {
-	const block = source.match(
-		/func nativeOperationSet\([^)]*\) map\[string\]bool \{[\s\S]*?for _, operation := range \[\]string\{([\s\S]*?)\} \{/,
-	);
-	if (block === null) throw new Error("nativeOperationSet literal not found");
+function extractBunImplementedOperations(source: string): string[] {
+	const block = source.match(/const IMPLEMENTED_OPERATIONS = new Set\(\[([\s\S]*?)\]\)/);
+	if (block === null) throw new Error("IMPLEMENTED_OPERATIONS literal not found");
 	return [...(block[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? "");
 }
 
@@ -58,13 +56,14 @@ test("committed generated TypeScript and Go files are the schema renderings", ()
 	expect(go).toContain("package piprotocol");
 });
 
-test("host operation set equals the nativeOperationSet source", () => {
-	const source = readFileSync(join(repositoryDir, "assistant/host/native_child.go"), "utf8");
-	const nativeOperations = extractNativeOperationSet(source);
-	expect(nativeOperations.length).toBeGreaterThan(0);
-	expect(new Set(nativeOperations).size).toBe(nativeOperations.length);
-	expect(schema.operations.host).toEqual(nativeOperations);
-	expect(nativeOperations).toEqual([...HOST_OPERATIONS]);
+test("Bun host operation set derives from the shared catalog", () => {
+	const source = readFileSync(join(packageDir, "..", "assistant", "src", "host.ts"), "utf8");
+	expect(source).toContain("../../shared/src/generated/protocol-catalog");
+	expect(source).toContain("HOST_OPERATIONS.map");
+	const implemented = extractBunImplementedOperations(source);
+	expect(implemented.length).toBeGreaterThan(0);
+	expect(new Set(implemented).size).toBe(implemented.length);
+	expect(schema.operations.host).toEqual([...HOST_OPERATIONS]);
 });
 
 test("thinking levels and prompt content block types match the schema", () => {

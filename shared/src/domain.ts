@@ -68,6 +68,104 @@ export interface RuntimeStatusReport {
 	design?: RuntimeServiceStatus;
 }
 
+/** One retained tombstone and its explicit operator reconciliation guidance. */
+export interface DeletionReconciliation {
+	projectId: string;
+	sessionId: string;
+	phase: string;
+	reason: string;
+	remediation: string;
+	/** True only when Pixie cannot establish the native deletion outcome. */
+	uncertain: boolean;
+}
+
+/** Negotiated agent data. Omitted fields are unavailable rather than false. */
+export interface RuntimeDiagnosticsCapabilities {
+	compatible?: boolean;
+	missingRequired?: string[];
+	operations?: AgentOperations;
+	capabilities?: Record<string, number>;
+	operationSet?: Record<string, boolean>;
+}
+
+/** Health facts from the controller and assistant host. Omitted booleans are unknown. */
+export interface RuntimeDiagnosticsHost {
+	configured?: boolean;
+	reachable?: boolean;
+	applicationReady?: boolean;
+	reason?: string;
+	applicationReason?: string;
+}
+
+/** Count-only active-run projection; it never identifies or claims a current run. */
+export interface RuntimeDiagnosticsRuns {
+	activeCount?: number;
+}
+
+/** Retained deletion records are projected without dispatching or clearing them. */
+export interface RuntimeDiagnosticsDeletionReconciliation {
+	count?: number;
+	records?: DeletionReconciliation[];
+}
+
+export interface RuntimeDiagnosticsSchedule {
+	state: "healthy" | "degraded" | "unknown";
+	reason?: string;
+}
+
+/** Authenticated, browser-safe operator diagnostics. */
+export interface RuntimeDiagnosticsReport {
+	capabilities: RuntimeDiagnosticsCapabilities;
+	host: RuntimeDiagnosticsHost;
+	runs: RuntimeDiagnosticsRuns;
+	deletionReconciliation: RuntimeDiagnosticsDeletionReconciliation;
+	schedule: RuntimeDiagnosticsSchedule;
+	remediation: string[];
+}
+
+/** A bounded, controller-only support export. It contains no logs, config, identifiers or endpoints. */
+export interface SupportSnapshot {
+	schemaVersion: 1;
+	generatedAt: string;
+	runtime: SupportSnapshotRuntime;
+	events: SupportSnapshotEvent[];
+}
+
+/** Explicit runtime fact allowlist for a support export. Missing values are unknown. */
+export interface SupportSnapshotRuntime {
+	build: RuntimeBuild;
+	host: SupportSnapshotHost;
+	activeRunCount?: number;
+	retainedDeletionCount?: number;
+	schedule: SupportSnapshotSchedule;
+}
+
+export interface SupportSnapshotHost {
+	configured?: boolean;
+	reachable?: boolean;
+	applicationReady?: boolean;
+	/** Sanitized and bounded; never a raw host error. */
+	reason?: string;
+	/** Sanitized and bounded; never a raw controller error. */
+	applicationReason?: string;
+}
+
+export interface SupportSnapshotSchedule {
+	state: "healthy" | "degraded" | "unknown";
+	/** Present only for a degraded schedule and sanitized at the controller. */
+	reason?: string;
+}
+
+/** A bounded controller request outcome with no request parameters or client identity. */
+export interface SupportSnapshotEvent {
+	at: string;
+	kind: "request";
+	operation: string;
+	outcome: "succeeded" | "failed";
+	/** Sanitized and bounded; never a raw error. */
+	detail?: string;
+}
+
 export type McpGatewayState =
 	| "ready"
 	| "degraded"
@@ -227,6 +325,8 @@ export interface Schedule {
 	cron: string;
 	timezone: string;
 	model?: { provider: string; id: string };
+	/** Null or absent means unlimited; a value is a persisted whole-second budget. */
+	maxRuntimeSeconds?: number | null;
 	paused: boolean;
 	nextRun: string;
 	runs: ScheduleRun[];
@@ -236,8 +336,17 @@ export interface ScheduleRun {
 	sessionId?: string;
 	startedAt: string;
 	finishedAt?: string;
-	status: "running" | "completed" | "failed" | "interrupted";
+	status:
+		| "running"
+		| "cancelling"
+		| "cancellation_unconfirmed"
+		| "completed"
+		| "failed"
+		| "interrupted"
+		| "timed_out";
 	error?: string;
+	cancellationRequestedAt?: string;
+	cancellationReason?: "deadline" | "manual" | "restart";
 }
 
 export const PROJECT_ICONS = ["folder", "code", "book", "flask", "rocket", "sparkles"] as const;

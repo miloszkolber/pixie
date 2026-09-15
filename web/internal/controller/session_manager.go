@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -145,11 +146,17 @@ type SessionManager struct {
 	creating        int
 	activeWork      int
 	pendingCommands map[string]pendingCommandCatalog
-	publish         SessionPublisher
-	now             func() time.Time
-	deviceCode      func(map[string]any)
-	history         *HistoryIndex
-	nativeMCP       nativeMCPRevoker
+	// scheduleCreationRoots retains the admitted cwd only while a scheduled
+	// session has an ID but its ordinary session record has not committed.
+	// It lets cancellation release that exact partial create without guessing a
+	// cwd; a restart intentionally loses this cache and leaves the schedule
+	// ledger fail-closed for external reconciliation.
+	scheduleCreationRoots map[string]string
+	publish               SessionPublisher
+	now                   func() time.Time
+	deviceCode            func(map[string]any)
+	history               *HistoryIndex
+	nativeMCP             nativeMCPRevoker
 
 	// deletionQuarantine retains requested records that could not be safely
 	// resumed this boot. They are never dispatched or forgotten implicitly.
@@ -171,7 +178,7 @@ func NewSessionManager(projects *workspace.Projects, policy *workspace.PathPolic
 	if records != nil {
 		deletions = NewSessionDeletions(records.store)
 	}
-	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), publish: publish, now: time.Now, deletionQuarantine: make(map[string]DeletionRecovery), deletionAuthority: DeletionAuthorityAuto}
+	manager := &SessionManager{projects: projects, policy: policy, records: records, queues: queues, objectives: objectives, deletions: deletions, sessions: make(map[string]*sessionEntry), dialogs: make(map[dialogKey]*pendingDialog), scheduleCreationRoots: make(map[string]string), publish: publish, now: time.Now, deletionQuarantine: make(map[string]DeletionRecovery), deletionAuthority: DeletionAuthorityAuto}
 	manager.history = newHistoryIndex(manager)
 	return manager
 }
@@ -225,7 +232,7 @@ func (m *SessionManager) RecordedCWD(projectID, sessionID string) (string, error
 }
 
 func (m *SessionManager) Create(ctx context.Context, projectID, cwd string, model *WireModel, thinking, clientKey string) (map[string]any, error) {
-	result, after, err := m.create(ctx, projectID, cwd, model, thinking, clientKey)
+	result, after, err := m.create(ctx, projectID, cwd, model, thinking, clientKey, nil)
 	if after != nil {
 		after()
 	}
@@ -233,14 +240,18 @@ func (m *SessionManager) Create(ctx context.Context, projectID, cwd string, mode
 }
 
 func (m *SessionManager) CreateDeferred(ctx context.Context, projectID, cwd string, model *WireModel, thinking, clientKey string) (any, error) {
-	result, after, err := m.create(ctx, projectID, cwd, model, thinking, clientKey)
+	result, after, err := m.create(ctx, projectID, cwd, model, thinking, clientKey, nil)
 	if err != nil {
 		return nil, err
 	}
 	return deferredResponse{result: result, after: after}, nil
 }
 
-func (m *SessionManager) create(ctx context.Context, projectID, cwd string, model *WireModel, thinking, clientKey string) (map[string]any, func(), error) {
+// create invokes onNativeSession after Pi has returned its authoritative ID but
+// before any later controller persistence. Schedules use this narrow seam to
+// make their own run ledger durable before a local session-record failure can
+// hide an already-created native session.
+func (m *SessionManager) create(ctx context.Context, projectID, cwd string, model *WireModel, thinking, clientKey string, onNativeSession func(string) error) (map[string]any, func(), error) {
 	if m.client == nil {
 		return nil, nil, fmt.Errorf("Pi agent client is not configured")
 	}
@@ -296,18 +307,11 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 	}
 	sessionID := string(response.SessionId)
 	if sessionID == "" {
-		return nil, nil, fmt.Errorf("Pi agent response is missing sessionId")
+		return nil, nil, &sessionCreateUncertainError{cause: fmt.Errorf("Pi agent response is missing sessionId")}
 	}
-	_, err = m.client.Ready(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	// Pi allocates the native session ID during session.create. Attach the
-	// optional Canvas server only after that ID is known so its capability is
-	// bound to the authenticated native principal rather than to caller input.
-	canvasAttached := m.attachNativeCanvas(ctx, profile, sessionID, token, generation)
 	var entry *sessionEntry
 	creationCommitted := false
+	canvasAttached := false
 	defer func() {
 		if creationCommitted {
 			return
@@ -325,7 +329,38 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 			entry.canvasAttached = 0
 			entry.state.Unlock()
 		}
+		// Partial-create recovery: the host already allocated sessionID, so a
+		// controller failure must not leave an orphan native session behind.
+		// Release with the same cwd before returning the error. Best-effort
+		// with a detached context; the original creation error stays authoritative.
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = m.client.ReleaseSession(releaseCtx, sessionID, admitted)
+		m.mu.Lock()
+		if entry != nil && m.sessions[sessionID] == entry {
+			delete(m.sessions, sessionID)
+		}
+		if leases := m.leases[clientKey]; leases != nil {
+			delete(leases.sessions, sessionID)
+		}
+		m.mu.Unlock()
+		if entry != nil && m.records != nil {
+			_ = m.records.Forget(projectID, sessionID)
+		}
 	}()
+	if onNativeSession != nil {
+		if err := onNativeSession(sessionID); err != nil {
+			return nil, nil, err
+		}
+	}
+	_, err = m.client.Ready(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Pi allocates the native session ID during session.create. Attach the
+	// optional Canvas server only after that ID is known so its capability is
+	// bound to the authenticated native principal rather than to caller input.
+	canvasAttached = m.attachNativeCanvas(ctx, profile, sessionID, token, generation)
 	entry = newSessionEntry(sessionID, projectID, admitted, "", token)
 	entry.capabilities = response.Capabilities
 	if canvasAttached {
@@ -650,50 +685,9 @@ func (m *SessionManager) List(ctx context.Context, projectID string, archived an
 			}
 		}
 	}
-	remote := make(map[string]remoteSession)
-	var cursor *string
-	seen := make(map[string]bool)
-	for page := 0; page < 20; page++ {
-		response, err := m.client.ListSessions(ctx, piwire.ListSessionsRequest{Cursor: cursor})
-		if err != nil {
-			return nil, err
-		}
-		for _, session := range response.Sessions {
-			remote[string(session.SessionId)] = normalizeRemoteSession(session)
-		}
-		if response.NextCursor == nil {
-			break
-		}
-		if seen[*response.NextCursor] {
-			return nil, fmt.Errorf("Pi agent session list was truncated because it repeated a cursor")
-		}
-		seen[*response.NextCursor] = true
-		cursor = response.NextCursor
-		if page == 19 {
-			return nil, fmt.Errorf("Pi agent session list was truncated after 20 pages")
-		}
-	}
-	missing := make([]ProjectSessionRecord, 0)
-	for _, record := range filtered {
-		if _, found := remote[record.SessionID]; !found {
-			missing = append(missing, record)
-		}
-	}
-	if profile.Pi && len(missing) > 200 {
-		return nil, fmt.Errorf("Pi session list requires more than 200 per-session lookups")
-	}
-	if profile.Pi {
-		for _, record := range missing {
-			info, err := m.info(ctx, record.SessionID)
-			if err != nil {
-				var requestError *piwire.RequestError
-				if errors.As(err, &requestError) && requestError.Code == -32002 {
-					continue
-				}
-				return nil, err
-			}
-			remote[record.SessionID] = info
-		}
+	remote, err := m.listRecordedRemoteSessions(ctx, filtered)
+	if err != nil {
+		return nil, err
 	}
 	result := make([]SessionSummary, 0, len(filtered))
 	for _, record := range filtered {
@@ -724,6 +718,60 @@ func (m *SessionManager) List(ctx context.Context, projectID string, archived an
 		result = append(result, SessionSummary{SessionID: record.SessionID, ProjectID: projectID, CWD: record.CWD, ParentSessionID: record.ParentSessionID, Title: title, ThinkingLevel: "off", MessageCount: source.messageCount, UpdatedAt: source.updatedAt, Live: false, Archived: source.archived, Queue: &queue})
 	}
 	return result, nil
+}
+
+// listRecordedRemoteSessions reconciles only the controller's durable records.
+// Pi 0.85.1 can list a session directory for an admitted cwd, but has no public
+// per-session information API. Query each distinct recorded cwd rather than
+// falling back to an unsupported global record lookup.
+func (m *SessionManager) listRecordedRemoteSessions(ctx context.Context, records []ProjectSessionRecord) (map[string]remoteSession, error) {
+	recordsByCWD := make(map[string]map[string]struct{})
+	for _, record := range records {
+		if record.CWD == "" || record.SessionID == "" {
+			continue
+		}
+		if recordsByCWD[record.CWD] == nil {
+			recordsByCWD[record.CWD] = make(map[string]struct{})
+		}
+		recordsByCWD[record.CWD][record.SessionID] = struct{}{}
+	}
+	if len(recordsByCWD) > 200 {
+		return nil, fmt.Errorf("Pi session list requires more than 200 recorded cwd lookups")
+	}
+	cwds := make([]string, 0, len(recordsByCWD))
+	for cwd := range recordsByCWD {
+		cwds = append(cwds, cwd)
+	}
+	sort.Strings(cwds)
+	remote := make(map[string]remoteSession, len(records))
+	for _, cwd := range cwds {
+		var cursor *string
+		seen := make(map[string]bool)
+		for page := 0; page < 20; page++ {
+			response, err := m.client.ListSessions(ctx, piwire.ListSessionsRequest{Cursor: cursor, Cwd: &cwd})
+			if err != nil {
+				return nil, err
+			}
+			for _, session := range response.Sessions {
+				id := string(session.SessionId)
+				if _, wanted := recordsByCWD[cwd][id]; wanted {
+					remote[id] = normalizeRemoteSession(session)
+				}
+			}
+			if response.NextCursor == nil {
+				break
+			}
+			if seen[*response.NextCursor] {
+				return nil, fmt.Errorf("Pi agent session list was truncated because it repeated a cursor")
+			}
+			seen[*response.NextCursor] = true
+			cursor = response.NextCursor
+			if page == 19 {
+				return nil, fmt.Errorf("Pi agent session list was truncated after 20 pages")
+			}
+		}
+	}
+	return remote, nil
 }
 
 func (m *SessionManager) SetModel(ctx context.Context, sessionID string, model WireModel) error {
@@ -880,21 +928,38 @@ func (m *SessionManager) SetThinking(ctx context.Context, sessionID, level strin
 	if running {
 		return fmt.Errorf("stop the running chat before changing its thinking level")
 	}
-	options, err := m.setConfig(entry.context(ctx), sessionID, "thinking", level)
+	ctx = entry.context(ctx)
+	options, err := m.setConfig(ctx, sessionID, "thinking", level)
 	if err != nil {
-		return err
+		return m.reconcileThinkingChangeFailure(ctx, sessionID, entry, err)
 	}
+	configuredThinking := thinkingFromOptions(options)
 	entry.state.Lock()
 	entry.configOptions = options
-	entry.thinkingLevel = level
-	var model *WireModel
-	if entry.model != nil {
-		copied := *entry.model
-		model = &copied
-	}
+	entry.thinkingLevel = configuredThinking
+	entry.model = modelFromSetup(options, nil)
+	model := entry.model
 	entry.state.Unlock()
 	m.emitSessionConfig(sessionID, model, options)
+	if configuredThinking != level {
+		return fmt.Errorf("set thinking returned %q, want %q", configuredThinking, level)
+	}
 	return nil
+}
+
+// A missing configuration response is ambiguous: Pi may have applied a value
+// before the host lost its authoritative projection. Reload before returning so
+// the resident state cannot continue to advertise a requested value as success.
+func (m *SessionManager) reconcileThinkingChangeFailure(ctx context.Context, sessionID string, entry *sessionEntry, failure error) error {
+	refreshCtx := context.WithoutCancel(ctx)
+	if err := m.reloadSessionConfig(refreshCtx, sessionID, entry); err != nil {
+		return errors.Join(failure, fmt.Errorf("reload session configuration after failed thinking change: %w", err))
+	}
+	entry.state.Lock()
+	model, options := entry.model, entry.configOptions
+	entry.state.Unlock()
+	m.emitSessionConfig(sessionID, model, options)
+	return failure
 }
 
 func (m *SessionManager) setConfig(ctx context.Context, sessionID, configID, value string) ([]any, error) {

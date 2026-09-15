@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { readFile } from "node:fs/promises";
+import { RELEASE_PRODUCTS } from "./build-release.ts";
 
 /**
  * Versioned evidence-bundle schema accepted for local release evidence (D7).
@@ -39,6 +40,10 @@ export const PERFORMANCE_ASSERTION_ID = "PERF-01";
  * architectures can coexist in one bundle.
  */
 export const PACKAGED_BINARY_ASSERTION_PREFIX = "BIN-PROBE";
+
+/** The public archive products emitted by build-release.ts. */
+export const PACKAGE_PRODUCTS = RELEASE_PRODUCTS;
+export type PackageProduct = (typeof PACKAGE_PRODUCTS)[number];
 
 const ISO8601_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -241,6 +246,38 @@ export function evidenceBundleIssues(value: unknown): string[] {
 			continue;
 		}
 		seen.add(key);
+		if (assertion.kind !== "GATE" || !assertion.id.startsWith(PACKAGE_ARCHIVE_ASSERTION_PREFIX))
+			continue;
+		const packageKey = parsePackageArchiveAssertionId(assertion.id);
+		if (packageKey === null) {
+			issues.push(
+				`${`assertions[${index}]`}: unknown package archive product assertion ${assertion.id}`,
+			);
+			continue;
+		}
+		if (assertion.status !== "pass") continue;
+		if (typeof assertion.detail !== "string") continue;
+		if (assertion.artifact === undefined) {
+			issues.push(
+				`${`assertions[${index}]`}: passing package archive assertion requires an artifact`,
+			);
+			continue;
+		}
+		const detail = decodePackageArchiveDetail(assertion.detail);
+		if (detail === null) {
+			issues.push(
+				`${`assertions[${index}]`}: passing package archive assertion has malformed detail`,
+			);
+			continue;
+		}
+		if (detail.product !== packageKey.product || detail.architecture !== packageKey.architecture) {
+			issues.push(`${`assertions[${index}]`}: package archive assertion id does not match detail`);
+		}
+		if (detail.binary !== detail.product) {
+			issues.push(
+				`${`assertions[${index}]`}: package archive primary executable must be ${detail.product}`,
+			);
+		}
 	}
 	return issues;
 }
@@ -351,31 +388,47 @@ export function decodeProbeDetail(detail: string): BinaryProbeDetail | null {
 }
 
 export interface PackageArchiveAssertionKey {
-	variant: "assistant" | "host";
+	product: PackageProduct;
 	architecture: EvidencePlatformArchitecture;
 }
 
-export function packageArchiveAssertionId(
-	variant: "assistant" | "host",
-	architecture: EvidencePlatformArchitecture,
-): string {
-	return `${PACKAGE_ARCHIVE_ASSERTION_PREFIX}${variant}-${architecture}`;
+/**
+ * Compatibility projection for the unmodified release-identity mapper. It is
+ * never serialized and only ever contains a current public product name.
+ */
+export interface DecodedPackageArchiveAssertionKey extends PackageArchiveAssertionKey {
+	variant: PackageProduct;
 }
 
-export function parsePackageArchiveAssertionId(id: string): PackageArchiveAssertionKey | null {
+export function packageArchiveAssertionId(
+	product: PackageProduct,
+	architecture: EvidencePlatformArchitecture,
+): string {
+	return `${PACKAGE_ARCHIVE_ASSERTION_PREFIX}${product}-${architecture}`;
+}
+
+export function parsePackageArchiveAssertionId(
+	id: string,
+): DecodedPackageArchiveAssertionKey | null {
 	if (!id.startsWith(PACKAGE_ARCHIVE_ASSERTION_PREFIX)) return null;
 	const remainder = id.slice(PACKAGE_ARCHIVE_ASSERTION_PREFIX.length);
 	const separator = remainder.lastIndexOf("-");
 	if (separator <= 0) return null;
-	const variant = remainder.slice(0, separator);
+	const product = remainder.slice(0, separator);
 	const architecture = remainder.slice(separator + 1);
-	if (variant !== "assistant" && variant !== "host") return null;
+	if (!(PACKAGE_PRODUCTS as readonly string[]).includes(product)) return null;
 	if (
 		typeof architecture !== "string" ||
 		!(EVIDENCE_PLATFORM_ARCHITECTURES as readonly string[]).includes(architecture)
 	)
 		return null;
-	return { variant, architecture: architecture as EvidencePlatformArchitecture };
+	return {
+		product: product as PackageProduct,
+		// Keep this ABI-only alias until release-gate.ts is migrated with the
+		// identity model. New evidence only exposes `product` in JSON.
+		variant: product as PackageProduct,
+		architecture: architecture as EvidencePlatformArchitecture,
+	};
 }
 
 /**
@@ -384,7 +437,7 @@ export function parsePackageArchiveAssertionId(id: string): PackageArchiveAssert
  * archive-content and binary-identity assertions rather than trusting a status.
  */
 export interface PackageArchiveDetail {
-	variant: "assistant" | "host";
+	product: PackageProduct;
 	architecture: EvidencePlatformArchitecture;
 	entries: readonly string[];
 	binary: string;
@@ -392,7 +445,7 @@ export interface PackageArchiveDetail {
 }
 
 const PACKAGE_ARCHIVE_DETAIL_KEYS = [
-	"variant",
+	"product",
 	"architecture",
 	"entries",
 	"binary",
@@ -401,7 +454,7 @@ const PACKAGE_ARCHIVE_DETAIL_KEYS = [
 
 export function encodePackageArchiveDetail(detail: PackageArchiveDetail): string {
 	return JSON.stringify({
-		variant: detail.variant,
+		product: detail.product,
 		architecture: detail.architecture,
 		entries: [...detail.entries].sort(),
 		binary: detail.binary,
@@ -409,7 +462,12 @@ export function encodePackageArchiveDetail(detail: PackageArchiveDetail): string
 	});
 }
 
-export function decodePackageArchiveDetail(detail: string): PackageArchiveDetail | null {
+export interface DecodedPackageArchiveDetail extends PackageArchiveDetail {
+	/** Compatibility projection; see DecodedPackageArchiveAssertionKey. */
+	variant: PackageProduct;
+}
+
+export function decodePackageArchiveDetail(detail: string): DecodedPackageArchiveDetail | null {
 	let value: unknown;
 	try {
 		value = JSON.parse(detail);
@@ -418,7 +476,11 @@ export function decodePackageArchiveDetail(detail: string): PackageArchiveDetail
 	}
 	if (!isRecord(value)) return null;
 	if (unknownKeys(value, PACKAGE_ARCHIVE_DETAIL_KEYS).length > 0) return null;
-	if (value.variant !== "assistant" && value.variant !== "host") return null;
+	if (
+		typeof value.product !== "string" ||
+		!(PACKAGE_PRODUCTS as readonly string[]).includes(value.product)
+	)
+		return null;
 	if (
 		typeof value.architecture !== "string" ||
 		!(EVIDENCE_PLATFORM_ARCHITECTURES as readonly string[]).includes(value.architecture)
@@ -436,7 +498,8 @@ export function decodePackageArchiveDetail(detail: string): PackageArchiveDetail
 		return null;
 	}
 	return {
-		variant: value.variant,
+		product: value.product as PackageProduct,
+		variant: value.product as PackageProduct,
 		architecture: value.architecture as EvidencePlatformArchitecture,
 		entries: [...value.entries],
 		binary: value.binary,

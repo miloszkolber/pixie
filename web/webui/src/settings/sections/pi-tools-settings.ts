@@ -35,3 +35,10 @@ export function isSessionInventoryCurrent(
 ): boolean {
 	return !loading && loadedTarget === activeTarget;
 }
+
+// The host only advertises this group when it can truthfully provide a complete
+// active-tool inventory. Do not send a session.toolList request to probe an
+// unavailable native API.
+export function toolInventoryAvailable(capabilities?: Readonly<Record<string, number>>): boolean {
+	return capabilities?.tools === 1;
+}

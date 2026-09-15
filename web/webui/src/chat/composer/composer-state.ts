@@ -115,6 +115,22 @@ export function clampedMentionActiveIndex(activeIndex: number, candidateCount: n
 	return candidateCount > 0 ? Math.min(Math.max(activeIndex, 0), candidateCount - 1) : 0;
 }
 
+/** Shared completion-menu navigation policy (mention and slash menus share lifetime and semantics). */
+export function completionNavigationIndex(
+	key: string,
+	visibleIndex: number,
+	count: number,
+): number | null {
+	if (count <= 0) return null;
+	if (key === "ArrowDown") return (visibleIndex + 1) % count;
+	if (key === "ArrowUp") return (visibleIndex - 1 + count) % count;
+	if (key === "Home") return 0;
+	if (key === "End") return count - 1;
+	if (key === "PageUp") return Math.max(0, visibleIndex - 4);
+	if (key === "PageDown") return Math.min(count - 1, visibleIndex + 4);
+	return null;
+}
+
 export type MentionCompletionKeyAction =
 	| { type: "none" }
 	| { type: "move"; index: number }
@@ -129,10 +145,8 @@ export function mentionCompletionKeyAction(
 ): MentionCompletionKeyAction {
 	if (!open || candidateCount === 0) return { type: "none" };
 	const visibleIndex = clampedMentionActiveIndex(activeIndex, candidateCount);
-	if (key === "ArrowDown") return { type: "move", index: (visibleIndex + 1) % candidateCount };
-	if (key === "ArrowUp") {
-		return { type: "move", index: (visibleIndex - 1 + candidateCount) % candidateCount };
-	}
+	const navigation = completionNavigationIndex(key, visibleIndex, candidateCount);
+	if (navigation !== null) return { type: "move", index: navigation };
 	if (key === "Enter" || key === "Tab") return { type: "select", index: visibleIndex };
 	if (key === "Escape") return { type: "dismiss" };
 	return { type: "none" };

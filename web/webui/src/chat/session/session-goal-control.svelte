@@ -51,7 +51,7 @@ function load(id = sessionId, areaId = projectAreaId): void {
 		.then((value) => {
 			if (generation !== requestGeneration) return;
 			appStoreApi.getState().setSessionGoal(id, value, goalRevision);
-			draft = value.goal ?? "";
+			if (!open) draft = value.goal ?? "";
 		})
 		.catch((cause) => {
 			if (generation !== requestGeneration) return;

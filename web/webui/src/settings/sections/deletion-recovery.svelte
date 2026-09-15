@@ -1,18 +1,19 @@
 <script lang="ts">
 import type { DeletionRecovery } from "@pixie/shared";
-import Button from "../../components/button.svelte";
 import Icon from "../../components/icon.svelte";
+import { deletionProjectLabel } from "../../session/deletion-reconciliation";
 import { deletionRecoveryKey } from "../deletion-recovery";
 
 interface Props {
 	records: readonly DeletionRecovery[];
 	pendingKey: string | null;
 	error: string | null;
+	announcement?: string | null;
 	onConfirm: (record: DeletionRecovery) => void;
 	onRetain: (record: DeletionRecovery) => void;
 }
 
-let { records, pendingKey, error, onConfirm, onRetain }: Props = $props();
+let { records, pendingKey, error, announcement = null, onConfirm, onRetain }: Props = $props();
 </script>
 
 <section
@@ -31,6 +32,11 @@ let { records, pendingKey, error, onConfirm, onRetain }: Props = $props();
 	{#if error}
 		<p role="alert" data-testid="deletion-recovery-error" class="u-mt-sm u-text-feedback-error tr-text-metadata">
 			{error}
+		</p>
+	{/if}
+	{#if announcement}
+		<p role="status" aria-live="polite" data-testid="deletion-recovery-status" class="u-mt-sm u-text-text-muted tr-text-metadata">
+			{announcement}
 		</p>
 	{/if}
 
@@ -56,34 +62,53 @@ let { records, pendingKey, error, onConfirm, onRetain }: Props = $props();
 						class="deletion-recovery-details u-min-w-0 tr-text-metadata"
 					>
 						<dt class="u-text-text-muted">Project</dt>
-						<dd class="deletion-recovery-value u-min-w-0 u-text-text-default"><code>{record.projectId}</code></dd>
+						<dd class="deletion-recovery-value u-min-w-0 u-text-text-default">
+							{#if record.projectId === ""}
+								{deletionProjectLabel(record)}
+							{:else}
+								<code>{deletionProjectLabel(record)}</code>
+							{/if}
+						</dd>
 						<dt class="u-text-text-muted">Session</dt>
 						<dd class="deletion-recovery-value u-min-w-0 u-text-text-default"><code>{record.sessionId}</code></dd>
 						<dt class="u-text-text-muted">Phase</dt>
 						<dd class="deletion-recovery-value u-min-w-0 u-text-text-default">{record.phase}</dd>
+						<dt class="u-text-text-muted">Native deletion</dt>
+						<dd class="deletion-recovery-value u-min-w-0 u-text-text-default">
+							{record.phase === "requested"
+								? "Outcome is uncertain"
+								: record.phase === "confirmed"
+									? "Confirmed; local cleanup may remain"
+									: "Not confirmed"}
+						</dd>
 						<dt class="u-text-text-muted">Reason</dt>
 						<dd class="deletion-recovery-reason u-min-w-0 u-text-text-default">{record.reason}</dd>
 					</dl>
 					<div class="u-flex u-shrink-0 u-flex-wrap u-gap-sm">
-						<Button
-							variant="outline"
-							size="sm"
+						<button
+							type="button"
+							class="btn"
+							data-variant="outline"
+							data-size="sm"
 							data-testid="deletion-recovery-confirm"
 							disabled={pendingKey === key}
 							onclick={() => onConfirm(record)}
 						>
 							<Icon name="check" size={14} />
 							{pendingKey === key ? "Confirming…" : "Confirm deletion happened"}
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
+						</button>
+						<button
+							type="button"
+							class="btn"
+							data-variant="ghost"
+							data-size="sm"
 							data-testid="deletion-recovery-retain"
+							disabled={pendingKey === key}
 							onclick={() => onRetain(record)}
 						>
 							<Icon name="lock" size={14} />
 							Retain record
-						</Button>
+						</button>
 					</div>
 				</li>
 			{/each}

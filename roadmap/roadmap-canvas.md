@@ -2,7 +2,7 @@
 
 Canvas is a session-scoped HTML drafting module: an agent stages an HTML draft, a person sees version-aware previews in Pixie, and the agent iterates with bounded DOM/text and screenshot feedback. One Canvas belongs to one authenticated native chat session. There is no shared gallery, online assets, editing framework or independent agent orchestration.
 
-This plan is self-contained. The module is disabled by default and optional: missing dependencies or containment degrade Canvas only, and basic chat never depends on it. The stream is tracked in [roadmap.md](roadmap.md).
+This plan is self-contained. The module is disabled by default and optional: missing dependencies or containment degrade Canvas only, and basic chat never depends on it.
 
 ## Current state
 

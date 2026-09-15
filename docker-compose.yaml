@@ -1,7 +1,9 @@
 services:
-    pixie:
-        image: "${PIXIE_IMAGE:-ghcr.io/miloszkolber/pixie:latest}"
-        container_name: pixie
+    # Split topology: a separately installed pixie_cli owns Pi on host loopback.
+    # Start only this topology with: docker compose --profile web up -d pixie_web
+    pixie_web:
+        profiles: ["web"]
+        image: "${PIXIE_IMAGE:-ghcr.io/miloszkolber/pixie_web:sha-000000000000}"
         restart: unless-stopped
         network_mode: host
         user: "1000:1000"
@@ -10,23 +12,21 @@ services:
             - path: .pixie
               required: false
         environment:
-            PIXIE_PI_PORT: "${PIXIE_PI_PORT:-}"
+            PIXIE_PI_PORT: "${PIXIE_PI_PORT:-3284}"
             PIXIE_PI_URL: "${PIXIE_PI_URL:-}"
-            PIXIE_PI_SECRET_KEY: "${PIXIE_PI_SECRET_KEY:?set the Pi service secret in .pixie}"
+            PIXIE_PI_SECRET_KEY: "${PIXIE_PI_SECRET_KEY:?set the pixie_cli secret in .pixie}"
             PIXIE_AUTH_ENABLED: "${PIXIE_AUTH_ENABLED:-false}"
             PIXIE_TOKEN: "${PIXIE_TOKEN:-}"
             PIXIE_CONTROLLER_HOST: "${PIXIE_CONTROLLER_HOST:-127.0.0.1}"
+            PIXIE_CONTROLLER_PORT: "${PIXIE_CONTROLLER_PORT:-7312}"
             PIXIE_ALLOW_UNAUTHENTICATED_REMOTE: "${PIXIE_ALLOW_UNAUTHENTICATED_REMOTE:-false}"
             PIXIE_PUBLIC_ORIGIN: "${PIXIE_PUBLIC_ORIGIN:-}"
             PIXIE_TRUSTED_PROXY_CIDRS: "${PIXIE_TRUSTED_PROXY_CIDRS:-}"
-            # The in-process MCP publisher and Pi adapter registration share this token.
             PIXIE_MCP_TOKEN: "${PIXIE_MCP_TOKEN:?set a strong MCP token in .pixie}"
-            # Pinned to the container layout below; non-Docker runs leave
-            # PIXIE_DATA_DIR unset for the XDG default (see docs/deployment.md).
-            PIXIE_DATA_DIR: "/var/lib/pixie"
+            PIXIE_DATA_DIR: "/var/lib/pixie/data"
         volumes:
-            - ${PIXIE_DATA_PATH}:/var/lib/pixie
-            # Add each admitted project root here as a read-only bind at the same absolute path.
+            - ${PIXIE_DATA_PATH}:/var/lib/pixie/data
+            # Add admitted project roots as read-only binds at their same absolute paths.
         security_opt:
             - no-new-privileges:true
         cap_drop:
@@ -39,33 +39,92 @@ services:
             - /run:size=16m,mode=700,uid=1000,gid=1000
             - /dev/shm:size=256m,mode=1777,uid=1000,gid=1000
 
-    # External browser MCP endpoint. Pi connects to it directly at the
-    # published host-loopback port; Pixie stores and registers the setting but
-    # never starts, proxies or hardens this service. Optional: `pixie` does not
-    # depend on it, and `docker compose up pixie` never starts it. The image
-    # binds its MCP HTTP transport with no authentication, so it publishes only
-    # on 127.0.0.1 and joins its own network, isolated from the controller.
-    pixie-browser:
-        image: "h4ckf0r0day/obscura:latest"
-        container_name: pixie-browser
-        restart: unless-stopped
-        command: ["mcp", "--http", "--host", "0.0.0.0", "--port", "3000"]
-        user: "65532:65532"
+    # Full topology: this is an alternative owner, not a companion to pixie_web.
+    # It shares the controller port and PIXIE_DATA_PATH with the split topology,
+    # so start only it with: docker compose --profile full up -d pixie
+    # This bounded, one-shot root service owns only fresh Pi-state-volume setup.
+    # The full suite itself remains the unprivileged Pi owner below.
+    pixie_pi_state_init:
+        profiles: ["full"]
+        image: "${PIXIE_FULL_IMAGE:-ghcr.io/miloszkolber/pixie:sha-000000000000}"
+        restart: "no"
+        network_mode: none
+        user: "0:0"
         read_only: true
-        networks:
-            - pixie-browser
-        ports:
-            - "127.0.0.1:3000:3000"
+        entrypoint: ["/usr/bin/tini", "-s", "--", "/usr/bin/install"]
+        command: ["-d", "-m", "0700", "-o", "1000", "-g", "1000", "/var/lib/pixie/pi"]
+        volumes:
+            - pixie-pi-state:/var/lib/pixie/pi
         security_opt:
             - no-new-privileges:true
         cap_drop:
             - ALL
-        pids_limit: 256
-        mem_limit: 2g
-        cpus: 1.0
-        tmpfs:
-            - /tmp:size=256m,mode=1777,uid=65532,gid=65532
+        cap_add:
+            - CHOWN
+            - FOWNER
+        pids_limit: 16
+        mem_limit: 64m
+        cpus: 0.25
 
-networks:
-    pixie-browser:
-        driver: bridge
+    pixie:
+        profiles: ["full"]
+        image: "${PIXIE_FULL_IMAGE:-ghcr.io/miloszkolber/pixie:sha-000000000000}"
+        restart: unless-stopped
+        network_mode: host
+        user: "1000:1000"
+        read_only: true
+        depends_on:
+            pixie_pi_state_init:
+                condition: service_completed_successfully
+                required: true
+        env_file:
+            - path: .pixie
+              required: false
+        environment:
+            PIXIE_PI_SECRET_KEY: "${PIXIE_PI_SECRET_KEY:?set the bundled Pi secret in .pixie}"
+            PIXIE_AUTH_ENABLED: "${PIXIE_AUTH_ENABLED:-false}"
+            PIXIE_TOKEN: "${PIXIE_TOKEN:-}"
+            PIXIE_CONTROLLER_HOST: "${PIXIE_CONTROLLER_HOST:-127.0.0.1}"
+            PIXIE_CONTROLLER_PORT: "${PIXIE_CONTROLLER_PORT:-7312}"
+            PIXIE_ALLOW_UNAUTHENTICATED_REMOTE: "${PIXIE_ALLOW_UNAUTHENTICATED_REMOTE:-false}"
+            PIXIE_PUBLIC_ORIGIN: "${PIXIE_PUBLIC_ORIGIN:-}"
+            PIXIE_TRUSTED_PROXY_CIDRS: "${PIXIE_TRUSTED_PROXY_CIDRS:-}"
+            PIXIE_MCP_TOKEN: "${PIXIE_MCP_TOKEN:?set a strong MCP token in .pixie}"
+            PIXIE_DATA_DIR: "/var/lib/pixie/data"
+            PI_CODING_AGENT_DIR: "/var/lib/pixie/pi"
+        configs:
+            - source: pixie_assistant_config
+              target: /etc/pixie/assistant.json
+              mode: 0444
+            - source: pixie_web_config
+              target: /etc/pixie/pixie.json
+              mode: 0444
+        volumes:
+            - ${PIXIE_DATA_PATH}:/var/lib/pixie/data
+            - pixie-pi-state:/var/lib/pixie/pi
+            # Add admitted project roots as read-only binds at their same absolute paths.
+        security_opt:
+            - no-new-privileges:true
+        cap_drop:
+            - ALL
+        pids_limit: 512
+        mem_limit: 2g
+        cpus: 2.0
+        tmpfs:
+            - /tmp:size=128m,mode=1777,uid=1000,gid=1000
+            - /run:size=16m,mode=700,uid=1000,gid=1000
+            - /dev/shm:size=256m,mode=1777,uid=1000,gid=1000
+
+configs:
+    pixie_assistant_config:
+        file: ./web/systemd/assistant.json
+    pixie_web_config:
+        file: ./web/systemd/pixie.json
+
+volumes:
+    # Pi owns this durable native state. It is intentionally not mounted by
+    # pixie_web, whose separately installed pixie_cli owns its own agent dir.
+    pixie-pi-state:
+
+# Docker hardening here is defense in depth, not a sandbox for untrusted Canvas
+# or Openfig content. Those modules require their own enforced worker boundary.

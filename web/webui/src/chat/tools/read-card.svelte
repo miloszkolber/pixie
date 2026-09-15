@@ -1,11 +1,12 @@
 <script lang="ts">
 import Icon from "../../components/icon.svelte";
 import { projectRelativePath } from "../../lib";
+import { languageForPath } from "../../lib/language";
 import type { ToolRenderProps } from "../render/tool-registry";
 import CodeBlock from "./code-block.svelte";
 import { countLines } from "./collapsible";
 import Collapsible from "./collapsible.svelte";
-import { languageFromPath, numArg, resultText, strArg } from "./tool-helpers";
+import { numArg, resultText, strArg } from "./tool-helpers";
 
 let { args, result, status, projectAreaRoot }: ToolRenderProps = $props();
 let path = $derived(strArg(args, "path"));
@@ -13,7 +14,7 @@ let displayPath = $derived(projectRelativePath(path, projectAreaRoot));
 let offset = $derived(numArg(args, "offset"));
 let limit = $derived(numArg(args, "limit"));
 let output = $derived(resultText(result, status === "error"));
-let language = $derived(languageFromPath(path));
+let language = $derived(languageForPath(path));
 let range = $derived.by(() => {
 	if (offset != null && offset > 1) {
 		return limit != null ? `lines ${offset}–${offset + limit - 1}` : `from line ${offset}`;

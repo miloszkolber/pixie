@@ -13,5 +13,5 @@
 		"types": ["bun"],
 		"lib": ["ESNext"]
 	},
-	"include": ["bridge/**/*.ts"]
+	"include": ["src/**/*.ts"]
 }

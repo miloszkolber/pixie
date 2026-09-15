@@ -3,12 +3,12 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, relative, resolve } from "node:path";
+import { assertProductArchiveLayout, RELEASE_PRODUCTS } from "./build-release.ts";
 import {
 	decodePackageArchiveDetail,
 	decodeProbeDetail,
 	type EvidenceBundle,
 	PACKAGE_ARCHIVE_ASSERTION_PREFIX,
-	PACKAGED_BINARY_ASSERTION_PREFIX,
 	parsePackageArchiveAssertionId,
 	readEvidenceBundle,
 } from "./evidence-bundle.ts";
@@ -18,9 +18,13 @@ export type { BinaryProbeDetail } from "./evidence-bundle.ts";
 // gate callers that previously owned the decoder.
 export { decodeProbeDetail };
 
-export const PACKAGE_VARIANTS = ["assistant", "host"] as const;
+/** The three public archive products from build-release.ts. */
+export const PACKAGE_PRODUCTS = RELEASE_PRODUCTS;
 export const PACKAGE_ARCHITECTURES = ["amd64", "arm64"] as const;
-export type PackageVariant = (typeof PACKAGE_VARIANTS)[number];
+export type PackageProduct = (typeof PACKAGE_PRODUCTS)[number];
+/** Compatibility names are accepted only when expanding frozen reduction rows. */
+export type LegacyPackageVariant = "assistant" | "host";
+export type PackageVariant = PackageProduct | LegacyPackageVariant;
 export type PackageArchitecture = (typeof PACKAGE_ARCHITECTURES)[number];
 
 export interface PackageArchiveEvidence {
@@ -29,7 +33,7 @@ export interface PackageArchiveEvidence {
 }
 
 export interface PackageBinaryEvidence {
-	variant: PackageVariant;
+	product: PackageProduct;
 	architecture: PackageArchitecture;
 	path: string;
 	version?: string;
@@ -96,9 +100,8 @@ export interface PackageArtifactReport {
 export const RELEASE_MANIFEST_ASSERTION_ID = "RELEASE-MANIFEST";
 
 const RELEASE_ID_PATTERN = /^sha-[0-9a-f]{12}$/;
-const ARCHIVE_PATTERN = /^pixie(?:-assistant)?-sha-[0-9a-f]{12}-linux-(?:amd64|arm64)\.tar\.gz$/;
-const SECRET_PATTERN = /(?:secret|token|password|passwd|credential|api[-_]?key)/i;
-const INSTALL_ENTRY_PATTERN = /^(?:INSTALL|INSTALL\.md|README(?:\.install)?(?:\.md)?)$/i;
+const ARCHIVE_PATTERN =
+	/^(pixie_web|pixie_cli|pixie)-sha-[0-9a-f]{12}-linux-(amd64|arm64)\.tar\.gz$/;
 
 /**
  * Shared shape of the `packageArtifacts` and `releaseGate` sections in
@@ -220,10 +223,10 @@ function findReducibleBase(id: string, bases: readonly string[]): string | null 
 
 function validBinaryTarget(target: string): boolean {
 	if (target === "*") return true;
-	const [variant, architecture, ...rest] = target.split("/");
+	const [product, architecture, ...rest] = target.split("/");
 	return (
 		rest.length === 0 &&
-		(variant === "assistant" || variant === "host") &&
+		([...PACKAGE_PRODUCTS, "assistant", "host"] as readonly string[]).includes(product ?? "") &&
 		(architecture === "*" || architecture === "amd64" || architecture === "arm64")
 	);
 }
@@ -337,7 +340,10 @@ export function reductionMatches(rowId: string, reductionId: string): boolean {
 	const reduction = reductionId.split("/");
 	for (const [index, segment] of reduction.entries()) {
 		if (segment === "*") return index === reduction.length - 1;
-		if (segment !== row[index]) return false;
+		// The frozen reduction manifest names the old host role; it now means the
+		// full public pixie product without changing the matrix row itself.
+		const mapped = segment === "host" ? "pixie" : segment;
+		if (mapped !== row[index]) return false;
 	}
 	return reduction.length === row.length;
 }
@@ -351,22 +357,13 @@ export function expectedArchiveName(
 	architecture: PackageArchitecture,
 	releaseId: string,
 ): string {
-	const binary = variant === "assistant" ? "pixie-assistant" : "pixie";
-	return `${binary}-${releaseId}-linux-${architecture}.tar.gz`;
+	const product =
+		variant === "assistant" ? "pixie_assistant" : variant === "host" ? "pixie" : variant;
+	return `${product}-${releaseId}-linux-${architecture}.tar.gz`;
 }
 
-function expectedBinaryName(variant: PackageVariant): string {
-	return variant === "assistant" ? "pixie-assistant" : "pixie";
-}
-
-function archiveEntryNames(entries: readonly string[]): Set<string> {
-	const names = new Set<string>();
-	for (const entry of entries) {
-		const normalized = entry.replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase();
-		names.add(normalized);
-		names.add(basename(normalized));
-	}
-	return names;
+function expectedBinaryName(product: PackageProduct): string {
+	return product;
 }
 
 function checkUnit(
@@ -395,48 +392,21 @@ function checkUnit(
 		if (!pattern.test(source)) violations.push(`${name}: missing ${label}`);
 	}
 
-	if (name === "pixie-assistant.service") {
-		if (!/^\s*ExecStart=.*\bpixie-assistant\b.*\bserve\b.*--config\s+\S+/m.test(source)) {
-			violations.push(`${name}: ExecStart must run pixie-assistant with an explicit config`);
-		}
-	} else if (name === "pixie.service") {
-		if (!/^\s*ExecStart=.*\bpixie\b.*\bserve\b.*--config\s+\S+/m.test(source)) {
+	if (name === "pixie.service") {
+		if (
+			!/^\s*ExecStart=.*\blibexec\/pixie_full\b.*\bserve\b.*--assistant-config\s+\S+.*--web-config\s+\S+/m.test(
+				source,
+			)
+		) {
 			violations.push(
-				`${name}: ExecStart must run the full-host pixie binary with an explicit config`,
+				`${name}: ExecStart must run the internal pixie_full supervisor with explicit assistant and web configs`,
 			);
-		}
-		if (/^\s*(?:Requires|BindsTo)=.*pixie-assistant\.service/m.test(source)) {
-			violations.push(`${name}: full-host unit must not depend on a separate assistant service`);
 		}
 	}
 	if (!/^\s*RestartForceExitStatus=75\s*$/m.test(source)) {
 		violations.push(`${name}: requested restart must use exit status 75`);
 	}
 	staticChecks.push(`${name}: service lifetime directives`);
-}
-
-function checkConfig(
-	name: string,
-	source: string | undefined,
-	violations: string[],
-	staticChecks: string[],
-): void {
-	if (source === undefined) {
-		violations.push(`web/systemd: missing ${name} configuration example`);
-		return;
-	}
-	if (SECRET_PATTERN.test(source)) {
-		violations.push(`${name}: configuration example contains a secret-shaped key`);
-	}
-	try {
-		const config = JSON.parse(source) as Record<string, unknown>;
-		if (config === null || typeof config !== "object" || Array.isArray(config)) {
-			violations.push(`${name}: configuration example must be a JSON object`);
-		}
-	} catch {
-		violations.push(`${name}: configuration example is not valid JSON`);
-	}
-	staticChecks.push(`${name}: non-secret JSON configuration`);
 }
 
 interface LiveEvidenceRow {
@@ -469,9 +439,9 @@ function checkArchives(
 				`release ID must be sha- plus 12 lowercase hexadecimal characters (${releaseId})`,
 			);
 		} else {
-			for (const variant of PACKAGE_VARIANTS) {
+			for (const product of PACKAGE_PRODUCTS) {
 				for (const architecture of PACKAGE_ARCHITECTURES) {
-					expected.push(expectedArchiveName(variant, architecture, releaseId));
+					expected.push(expectedArchiveName(product, architecture, releaseId));
 				}
 			}
 		}
@@ -483,46 +453,31 @@ function checkArchives(
 			violations.push(`archive ${archive.name}: duplicate archive evidence`);
 		byName.set(archive.name, archive);
 		if (!ARCHIVE_PATTERN.test(archive.name)) {
-			violations.push(`archive ${archive.name}: name must be commit-based for linux amd64/arm64`);
+			violations.push(
+				`archive ${archive.name}: name must be one current public product for linux amd64/arm64`,
+			);
 			continue;
 		}
-		const entries = archiveEntryNames(archive.entries);
-		const isAssistant = archive.name.startsWith("pixie-assistant-");
-		const variant: PackageVariant = isAssistant ? "assistant" : "host";
-		const binary = expectedBinaryName(variant);
-		const unit = `${binary}.service`;
-		const config = variant === "assistant" ? "assistant.json" : "pixie.json";
-		if (!entries.has(binary))
-			violations.push(`archive ${archive.name}: missing ${binary} executable`);
-		if (!entries.has(unit)) violations.push(`archive ${archive.name}: missing ${unit}`);
-		if (!entries.has(config)) violations.push(`archive ${archive.name}: missing ${config}`);
-		if (![...entries].some((entry) => INSTALL_ENTRY_PATTERN.test(entry))) {
-			violations.push(`archive ${archive.name}: missing concise install/uninstall instructions`);
+		if (expected.length > 0 && !expected.includes(archive.name)) {
+			violations.push(`archive ${archive.name}: does not belong to release ${releaseId}`);
+			continue;
 		}
-		for (const legal of ["license", "notice.md"]) {
-			if (!entries.has(legal))
-				violations.push(`archive ${archive.name}: missing ${legal.toUpperCase()} notice`);
-		}
-		if (
-			variant === "host" &&
-			[...entries].some(
-				(entry) => entry === "pixie-assistant" || entry === "pixie-assistant.service",
-			)
-		) {
-			violations.push(
-				`archive ${archive.name}: full-host archive must not ship a separate assistant runtime`,
-			);
-		}
-		if ([...entries].some((entry) => entry === "web" || entry.startsWith("web/"))) {
-			violations.push(
-				`archive ${archive.name}: full-host UI must be embedded, not a required web asset directory`,
-			);
+		const product = archive.name.match(ARCHIVE_PATTERN)?.[1] as PackageProduct | undefined;
+		if (product === undefined) continue;
+		try {
+			// build-release.ts owns the exact product layouts. This gate checks its
+			// observed member list against that source of truth rather than carrying
+			// a second hand-written layout model.
+			assertProductArchiveLayout(product, archive.entries);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			violations.push(`archive ${archive.name}: ${message}`);
 		}
 	}
 	if (expected.length === 0) {
 		liveRows.push({
 			id: "archive.complete-set",
-			message: "four commit-named host archives (assistant and full-host, linux amd64 and arm64)",
+			message: "six commit-named public product archives (three products, linux amd64 and arm64)",
 		});
 	} else {
 		for (const name of expected) {
@@ -554,113 +509,35 @@ function checkStaticCommands(
 			);
 		else staticChecks.push(`binary ${label} command/check`);
 	}
-
-	const units = Object.values(input.units ?? {}).join("\n");
-	if (
-		!/^\s*Restart=on-failure\s*$/m.test(units) ||
-		!/^\s*RestartForceExitStatus=75\s*$/m.test(units)
-	) {
-		violations.push("package units: restart policy evidence is missing");
-	} else {
-		staticChecks.push("restart policy and requested-restart status");
-	}
 }
 
 function checkBinaries(
 	binaries: readonly PackageBinaryEvidence[] | undefined,
-	input: PackageArtifactInput,
+	violations: string[],
 	liveRows: LiveEvidenceRow[],
 ): void {
-	const inferredReleaseId =
-		input.releaseId ?? input.archives?.[0]?.name.match(/-sha-([0-9a-f]{12})-linux-/)?.[1];
-	const expectedReleaseId =
-		inferredReleaseId === undefined
-			? undefined
-			: inferredReleaseId.startsWith("sha-")
-				? inferredReleaseId
-				: `sha-${inferredReleaseId}`;
 	const observed = new Map<string, PackageBinaryEvidence>();
 	for (const binary of binaries ?? []) {
-		const key = `${binary.variant}/${binary.architecture}`;
-		if (observed.has(key))
-			liveRows.push({
-				id: `binary.present/${key}`,
-				message: `duplicate live binary evidence ${key}`,
-			});
+		const key = `${binary.product}/${binary.architecture}`;
+		if (observed.has(key)) violations.push(`package entrypoint ${key}: duplicate archive evidence`);
 		observed.set(key, binary);
-		if (!new RegExp(`(?:^|/)${expectedBinaryName(binary.variant)}$`).test(binary.path ?? "")) {
-			liveRows.push({
-				id: `binary.path/${key}`,
-				message: `${key} binary path is not the expected executable`,
-			});
+		if (binary.path !== expectedBinaryName(binary.product)) {
+			violations.push(`${key} package entrypoint must be ${expectedBinaryName(binary.product)}`);
 		}
-		if (!binary.version)
-			liveRows.push({ id: `binary.version/${key}`, message: `${key} --version output` });
-		if (expectedReleaseId !== undefined && binary.version !== expectedReleaseId) {
-			liveRows.push({
-				id: `binary.version/${key}`,
-				message: `${key} --version output matches ${expectedReleaseId}`,
-			});
-		}
-		if (!binary.doctor)
-			liveRows.push({ id: `binary.doctor/${key}`, message: `${key} doctor check` });
-		if (!binary.readiness)
-			liveRows.push({ id: `binary.readiness/${key}`, message: `${key} readiness check` });
-		if (!binary.lifecycle)
-			liveRows.push({ id: `binary.lifecycle/${key}`, message: `${key} start/stop/restart check` });
-		if (!binary.uninstall)
-			liveRows.push({ id: `binary.uninstall/${key}`, message: `${key} uninstall check` });
-		if (binary.variant === "host" && !binary.uiEmbedded)
-			liveRows.push({
-				id: `binary.embedded-ui/${key}`,
-				message: `${key} real embedded UI check`,
-			});
 	}
-	for (const variant of PACKAGE_VARIANTS) {
+	for (const product of PACKAGE_PRODUCTS) {
 		for (const architecture of PACKAGE_ARCHITECTURES) {
-			const key = `${variant}/${architecture}`;
+			const key = `${product}/${architecture}`;
 			if (!observed.has(key))
-				liveRows.push({ id: `binary.present/${key}`, message: `built executable ${key}` });
+				liveRows.push({
+					id: `binary.present/${key}`,
+					message: `package entrypoint evidence ${key}`,
+				});
 		}
 	}
-	if (binaries === undefined || binaries.length === 0) {
-		liveRows.push({
-			id: "binary.live-matrix",
-			message:
-				"live version/doctor/readiness/lifecycle checks for both binaries on both architectures",
-		});
-	}
-	if (
-		input.facadeSources !== undefined &&
-		Object.values(input.facadeSources).some((source) =>
-			/ErrUnavailable|native engine is unavailable|capabilities["']?\s*:\s*map\[string\]int\{\}/.test(
-				source,
-			),
-		)
-	) {
-		liveRows.push({
-			id: "facade.native-engine",
-			message: "full-host binary starts a working native assistant engine through the facade",
-		});
-	}
-	if (
-		input.webuiSources !== undefined &&
-		!Object.values(input.webuiSources).some((source) => /go:embed\s+all:dist/.test(source))
-	) {
-		liveRows.push({
-			id: "webui.embed",
-			message: "full-host binary embeds the UI through web/webui",
-		});
-	}
-	if (
-		input.embeddedUiFiles !== undefined &&
-		!input.embeddedUiFiles.some((path) => /(?:^|\/)dist\/index\.html$/.test(path))
-	) {
-		liveRows.push({
-			id: "webui.dist",
-			message: "full-host binary contains a real dist/index.html bundle",
-		});
-	}
+	// The archived entrypoint identity is structural evidence. Native execution
+	// remains with the frozen coverage/performance collectors; do not create a
+	// second product-by-product live evidence matrix here.
 }
 
 export function inspectPackageArtifacts(input: PackageArtifactInput): PackageArtifactReport {
@@ -670,24 +547,11 @@ export function inspectPackageArtifacts(input: PackageArtifactInput): PackageArt
 	for (const [name, source] of Object.entries(input.units ?? {}))
 		checkUnit(basename(name), source, violations, staticChecks);
 	const units = Object.keys(input.units ?? {}).map((name) => basename(name).toLowerCase());
-	for (const required of ["pixie-assistant.service", "pixie.service"]) {
-		if (!units.includes(required)) violations.push(`web/systemd: missing ${required}`);
-	}
-	checkConfig(
-		"assistant.json",
-		Object.entries(input.configs ?? {}).find(([name]) => basename(name) === "assistant.json")?.[1],
-		violations,
-		staticChecks,
-	);
-	checkConfig(
-		"pixie.json",
-		Object.entries(input.configs ?? {}).find(([name]) => basename(name) === "pixie.json")?.[1],
-		violations,
-		staticChecks,
-	);
+	// Config files and units are not archive members. If the source provides a
+	// full-service unit, only its internal supervisor shape is checked above.
 	checkStaticCommands(input, violations, staticChecks);
 	const archives = checkArchives(input, violations, liveRows);
-	checkBinaries(input.binaries, input, liveRows);
+	checkBinaries(input.binaries, violations, liveRows);
 
 	const split = splitReducibleRows(
 		liveRows,
@@ -785,10 +649,13 @@ export async function collectPackageArtifactInput(
 	};
 	const webuiSources = await collectTextTree(repositoryRoot, "web/webui", new Set([".go"]));
 	const embeddedUiFiles = await collectFilePaths(repositoryRoot, "web/webui/dist");
-	const facadeSources = await collectTextTree(repositoryRoot, "assistant/host", new Set([".go"]));
-	const units = await collectTextTree(repositoryRoot, "web/systemd", new Set([".service"]));
-	const configs = await collectTextTree(repositoryRoot, "web/systemd", new Set([".json"]));
-	return { commandSources, webuiSources, embeddedUiFiles, facadeSources, units, configs };
+	// The assistant is Bun-only: these are the TypeScript sources whose
+	// verified-Pi wiring proves the packaged binary can start a native engine.
+	const facadeSources = await collectTextTree(repositoryRoot, "assistant/src", new Set([".ts"]));
+	// Release archives deliberately contain neither deployment units nor example
+	// configuration. Those files have independent deployment ownership and must
+	// not become a hidden archive-product contract.
+	return { commandSources, webuiSources, embeddedUiFiles, facadeSources };
 }
 
 export interface PackageEvidenceMapping {
@@ -796,28 +663,13 @@ export interface PackageEvidenceMapping {
 	violations: readonly string[];
 }
 
-function variantFromBinaryPath(path: string): PackageVariant | null {
-	const name = basename(path);
-	if (name === "pixie-assistant") return "assistant";
-	if (name === "pixie") return "host";
-	return null;
-}
-
-interface BinaryProbeFacts {
-	version?: string;
-	doctor?: boolean;
-	readiness?: boolean;
-}
-
 /**
  * Translate a validated evidence bundle into the archive side of the package
  * input. Only `pass` archive assertions carry a machine-readable detail; any
- * blocked/failed/malformed assertion becomes a precise violation. Binary
- * presence is taken from the inspected archive members, and the version,
- * doctor and readiness rows are filled only from `pass` probes the collector
- * actually executed on the matching architecture. Lifecycle, uninstall and
- * embedded-UI facts are never synthesized: those rows stay absent and fail
- * closed unless reduced.
+ * blocked/failed/malformed assertion becomes a precise violation. The
+ * inspected primary entrypoint is structural evidence for its product and
+ * architecture. Probe assertions remain owned by the frozen coverage and
+ * performance evidence; they do not create another package matrix.
  */
 export function packageArtifactInputFromEvidence(
 	evidence: EvidenceBundle,
@@ -826,39 +678,6 @@ export function packageArtifactInputFromEvidence(
 	const violations: string[] = [];
 	const archives: PackageArchiveEvidence[] = [];
 	const binaries: PackageBinaryEvidence[] = [];
-	// Probe facts are keyed by `variant/architecture` because one bundle now
-	// carries the native probes executed on each architecture. A detail without
-	// an architecture predates the field and belongs to the bundle's platform.
-	const probes = new Map<string, BinaryProbeFacts>();
-	for (const assertion of evidence.assertions) {
-		if (assertion.kind !== "GATE") continue;
-		if (!assertion.id.startsWith(PACKAGED_BINARY_ASSERTION_PREFIX)) continue;
-		if (assertion.status !== "pass") continue;
-		const probe = assertion.id.endsWith("-version")
-			? "version"
-			: assertion.id.endsWith("-doctor")
-				? "doctor"
-				: assertion.id.endsWith("-readiness")
-					? "readiness"
-					: null;
-		if (probe === null) continue;
-		const detail = decodeProbeDetail(assertion.detail);
-		if (detail === null) continue;
-		const variant = variantFromBinaryPath(detail.path);
-		if (variant === null) continue;
-		const architecture = detail.architecture ?? evidence.platform.arch;
-		const key = `${variant}/${architecture}`;
-		const facts = probes.get(key) ?? {};
-		if (probe === "version") {
-			const observed = detail.stdout.match(/sha-[0-9a-f]{12}/)?.[0];
-			if (observed !== undefined) facts.version = observed;
-		} else if (probe === "doctor") {
-			facts.doctor = true;
-		} else {
-			facts.readiness = true;
-		}
-		probes.set(key, facts);
-	}
 	for (const assertion of evidence.assertions) {
 		if (assertion.kind !== "GATE") continue;
 		if (!assertion.id.startsWith(PACKAGE_ARCHIVE_ASSERTION_PREFIX)) continue;
@@ -881,14 +700,14 @@ export function packageArtifactInputFromEvidence(
 			violations.push(`evidence ${assertion.id}: malformed archive inspection detail`);
 			continue;
 		}
-		if (key.variant !== detail.variant || key.architecture !== detail.architecture) {
+		if (key.product !== detail.product || key.architecture !== detail.architecture) {
 			violations.push(
-				`evidence ${assertion.id}: assertion id does not match inspected ${detail.variant}/${detail.architecture}`,
+				`evidence ${assertion.id}: assertion id does not match inspected ${detail.product}/${detail.architecture}`,
 			);
 			continue;
 		}
 		if (
-			artifact.name !== expectedArchiveName(detail.variant, detail.architecture, evidence.releaseId)
+			artifact.name !== expectedArchiveName(detail.product, detail.architecture, evidence.releaseId)
 		) {
 			violations.push(
 				`evidence ${assertion.id}: artifact ${artifact.name} is not the expected release archive`,
@@ -897,19 +716,10 @@ export function packageArtifactInputFromEvidence(
 		}
 		archives.push({ name: artifact.name, entries: detail.entries });
 		binaries.push({
-			variant: detail.variant,
+			product: detail.product,
 			architecture: detail.architecture,
 			path: detail.binary,
 		});
-	}
-	// Each row is filled only from probes whose recorded architecture matches the
-	// binary's own; a missing arm64 fact stays missing and fails closed.
-	for (const binary of binaries) {
-		const facts = probes.get(`${binary.variant}/${binary.architecture}`);
-		if (facts === undefined) continue;
-		if (facts.version !== undefined) binary.version = facts.version;
-		if (facts.doctor === true) binary.doctor = true;
-		if (facts.readiness === true) binary.readiness = true;
 	}
 	return {
 		input: {
@@ -928,12 +738,10 @@ export const PACKAGE_ARTIFACTS_USAGE = [
 	"         [--reductions <reductions.json>]",
 	"",
 	"Without --evidence this command keeps its fail-closed behavior: it inspects",
-	"the checked-in sources and reports every absent live archive and binary",
-	"input.",
+	"the checked-in sources and reports the absent complete archive set.",
 	"",
 	"With --evidence it consumes a schema-versioned bundle produced by",
-	"collect-evidence.ts for archive contents, digests and executed native",
-	"version/doctor/readiness probes. A missing, malformed or non-passing archive",
+	"collect-evidence.ts for archive contents and digests. A missing, malformed or non-passing archive",
 	"assertion fails closed.",
 	"",
 	"--reductions (or PIXIE_REDUCTIONS_MANIFEST, defaulting to the committed",

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -101,12 +102,23 @@ func (a *PiAdmin) lookupCanonical(ctx context.Context, key canonicalKey, flight 
 	ctx = context.WithValue(ctx, connectionGenerationKey{}, key.generation)
 	raw, err := a.client.CallPiUntilDone(ctx, "pi.providers.canonical-model-info", map[string]any{"provider": key.provider, "model": key.model})
 	if err != nil {
+		// An unknown model is authoritative absence, not a transient gap.
+		// Mark it complete so callers do not retry metadata that can never arrive.
+		if strings.Contains(err.Error(), "Unknown model") {
+			flight.result = nil
+			flight.complete = true
+		}
 		return
 	}
 	var response struct {
 		ModelInfo *canonicalModelInfo `json:"modelInfo"`
 	}
 	if json.Unmarshal(raw, &response) == nil {
+		// Typed contract: the host must echo the requested provider/model.
+		// A mismatched payload is incomplete rather than authoritative.
+		if response.ModelInfo != nil && (response.ModelInfo.Provider != key.provider || response.ModelInfo.Model != key.model) {
+			return
+		}
 		flight.result = response.ModelInfo
 		flight.complete = true
 	}

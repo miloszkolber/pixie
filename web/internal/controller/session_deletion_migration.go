@@ -128,7 +128,7 @@ func PlanDeletionMigration(tombstones []DeletionTombstone, moves []DeletionProje
 	}
 	decisions := make([]DeletionMigrationDecision, 0, len(tombstones))
 	for _, tombstone := range tombstones {
-		if tombstone.ProjectID == "" || tombstone.SessionID == "" {
+		if tombstone.SessionID == "" {
 			return nil, fmt.Errorf("invalid session deletion target")
 		}
 		target, ok := targets[queueRecordKey(tombstone.ProjectID, tombstone.SessionID)]

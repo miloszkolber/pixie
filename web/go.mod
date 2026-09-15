@@ -5,14 +5,11 @@ go 1.27.0
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/miloszkolber/pixie/assistant v0.0.0
 	github.com/miloszkolber/pixie/shared v0.0.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/sys v0.41.0
 )
-
-replace github.com/miloszkolber/pixie/assistant => ../assistant
 
 replace github.com/miloszkolber/pixie/shared => ../shared
 

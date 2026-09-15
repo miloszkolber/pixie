@@ -245,3 +245,68 @@ func TestMigrationPersistRollbackNoRewindNoOpAndInterrupted(t *testing.T) {
 		t.Fatalf("post-restore interruption must stay durability-uncertain: %#v %v", outcome, err)
 	}
 }
+
+func TestMigrationRollbackNeverAllowsAuthorityBackupReplay(t *testing.T) {
+	dir := t.TempDir()
+	files := []string{"pi-session-deletions.json", "schedules.json"}
+	deletionBefore := "{\"version\":1,\"engine\":\"pi\",\"records\":[{\"sessionId\":\"session\",\"phase\":\"requested\"}]}\n"
+	scheduleBefore := "{\"version\":1,\"jobs\":{\"daily\":{\"runs\":[]}},\"operations\":[]}\n"
+	migrationWriteJSON(t, dir, "pi-session-deletions.json", deletionBefore, 0o600)
+	migrationWriteJSON(t, dir, "schedules.json", scheduleBefore, 0o600)
+	if _, err := persist.BackupMigrationInputs(dir, files); err != nil {
+		t.Fatal(err)
+	}
+	deletionAfter := "{\"version\":1,\"engine\":\"pi\",\"records\":[{\"sessionId\":\"session\",\"phase\":\"confirmed\"}]}\n"
+	scheduleAfter := "{\"version\":1,\"jobs\":{\"daily\":{\"runs\":[{\"id\":\"later\",\"status\":\"completed\"}]}},\"operations\":[{\"key\":\"later\"}]}\n"
+	migrationWriteJSON(t, dir, "pi-session-deletions.json", deletionAfter, 0o600)
+	migrationWriteJSON(t, dir, "schedules.json", scheduleAfter, 0o600)
+
+	_, outcome, err := persist.ApplyMigrationRollback(dir, files, persist.MigrationRollbackFaults{}, true)
+	if err == nil {
+		t.Fatal("a caller assertion must not authorize authority backup replay")
+	}
+	if outcome.Kind != persist.OutcomeKnownUncommitted || outcome.PrimaryVisible || outcome.MustReconcileLedger() {
+		t.Fatalf("blocked authority rollback must leave current primaries untouched: %#v", outcome)
+	}
+	for name, want := range map[string]string{
+		"pi-session-deletions.json": deletionAfter,
+		"schedules.json":            scheduleAfter,
+	} {
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || string(raw) != want {
+			t.Fatalf("authority rollback must retain later state in %s: %q %v", name, raw, err)
+		}
+	}
+}
+
+func TestMigrationRollbackSecondRestoreFailureIsDurabilityUncertain(t *testing.T) {
+	dir := t.TempDir()
+	files := []string{"config.json", "mcp-modules.json"}
+	migrationWriteJSON(t, dir, "config.json", "{\"config\":\"backup\"}\n", 0o600)
+	migrationWriteJSON(t, dir, "mcp-modules.json", "{\"modules\":\"backup\"}\n", 0o600)
+	if _, err := persist.BackupMigrationInputs(dir, files); err != nil {
+		t.Fatal(err)
+	}
+	migrationWriteJSON(t, dir, "config.json", "{\"config\":\"current\"}\n", 0o600)
+	if err := os.Remove(filepath.Join(dir, "mcp-modules.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "mcp-modules.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	receipt, outcome, err := persist.ApplyMigrationRollback(dir, files, persist.MigrationRollbackFaults{}, false)
+	if err == nil {
+		t.Fatal("second restore rename collision must report an error")
+	}
+	if outcome.Kind != persist.OutcomeDurabilityUncertain || outcome.Stage != persist.StagePrimary || !outcome.PrimaryVisible || !outcome.MustReconcileLedger() {
+		t.Fatalf("partial rollback must be durability-uncertain: %#v", outcome)
+	}
+	if len(receipt.RestoredFiles) != 1 || receipt.RestoredFiles[0] != "config.json" {
+		t.Fatalf("partial rollback receipt must name the visible restored primary: %#v", receipt)
+	}
+	config, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil || string(config) != "{\"config\":\"backup\"}\n" {
+		t.Fatalf("first restored primary must remain visible for reconciliation: %q %v", config, err)
+	}
+}

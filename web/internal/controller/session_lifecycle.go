@@ -2,10 +2,10 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -385,6 +385,9 @@ func (m *SessionManager) RecoverDeletions(ctx context.Context) error {
 
 func (m *SessionManager) recoverDeletionRecord(ctx context.Context, record sessionDeletion) string {
 	if record.Phase == deletionRequested {
+		if reason := m.admitDeletionRecovery(record); reason != "" {
+			return reason
+		}
 		if m.client == nil {
 			return "Pi client is not configured"
 		}
@@ -414,6 +417,56 @@ func (m *SessionManager) recoverDeletionRecord(ctx context.Context, record sessi
 	}
 	if forgetErr := m.deletions.Forget(record.ProjectID, record.SessionID); forgetErr != nil {
 		return fmt.Sprintf("finish deletion: %v", forgetErr)
+	}
+	return ""
+}
+
+// admitDeletionRecovery rechecks the exact durable session association before
+// a requested tombstone can consult a host authority or dispatch a delete. A
+// journal record does not carry a cwd, so a matching persisted association is
+// the only source of that filesystem identity. Stored paths must still exist,
+// remain non-symlinks and re-admit unchanged under the current project policy.
+func (m *SessionManager) admitDeletionRecovery(record sessionDeletion) string {
+	if m.records == nil {
+		return "persisted session association is unavailable; retain the tombstone"
+	}
+	records, err := m.records.List()
+	if err != nil {
+		return fmt.Sprintf("persisted session association is unreadable: %v", err)
+	}
+	var association *ProjectSessionRecord
+	for index := range records {
+		candidate := &records[index]
+		if candidate.SessionID != record.SessionID {
+			continue
+		}
+		if candidate.ProjectID != record.ProjectID {
+			return "persisted session association does not match the deletion project; retain the tombstone"
+		}
+		if association != nil {
+			return "persisted session association is ambiguous; retain the tombstone"
+		}
+		association = candidate
+	}
+	if association == nil {
+		return "persisted session association is missing; retain the tombstone"
+	}
+	info, err := os.Lstat(association.CWD)
+	if err != nil {
+		return fmt.Sprintf("persisted session cwd is unavailable; retain the tombstone: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "persisted session cwd is not an existing non-symlink directory; retain the tombstone"
+	}
+	if m.projects == nil {
+		return "project filesystem admission is unavailable; retain the tombstone"
+	}
+	admitted, err := m.projects.AssertCWD(record.ProjectID, association.CWD)
+	if err != nil {
+		return fmt.Sprintf("persisted session cwd cannot be re-admitted; retain the tombstone: %v", err)
+	}
+	if admitted != association.CWD {
+		return "persisted session cwd does not exactly match its admitted directory; retain the tombstone"
 	}
 	return ""
 }
@@ -476,17 +529,130 @@ func (m *SessionManager) legacyDeletionBindingReason(hostIdentity, binding strin
 	return ""
 }
 
-// DeletionRecoveryStatus returns the retained, unauthorized deletion records
-// for operator reconciliation. It never dispatches or forgets them.
+// DeletionRecoveryStatus returns the retained deletion records for operator
+// reconciliation. It unions the recovery-blocked quarantine with any pending
+// journal tombstones that have not been quarantined yet (for example an
+// uncertain dispatch that has not been through restart recovery), so unmatched
+// and uncertain records are never invisible. It never dispatches or forgets
+// them; only ConfirmExternalDeletion finishes a record and
+// RetainExternalDeletion explicitly leaves it in place.
 func (m *SessionManager) DeletionRecoveryStatus() []DeletionRecovery {
+	reconciliation := m.DeletionReconciliationStatus()
+	result := make([]DeletionRecovery, 0, len(reconciliation))
+	for _, record := range reconciliation {
+		result = append(result, record.DeletionRecovery)
+	}
+	return result
+}
+
+// DeletionReconciliation is one retained tombstone plus operator guidance. It
+// embeds the wire-compatible DeletionRecovery so existing
+// session.deletionRecovery callers keep working; Remediation never changes the
+// tombstone itself.
+type DeletionReconciliation struct {
+	DeletionRecovery
+	// Remediation is an actionable hint for the confirm/retain decision. It is
+	// derived from the stored reason and never clears the tombstone.
+	Remediation string `json:"remediation"`
+	// Uncertain reports whether the native outcome is unknown (requested phase
+	// or an uncertain dispatch) rather than a confirmed local-cleanup backlog.
+	Uncertain bool `json:"uncertain"`
+}
+
+// DeletionReconciliationStatus projects every retained tombstone: the
+// recovery-blocked quarantine plus any pending journal records not yet
+// quarantined. Quarantine entries win on session identity so their actionable
+// reason is preserved. The projection never dispatches, confirms or forgets.
+func (m *SessionManager) DeletionReconciliationStatus() []DeletionReconciliation {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	result := make([]DeletionRecovery, 0, len(m.deletionQuarantine))
-	for _, record := range m.deletionQuarantine {
+	quarantined := make(map[string]DeletionRecovery, len(m.deletionQuarantine))
+	for sessionID, record := range m.deletionQuarantine {
+		quarantined[sessionID] = record
+	}
+	m.mu.Unlock()
+	bySession := make(map[string]DeletionReconciliation, len(quarantined))
+	for sessionID, record := range quarantined {
+		bySession[sessionID] = DeletionReconciliation{
+			DeletionRecovery: record,
+			Remediation:      deletionRemediationHint(record.Reason),
+			Uncertain:        record.Phase == deletionRequested,
+		}
+	}
+	if m.deletions != nil {
+		if records, err := m.deletions.List(); err == nil {
+			for _, pending := range records {
+				if _, ok := bySession[pending.SessionID]; ok {
+					continue
+				}
+				reason := "deletion outcome is uncertain; restart Pixie to reconcile it; confirm only after verifying the native session is gone, or retain to keep the tombstone"
+				if pending.Phase == deletionConfirmed {
+					reason = "deletion is confirmed but local cleanup is still pending; confirm again only after verifying the native session is gone, or retain to keep the tombstone"
+				}
+				bySession[pending.SessionID] = DeletionReconciliation{
+					DeletionRecovery: DeletionRecovery{ProjectID: pending.ProjectID, SessionID: pending.SessionID, Phase: pending.Phase, Reason: reason},
+					Remediation:      deletionRemediationHint(reason),
+					Uncertain:        pending.Phase == deletionRequested,
+				}
+			}
+		}
+		// An unreadable journal fails closed: the quarantine above stays
+		// visible instead of clearing tombstones the operator has not reconciled.
+	}
+	result := make([]DeletionReconciliation, 0, len(bySession))
+	for _, record := range bySession {
 		result = append(result, record)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].SessionID < result[j].SessionID })
 	return result
+}
+
+// deletionRemediationHint derives the confirm/retain guidance for one retained
+// reason. Confirm asserts the native session is already gone and finishes
+// local cleanup without another dispatch; retain is an explicit no-op that
+// leaves the tombstone in place. Nothing here auto-clears.
+func deletionRemediationHint(reason string) string {
+	lowered := strings.ToLower(reason)
+	switch {
+	case strings.Contains(lowered, "binding changed"),
+		strings.Contains(lowered, "recovery-blocked"),
+		strings.Contains(lowered, "host identity mismatch"):
+		return "Native identity changed: confirm only after verifying the native session is gone outside Pixie, or retain to keep the tombstone for a later host."
+	case strings.Contains(lowered, "uncertain"),
+		strings.Contains(lowered, "restart pixie to reconcile"):
+		return "Outcome is uncertain: confirm only after verifying the native session is gone, or retain to keep the tombstone and retry after restart."
+	case strings.Contains(lowered, "cleanup") || strings.Contains(lowered, "finish deletion"):
+		return "Native deletion is done but local cleanup is pending: confirm again to retry cleanup, or retain to keep the tombstone."
+	case strings.Contains(lowered, "capability"), strings.Contains(lowered, "unsupported"):
+		return "Connected agent cannot delete: retain the record and retry after restoring a host with session.delete support; confirm only if the native session is already gone."
+	default:
+		return "Confirm only after verifying the native session is gone, or retain to keep the tombstone in place."
+	}
+}
+
+// RetainExternalDeletion is the explicit retain reconciliation action. It
+// verifies a tombstone exists in the quarantine or the durable journal and
+// then leaves it untouched: it never dispatches a delete, confirms, or
+// forgets. A missing record is an error so the UI never reports a silent keep.
+func (m *SessionManager) RetainExternalDeletion(projectID, sessionID string) error {
+	m.mu.Lock()
+	quarantined, ok := m.deletionQuarantine[sessionID]
+	m.mu.Unlock()
+	if ok && quarantined.ProjectID == projectID {
+		return nil
+	}
+	if m.deletions == nil {
+		return fmt.Errorf("session deletion journal is not configured")
+	}
+	records, err := m.deletions.List()
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		if record.ProjectID == projectID && record.SessionID == sessionID {
+			return nil
+		}
+	}
+	return fmt.Errorf("session deletion request is missing")
 }
 
 // ConfirmExternalDeletion is the operator reconciliation action that asserts
@@ -640,32 +806,6 @@ func (m *SessionManager) ListWithFallback(ctx context.Context, projectID string,
 	return m.List(ctx, projectID, archived)
 }
 
-func (m *SessionManager) info(ctx context.Context, sessionID string) (remoteSession, error) {
-	response, err := m.client.CallPi(ctx, "pi.session.info", map[string]any{"sessionId": sessionID})
-	if err != nil {
-		return remoteSession{}, err
-	}
-	var value map[string]any
-	if json.Unmarshal(response, &value) != nil {
-		return remoteSession{}, fmt.Errorf("Pi session info is invalid")
-	}
-	session := mapValue(value["session"])
-	if session["sessionId"] == nil {
-		session["sessionId"] = sessionID
-	}
-	meta := mapValue(session["_meta"])
-	archived := session["archived"] == true || meta["archivedAt"] != nil || session["archivedAt"] != nil
-	title := textValue(session["title"])
-	if title == "" {
-		title = "Chat"
-	}
-	updated := timeNowMillis()
-	if parsed, err := parseTimestamp(textValue(session["updatedAt"])); err == nil {
-		updated = parsed
-	}
-	return remoteSession{title: title, updatedAt: updated, messageCount: int(integerValue(firstNonNil(session["messageCount"], meta["messageCount"]))), archived: archived}, nil
-}
-
 func stringIndex(values []string, wanted string) int {
 	for index, value := range values {
 		if value == wanted {
@@ -680,15 +820,6 @@ func absolute(value int) int {
 	}
 	return value
 }
-func firstNonNil(values ...any) any {
-	for _, value := range values {
-		if value != nil {
-			return value
-		}
-	}
-	return nil
-}
-func timeNowMillis() int64 { return time.Now().UnixMilli() }
 func parseTimestamp(value string) (int64, error) {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	return parsed.UnixMilli(), err

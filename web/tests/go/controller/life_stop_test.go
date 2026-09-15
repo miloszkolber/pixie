@@ -113,30 +113,20 @@ func TestStopQuiescenceUncertainOnTimeout(t *testing.T) {
 	defer shortCancel()
 	outcome, err := manager.Stop(shortCtx, "chat")
 	if err == nil {
-		t.Fatal("bounded Stop did not report an error for an unverifiable abort")
+		t.Fatal("Stop did not report an error for an unverifiable abort")
 	}
 	if outcome.Status != controller.StopStatusUncertain {
 		t.Fatalf("Stop status = %q, want uncertain", outcome.Status)
 	}
-	if !outcome.ForcedTermination {
-		t.Fatal("uncertain Stop did not report forced managed-generation teardown")
+	if outcome.ForcedTermination {
+		t.Fatal("uncertain Stop must not tear down the managed generation without native confirmation")
 	}
 	if outcome.Generation == 0 {
-		t.Fatal("forced Stop did not advance the managed generation")
+		t.Fatal("uncertain Stop did not retain the active generation")
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		releaseErr := manager.ReleaseIdleRuntime(context.Background(), "chat")
-		if releaseErr != nil && strings.Contains(releaseErr.Error(), "uncertain") {
-			break
-		}
-		if releaseErr == nil || !strings.Contains(releaseErr.Error(), "busy") {
-			t.Fatalf("uncertain detached work was reported idle: %v", releaseErr)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("uncertain detached work never settled: %v", releaseErr)
-		}
-		time.Sleep(time.Millisecond)
+	releaseErr := manager.ReleaseIdleRuntime(context.Background(), "chat")
+	if releaseErr == nil || (!strings.Contains(releaseErr.Error(), "still running") && !strings.Contains(releaseErr.Error(), "busy")) {
+		t.Fatalf("unconfirmed native work was reported idle: %v", releaseErr)
 	}
 	if outcome.Reason == "" {
 		t.Fatal("uncertain Stop reported no reason")

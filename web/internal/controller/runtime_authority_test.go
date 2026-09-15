@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"encoding/json"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +38,20 @@ func TestValidateControllerRuntimeAuthorityPolicy(t *testing.T) {
 				t.Fatalf("validateControllerRuntime(%q, %d, %#v) = %v, valid=%v", test.host, test.port, test.auth, err, test.valid)
 			}
 		})
+	}
+}
+
+func TestBrowserAppConfigRedactsBrowserMCPURL(t *testing.T) {
+	const endpoint = "https://mcp.example/tools?access_token=private-value"
+	projected := browserAppConfig(AppConfig{BrowserMCP: BrowserMCPConfig{Name: "browser", URL: endpoint, Enabled: true}})
+	if projected.BrowserMCP.URL != "" {
+		t.Fatalf("browser projection retained MCP URL %q", projected.BrowserMCP.URL)
+	}
+	encoded, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "private-value") {
+		t.Fatalf("browser projection serialized endpoint credential: %s", encoded)
 	}
 }

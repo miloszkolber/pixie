@@ -1,12 +1,22 @@
 # Architecture
 
+## Products
+
+| Product | Role |
+| --- | --- |
+| `pixie_web` | Controller-only Go web workspace. It connects to a separately managed loopback `pixie_cli` host and never contains or starts Bun, Node or Pi. |
+| `pixie_cli` | Bundled Bun `1.4.0`, regular Pi TUI, Pi SDK, and standalone assistant host. `pixie_cli serve --config ABS` starts the host. |
+| `pixie` | Bundled Bun `1.4.0`, regular Pi TUI, Pi SDK, assistant host, and controller. Its archive-internal full service is `libexec/pixie_full serve --assistant-config ABS --web-config ABS`. |
+
+`pixie_assistant` is the archive-internal JavaScript host `libexec/pixie_assistant.js`, run by the pinned Bun `1.4.0` runtime `runtime/bin/bun`, rather than a compiled executable or a public product, command, unit, or archive. No Node runtime is bundled. The source build does not prove a standalone distribution, a published release, or an approved Docker deployment.
+
 | Process | Location | Owns |
 | --- | --- | --- |
-| `pixie_assistant`, `:3284` | Host user | Pi sessions, providers, credentials, models and extensions through the operator's installed Pi SDK; the interim Go host supervises the selected `pi` executable over native RPC |
+| `pixie_cli`, `:3284` | Host user | Pi sessions, providers, credentials, models and extensions through the bundled Pi SDK at version `0.85.1` |
 | `pixie_web`, `:7312` | Application container or local process | Web UI, projects, files, Git, goals, questions, queues, schedules and browser-MCP registration |
 | External browser MCP, operator-chosen | Deployment | Browser runtime and MCP transport; Pi is the client and Pixie stores only the registration setting |
 
-Host networking lets the container reach host services over loopback. The application receives project mounts, read-only and at the same absolute paths used by Pi. Pixie hosts no browser and never proxies MCP traffic: Pi dials the operator-chosen browser MCP endpoint directly, while Pixie writes the registration into Pi's MCP configuration and reports a bounded probe.
+The two Compose products are alternatives. The controller-only `pixie_web` image never starts Pi and reaches a separately managed host over loopback; the full `pixie` image starts its bundled host and controller and persists Pi state in `pixie-pi-state`. They share controller state and the global `pixie` command, so do not run them against the same `PI_CODING_AGENT_DIR`. Docker definitions do not establish a completed deployment. Pixie hosts no browser and never proxies MCP traffic: Pi dials the operator-chosen browser MCP endpoint directly, while Pixie writes the registration into Pi's MCP configuration and reports a bounded probe.
 
 ## Source
 
@@ -14,15 +24,15 @@ Paths below are relative to the repository root, which holds the shared Bun work
 
 | Directory | Responsibility |
 | --- | --- |
-| `assistant/` | The `pixie_assistant` host. Target: a Bun host running Pi in-process through the installed Pi SDK. Current: the interim Go host in `assistant/cmd` and the opt-in Bun administration bridge in `assistant/bridge` |
+| `assistant/` | The archive-internal host bundle `libexec/pixie_assistant.js`, built from `assistant/src`: Pi sessions in-process through the bundled Pi SDK, with no RPC child model or bridge sidecar |
 | `web/cmd`, `web/internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection, lifecycle and browser-MCP registration (`mcp_browser.go`) |
 | `web/internal/canvas`, `web/internal/design` | Optional Canvas and Openfig workspace modules |
 | `web/internal/mcpserver` | Module catalog and in-process MCP publication |
 | `web/internal/workspace`, `web/internal/persist` | Bounded project access and durable state |
 | `web/webui`, `shared/` | Svelte 5 interface and the shared wire-contract schema plus generated Go and TypeScript catalogs |
-| `web/tests`, `shared/tests` | Unit, integration and deployment checks; assistant tests are currently colocated with the interim host |
+| `web/tests`, `shared/tests`, `assistant/tests` | Unit, integration and deployment checks, including the Bun host and Pi SDK probe suites |
 
-The root `go.work` links the `assistant`, `shared` and `web` Go modules, each with its own `go.mod` and local `replace` so `GOWORK=off` still works. Bun builds the frontend with verified Mewa UI assets. The single application image includes static UI assets and Git. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
+The root `go.work` links the `shared` and `web` Go modules, each with its own `go.mod` and local `replace` so `GOWORK=off` still works. Bun builds the frontend with verified Mewa UI assets. The `pixie_web` image build includes static UI assets and Git. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
 
 ## Configuration ownership
 
@@ -33,7 +43,7 @@ Each setting has one owner. Pixie never reads or writes another owner's state.
 | Pi (host service) | Providers, models, thinking, credentials, extensions, subagents, agents, transcripts, run settlement, effective MCP servers | `~/.pi/agent`, Pi settings APIs |
 | Extension (guest capabilities) | Dialog answers, status/widget/title/working hints, background work signals | `ctx.ui` bridge, per-session liveness |
 | Pixie (application state) | Projects, sessions, MCP enablement, browser-MCP registration, schedules, goals, settings, dialog and event projection | Controller data directory (`config.json`, `mcp-modules.json`) |
-| External (operator-owned) | Browser MCP endpoint, memory daemon, search backend and credentials | Compose `pixie-browser`, `SIGNET_DAEMON_URL`, `~/.config/rpiv-web-tools/config.json`, provider `*_API_KEY` |
+| External (operator-owned) | Browser MCP endpoint, memory daemon, search backend and credentials | Operator-selected endpoint, `SIGNET_DAEMON_URL`, `~/.config/rpiv-web-tools/config.json`, provider `*_API_KEY` |
 
 Pi owns the effective MCP configuration. Pixie writes only its own browser entry through Pi's `pi.mcp.servers.*` operations. See [Pi integration](pi.md) for Pi-owned settings, the extension bridge and MCP publication, and [deployment](deployment.md) for external services.
 

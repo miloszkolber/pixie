@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -20,45 +20,29 @@ import (
 var version = "0.0.0-dev"
 var revision = "unknown"
 
+const runtimeCLIName = "pixie_web"
+
 type runMode string
 
 const (
-	modeFullHost   runMode = "full-host"
 	modeController runMode = "controller"
 )
 
 type runtimeConfigFile struct {
-	Host              string `json:"host"`
-	Port              int    `json:"port"`
-	DataDir           string `json:"dataDir"`
-	StaticDir         string `json:"staticDir"`
-	Mode              string `json:"mode"`
-	AgentDir          string `json:"agentDir"`
-	PiExecutable      string `json:"piExecutable"`
-	AllowSelfRestart  bool   `json:"allowSelfRestart"`
-	AdminBridge       bool   `json:"adminBridge"`
-	PiPackage         string `json:"piPackage"`
-	AdminBridgeBun    string `json:"adminBridgeBun"`
-	AdminBridgeScript string `json:"adminBridgeScript"`
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	DataDir      string `json:"dataDir"`
+	StaticDir    string `json:"staticDir"`
+	Mode         string `json:"mode"`
+	AgentDir     string `json:"agentDir"`
+	PiExecutable string `json:"piExecutable"`
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func envFlag(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
-	case "1", "true", "yes":
-		return true
-	default:
-		return false
-	}
-}
+// AgentDir stays for the pairing ceremony identity resolution and so
+// controller mode can reject it explicitly. PiExecutable stays only so
+// controller mode can reject it explicitly; the controller never starts a
+// local Pi. The former full-host allowSelfRestart and admin-bridge options
+// (adminBridge, piPackage, adminBridgeBun, adminBridgeScript) are removed.
 
 // restartExitCode matches RestartForceExitStatus in the packaged systemd
 // units. It is only ever produced by an accepted runtime.restart.
@@ -67,39 +51,8 @@ const restartExitCode = 75
 // errRestartRequested is the composition sentinel for an accepted reload.
 var errRestartRequested = errors.New("restart requested")
 
-// validateFullHostPiSelection fails full-host startup unless an absolute Pi
-// agent directory and a resolvable Pi executable are selected. Full-host mode
-// must never fall back to a transport-only service with no native engine.
-func validateFullHostPiSelection(agentDir, piExecutable string) (string, error) {
-	cleanAgentDir := expandHomePath(agentDir)
-	if cleanAgentDir == "" {
-		return "", errors.New("full-host mode requires an absolute Pi agent directory (PI_CODING_AGENT_DIR or config agentDir)")
-	}
-	if !filepath.IsAbs(cleanAgentDir) {
-		return "", errors.New("full-host Pi agent directory must be an absolute path")
-	}
-	resolvedExecutable := expandHomePath(piExecutable)
-	if resolvedExecutable == "" {
-		resolvedExecutable = "pi"
-	}
-	resolved, err := exec.LookPath(resolvedExecutable)
-	if err != nil {
-		return "", fmt.Errorf("full-host mode requires a selected Pi executable: %w", err)
-	}
-	return resolved, nil
-}
-
-func selfRestartAllowed() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("PIXIE_ALLOW_SELF_RESTART"))) {
-	case "1", "true", "yes":
-		return true
-	default:
-		return false
-	}
-}
-
 func parseMode(args []string) (runMode, error) {
-	mode := modeFullHost
+	mode := modeController
 	if len(args) == 0 {
 		return mode, nil
 	}
@@ -140,7 +93,7 @@ func parseMode(args []string) (runMode, error) {
 		}
 		modeConfigured = true
 		switch runMode(argument) {
-		case modeFullHost, modeController:
+		case modeController:
 			mode = runMode(argument)
 		default:
 			return "", fmt.Errorf("unsupported serve mode %q", argument)
@@ -166,7 +119,7 @@ func readRuntimeConfig(path string, mode runMode) (runtimeConfigFile, error) {
 	if err != nil {
 		return runtimeConfigFile{}, err
 	}
-	if config.Mode != "" && config.Mode != string(modeFullHost) && config.Mode != string(modeController) {
+	if config.Mode != "" && config.Mode != string(modeController) {
 		return runtimeConfigFile{}, fmt.Errorf("unsupported config mode %q", config.Mode)
 	}
 	if config.Mode != "" && runMode(config.Mode) != mode {
@@ -178,7 +131,7 @@ func readRuntimeConfig(path string, mode runMode) (runtimeConfigFile, error) {
 // decodeRuntimeConfig reads and decodes a Pixie JSON configuration without
 // binding it to a serve mode. The mode-agnostic utility commands (pairing
 // ceremonies) need the shared dataDir/agentDir resolution without selecting a
-// full-host or controller-only topology.
+// topology.
 func decodeRuntimeConfig(path string) (runtimeConfigFile, error) {
 	if strings.TrimSpace(path) == "" {
 		return runtimeConfigFile{}, nil
@@ -205,7 +158,7 @@ func runtimeConfigFor(path string, mode runMode) (runtimeConfigFile, error) {
 	return readRuntimeConfig(path, mode)
 }
 
-func runUtilityCommand(command, path string) error {
+func runUtilityCommand(command, path string, stdout io.Writer) error {
 	if path != "" {
 		if !filepath.IsAbs(path) {
 			return errors.New("--config must be an absolute path")
@@ -220,14 +173,14 @@ func runUtilityCommand(command, path string) error {
 		}
 	}
 	if command == "doctor" {
-		fmt.Printf("pixie doctor: configuration is readable (%s)\n", path)
-		return nil
+		_, err := fmt.Fprintf(stdout, "%s doctor: configuration is readable (%s)\n", runtimeCLIName, path)
+		return err
 	}
 	// Uninstall is intentionally non-destructive. The package provides the
 	// binary/unit/configuration evidence and leaves native Pi state untouched;
 	// operators stop and remove the selected unit explicitly.
-	fmt.Println("pixie uninstall: stop and remove the selected user unit and binary")
-	return nil
+	_, err := fmt.Fprintf(stdout, "%s uninstall: stop and remove the selected user unit and binary\n", runtimeCLIName)
+	return err
 }
 
 // controllerPort reads PIXIE_CONTROLLER_PORT with the compiled default.
@@ -245,9 +198,9 @@ func controllerPort() int {
 	return port
 }
 
-// runController is shared by the full-host and controller-only entrypoints.
-// The controller owns its runtime; only the full-host composition supplies a
-// PiURL from the public assistant facade before calling serveController.
+// runController starts the controller-only entrypoint. The controller dials
+// the separately managed assistant over loopback via PIXIE_PI_PORT/PIXIE_PI_URL;
+// it never starts a local Pi.
 func runController(ctx context.Context, build diagnostics.BuildInfo) error {
 	return runControllerWithConfig(ctx, build, "")
 }
@@ -281,7 +234,11 @@ func runControllerWithConfig(ctx context.Context, build diagnostics.BuildInfo, c
 	if strings.TrimSpace(staticDir) == "" {
 		staticDir = fileConfig.StaticDir
 	}
-	runtime, err := controller.NewRuntime(controller.RuntimeConfig{Host: host, AppVersion: build.Version, AppRevision: build.Revision, DataDir: dataDir, StaticDir: staticDir, Port: port, ProtocolMode: os.Getenv("PIXIE_PI_PROTOCOL")})
+	scheduleRuntime, err := controller.ParseScheduleRuntimePolicy(os.Getenv)
+	if err != nil {
+		return err
+	}
+	runtime, err := controller.NewRuntime(controller.RuntimeConfig{Host: host, AppVersion: build.Version, AppRevision: build.Revision, DataDir: dataDir, StaticDir: staticDir, Port: port, ProtocolMode: os.Getenv("PIXIE_PI_PROTOCOL"), ScheduleRuntime: &scheduleRuntime})
 	if err != nil {
 		return err
 	}
@@ -309,8 +266,26 @@ const applicationDrainTimeout = 25 * time.Second
 // accidentally accepting settings that would select or configure a local Pi.
 // PIXIE_PI_PORT/PIXIE_PI_URL remain valid: they identify the separately
 // managed host service that controller mode is intended to reach.
+// PIXIE_PI_PACKAGE and PIXIE_ASSISTANT_* are rejected because a shared
+// pixie.env must not silently configure a local assistant the controller
+// never starts.
 func rejectControllerAssistantSettings(lookup func(string) (string, bool)) error {
-	for _, key := range []string{"PI_CODING_AGENT_DIR", "PIXIE_PI_EXECUTABLE", "PIXIE_PI_ARGS", "PIXIE_LLAMA", "LLAMA_BASE_URL"} {
+	for _, key := range []string{"PI_CODING_AGENT_DIR", "PIXIE_PI_EXECUTABLE", "PIXIE_PI_ARGS", "PIXIE_PI_PACKAGE", "PIXIE_ASSISTANT_PORT", "PIXIE_ASSISTANT_HOST", "PIXIE_LLAMA", "LLAMA_BASE_URL"} {
+		if value, ok := lookup(key); ok && strings.TrimSpace(value) != "" {
+			return fmt.Errorf("controller-only mode rejects local assistant setting %s", key)
+		}
+	}
+	// A shared pixie.env may export other PIXIE_ASSISTANT_* knobs. lookup
+	// cannot enumerate, so use the process environment only to discover
+	// candidate keys and let lookup stay authoritative for the value.
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if !strings.HasPrefix(key, "PIXIE_ASSISTANT_") {
+			continue
+		}
+		if key == "PIXIE_ASSISTANT_PORT" || key == "PIXIE_ASSISTANT_HOST" {
+			continue
+		}
 		if value, ok := lookup(key); ok && strings.TrimSpace(value) != "" {
 			return fmt.Errorf("controller-only mode rejects local assistant setting %s", key)
 		}

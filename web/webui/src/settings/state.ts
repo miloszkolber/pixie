@@ -36,6 +36,7 @@ export const SettingsSection = {
 	Browser: "browser",
 	Schedules: "schedules",
 	System: "system",
+	Diagnostics: "diagnostics",
 } as const;
 export type SettingsSection = (typeof SettingsSection)[keyof typeof SettingsSection];
 

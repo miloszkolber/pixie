@@ -56,6 +56,6 @@ function report(error: unknown): void {
 	}
 
 	.error-boundary-message {
-		max-width: calc(var(--size-2800) * 4);
+		max-width: 28rem;
 	}
 </style>

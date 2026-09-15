@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 
 import { createHash } from "node:crypto";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { chmod, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
+import { assertProductArchiveLayout, RELEASE_PRODUCTS } from "./build-release.ts";
 import {
 	ACCEPTANCE_IDS,
 	CORE_GATE_IDS,
@@ -11,7 +12,11 @@ import {
 	type CoverageReduction,
 	MANDATORY_FEATURE_IDS,
 } from "./check-coverage.ts";
-import { expectedArchiveName, type PackageArchitecture } from "./check-package-artifacts.ts";
+import {
+	expectedArchiveName,
+	type PackageArchitecture,
+	type PackageProduct,
+} from "./check-package-artifacts.ts";
 import {
 	PERFORMANCE_ARCHITECTURES,
 	PERFORMANCE_VARIANTS,
@@ -21,7 +26,7 @@ import {
 	type PerformanceTargetReduction,
 	REDUCIBLE_PERFORMANCE_FIELDS,
 } from "./check-performance.ts";
-import { parseTarGz } from "./collect-evidence.ts";
+import { parseTarGz, type TarEntry } from "./collect-evidence.ts";
 
 /**
  * Lean live-evidence producer.
@@ -40,10 +45,14 @@ const READINESS_TIMEOUT_MS = 5000;
 const PROBE_OUTPUT_LIMIT = 4096;
 const MIN_SAMPLES = 5;
 
-type Variant = "assistant" | "full-host";
+/** The frozen performance matrix still calls its two rows assistant/full-host. */
+type PerformanceVariant = "assistant" | "full-host";
 
 export interface ProducerProbe {
 	name: string;
+	/** Current product name when the probe ran against an archive entrypoint. */
+	product?: PackageProduct;
+	/** Retained for readers of older producer output; current product names are used. */
 	variant: string;
 	architecture: string;
 	status: "executed" | "blocked" | "failed";
@@ -58,7 +67,9 @@ export interface ProducedCoverageInput extends CoverageInput {
 }
 
 export interface ResolvedBinary {
-	variant: Variant;
+	product: PackageProduct;
+	/** Frozen performance row represented by this product, when applicable. */
+	performanceVariant?: PerformanceVariant;
 	architecture: PackageArchitecture;
 	path: string;
 	sha256: string;
@@ -79,9 +90,9 @@ export interface ProduceEvidenceOptions {
 	sourceCommit: string;
 	/** Defaults to `sha-<first 12 of sourceCommit>`. */
 	releaseId?: string;
-	/** Staged archive directory; required when no `binaryPaths` are supplied. */
+	/** Staged archive directory; required to validate the complete release. */
 	artifactsDir?: string;
-	/** Explicit binaries; overrides archive extraction (used by tests). */
+	/** Explicit current-product binaries; overrides extracted probe paths (used by tests). */
 	binaryPaths?: readonly string[];
 	/** Readiness origin for the running host. Absent keeps readiness blocked. */
 	baseUrl?: string;
@@ -152,18 +163,12 @@ function nativeArchitecture(): PackageArchitecture {
 	throw new Error(`produce-evidence-inputs: unsupported host architecture ${process.arch}`);
 }
 
-function binaryName(variant: Variant): string {
-	return variant === "assistant" ? "pixie-assistant" : "pixie";
-}
-
-function archiveVariant(variant: Variant): "assistant" | "host" {
-	return variant === "assistant" ? "assistant" : "host";
-}
-
-function variantFromBinaryName(name: string): Variant {
-	if (name === "pixie-assistant") return "assistant";
-	if (name === "pixie") return "full-host";
-	throw new Error(`produce-evidence-inputs: cannot infer variant from binary name ${name}`);
+function performanceVariant(product: PackageProduct): PerformanceVariant | undefined {
+	// The matrix has two immutable targets. The archive-local CLI is the retained
+	// assistant target; the combined archive is the retained full-host target.
+	if (product === "pixie_cli") return "assistant";
+	if (product === "pixie") return "full-host";
+	return undefined;
 }
 
 function expectedTargets(): string[] {
@@ -328,7 +333,8 @@ async function probeVersion(
 	const run = await runCommand([binary.path, "--version"]);
 	const probe: ProducerProbe = {
 		name: "version",
-		variant: binary.variant,
+		product: binary.product,
+		variant: binary.product,
 		architecture: binary.architecture,
 		status: "failed",
 		command,
@@ -344,7 +350,7 @@ async function probeVersion(
 			id: "FC01",
 			kind: "artifact",
 			source: binary.path,
-			test: `${binary.variant}-${binary.architecture}-version`,
+			test: `${binary.product}-${binary.architecture}-version`,
 			profile: `linux-${binary.architecture}-staged-artifact`,
 			actual: true,
 			live: true,
@@ -357,7 +363,8 @@ async function probeDoctor(binary: ResolvedBinary): Promise<ProbeResult> {
 	const run = await runCommand([binary.path, "doctor"]);
 	const probe: ProducerProbe = {
 		name: "doctor",
-		variant: binary.variant,
+		product: binary.product,
+		variant: binary.product,
 		architecture: binary.architecture,
 		status: "failed",
 		command,
@@ -371,14 +378,17 @@ async function probeDoctor(binary: ResolvedBinary): Promise<ProbeResult> {
 				id: "FC01",
 				kind: "native",
 				source: binary.path,
-				test: `${binary.variant}-${binary.architecture}-doctor`,
+				test: `${binary.product}-${binary.architecture}-doctor`,
 				profile: `linux-${binary.architecture}-staged-artifact`,
 				actual: true,
 				live: true,
 			},
 		};
 	}
-	if (/unknown command/i.test(`${run.stdout}\n${run.stderr}`)) {
+	if (
+		!PRODUCT_DOCTOR_SUPPORTED[binary.product] ||
+		/unknown command/i.test(`${run.stdout}\n${run.stderr}`)
+	) {
 		return { probe: { ...probe, status: "blocked" } };
 	}
 	return { probe };
@@ -448,54 +458,273 @@ async function probeReadiness(
 	}
 }
 
+interface ValidatedArchive {
+	product: PackageProduct;
+	architecture: PackageArchitecture;
+	archive: string;
+	entries: ReturnType<typeof parseTarGz>;
+}
+
+const PRODUCT_EXECUTABLE_PATHS: Readonly<Record<PackageProduct, readonly string[]>> = {
+	pixie_web: ["pixie_web"],
+	pixie_cli: ["pixie", "pixie_cli"],
+	pixie: ["pixie", "libexec/pixie_full", "libexec/pixie_web"],
+};
+
+/**
+ * Archive-local files that must extract as regular 0o644 files. The internal
+ * `libexec/pixie_assistant.js` is a portable `bun build --target=bun` bundle
+ * run by the staged runtime, not a compiled executable, so it stays absent
+ * from the executable list above.
+ */
+const PRODUCT_REGULAR_PATHS: Readonly<Record<PackageProduct, readonly string[]>> = {
+	pixie_web: [],
+	pixie_cli: ["libexec/pixie_assistant.js"],
+	pixie: ["libexec/pixie_assistant.js"],
+};
+
+/**
+ * The archive-local launcher each product probes for release identity. The
+ * `pixie_cli` host launcher and the internal full-suite supervisor own the
+ * release `--version` contract, while the root `pixie` command stays the
+ * transparent upstream Pi interface (and is not probed here).
+ */
+export function productProbeEntrypoint(product: PackageProduct): string {
+	if (product === "pixie_cli") return "pixie_cli";
+	if (product === "pixie") return "libexec/pixie_full";
+	return "pixie_web";
+}
+
+/**
+ * Launchers that implement a real `doctor` command. The `pixie_cli` host
+ * launcher and the full-suite supervisor deliberately expose only
+ * serve/version/help, so probing their unsupported `doctor` reports blocked
+ * rather than a failed execution. A launcher that unexpectedly exits 0 is
+ * still recorded as executed.
+ */
+const PRODUCT_DOCTOR_SUPPORTED: Readonly<Record<PackageProduct, boolean>> = {
+	pixie_web: true,
+	pixie_cli: false,
+	pixie: false,
+};
+
+function legacyArchivePath(name: string): boolean {
+	return name.startsWith("pixie-assistant-");
+}
+
+function legacyExecutablePath(entries: readonly { name: string }[]): string | undefined {
+	return entries.find(({ name }) => name.split("/").includes("pixie-assistant"))?.name;
+}
+
+/** Only the pinned Bun runtime may ship; a bundled Node runtime is rejected. */
+function nodeRuntimePath(entries: readonly { name: string }[]): string | undefined {
+	return entries.find(({ name }) => /(?:^|\/)runtime\/node(?:\/|$)/.test(name))?.name;
+}
+
+/**
+ * Reject any archive member that could escape the extraction root before a
+ * single byte is written. Mirrors `verifyBundledPiRuntimeArchive`'s runtime
+ * path checks (`runtimePath`) and additionally rejects duplicate names so a
+ * later member cannot overwrite an earlier extraction. `parseTar` strips one
+ * leading `./`, so `./../escaped` still fails the `..` segment check.
+ */
+function assertSafeMemberPaths(archive: string, entries: readonly TarEntry[]): void {
+	const seen = new Set<string>();
+	for (const { name } of entries) {
+		if (
+			name === "" ||
+			name.startsWith("/") ||
+			name.includes("\\") ||
+			name.split("/").some((part) => part === "" || part === "." || part === "..")
+		) {
+			throw new Error(
+				`produce-evidence-inputs: ${archive} has an unsafe member path ${JSON.stringify(name)}`,
+			);
+		}
+		if (seen.has(name)) {
+			throw new Error(
+				`produce-evidence-inputs: ${archive} has a duplicate member ${JSON.stringify(name)}`,
+			);
+		}
+		seen.add(name);
+	}
+}
+
+/**
+ * Verify the complete merged release before creating any probe input. The
+ * architecture-specific runner only executes its native product entrypoints,
+ * but its evidence is meaningful only when all six staged archives use the
+ * same current three-product contract.
+ */
+async function validateStagedArchives(
+	artifactsDir: string,
+	releaseId: string,
+): Promise<ValidatedArchive[]> {
+	let names: string[];
+	try {
+		names = await readdir(artifactsDir);
+	} catch (error) {
+		throw new Error(
+			`produce-evidence-inputs: staged archive directory is unreadable: ${errorMessage(error)}`,
+		);
+	}
+	const legacy = names.find(legacyArchivePath);
+	if (legacy !== undefined) {
+		throw new Error(
+			`produce-evidence-inputs: legacy pixie-assistant archive ${legacy} is not a current product archive`,
+		);
+	}
+
+	const archives: ValidatedArchive[] = [];
+	for (const architecture of ["amd64", "arm64"] as const) {
+		for (const product of RELEASE_PRODUCTS) {
+			const archive = expectedArchiveName(product, architecture, releaseId);
+			let buffer: Buffer;
+			try {
+				buffer = await readFile(join(artifactsDir, archive));
+			} catch (error) {
+				throw new Error(
+					`produce-evidence-inputs: required staged archive ${archive} is unreadable: ${errorMessage(error)}`,
+				);
+			}
+			let entries: ReturnType<typeof parseTarGz>;
+			try {
+				entries = parseTarGz(buffer);
+			} catch (error) {
+				throw new Error(
+					`produce-evidence-inputs: required staged archive ${archive} cannot be read: ${errorMessage(error)}`,
+				);
+			}
+			assertSafeMemberPaths(archive, entries);
+			const legacyEntry = legacyExecutablePath(entries);
+			if (legacyEntry !== undefined) {
+				throw new Error(
+					`produce-evidence-inputs: ${archive} has legacy pixie-assistant executable path ${legacyEntry}`,
+				);
+			}
+			const nodeEntry = nodeRuntimePath(entries);
+			if (nodeEntry !== undefined) {
+				throw new Error(
+					`produce-evidence-inputs: ${archive} bundles a Node runtime at ${nodeEntry}`,
+				);
+			}
+			try {
+				assertProductArchiveLayout(
+					product,
+					entries.map(({ name }) => name),
+				);
+			} catch (error) {
+				throw new Error(
+					`produce-evidence-inputs: ${archive} has an invalid ${product} layout: ${errorMessage(error)}`,
+				);
+			}
+			archives.push({ product, architecture, archive, entries });
+		}
+	}
+	return archives;
+}
+
+/**
+ * Extract each native archive into an isolated product tree. The probe
+ * entrypoint stays inside that tree so its runtime/ and libexec/ siblings are
+ * present; a bare copy would make the launcher fail before `--version`. */
+async function extractNativeBinaries(
+	archives: readonly ValidatedArchive[],
+	architecture: PackageArchitecture,
+	outputDir: string,
+): Promise<ResolvedBinary[]> {
+	const binaryRoot = join(outputDir, "binaries");
+	const resolved: ResolvedBinary[] = [];
+	for (const product of RELEASE_PRODUCTS) {
+		const archive = archives.find(
+			(candidate) => candidate.product === product && candidate.architecture === architecture,
+		);
+		if (archive === undefined) {
+			throw new Error(
+				`produce-evidence-inputs: validated release is missing ${product} linux-${architecture}`,
+			);
+		}
+		const productRoot = join(binaryRoot, "products", product);
+		for (const entry of archive.entries) {
+			const path = join(productRoot, entry.name);
+			await mkdir(dirname(path), { recursive: true });
+			await writeFile(path, entry.content);
+			const executable =
+				PRODUCT_EXECUTABLE_PATHS[product].includes(entry.name) ||
+				// The Pi-bearing archives ship the runtime executable at 0o755; a
+				// probe that starts the root `pixie` launcher needs it executable.
+				(product !== "pixie_web" && entry.name === "runtime/bin/bun");
+			await chmod(path, executable ? 0o755 : 0o644);
+		}
+		// The internal assistant bundle must be a regular 0o644 file, never an
+		// executable; a layout that dropped or replaced it is not probed.
+		for (const expected of PRODUCT_REGULAR_PATHS[product]) {
+			if (!archive.entries.some((entry) => entry.name === expected)) {
+				throw new Error(`produce-evidence-inputs: ${archive.archive} does not contain ${expected}`);
+			}
+		}
+		const probeEntrypoint = productProbeEntrypoint(product);
+		const entrypoint = archive.entries.find((entry) => entry.name === probeEntrypoint);
+		if (entrypoint === undefined) {
+			throw new Error(
+				`produce-evidence-inputs: ${archive.archive} does not contain ${probeEntrypoint}`,
+			);
+		}
+		const path = join(productRoot, probeEntrypoint);
+		const variant = performanceVariant(product);
+		resolved.push({
+			product,
+			...(variant === undefined ? {} : { performanceVariant: variant }),
+			architecture,
+			path,
+			sha256: sha256(entrypoint.content),
+			archive: archive.archive,
+		});
+	}
+	return resolved;
+}
+
 async function resolveBinaries(
 	options: ProduceEvidenceOptions,
 	architecture: PackageArchitecture,
-	releaseId: string,
+	archives: readonly ValidatedArchive[],
 	outputDir: string,
 ): Promise<ResolvedBinary[]> {
+	const staged = await extractNativeBinaries(archives, architecture, outputDir);
 	const explicit = (options.binaryPaths ?? [])
 		.map((path) => path.trim())
 		.filter((path) => path !== "");
-	if (explicit.length > 0) {
-		const resolved: ResolvedBinary[] = [];
-		for (const path of explicit) {
-			const absolute = resolve(path);
-			const variant = variantFromBinaryName(basename(absolute));
-			resolved.push({
-				variant,
-				architecture,
-				path: absolute,
-				sha256: sha256(await readFile(absolute)),
-			});
+	if (explicit.length === 0) return staged;
+
+	const explicitByProduct = new Map<PackageProduct, string>();
+	for (const path of explicit) {
+		const absolute = resolve(path);
+		const product = basename(absolute);
+		if (product === "pixie-assistant") {
+			throw new Error(
+				"produce-evidence-inputs: legacy pixie-assistant executable path is not a current product path",
+			);
 		}
-		return resolved;
-	}
-	if (options.artifactsDir === undefined || options.artifactsDir.trim() === "") {
-		throw new Error("produce-evidence-inputs: --artifacts or --binary is required");
-	}
-	const artifactsDir = resolve(options.artifactsDir);
-	const resolved: ResolvedBinary[] = [];
-	for (const variant of ["assistant", "full-host"] as const) {
-		const archive = expectedArchiveName(archiveVariant(variant), architecture, releaseId);
-		let buffer: Buffer;
-		try {
-			buffer = await readFile(join(artifactsDir, archive));
-		} catch {
-			// A missing native archive is honestly absent; the gate stays closed.
-			continue;
+		if (!(RELEASE_PRODUCTS as readonly string[]).includes(product)) {
+			throw new Error(`produce-evidence-inputs: ${absolute} is not a current product executable`);
 		}
-		const name = binaryName(variant);
-		const member = parseTarGz(buffer).find((entry) => entry.name === name);
-		if (member === undefined) {
-			throw new Error(`produce-evidence-inputs: ${archive} does not contain ${name}`);
+		if (explicitByProduct.has(product as PackageProduct)) {
+			throw new Error(`produce-evidence-inputs: duplicate explicit binary for ${product}`);
 		}
-		const target = join(outputDir, "binaries", name);
-		await writeFile(target, member.content, { mode: 0o755 });
-		await chmod(target, 0o755);
-		resolved.push({ variant, architecture, path: target, sha256: sha256(member.content), archive });
+		explicitByProduct.set(product as PackageProduct, absolute);
 	}
-	return resolved;
+	for (const product of RELEASE_PRODUCTS) {
+		if (!explicitByProduct.has(product)) {
+			throw new Error(`produce-evidence-inputs: explicit binaries must include ${product}`);
+		}
+	}
+	return Promise.all(
+		staged.map(async (binary) => {
+			const path = explicitByProduct.get(binary.product);
+			if (path === undefined) throw new Error(`missing explicit ${binary.product} binary`);
+			return { ...binary, path, sha256: sha256(await readFile(path)) };
+		}),
+	);
 }
 
 function percentile(samples: readonly number[], percent: number): number {
@@ -520,6 +749,7 @@ async function resolveTimeBinary(): Promise<string | null> {
 
 async function measureStartup(
 	binary: ResolvedBinary,
+	variant: PerformanceVariant,
 	timeBinary: string,
 	minSamples: number,
 	sourceCommit: string,
@@ -540,18 +770,18 @@ async function measureStartup(
 		const elapsed = performance.now() - started;
 		if (exitCode !== 0) {
 			throw new Error(
-				`produce-evidence-inputs: ${binary.variant} sample ${index} exited ${exitCode}: ${stderr.trim()}`,
+				`produce-evidence-inputs: ${binary.product} sample ${index} exited ${exitCode}: ${stderr.trim()}`,
 			);
 		}
 		const rss = parseMaxRss(stderr);
 		if (rss === null) {
 			throw new Error(
-				`produce-evidence-inputs: ${binary.variant} sample ${index} reported no peak RSS (${timeBinary})`,
+				`produce-evidence-inputs: ${binary.product} sample ${index} reported no peak RSS (${timeBinary})`,
 			);
 		}
 		if (!Number.isFinite(elapsed) || elapsed <= 0) {
 			throw new Error(
-				`produce-evidence-inputs: ${binary.variant} sample ${index} has invalid duration`,
+				`produce-evidence-inputs: ${binary.product} sample ${index} has invalid duration`,
 			);
 		}
 		samples.push(elapsed);
@@ -559,7 +789,7 @@ async function measureStartup(
 	}
 	return {
 		architecture: binary.architecture,
-		variant: binary.variant,
+		variant,
 		profile: `linux-${binary.architecture}-fresh-process-startup`,
 		artifact: `sha256:${binary.sha256}`,
 		sourceCommit,
@@ -606,10 +836,16 @@ export async function produceEvidenceInputs(
 	const manifest = await loadReductionsManifest(manifestPath);
 	const expanded = expandReductions(manifest);
 
+	if (options.artifactsDir === undefined || options.artifactsDir.trim() === "") {
+		throw new Error(
+			"produce-evidence-inputs: --artifacts is required to validate the complete release",
+		);
+	}
+	const artifacts = await validateStagedArchives(resolve(options.artifactsDir), releaseId);
 	const architecture = nativeArchitecture();
 	const outputDir = resolve(options.outputDir);
 	await mkdir(join(outputDir, "binaries"), { recursive: true });
-	const binaries = await resolveBinaries(options, architecture, releaseId, outputDir);
+	const binaries = await resolveBinaries(options, architecture, artifacts, outputDir);
 
 	const probes: ProducerProbe[] = [];
 	const evidence: CoverageEvidence[] = [];
@@ -642,7 +878,16 @@ export async function produceEvidenceInputs(
 	const measurements: PerformanceMeasurement[] = [];
 	if (timeBinary !== null) {
 		for (const binary of binaries) {
-			measurements.push(await measureStartup(binary, timeBinary, minSamples, sourceCommit));
+			if (binary.performanceVariant === undefined) continue;
+			measurements.push(
+				await measureStartup(
+					binary,
+					binary.performanceVariant,
+					timeBinary,
+					minSamples,
+					sourceCommit,
+				),
+			);
 		}
 	}
 	const performance: PerformanceInput = {
@@ -674,14 +919,16 @@ export async function produceEvidenceInputs(
 
 export const PRODUCE_EVIDENCE_USAGE = [
 	"usage: bun scripts/produce-evidence-inputs.ts --output <dir> --source-commit <40-hex>",
-	"         [--artifacts <dir>] [--binary <path>]... [--release-id sha-<12>]",
+	"         --artifacts <dir> [--binary <current-product-path>]... [--release-id sha-<12>]",
 	"         [--base-url <origin>] [--reduction-manifest <json>] [--min-samples <n>]",
 	"",
-	"Extracts the native-architecture staged binaries (assistant and full-host),",
-	"runs only the checks that genuinely execute (--version and doctor, plus a",
-	"readiness GET when --base-url is supplied), and measures at least five",
-	"fresh-process startup samples with p50/p95 and peak RSS. Everything else is",
-	"either absent or skipped only by the committed, approved reductions manifest.",
+	"Validates all six current product archives, their exact layouts and every member",
+	"path before extracting each product tree. It probes the launcher that owns each",
+	"product's release identity (pixie_cli for pixie_cli, libexec/pixie_full for full",
+	"pixie) and runs only checks that genuinely execute (--version and doctor, plus a readiness",
+	"GET when --base-url is supplied), then measures pixie_cli and pixie for the",
+	"frozen assistant/full-host startup rows. Everything else is absent or reduced",
+	"only by the committed, approved reductions manifest.",
 ].join("\n");
 
 interface ProducerCliOptions {
@@ -772,7 +1019,9 @@ if (import.meta.main) {
 				`(${result.binaries.length} native binaries, ${result.coverage.reductions?.length ?? 0} coverage reductions)`,
 		);
 		for (const probe of result.probes) {
-			console.log(`  probe ${probe.name} [${probe.status}]: ${probe.command}`);
+			console.log(
+				`  probe ${probe.name} [${probe.status}]: ${probe.product ?? probe.variant} ${probe.command}`,
+			);
 		}
 	} catch (error) {
 		console.error(`produce-evidence-inputs: ${errorMessage(error)}`);

@@ -74,10 +74,12 @@ jobs:
           echo "source_commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
 
-  stage:
-    name: Stage four commit-named archives
+  stage-amd64:
+    name: Stage native amd64 release archives
     needs: [validate, identity]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -93,47 +95,113 @@ jobs:
       - name: Install release build dependencies
         run: bun install --frozen-lockfile
         working-directory: web
-      - name: Build and stage immutable archives
-        run: bun run build:release --output "$RUNNER_TEMP/pixie-release"
-      - name: Verify complete archive names and checksums
+      - name: Build and stage native immutable archives
+        run: bun run build:release --architecture amd64 --output "$RUNNER_TEMP/pixie-release"
+      - name: Verify native archive names and staging metadata
         working-directory: ${{ runner.temp }}/pixie-release
         run: |
           set -euo pipefail
           SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
           RELEASE_ID='${{ needs.identity.outputs.release_id }}'
           for archive in \
-            "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" \
-            "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" \
-            "pixie-${RELEASE_ID}-linux-amd64.tar.gz" \
+            "pixie_web-${RELEASE_ID}-linux-amd64.tar.gz" \
+            "pixie_cli-${RELEASE_ID}-linux-amd64.tar.gz" \
+            "pixie-${RELEASE_ID}-linux-amd64.tar.gz"; do
+            test -f "$archive"
+          done
+          sha256sum --check checksums-linux-amd64.txt
+          jq -e --arg source '${{ needs.identity.outputs.source_commit }}' --arg release_id '${{ needs.identity.outputs.release_id }}' \
+            '.schemaVersion == 2 and .releaseId == $release_id and .sourceCommit == $source and .cleanSourceTree == true and .completeSet == false and .architectures == ["amd64"] and .products == ["pixie_web", "pixie_cli", "pixie"] and .checksumsPresent == true and .sbomPresent == false and .provenancePresent == false and (.archiveHashes | length == 3) and (.artifacts | length == 3)' \
+            release-manifest-linux-amd64.json >/dev/null
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pixie-release-${{ needs.identity.outputs.source_commit }}-amd64
+          path: ${{ runner.temp }}/pixie-release
+          if-no-files-found: error
+          retention-days: 14
+
+  stage-arm64:
+    name: Stage native arm64 release archives
+    needs: [validate, identity]
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: web/go.mod
+          cache-dependency-path: web/go.sum
+      - name: Install release build dependencies
+        run: bun install --frozen-lockfile
+        working-directory: web
+      - name: Build and stage native immutable archives
+        run: bun run build:release --architecture arm64 --output "$RUNNER_TEMP/pixie-release"
+      - name: Verify native archive names and staging metadata
+        working-directory: ${{ runner.temp }}/pixie-release
+        run: |
+          set -euo pipefail
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          for archive in \
+            "pixie_web-${RELEASE_ID}-linux-arm64.tar.gz" \
+            "pixie_cli-${RELEASE_ID}-linux-arm64.tar.gz" \
             "pixie-${RELEASE_ID}-linux-arm64.tar.gz"; do
             test -f "$archive"
           done
-          sha256sum --check checksums.txt
+          sha256sum --check checksums-linux-arm64.txt
           jq -e --arg source '${{ needs.identity.outputs.source_commit }}' --arg release_id '${{ needs.identity.outputs.release_id }}' \
-            '.releaseId == $release_id and .sourceCommit == $source and .cleanSourceTree == true and .completeSet == false and .checksumsPresent == true and .sbomPresent == false and .provenancePresent == false and (.archiveHashes | length == 4)' \
+            '.schemaVersion == 2 and .releaseId == $release_id and .sourceCommit == $source and .cleanSourceTree == true and .completeSet == false and .architectures == ["arm64"] and .products == ["pixie_web", "pixie_cli", "pixie"] and .checksumsPresent == true and .sbomPresent == false and .provenancePresent == false and (.archiveHashes | length == 3) and (.artifacts | length == 3)' \
+            release-manifest-linux-arm64.json >/dev/null
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pixie-release-${{ needs.identity.outputs.source_commit }}-arm64
+          path: ${{ runner.temp }}/pixie-release
+          if-no-files-found: error
+          retention-days: 14
+
+  merge:
+    name: Merge and verify the complete six-archive release
+    needs: [validate, identity, stage-amd64, stage-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-release-${{ needs.identity.outputs.source_commit }}-amd64
+          path: ${{ runner.temp }}/pixie-release
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-release-${{ needs.identity.outputs.source_commit }}-arm64
+          path: ${{ runner.temp }}/pixie-release
+      - name: Merge native archives into the immutable complete release metadata
+        run: bun run build:release:merge --output "$RUNNER_TEMP/pixie-release"
+      - name: Verify merged six-archive checksum and manifest
+        working-directory: ${{ runner.temp }}/pixie-release
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          for product in pixie_web pixie_cli pixie; do
+            for architecture in amd64 arm64; do
+              test -f "${product}-${RELEASE_ID}-linux-${architecture}.tar.gz"
+            done
+          done
+          sha256sum --check checksums.txt
+          jq -e --arg source "$SOURCE_COMMIT" --arg release_id "$RELEASE_ID" \
+            '.schemaVersion == 2 and .releaseId == $release_id and .sourceCommit == $source and .cleanSourceTree == true and .completeSet == true and .architectures == ["amd64", "arm64"] and .products == ["pixie_web", "pixie_cli", "pixie"] and (.artifacts | length == 6) and (.archiveHashes | length == 6) and .checksumsPresent == true' \
             release-manifest.json >/dev/null
-          verify_archive() {
-            local archive="$1" binary="$2" unit="$3" config="$4" listing
-            # List once: piping tar into `grep -q` under pipefail fails with a
-            # SIGPIPE write error as soon as grep matches and exits.
-            listing="$(tar -tzf "$archive")"
-            grep -qx "$binary" <<<"$listing"
-            grep -qx "$unit" <<<"$listing"
-            grep -qx "$config" <<<"$listing"
-            grep -qx 'INSTALL.md' <<<"$listing"
-            grep -qx 'LICENSE' <<<"$listing"
-            grep -qx 'NOTICE.md' <<<"$listing"
-          }
-          verify_archive "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" pixie-assistant pixie-assistant.service assistant.json
-          verify_archive "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" pixie-assistant pixie-assistant.service assistant.json
-          verify_archive "pixie-${RELEASE_ID}-linux-amd64.tar.gz" pixie pixie.service pixie.json
-          verify_archive "pixie-${RELEASE_ID}-linux-arm64.tar.gz" pixie pixie.service pixie.json
-          CANDIDATE_DIR=$(mktemp -d)
-          trap 'rm -rf "$CANDIDATE_DIR"' EXIT
-          tar -xzf "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" -C "$CANDIDATE_DIR"
-          tar -xzf "pixie-${RELEASE_ID}-linux-amd64.tar.gz" -C "$CANDIDATE_DIR"
-          [[ "$("$CANDIDATE_DIR/pixie-assistant" --version)" == "pixie-assistant $RELEASE_ID (revision $SOURCE_COMMIT)" ]]
-          [[ "$("$CANDIDATE_DIR/pixie" --version)" == "pixie $RELEASE_ID (revision $SOURCE_COMMIT)" ]]
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pixie-release-${{ needs.identity.outputs.source_commit }}
@@ -158,10 +226,10 @@ jobs:
           set -euo pipefail
           SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
           RELEASE_ID='${{ needs.identity.outputs.release_id }}'
-          docker buildx build --platform linux/amd64,linux/arm64 --file web/Dockerfile --target pixie \
+          docker buildx build --platform linux/amd64,linux/arm64 --file web/Dockerfile --target pixie_web \
             --build-arg "VERSION=$RELEASE_ID" \
             --build-arg "REVISION=$SOURCE_COMMIT" \
-            --tag "pixie:${RELEASE_ID}" \
+            --tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/pixie_web:${RELEASE_ID}" \
             --label "org.opencontainers.image.version=$RELEASE_ID" \
             --label "org.opencontainers.image.revision=$SOURCE_COMMIT" \
             --sbom=true --attest type=provenance --output=type=oci,dest="$RUNNER_TEMP/pixie-controller.oci" .
@@ -175,7 +243,7 @@ jobs:
 
   evidence-arm64:
     name: Produce native arm64 performance and probe evidence
-    needs: [validate, identity, stage, image]
+    needs: [validate, identity, merge, image]
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -235,7 +303,9 @@ jobs:
           # merges exactly these BIN-PROBE facts into its single bundle.
           EXTRA_ARGS=()
           BIN_DIR="$EVIDENCE_DIR/binaries"
-          for candidate in "$BIN_DIR/pixie-assistant" "$BIN_DIR/pixie"; do
+          for candidate in \
+            "$BIN_DIR/products/pixie_cli/pixie_cli" \
+            "$BIN_DIR/products/pixie/libexec/pixie_full"; do
             if [[ -x "$candidate" ]]; then
               EXTRA_ARGS+=(--binary "$candidate")
             fi
@@ -262,7 +332,7 @@ jobs:
 
   evidence:
     name: Run live evidence gates on exact-commit artifacts
-    needs: [validate, identity, stage, image, evidence-arm64]
+    needs: [validate, identity, merge, image, evidence-arm64]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -374,7 +444,9 @@ jobs:
           # The producer extracted the native binaries it actually ran; reuse
           # exactly those paths for the bundled --version/doctor/readiness probes.
           BIN_DIR="$EVIDENCE_DIR/binaries"
-          for candidate in "$BIN_DIR/pixie-assistant" "$BIN_DIR/pixie"; do
+          for candidate in \
+            "$BIN_DIR/products/pixie_cli/pixie_cli" \
+            "$BIN_DIR/products/pixie/libexec/pixie_full"; do
             if [[ -x "$candidate" ]]; then
               EXTRA_ARGS+=(--binary "$candidate")
             fi
@@ -421,16 +493,15 @@ jobs:
             (cd "$ARTIFACT_DIR" && sha256sum ./*.tar.gz) || true
             echo
             echo "expected exact-commit archives:"
-            for archive in \
-              "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" \
-              "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" \
-              "pixie-${RELEASE_ID}-linux-amd64.tar.gz" \
-              "pixie-${RELEASE_ID}-linux-arm64.tar.gz"; do
-              if [[ -f "$ARTIFACT_DIR/$archive" ]]; then
-                echo "  present: $archive"
-              else
-                echo "  MISSING: $archive"
-              fi
+            for product in pixie_web pixie_cli pixie; do
+              for architecture in amd64 arm64; do
+                archive="${product}-${RELEASE_ID}-linux-${architecture}.tar.gz"
+                if [[ -f "$ARTIFACT_DIR/$archive" ]]; then
+                  echo "  present: $archive"
+                else
+                  echo "  MISSING: $archive"
+                fi
+              done
             done
             echo
           } | tee -a "$LOG"
@@ -469,47 +540,113 @@ jobs:
           retention-days: 14
 
   publish-image:
-    name: Publish matching controller image after complete validation
-    needs: [validate, identity, stage, image, evidence]
+    name: Publish exact staged controller image after complete validation
+    needs: [validate, identity, merge, image, evidence]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-      attestations: write
-      id-token: write
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          ref: ${{ needs.identity.outputs.source_commit }}
-      - uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        with:
+          # OCI-layout source and referrer copying requires Buildx v0.33.0.
+          version: v0.33.0
+      - name: Download evidence-gated OCI image artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-image-${{ needs.identity.outputs.source_commit }}
+          path: ${{ runner.temp }}/pixie-image
+      - name: Download evidence gate bundle
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: pixie-evidence-${{ needs.identity.outputs.source_commit }}
+          path: ${{ runner.temp }}/pixie-evidence
       - name: Log in to GHCR for the authorized release job
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish matching controller image after complete validation
+      - name: Publish the exact evidence-gated controller image
         run: |
           set -euo pipefail
           SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
           RELEASE_ID='${{ needs.identity.outputs.release_id }}'
-          REF="ghcr.io/${GITHUB_REPOSITORY_OWNER}/pixie:${RELEASE_ID}"
-          docker buildx build --platform linux/amd64,linux/arm64 --file web/Dockerfile --target pixie \
-            --build-arg "VERSION=$RELEASE_ID" \
-            --build-arg "REVISION=$SOURCE_COMMIT" \
-            --tag "$REF" \
-            --label "org.opencontainers.image.version=$RELEASE_ID" \
-            --label "org.opencontainers.image.revision=$SOURCE_COMMIT" \
-            --sbom=true --attest type=provenance --push --metadata-file "$RUNNER_TEMP/pixie-image-metadata.json" .
+          REF="ghcr.io/${GITHUB_REPOSITORY_OWNER}/pixie_web:${RELEASE_ID}"
+          STAGED_IMAGE_ARCHIVE="$RUNNER_TEMP/pixie-image/pixie-controller.oci"
+          STAGED_EVIDENCE="$RUNNER_TEMP/pixie-evidence/evidence.json"
+          STAGED_OCI_LAYOUT="$RUNNER_TEMP/pixie-controller-layout"
+          test -s "$STAGED_IMAGE_ARCHIVE"
+          test -s "$STAGED_EVIDENCE"
+          mkdir -p "$STAGED_OCI_LAYOUT"
+          tar --extract --file "$STAGED_IMAGE_ARCHIVE" --directory "$STAGED_OCI_LAYOUT"
+          test -s "$STAGED_OCI_LAYOUT/index.json"
+
+          # Bind the bytes being published to the successful evidence bundle.
+          # The collector records the OCI layout's root index digest and the
+          # artifact SHA-256; the image descriptor below is selected from that
+          # verified layout before it is copied to the registry.
+          jq -e --arg source "$SOURCE_COMMIT" --arg release "$RELEASE_ID" '
+            .schemaVersion == 1 and .sourceCommit == $source and .releaseId == $release and
+            ([.assertions[] | select(.kind == "GATE" and .id == "IMG-CONTROLLER" and .status == "pass")] | length == 1)
+          ' "$STAGED_EVIDENCE" >/dev/null
+          EVIDENCE_ARCHIVE_NAME=$(jq -er '
+            [.assertions[] | select(.kind == "GATE" and .id == "IMG-CONTROLLER" and .status == "pass")] |
+            .[0].artifact.name
+          ' "$STAGED_EVIDENCE")
+          EVIDENCE_ARCHIVE_SHA256=$(jq -er '
+            [.assertions[] | select(.kind == "GATE" and .id == "IMG-CONTROLLER" and .status == "pass")] |
+            .[0].artifact.sha256
+          ' "$STAGED_EVIDENCE")
+          EVIDENCE_LAYOUT_DIGEST=$(jq -er '
+            [.assertions[] | select(.kind == "GATE" and .id == "IMG-CONTROLLER" and .status == "pass")] |
+            .[0].detail | fromjson | .indexDigest
+          ' "$STAGED_EVIDENCE")
+          [[ "$EVIDENCE_ARCHIVE_NAME" == "$(basename "$STAGED_IMAGE_ARCHIVE")" ]]
+          [[ "$EVIDENCE_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$EVIDENCE_LAYOUT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$(sha256sum "$STAGED_IMAGE_ARCHIVE" | cut -d' ' -f1)" == "$EVIDENCE_ARCHIVE_SHA256" ]]
+          [[ "sha256:$(sha256sum "$STAGED_OCI_LAYOUT/index.json" | cut -d' ' -f1)" == "$EVIDENCE_LAYOUT_DIGEST" ]]
+
+          # BuildKit records the publishable image index as a named descriptor
+          # in the OCI layout's root index. Its digest identifies the exact
+          # platform manifests and attestation descriptors staged above.
+          STAGED_IMAGE_INDEX_DIGEST=$(jq -er --arg ref "$REF" '
+            [.manifests[] | select(.annotations["io.containerd.image.name"] == $ref)] |
+            if length == 1 then .[0].digest else error("expected one staged controller image descriptor") end
+          ' "$STAGED_OCI_LAYOUT/index.json")
+          [[ "$STAGED_IMAGE_INDEX_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          STAGED_IMAGE_INDEX="$STAGED_OCI_LAYOUT/blobs/sha256/${STAGED_IMAGE_INDEX_DIGEST#sha256:}"
+          test -s "$STAGED_IMAGE_INDEX"
+          [[ "sha256:$(sha256sum "$STAGED_IMAGE_INDEX" | cut -d' ' -f1)" == "$STAGED_IMAGE_INDEX_DIGEST" ]]
+
+          # Copy, rather than rebuild, the exact staged OCI image index. Buildx
+          # v0.33.0 copies attached referrers, so the staged SBOM and provenance
+          # attestations travel with the evidence-gated platform manifests.
+          docker buildx imagetools create --tag "$REF" \
+            --metadata-file "$RUNNER_TEMP/pixie-image-metadata.json" \
+            "oci-layout://$STAGED_OCI_LAYOUT@$STAGED_IMAGE_INDEX_DIGEST"
           test -s "$RUNNER_TEMP/pixie-image-metadata.json"
-          # Verify both runnable platform manifests; attestations do not replace
-          # platform evidence. The release tag is immutable and latest moves later.
+          INDEX_DIGEST=$(jq -er '."containerimage.descriptor".digest // ."containerimage.digest" // empty' "$RUNNER_TEMP/pixie-image-metadata.json")
+          [[ "$INDEX_DIGEST" == "$STAGED_IMAGE_INDEX_DIGEST" ]] || {
+            echo "published image index does not match the evidence-gated staged image index" >&2
+            exit 1
+          }
+          # Verify the registry still resolves to the exact staged index. That
+          # index binds both runnable platform manifests and their attestations.
           docker buildx imagetools inspect "$REF" | tee "$RUNNER_TEMP/pixie-image-inspect.txt"
           grep -q 'linux/amd64' "$RUNNER_TEMP/pixie-image-inspect.txt"
           grep -q 'linux/arm64' "$RUNNER_TEMP/pixie-image-inspect.txt"
           docker buildx imagetools inspect --raw "$REF" > "$RUNNER_TEMP/pixie-image-index.json"
+          PUBLISHED_INDEX_DIGEST="sha256:$(sha256sum "$RUNNER_TEMP/pixie-image-index.json" | cut -d' ' -f1)"
+          if [[ "$PUBLISHED_INDEX_DIGEST" != "$STAGED_IMAGE_INDEX_DIGEST" ]]; then
+            PUBLISHED_INDEX_DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}')
+          fi
+          [[ "$PUBLISHED_INDEX_DIGEST" == "$STAGED_IMAGE_INDEX_DIGEST" ]] || {
+            echo "registry tag does not resolve to the evidence-gated staged image index" >&2
+            exit 1
+          }
           mkdir -p "$RUNNER_TEMP/pixie-attestations"
           while read -r ATTESTATION_DIGEST; do
             [[ "$ATTESTATION_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || continue
@@ -531,7 +668,6 @@ jobs:
             echo "published image is missing an SBOM or provenance attestation" >&2
             exit 1
           }
-          INDEX_DIGEST=$(jq -r '.["containerimage.digest"] // .containerimage.digest // empty' "$RUNNER_TEMP/pixie-image-metadata.json")
           AMD64_DIGEST=$(jq -r '.manifests[] | select(.platform.architecture == "amd64" and .platform.os == "linux") | .digest' "$RUNNER_TEMP/pixie-image-index.json" | head -n1)
           ARM64_DIGEST=$(jq -r '.manifests[] | select(.platform.architecture == "arm64" and .platform.os == "linux") | .digest' "$RUNNER_TEMP/pixie-image-index.json" | head -n1)
           [[ "$INDEX_DIGEST" =~ ^sha256:[0-9a-f]{64}$ && "$AMD64_DIGEST" =~ ^sha256:[0-9a-f]{64}$ && "$ARM64_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
@@ -548,7 +684,7 @@ jobs:
 
   publish:
     name: Publish immutable GitHub Release
-    needs: [validate, identity, stage, image, evidence, publish-image]
+    needs: [validate, identity, merge, image, evidence, publish-image]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -581,16 +717,21 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum --check checksums.txt
-          test -f "pixie-assistant-${{ needs.identity.outputs.release_id }}-linux-amd64.tar.gz"
-          test -f "pixie-assistant-${{ needs.identity.outputs.release_id }}-linux-arm64.tar.gz"
-          test -f "pixie-${{ needs.identity.outputs.release_id }}-linux-amd64.tar.gz"
-          test -f "pixie-${{ needs.identity.outputs.release_id }}-linux-arm64.tar.gz"
+          RELEASE_ID='${{ needs.identity.outputs.release_id }}'
+          for product in pixie_web pixie_cli pixie; do
+            for architecture in amd64 arm64; do
+              test -f "${product}-${RELEASE_ID}-linux-${architecture}.tar.gz"
+            done
+          done
+          jq -e --arg release_id "$RELEASE_ID" \
+            '.schemaVersion == 2 and .releaseId == $release_id and .completeSet == true and .architectures == ["amd64", "arm64"] and .products == ["pixie_web", "pixie_cli", "pixie"] and (.artifacts | length == 6) and (.archiveHashes | length == 6) and .checksumsPresent == true' \
+            release-manifest.json >/dev/null
       - name: Record verified OCI digests in the release manifest
         working-directory: release
         run: |
           set -euo pipefail
           jq -e --arg release_id '${{ needs.identity.outputs.release_id }}' \
-            '.tag == ("ghcr.io/" + env.GITHUB_REPOSITORY_OWNER + "/pixie:" + $release_id) and (.indexDigest | test("^sha256:[0-9a-f]{64}$")) and (.platformDigests.amd64 | test("^sha256:[0-9a-f]{64}$")) and (.platformDigests.arm64 | test("^sha256:[0-9a-f]{64}$"))' \
+            '.tag == ("ghcr.io/" + env.GITHUB_REPOSITORY_OWNER + "/pixie_web:" + $release_id) and (.indexDigest | test("^sha256:[0-9a-f]{64}$")) and (.platformDigests.amd64 | test("^sha256:[0-9a-f]{64}$")) and (.platformDigests.arm64 | test("^sha256:[0-9a-f]{64}$"))' \
             ../image-evidence/pixie-image-evidence.json >/dev/null
           INDEX_DIGEST=$(jq -r '.indexDigest' ../image-evidence/pixie-image-evidence.json)
           AMD64_DIGEST=$(jq -r '.platformDigests.amd64' ../image-evidence/pixie-image-evidence.json)
@@ -616,16 +757,49 @@ jobs:
           gh release view "$RELEASE_ID" >/dev/null 2>&1 || gh release create "$RELEASE_ID" --draft --title "$RELEASE_ID" --target "$SOURCE_COMMIT"
           TEMP_DIR=$(mktemp -d)
           trap 'rm -rf "$TEMP_DIR"' EXIT
+          EXPECTED_ASSETS=(checksums.txt release-manifest.json)
+          for product in pixie_web pixie_cli pixie; do
+            for architecture in amd64 arm64; do
+              EXPECTED_ASSETS+=("${product}-${RELEASE_ID}-linux-${architecture}.tar.gz")
+            done
+          done
+          declare -A EXPECTED_ASSET_SET=()
+          for asset in "${EXPECTED_ASSETS[@]}"; do
+            EXPECTED_ASSET_SET["$asset"]=1
+          done
           # A draft release has no Git tag yet, so the releases/tags endpoint
           # 404s; resolve its numeric ID and read the release directly.
           RELEASE_NUM=$(gh release view "$RELEASE_ID" --json databaseId --jq '.databaseId')
           [[ -n "$RELEASE_NUM" ]] || { echo "release $RELEASE_ID was not found after creation" >&2; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_NUM" > "$TEMP_DIR/release.json"
-          for asset in \
-            "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz" \
-            "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz" \
-            "pixie-${RELEASE_ID}-linux-amd64.tar.gz" \
-            "pixie-${RELEASE_ID}-linux-arm64.tar.gz" checksums.txt release-manifest.json; do
+          while IFS= read -r asset; do
+            [[ -n "${EXPECTED_ASSET_SET[$asset]:-}" ]] || {
+              echo "release asset $asset is not part of the complete six-archive payload; refusing to publish" >&2
+              exit 1
+            }
+          done < <(jq -r '.assets[]?.name' "$TEMP_DIR/release.json")
+          for product in pixie_web pixie_cli pixie; do
+            for architecture in amd64 arm64; do
+              asset="${product}-${RELEASE_ID}-linux-${architecture}.tar.gz"
+              LOCAL_HASH=$(sha256sum "$asset" | cut -d' ' -f1)
+              DOWNLOAD_URL=$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .browser_download_url // empty' "$TEMP_DIR/release.json")
+              if [[ -z "$DOWNLOAD_URL" ]]; then
+                gh release upload "$RELEASE_ID" "$asset"
+                continue
+              fi
+              curl --fail --silent --show-error --location \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/octet-stream' \
+                "$DOWNLOAD_URL" -o "$TEMP_DIR/$asset"
+              REMOTE_HASH=$(sha256sum "$TEMP_DIR/$asset" | cut -d' ' -f1)
+              if [[ "$REMOTE_HASH" != "$LOCAL_HASH" ]]; then
+                echo "release asset $asset exists with a different SHA-256; refusing to overwrite" >&2
+                exit 1
+              fi
+              echo "release asset $asset already matches ($LOCAL_HASH); skipping upload"
+            done
+          done
+          for asset in checksums.txt release-manifest.json; do
             LOCAL_HASH=$(sha256sum "$asset" | cut -d' ' -f1)
             DOWNLOAD_URL=$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .browser_download_url // empty' "$TEMP_DIR/release.json")
             if [[ -z "$DOWNLOAD_URL" ]]; then
@@ -643,6 +817,18 @@ jobs:
             fi
             echo "release asset $asset already matches ($LOCAL_HASH); skipping upload"
           done
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_NUM" > "$TEMP_DIR/release-after-upload.json"
+          for asset in "${EXPECTED_ASSETS[@]}"; do
+            jq -e --arg name "$asset" '[.assets[] | select(.name == $name and (.size // 0) > 0)] | length == 1' \
+              "$TEMP_DIR/release-after-upload.json" >/dev/null || {
+              echo "release $RELEASE_ID is missing a non-empty asset $asset after upload" >&2
+              exit 1
+            }
+          done
+          [[ "$(jq '[.assets[]?.name] | length' "$TEMP_DIR/release-after-upload.json")" == "${#EXPECTED_ASSETS[@]}" ]] || {
+            echo "release $RELEASE_ID contains assets outside the complete six-archive payload" >&2
+            exit 1
+          }
       - name: Publish the complete release, then consider latest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -661,7 +847,7 @@ jobs:
 
   verify-publication:
     name: Verify published tag, release and registry digests
-    needs: [identity, stage, evidence, publish-image, publish]
+    needs: [identity, merge, evidence, publish-image, publish]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -694,7 +880,7 @@ jobs:
           SOURCE_COMMIT='${{ needs.identity.outputs.source_commit }}'
           RELEASE_ID='${{ needs.identity.outputs.release_id }}'
           EVIDENCE='image-evidence/pixie-image-evidence.json'
-          REF="ghcr.io/${GITHUB_REPOSITORY_OWNER}/pixie:${RELEASE_ID}"
+          REF="ghcr.io/${GITHUB_REPOSITORY_OWNER}/pixie_web:${RELEASE_ID}"
           WORK=$(mktemp -d)
           trap 'rm -rf "$WORK"' EXIT
 
@@ -712,33 +898,35 @@ jobs:
             exit 1
           }
 
-          # 3. Download only the small metadata assets; the four large archives
+          # 3. Download only the small metadata assets; the six large archives
           # are verified by published digest instead of being re-downloaded.
           gh release download "$RELEASE_ID" --dir "$WORK" \
             --pattern checksums.txt --pattern release-manifest.json
           test -s "$WORK/checksums.txt"
           test -s "$WORK/release-manifest.json"
           jq -e --arg source "$SOURCE_COMMIT" --arg release_id "$RELEASE_ID" \
-            '.releaseId == $release_id and .sourceCommit == $source and .completeSet == true and .checksumsPresent == true and .sbomPresent == true and .provenancePresent == true and (.archiveHashes | length == 4)' \
+            '.schemaVersion == 2 and .releaseId == $release_id and .sourceCommit == $source and .completeSet == true and .architectures == ["amd64", "arm64"] and .products == ["pixie_web", "pixie_cli", "pixie"] and .checksumsPresent == true and .sbomPresent == true and .provenancePresent == true and (.artifacts | length == 6) and (.archiveHashes | length == 6)' \
             "$WORK/release-manifest.json" >/dev/null || {
             echo "published release-manifest.json does not record the complete verified set" >&2
             exit 1
           }
 
-          EXPECTED_ASSETS=(
-            "pixie-assistant-${RELEASE_ID}-linux-amd64.tar.gz"
-            "pixie-assistant-${RELEASE_ID}-linux-arm64.tar.gz"
-            "pixie-${RELEASE_ID}-linux-amd64.tar.gz"
-            "pixie-${RELEASE_ID}-linux-arm64.tar.gz"
-            checksums.txt
-            release-manifest.json
-          )
+          EXPECTED_ASSETS=(checksums.txt release-manifest.json)
+          for product in pixie_web pixie_cli pixie; do
+            for architecture in amd64 arm64; do
+              EXPECTED_ASSETS+=("${product}-${RELEASE_ID}-linux-${architecture}.tar.gz")
+            done
+          done
           for asset in "${EXPECTED_ASSETS[@]}"; do
             jq -e --arg name "$asset" '[.assets[] | select(.name == $name and (.size // 0) > 0)] | length == 1' "$WORK/release.json" >/dev/null || {
               echo "release ${RELEASE_ID} is missing a non-empty asset ${asset}" >&2
               exit 1
             }
           done
+          [[ "$(jq '[.assets[]?.name] | length' "$WORK/release.json")" == "${#EXPECTED_ASSETS[@]}" ]] || {
+            echo "release ${RELEASE_ID} contains assets outside the complete six-archive payload" >&2
+            exit 1
+          }
 
           # Every archive's published digest must match the hash staging recorded.
           while IFS= read -r asset; do
@@ -816,7 +1004,7 @@ jobs:
 
           echo 'verify-publication passed'
           echo "  tag:          refs/tags/${RELEASE_ID} -> ${SOURCE_COMMIT}"
-          echo "  release:      ${RELEASE_ID} (published, 6 assets verified)"
+          echo "  release:      ${RELEASE_ID} (published, 10 assets verified)"
           echo "  image:        ${REF}"
           echo "  index digest: ${PUBLISHED_INDEX}"
           echo "  platforms:    linux/amd64 ${PUBLISHED_AMD64} linux/arm64 ${PUBLISHED_ARM64}"

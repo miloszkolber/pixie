@@ -8,6 +8,8 @@ import { appStore } from "../store";
 import ScheduleForm from "./schedule-form.svelte";
 import {
 	activeExecution,
+	scheduleRunStatusLabel,
+	scheduleRuntimeLabel,
 	scheduleSessionHref,
 	scheduleTime,
 	SchedulesModel,
@@ -21,6 +23,9 @@ const model = new SchedulesModel(
 const view = model.readable;
 let selected = $derived($view.jobs.find((job) => job.id === $view.selectedId));
 let active = $derived(selected ? activeExecution(selected) : undefined);
+let reconciliationRequired = $derived(
+	active?.status === "cancelling" || active?.status === "cancellation_unconfirmed",
+);
 let connected = $derived($appStore.status === "connected");
 let locked = $derived(!connected || $view.busy || Boolean($view.pending));
 let editor = $state<{ job: Schedule | null } | null>(null);
@@ -52,7 +57,12 @@ $effect(() => {
 	};
 });
 
-async function save(values: { prompt: string; cron: string; timezone: string }): Promise<void> {
+async function save(values: {
+	prompt: string;
+	cron: string;
+	timezone: string;
+	maxRuntimeSeconds?: number | null;
+}): Promise<void> {
 	if (locked || !editor) return;
 	const ok = editor.job
 		? await model.mutate(
@@ -95,7 +105,7 @@ async function save(values: { prompt: string; cron: string; timezone: string }):
 			{#each $view.jobs as job (job.id)}
 				<li><button type="button" class="schedule-row u-flex u-w-full u-min-w-0 u-flex-col u-gap-xs u-px-sm u-py-sm u-text-left" aria-pressed={selected?.id === job.id} disabled={Boolean(editor)} onclick={() => model.select(job.id)}>
 					<span class="schedule-row__prompt tr-text-ui">{job.prompt}</span>
-					<span class="tr-text-metadata u-text-text-muted">{job.paused ? "Paused" : "Enabled"} · {activeExecution(job) ? "Running" : job.runs[0]?.status ?? "Not run yet"}</span>
+					<span class="tr-text-metadata u-text-text-muted">{job.paused ? "Paused" : "Enabled"} · {activeExecution(job) ? scheduleRunStatusLabel(activeExecution(job)?.status ?? "running") : job.runs[0] ? scheduleRunStatusLabel(job.runs[0].status) : "Not run yet"}</span>
 					<span class="schedule-value tr-text-metadata u-text-text-muted">{job.cron} · {job.timezone}</span>
 					<span class="tr-text-metadata u-text-text-muted">{job.paused ? "Next dispatch paused" : `Next: ${scheduleTime(job.nextRun, job.timezone)}`}</span>
 				</button></li>
@@ -108,25 +118,28 @@ async function save(values: { prompt: string; cron: string; timezone: string }):
 				<section class="u-flex u-min-w-0 u-flex-col u-gap-md" aria-label="Schedule details">
 					<h3 class="tr-title-entity">Schedule details</h3>
 					<p class="schedule-detail__prompt tr-text-ui">{selected.prompt}</p>
-					<dl class="tr-text-ui"><dt>Timing</dt><dd class="schedule-value u-text-text-muted">{selected.cron} · {selected.timezone}</dd><dt class="schedule-detail__term">Next occurrence</dt><dd class="u-text-text-muted">{scheduleTime(selected.nextRun, selected.timezone)}{selected.paused ? " · Dispatch paused" : ""}</dd><dt class="schedule-detail__term">Latest outcome</dt><dd>{selected.runs[0]?.status ?? "Not run yet"}</dd><dt class="schedule-detail__term">Model</dt><dd class="schedule-value u-text-text-muted">{selected.model ? `${selected.model.provider}/${selected.model.id}` : "Native Pi default"}</dd></dl>
+					<dl class="tr-text-ui"><dt>Timing</dt><dd class="schedule-value u-text-text-muted">{selected.cron} · {selected.timezone}</dd><dt class="schedule-detail__term">Maximum runtime</dt><dd>{scheduleRuntimeLabel(selected)}</dd><dt class="schedule-detail__term">Next occurrence</dt><dd class="u-text-text-muted">{scheduleTime(selected.nextRun, selected.timezone)}{selected.paused ? " · Dispatch paused" : ""}</dd><dt class="schedule-detail__term">Latest outcome</dt><dd>{selected.runs[0] ? scheduleRunStatusLabel(selected.runs[0].status) : "Not run yet"}</dd><dt class="schedule-detail__term">Model</dt><dd class="schedule-value u-text-text-muted">{selected.model ? `${selected.model.provider}/${selected.model.id}` : "Native Pi default"}</dd></dl>
 					<div class="u-flex u-flex-wrap u-gap-sm">
-						<Button variant="outline" disabled={locked} onclick={() => selected && void model.mutate("schedule.update", { scheduleId: selected.id, paused: !selected.paused }, selected.paused ? "Schedule resumed. Next occurrence recalculated." : "Schedule paused. Active execution is unchanged.")}>{selected.paused ? "Resume" : "Pause"}</Button>
+						<Button variant="outline" disabled={locked || reconciliationRequired} onclick={() => selected && void model.mutate("schedule.update", { scheduleId: selected.id, paused: !selected.paused }, selected.paused ? "Schedule resumed. Next occurrence recalculated." : "Schedule paused. Active execution is unchanged.")}>{selected.paused ? "Resume" : "Pause"}</Button>
 						<Button variant="outline" disabled={locked || Boolean(active)} onclick={() => selected && void model.mutate("schedule.runNow", { scheduleId: selected.id }, "Run requested. See the execution ledger for its outcome.")}>Run now</Button>
-						<Button variant="outline" disabled={locked || !active} onclick={() => selected && void model.mutate("schedule.stop", { scheduleId: selected.id }, "Stop requested. Wait for the active execution to settle. Future dispatch is unchanged.")}>Stop execution</Button>
+						<Button variant="outline" disabled={locked || !active || active?.status === "cancelling"} onclick={() => selected && void model.mutate("schedule.stop", { scheduleId: selected.id }, "Stop requested. Wait for the active execution to settle. Future dispatch is unchanged.")}>{active?.status === "cancellation_unconfirmed" ? "Retry cancellation" : "Stop execution"}</Button>
 						<Button variant="outline" disabled={locked || Boolean(active)} onclick={() => { if (selected) editor = { job: selected }; }}>Edit</Button>
 						<Button variant="destructive-outline" disabled={locked || Boolean(active)} onclick={(event) => { deleteTrigger = event.currentTarget; if (selected) deleting = selected; }}>Delete</Button>
 					</div>
-					<p class="tr-text-metadata u-text-text-muted">Run now also works while paused and keeps the pause state. It recalculates the next occurrence. Pause does not stop execution. Stop does not pause future runs. Wait for execution to settle before editing or deleting.</p>
+					<p class="tr-text-metadata u-text-text-muted">Run now also works while paused and keeps the pause state. It recalculates the next occurrence. Pause does not stop execution. Stop pauses future dispatch before Pixie asks Pi to stop. Wait for confirmed cancellation before editing or deleting.</p>
 					<h4 class="tr-text-ui">Execution ledger</h4>
 					{#if !selected.runs.length}<p class="tr-text-metadata u-text-text-muted">No executions yet.</p>{/if}
 					<ol class="schedule-run-list">
 						{#each selected.runs as run (run.id)}
 							{@const href = scheduleSessionHref(project.id, run)}
 							<li class="u-flex u-min-w-0 u-flex-col u-gap-xs u-py-sm">
-								<span class="tr-text-ui">{run.status === "running" ? "Active execution" : run.status} · {scheduleTime(run.startedAt, selected.timezone)}</span>
+								<span class="tr-text-ui">{scheduleRunStatusLabel(run.status)} · {scheduleTime(run.startedAt, selected.timezone)}</span>
 								{#if run.finishedAt}<span class="tr-text-metadata u-text-text-muted">Finished: {scheduleTime(run.finishedAt, selected.timezone)}</span>{/if}
 								{#if run.error}<p class="schedule-detail__error tr-text-ui u-text-feedback-error">{run.error}</p>{/if}
-								{#if run.status === "interrupted"}<p class="tr-text-metadata u-text-text-muted">Inspect the native session before retrying. An ambiguous execution after restart pauses its schedule.</p>{/if}
+								{#if run.status === "cancelling"}<p class="tr-text-metadata u-text-text-muted">Cancellation was accepted by Pixie and is waiting for native confirmation. The schedule is paused.</p>{/if}
+								{#if run.status === "cancellation_unconfirmed"}<p class="tr-text-metadata u-text-text-muted">Pixie cannot confirm that Pi stopped. The schedule stays paused and blocked. Use Retry cancellation after checking Pi.</p>{/if}
+								{#if run.status === "interrupted"}<p class="tr-text-metadata u-text-text-muted">Pi confirmed the manual interruption.</p>{/if}
+								{#if run.status === "timed_out"}<p class="tr-text-metadata u-text-text-muted">Pi confirmed cancellation after this schedule reached its runtime budget.</p>{/if}
 								{#if href}<a class="btn schedule-session-link u-text-left" data-variant="link" {href}>Open Pi session {run.sessionId}</a>{:else}<span class="tr-text-metadata u-text-text-muted">No native session recorded yet.</span>{/if}
 							</li>
 						{/each}

@@ -10,6 +10,7 @@ import {
 
 const sourceCommit = "71590cac48925b31b9d5d3c7d1746ee94b351772";
 const releaseId = `sha-${sourceCommit.slice(0, 12)}`;
+const repositoryOwner = "release-test-owner";
 const archiveHash = "a".repeat(64);
 const digest = `sha256:${"b".repeat(64)}`;
 
@@ -29,15 +30,20 @@ jobs:
     run: RELEASE_ID="sha-\${SOURCE_COMMIT:0:12}"
   release:
     if: github.event_name == 'push'
-    run: stage pixie-assistant-${releaseId}-linux-amd64.tar.gz pixie-assistant-${releaseId}-linux-arm64.tar.gz pixie-${releaseId}-linux-amd64.tar.gz pixie-${releaseId}-linux-arm64.tar.gz checksums.txt release-manifest.json
+    run: stage pixie_web-${releaseId}-linux-amd64.tar.gz pixie_web-${releaseId}-linux-arm64.tar.gz pixie_cli-${releaseId}-linux-amd64.tar.gz pixie_cli-${releaseId}-linux-arm64.tar.gz pixie-${releaseId}-linux-amd64.tar.gz pixie-${releaseId}-linux-arm64.tar.gz checksums.txt release-manifest.json
     run: docker buildx build --label org.opencontainers.image.version=${releaseId} --label org.opencontainers.image.revision=$SOURCE_COMMIT --sbom=true --attest type=provenance
     run: reject collision when an existing tag has a different full commit
     run: retain partial publication for retry with the same payload; never move latest backward
     run: validate-only on pull requests, schedules and manual dispatch
 `;
 
-function archive(variant: "assistant" | "host", architecture: "amd64" | "arm64"): ArchiveEvidence {
-	const binaryName = variant === "assistant" ? "pixie-assistant" : "pixie";
+const products = ["pixie_web", "pixie_cli", "pixie"] as const;
+
+function archive(
+	variant: (typeof products)[number],
+	architecture: "amd64" | "arm64",
+): ArchiveEvidence {
+	const binaryName = variant;
 	return {
 		name: `${binaryName}-${releaseId}-linux-${architecture}.tar.gz`,
 		sourceCommit,
@@ -47,9 +53,12 @@ function archive(variant: "assistant" | "host", architecture: "amd64" | "arm64")
 	};
 }
 
-function binary(variant: "assistant" | "host", architecture: "amd64" | "arm64"): BinaryEvidence {
+function binary(
+	variant: (typeof products)[number],
+	architecture: "amd64" | "arm64",
+): BinaryEvidence {
 	return {
-		name: variant === "assistant" ? "pixie-assistant" : "pixie",
+		name: variant,
 		variant,
 		architecture,
 		sourceCommit,
@@ -60,32 +69,20 @@ function binary(variant: "assistant" | "host", architecture: "amd64" | "arm64"):
 
 function passingInput(): ReleaseIdentityInput {
 	const archiveHashes = Object.fromEntries(
-		[
-			archive("assistant", "amd64"),
-			archive("assistant", "arm64"),
-			archive("host", "amd64"),
-			archive("host", "arm64"),
-		].map((item) => [item.name, item.sha256]),
+		products
+			.flatMap((product) => [archive(product, "amd64"), archive(product, "arm64")])
+			.map((item) => [item.name, item.sha256]),
 	);
 	return {
 		sourceCommit,
 		releaseId,
+		repositoryOwner,
 		tag: { name: releaseId, target: sourceCommit },
 		release: { title: releaseId, tag: releaseId, target: sourceCommit },
-		archives: [
-			archive("assistant", "amd64"),
-			archive("assistant", "arm64"),
-			archive("host", "amd64"),
-			archive("host", "arm64"),
-		],
-		binaries: [
-			binary("assistant", "amd64"),
-			binary("assistant", "arm64"),
-			binary("host", "amd64"),
-			binary("host", "arm64"),
-		],
+		archives: products.flatMap((product) => [archive(product, "amd64"), archive(product, "arm64")]),
+		binaries: products.flatMap((product) => [binary(product, "amd64"), binary(product, "arm64")]),
 		docker: {
-			tag: `ghcr.io/miloszkolber/pixie:${releaseId}`,
+			tag: `ghcr.io/${repositoryOwner}/pixie_web:${releaseId}`,
 			version: releaseId,
 			revision: sourceCommit,
 			indexDigest: digest,
@@ -118,8 +115,35 @@ test("one full source commit derives the same identity on every release surface"
 
 	expect(report.ok).toBe(true);
 	expect(report.facts.expectedReleaseId).toBe(releaseId);
-	expect(report.facts.observedArchives).toHaveLength(4);
-	expect(report.facts.observedBinaries).toHaveLength(4);
+	expect(report.facts.observedArchives).toHaveLength(6);
+	expect(report.facts.observedBinaries).toHaveLength(6);
+});
+
+test("controller image identity uses the dynamic repository owner and rejects the legacy pixie package", () => {
+	const legacy = passingInput();
+	if (legacy.docker === undefined) throw new Error("passing fixture Docker evidence is missing");
+	const legacyReport = inspectReleaseIdentity({
+		...legacy,
+		docker: { ...legacy.docker, tag: `ghcr.io/${repositoryOwner}/pixie:${releaseId}` },
+	});
+
+	expect(legacyReport.ok).toBe(false);
+	expect(legacyReport.violations).toContain(
+		`Docker tag must be ghcr.io/${repositoryOwner}/pixie_web:${releaseId}`,
+	);
+
+	const wrongOwner = inspectReleaseIdentity({
+		...passingInput(),
+		docker: {
+			...legacy.docker,
+			tag: `ghcr.io/another-owner/pixie_web:${releaseId}`,
+		},
+	});
+
+	expect(wrongOwner.ok).toBe(false);
+	expect(wrongOwner.violations).toContain(
+		`Docker tag must be ghcr.io/${repositoryOwner}/pixie_web:${releaseId}`,
+	);
 });
 
 test("release identity rejects short source references, semver names, and incomplete digests", () => {

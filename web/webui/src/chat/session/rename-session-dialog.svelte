@@ -15,6 +15,7 @@ let { target, open = $bindable(false), onOpenChange }: Props = $props();
 let title = $state("");
 let error = $state<string | null>(null);
 let busy = $state(false);
+let initializedKey = "";
 
 function setOpen(next: boolean): boolean {
 	if (busy && !next) return false;
@@ -24,7 +25,13 @@ function setOpen(next: boolean): boolean {
 }
 
 $effect(() => {
-	if (!open) return;
+	if (!open) {
+		initializedKey = "";
+		return;
+	}
+	const key = `${target.projectId}:${target.sessionId}`;
+	if (initializedKey === key) return;
+	initializedKey = key;
 	title = target.title;
 	error = null;
 });

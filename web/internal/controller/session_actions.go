@@ -382,14 +382,6 @@ func (m *SessionManager) Steer(ctx context.Context, sessionID, text string, imag
 		return err
 	}
 	defer m.releaseEntry(entry)
-	if err := m.lockEntry(sessionID, entry); err != nil {
-		return err
-	}
-	defer entry.op.Unlock()
-	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
-		return err
-	}
-	ctx = entry.context(ctx)
 	_, profile, err := m.client.Profile(ctx)
 	if err != nil {
 		return err
@@ -403,6 +395,14 @@ func (m *SessionManager) Steer(ctx context.Context, sessionID, text string, imag
 	if len(resources) > 0 && !profile.Operations.PromptEmbeddedContext {
 		return unsupportedAgentCapability("text resource prompts")
 	}
+	if err := m.lockEntry(sessionID, entry); err != nil {
+		return err
+	}
+	defer entry.op.Unlock()
+	if err := m.attachLocked(ctx, sessionID, entry); err != nil {
+		return err
+	}
+	ctx = entry.context(ctx)
 	entry.state.Lock()
 	runID := entry.runID
 	entry.state.Unlock()
@@ -428,7 +428,12 @@ func (m *SessionManager) Steer(ctx context.Context, sessionID, text string, imag
 }
 
 func (m *SessionManager) Abort(ctx context.Context, sessionID string) error {
-	outcome, err := m.Stop(ctx, sessionID)
+	// Browser abort keeps a bounded grace, while Stop itself honors its caller's
+	// context. A schedule uses its own bounded grace and never turns timeout or
+	// transport loss into a stopped native session.
+	grace, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	outcome, err := m.Stop(grace, sessionID)
 	if err != nil {
 		// Abort keeps its historical contract: a caller deadline surfaces as
 		// the context error even though Stop reports the richer uncertain
@@ -447,14 +452,43 @@ func (m *SessionManager) Abort(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-// Stop freezes controller dispatch first, clears continuation, aborts
-// boundedly and verifies generation quiescence with distinct
+// cancelScheduleRun adapts the session lifecycle's verified Stop outcome to
+// the schedule ledger. A partial create can have a durable schedule link but
+// no project-session record because the later local write failed. Its admitted
+// cwd is retained only in process, so a restart leaves the ledger unconfirmed
+// rather than guessing a native release target.
+func (m *SessionManager) cancelScheduleRun(ctx context.Context, sessionID string) (ScheduleCancellationOutcome, error) {
+	outcome, stopErr := m.Stop(ctx, sessionID)
+	if stopErr == nil && outcome.Status == StopStatusStopped {
+		return ScheduleCancellationOutcome{Confirmed: true}, nil
+	}
+	m.mu.Lock()
+	cwd, partialCreate := m.scheduleCreationRoots[sessionID]
+	m.mu.Unlock()
+	if !partialCreate || m.client == nil {
+		return ScheduleCancellationOutcome{Confirmed: false}, stopErr
+	}
+	if err := m.client.ReleaseSession(ctx, sessionID, cwd); err != nil {
+		if agentSessionMissing(err) {
+			m.mu.Lock()
+			delete(m.scheduleCreationRoots, sessionID)
+			m.mu.Unlock()
+			return ScheduleCancellationOutcome{Confirmed: true}, nil
+		}
+		return ScheduleCancellationOutcome{Confirmed: false, Reason: "Native session could not be released after partial creation."}, errors.Join(stopErr, err)
+	}
+	m.mu.Lock()
+	delete(m.scheduleCreationRoots, sessionID)
+	m.mu.Unlock()
+	return ScheduleCancellationOutcome{Confirmed: true}, nil
+}
+
+// Stop freezes controller dispatch first, clears continuation, requests
+// cancellation and verifies generation quiescence with distinct
 // stopping/stopped/uncertain reporting. Unsent outbox items are retained
 // paused; resume or discard stays an explicit user decision and never happens
 // automatically here.
 func (m *SessionManager) Stop(ctx context.Context, sessionID string) (StopOutcome, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 	entry, err := m.entry(sessionID)
 	if err != nil {
 		return StopOutcome{Status: StopStatusUncertain, Reason: err.Error()}, err
@@ -513,20 +547,13 @@ func (m *SessionManager) Stop(ctx context.Context, sessionID string) (StopOutcom
 		paused := pausedOutboxCount(entry.queue)
 		entry.state.Unlock()
 		entry.op.Unlock()
-		forcedGeneration, forcedPaused, forceErr := m.forceTerminateGeneration(sessionID, entry, generation)
 		unfreeze()
 		reason := err.Error()
 		if rewindErrMessage != "" {
 			reason = rewindErrMessage + "; " + reason
 		}
-		if forceErr != nil {
-			reason += "; forced generation teardown: " + forceErr.Error()
-		}
-		if forcedPaused > paused {
-			paused = forcedPaused
-		}
-		outcome := StopOutcome{Status: StopStatusUncertain, Generation: forcedGeneration, RetainedPaused: paused, ForcedTermination: true, Reason: reason}
-		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": forcedGeneration, "reason": reason}})
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: reason}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": reason}})
 		return outcome, err
 	}
 	// Stop unwinds blocked UI on the controller side as well: dismiss the
@@ -555,7 +582,6 @@ func (m *SessionManager) Stop(ctx context.Context, sessionID string) (StopOutcom
 		entry.state.Lock()
 		paused := pausedOutboxCount(entry.queue)
 		entry.state.Unlock()
-		forcedGeneration, forcedPaused, forceErr := m.forceTerminateGeneration(sessionID, entry, generation)
 		unfreeze()
 		reason := "could not verify generation quiescence"
 		if cancelErr != nil {
@@ -566,14 +592,8 @@ func (m *SessionManager) Stop(ctx context.Context, sessionID string) (StopOutcom
 		if rewindErrMessage != "" {
 			reason = rewindErrMessage + "; " + reason
 		}
-		if forceErr != nil {
-			reason += "; forced generation teardown: " + forceErr.Error()
-		}
-		if forcedPaused > paused {
-			paused = forcedPaused
-		}
-		outcome := StopOutcome{Status: StopStatusUncertain, Generation: forcedGeneration, RetainedPaused: paused, ForcedTermination: true, Reason: reason}
-		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": forcedGeneration, "reason": reason}})
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: reason}
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": reason}})
 		if cancelErr != nil {
 			return outcome, cancelErr
 		}
@@ -601,31 +621,17 @@ func (m *SessionManager) Stop(ctx context.Context, sessionID string) (StopOutcom
 		return outcome, fmt.Errorf("stop outcome is uncertain: %s", reason)
 	}
 	if cancelErr != nil {
-		forcedGeneration, forcedPaused, forceErr := m.forceTerminateGeneration(sessionID, entry, generation)
-		if forcedPaused > paused {
-			paused = forcedPaused
-		}
 		reason := cancelErr.Error()
-		if forceErr != nil {
-			reason += "; forced generation teardown: " + forceErr.Error()
-		}
-		outcome := StopOutcome{Status: StopStatusUncertain, Generation: forcedGeneration, RetainedPaused: paused, ForcedTermination: true, Reason: reason}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: reason}
 		unfreeze()
-		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": forcedGeneration, "reason": reason}})
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": reason}})
 		return outcome, cancelErr
 	}
 	if !quiescent {
-		forcedGeneration, forcedPaused, forceErr := m.forceTerminateGeneration(sessionID, entry, generation)
-		if forcedPaused > paused {
-			paused = forcedPaused
-		}
 		reason := quiesceReason
-		if forceErr != nil {
-			reason += "; forced generation teardown: " + forceErr.Error()
-		}
-		outcome := StopOutcome{Status: StopStatusUncertain, Generation: forcedGeneration, RetainedPaused: paused, ForcedTermination: true, Reason: reason}
+		outcome := StopOutcome{Status: StopStatusUncertain, Generation: generation, RetainedPaused: paused, Reason: reason}
 		unfreeze()
-		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": forcedGeneration, "reason": reason}})
+		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "stop_uncertain", "generation": generation, "reason": reason}})
 		return outcome, fmt.Errorf("stop outcome is uncertain: %s", quiesceReason)
 	}
 	unfreeze()

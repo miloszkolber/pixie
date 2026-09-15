@@ -8,6 +8,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/workspace"
+	piwire "github.com/miloszkolber/pixie/shared/piprotocol"
 )
 
 const defaultDirectoryPageSize = 100
@@ -17,20 +18,30 @@ type Handler interface {
 }
 
 type CoreHandler struct {
-	Schedules     *Schedules
-	Projects      *workspace.Projects
-	Files         *workspace.Files
-	Sessions      *SessionManager
-	Settings      *Settings
-	Admin         *PiAdmin
-	Git           *workspace.Git
-	Watches       *workspace.ProjectWatches
-	Requests      *diagnostics.RequestCounter
-	RuntimeStatus func(context.Context) runtimeStatusReport
-	MCPRegistry   *mcpserver.Registry
+	Schedules          *Schedules
+	Projects           *workspace.Projects
+	Files              *workspace.Files
+	Sessions           *SessionManager
+	Settings           *Settings
+	Admin              *PiAdmin
+	Git                *workspace.Git
+	Watches            *workspace.ProjectWatches
+	Requests           *diagnostics.RequestCounter
+	RuntimeStatus      func(context.Context) runtimeStatusReport
+	RuntimeDiagnostics func(context.Context) RuntimeDiagnosticsReport
+	// SupportSnapshot is deliberately separate from runtime diagnostics. Its
+	// already-marshaled, bounded JSON contains only the support-export allowlist.
+	SupportSnapshot            func(context.Context) (json.RawMessage, error)
+	SupportSnapshotAuthEnabled bool
+	ControllerEvents           *diagnostics.ControllerEventRing
+	MCPRegistry                *mcpserver.Registry
 }
 
 func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMessage, clientKey string) (result any, err error) {
+	if h.ControllerEvents != nil {
+		operation := supportEventOperation(method)
+		defer func() { h.ControllerEvents.RecordRequest(operation, err) }()
+	}
 	if h.Requests != nil && method != "runtime.status" {
 		started := h.Requests.Begin()
 		defer func() { h.Requests.End(started, err != nil) }()
@@ -47,6 +58,19 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 			return nil, fmt.Errorf("runtime status is not configured")
 		}
 		return h.RuntimeStatus(ctx), nil
+	case "runtime.diagnostics":
+		if h.RuntimeDiagnostics == nil {
+			return nil, fmt.Errorf("runtime diagnostics are not configured")
+		}
+		return h.RuntimeDiagnostics(ctx), nil
+	case "runtime.supportSnapshot":
+		if !h.SupportSnapshotAuthEnabled {
+			return nil, &SupportSnapshotAuthenticationRequiredError{}
+		}
+		if h.SupportSnapshot == nil {
+			return nil, fmt.Errorf("support snapshot export is not configured")
+		}
+		return h.SupportSnapshot(ctx)
 	case "mcpRegistry.catalog":
 		if h.MCPRegistry == nil {
 			return map[string]any{"schemaVersion": 1, "engine": "in-process", "gateway": map[string]any{"state": "not-configured", "detail": "In-process MCP publisher is not configured."}, "modules": []any{}}, nil
@@ -388,13 +412,24 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		return h.Sessions.DeletionRecoveryStatus(), nil
 	case "session.confirmExternalDeletion":
 		var request struct {
-			ProjectID string `json:"projectId"`
-			SessionID string `json:"sessionId"`
+			ProjectID *string `json:"projectId"`
+			SessionID string  `json:"sessionId"`
 		}
-		if h.Sessions == nil || decodeParams(raw, &request) != nil {
+		if h.Sessions == nil || decodeParams(raw, &request) != nil || request.ProjectID == nil || request.SessionID == "" {
 			return nil, fmt.Errorf("malformed session request")
 		}
-		return ack(h.Sessions.ConfirmExternalDeletion(request.ProjectID, request.SessionID))
+		return ack(h.Sessions.ConfirmExternalDeletion(*request.ProjectID, request.SessionID))
+	case "session.retainExternalDeletion":
+		var request struct {
+			ProjectID *string `json:"projectId"`
+			SessionID string  `json:"sessionId"`
+		}
+		if h.Sessions == nil || decodeParams(raw, &request) != nil || request.ProjectID == nil || request.SessionID == "" {
+			return nil, fmt.Errorf("malformed session request")
+		}
+		// Retain validates the target and intentionally leaves its tombstone
+		// untouched. It never dispatches, confirms, or forgets a deletion.
+		return ack(h.Sessions.RetainExternalDeletion(*request.ProjectID, request.SessionID))
 	case "session.rename", "session.archive", "session.delete":
 		var request struct {
 			ProjectID string `json:"projectId"`
@@ -527,7 +562,11 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		if h.Settings == nil || decodeParams(raw, &request) != nil {
 			return nil, fmt.Errorf("malformed settings request")
 		}
-		return h.Settings.Update(request.Config)
+		updated, err := h.Settings.Update(request.Config)
+		if err != nil {
+			return nil, err
+		}
+		return browserAppConfig(updated), nil
 	case "model.list":
 		if h.Admin == nil {
 			return nil, fmt.Errorf("Pi administration is not configured")
@@ -626,6 +665,28 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		}
 		return nil, fmt.Errorf("unknown method: %s", method)
 	}
+}
+
+// SupportSnapshotAuthenticationRequiredError is a typed, actionable denial.
+// Support exports remain unavailable for every unauthenticated controller,
+// including a trusted-loopback controller.
+type SupportSnapshotAuthenticationRequiredError struct{}
+
+func (*SupportSnapshotAuthenticationRequiredError) Error() string {
+	return "Support snapshot export requires controller authentication. Set PIXIE_AUTH_ENABLED=true, then sign in and try again."
+}
+
+func (*SupportSnapshotAuthenticationRequiredError) ErrorCode() string {
+	return "SUPPORT_SNAPSHOT_AUTH_REQUIRED"
+}
+
+func supportEventOperation(method string) string {
+	for _, operation := range piwire.CatalogControllerMethods {
+		if operation == method {
+			return operation
+		}
+	}
+	return "unknown"
 }
 
 type fileRequest struct {

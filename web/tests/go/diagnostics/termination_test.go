@@ -9,8 +9,8 @@ import (
 )
 
 // TestDiagnosticsFinalContainerReapsChildren verifies the FIX-12/X03
-// final-container reaping contract at the owned level: the published pixie
-// image must run under tini so PID 1 reaps orphaned managed-group
+// final-container reaping contract at the owned level: the published full
+// pixie image must run its internal supervisor under tini so PID 1 reaps orphaned managed-group
 // descendants (Git and Browser helpers) instead of leaving zombies.
 func TestDiagnosticsFinalContainerReapsChildren(t *testing.T) {
 	dockerfile := findDockerfile(t)
@@ -36,11 +36,11 @@ func TestDiagnosticsFinalContainerReapsChildren(t *testing.T) {
 		t.Fatal("Dockerfile has no ENTRYPOINT")
 	}
 	// The final stage is the published image. It must keep tini as PID 1
-	// with pixie as its child, not replace tini with a bare pixie entrypoint.
-	if !strings.Contains(lastEntrypoint, "tini") || !strings.Contains(lastEntrypoint, "/app/pixie") {
+	// with the internal full supervisor as its child, not replace tini with a bare entrypoint.
+	if !strings.Contains(lastEntrypoint, "tini") || !strings.Contains(lastEntrypoint, "/app/libexec/pixie_full") {
 		t.Fatalf("final ENTRYPOINT does not reap under tini: %q", lastEntrypoint)
 	}
-	if strings.TrimSpace(lastEntrypoint) == `ENTRYPOINT ["/app/pixie"]` {
+	if strings.TrimSpace(lastEntrypoint) == `ENTRYPOINT ["/app/libexec/pixie_full"]` {
 		t.Fatalf("final ENTRYPOINT lost its init, PID 1 would not reap helpers: %q", lastEntrypoint)
 	}
 }

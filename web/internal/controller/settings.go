@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,14 +22,25 @@ type ModelReference struct {
 // registers Name in Pi's own configuration and reports the endpoint state; it
 // never proxies MCP traffic.
 type BrowserMCPConfig struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Enabled bool   `json:"enabled"`
+	Name           string `json:"name"`
+	URL            string `json:"url"`
+	Enabled        bool   `json:"enabled"`
+	OwnershipToken string `json:"ownershipToken,omitempty"`
 }
 
 type AppConfig struct {
 	HiddenModels []ModelReference `json:"hiddenModels"`
 	BrowserMCP   BrowserMCPConfig `json:"browserMCP"`
+}
+
+// browserAppConfig projects persisted settings for browser clients. Browser
+// MCP URLs may contain query credentials, so registration intent stays
+// controller-private and the browser reads only the redacted status surface.
+func browserAppConfig(value AppConfig) AppConfig {
+	value = cloneConfig(value)
+	value.BrowserMCP.URL = ""
+	value.BrowserMCP.OwnershipToken = ""
+	return value
 }
 
 // Persisted settings accept partial objects and normalize individual fields,
@@ -193,6 +206,16 @@ func normalizeBrowserMCP(value BrowserMCPConfig) BrowserMCPConfig {
 		value.URL = defaults.URL
 	}
 	return value
+}
+
+// newBrowserMCPOwnershipToken creates the controller-private proof that a
+// native agent-layer entry belongs to this Pixie installation.
+func newBrowserMCPOwnershipToken() (string, error) {
+	value := make([]byte, 32)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate Browser MCP ownership token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(value), nil
 }
 
 // BrowserMCP returns the persisted browser-MCP registration setting.

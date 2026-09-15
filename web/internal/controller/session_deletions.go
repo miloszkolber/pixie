@@ -184,7 +184,7 @@ func validateStoredSessionDeletions(value storedSessionDeletions) error {
 func validateSessionDeletion(record sessionDeletion) error {
 	// Match the existing project-session record contract. Pi session IDs are
 	// opaque and may legitimately contain slashes or exceed path-key limits.
-	if record.ProjectID == "" || validatePiSessionID(record.SessionID) != nil || containsNUL(record.ProjectID) {
+	if validatePiSessionID(record.SessionID) != nil || containsNUL(record.ProjectID) {
 		return fmt.Errorf("invalid session deletion target")
 	}
 	if !validDeletionAgentBinding(record.AgentBinding) {

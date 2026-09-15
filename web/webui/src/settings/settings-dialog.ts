@@ -15,6 +15,7 @@ const ADMIN_TABS: readonly SettingsTabDescriptor[] = [
 	{ section: SettingsSection.Browser, label: "Browser" },
 	{ section: SettingsSection.Schedules, label: "Schedules" },
 	{ section: SettingsSection.System, label: "System" },
+	{ section: SettingsSection.Diagnostics, label: "Diagnostics" },
 ];
 
 const GENERIC_TABS: readonly SettingsTabDescriptor[] = [
@@ -54,7 +55,7 @@ export function selectVisibleSettingsSection(
 export function settingsTabs(
 	genericAgent = false,
 	profilePending = false,
-	profile?: AgentProfile | null,
+	_profile?: AgentProfile | null,
 ): readonly SettingsTabDescriptor[] {
 	if (profilePending) return PENDING_TABS;
 	if (genericAgent) return GENERIC_TABS;

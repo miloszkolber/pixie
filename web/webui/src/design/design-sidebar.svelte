@@ -108,7 +108,7 @@ let draftReference = $derived(draftTarget ? buildDesignDraftReference(draftTarge
 				data-variant="outline"
 				data-size="sm"
 				data-testid="design-upload-cancel"
-				disabled={!upload.cancellable}
+				disabled={!upload.cancellable || !onuploadcancel}
 				onclick={() => onuploadcancel?.()}
 			>
 				Cancel upload
@@ -129,7 +129,7 @@ let draftReference = $derived(draftTarget ? buildDesignDraftReference(draftTarge
 				data-variant="destructive-outline"
 				data-size="sm"
 				data-testid="design-remove-button"
-				disabled={removal.request === null}
+				disabled={removal.request === null || !onremove}
 				onclick={() => onremove?.()}
 			>
 				Remove document
@@ -207,7 +207,7 @@ let draftReference = $derived(draftTarget ? buildDesignDraftReference(draftTarge
 			data-variant="outline"
 			data-size="sm"
 			data-testid="design-shared-focus-publish"
-			disabled={!publish.enabled}
+			disabled={!publish.enabled || !onpublish}
 			title={publish.reason ?? "Publish the selected page and node as shared focus"}
 			onclick={() => onpublish?.(inspector.selectedPageId, state.focus.privateFocus?.nodeId ?? null)}
 		>
@@ -238,7 +238,7 @@ let draftReference = $derived(draftTarget ? buildDesignDraftReference(draftTarge
 			data-variant="outline"
 			data-size="sm"
 			data-testid="design-draft-reference-insert"
-			disabled={!draftAction.enabled || draftReference === null}
+			disabled={!draftAction.enabled || draftReference === null || !oninsertreference}
 			title={draftAction.hint}
 			onclick={() => {
 				if (draftReference) oninsertreference?.(draftReference);
@@ -260,6 +260,7 @@ let draftReference = $derived(draftTarget ? buildDesignDraftReference(draftTarge
 		data-variant="outline"
 		data-size="sm"
 		data-testid="design-refresh-button"
+		disabled={!onrefresh}
 		onclick={() => onrefresh?.()}
 	>
 		Refresh status

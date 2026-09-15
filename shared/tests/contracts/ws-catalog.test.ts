@@ -179,6 +179,13 @@ const CATALOG = [
 		nativeRoute: "controller:deletions",
 	},
 	{
+		method: "session.retainExternalDeletion",
+		fc: "FC09",
+		owner: "controller",
+		profile: "controller-local",
+		nativeRoute: "controller:deletions",
+	},
+	{
 		method: "session.rename",
 		fc: "FC07",
 		owner: "pi",
@@ -538,6 +545,20 @@ const CATALOG = [
 		nativeRoute: "controller:runtime-status",
 	},
 	{
+		method: "runtime.diagnostics",
+		fc: "FC01",
+		owner: "controller",
+		profile: "controller-local",
+		nativeRoute: "controller:runtime-diagnostics",
+	},
+	{
+		method: "runtime.supportSnapshot",
+		fc: "FC01",
+		owner: "controller",
+		profile: "controller-local",
+		nativeRoute: "controller:runtime-support-snapshot",
+	},
+	{
 		method: "mcpRegistry.catalog",
 		fc: "FC26",
 		owner: "controller",
@@ -702,8 +723,8 @@ function extractHandlerMethods(source: string): string[] {
 test("exhaustive catalog covers every WS_METHODS value", () => {
 	const values = Object.values(WS_METHODS);
 	const catalogMethods = CATALOG.map((row) => row.method);
-	expect(values.length).toBe(98);
-	expect(CATALOG.length).toBe(98);
+	expect(values.length).toBe(101);
+	expect(CATALOG.length).toBe(101);
 	expect(new Set(values).size).toBe(values.length);
 	expect(new Set(catalogMethods).size).toBe(CATALOG.length);
 	expect(new Set(catalogMethods)).toEqual(new Set(values));
@@ -761,7 +782,7 @@ test("generated binding check matches Go handler cases both directions", async (
 	]);
 	const wsValues = new Set<string>(Object.values(WS_METHODS));
 	const catalogMethods = new Set<string>(CATALOG.map((row) => row.method));
-	expect(handlerMethods.size).toBe(98);
+	expect(handlerMethods.size).toBe(101);
 	expect(handlerMethods).toEqual(wsValues);
 	expect(handlerMethods).toEqual(catalogMethods);
 });

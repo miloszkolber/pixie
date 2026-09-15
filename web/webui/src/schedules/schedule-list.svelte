@@ -3,7 +3,12 @@ import type { Project } from "@pixie/shared";
 import { untrack } from "svelte";
 import { getTransport } from "../connection";
 import { appStore, appStoreApi, selectPrimary } from "../store";
-import { activeExecution, SchedulesModel, scheduleTime } from "./schedules-model";
+import {
+	activeExecution,
+	SchedulesModel,
+	scheduleRunStatusLabel,
+	scheduleTime,
+} from "./schedules-model";
 import { filterSchedules } from "./schedules-workspace";
 
 let { project }: { project: Project } = $props();
@@ -75,7 +80,7 @@ function select(id: string): void {
 					onclick={() => select(job.id)}
 				>
 					<span class="schedule-row__prompt tr-text-ui">{job.prompt}</span>
-					<span class="tr-text-metadata u-text-text-muted">{job.paused ? "Paused" : "Enabled"} · {activeExecution(job) ? "Running" : job.runs[0]?.status ?? "Not run yet"}</span>
+					<span class="tr-text-metadata u-text-text-muted">{job.paused ? "Paused" : "Enabled"} · {activeExecution(job) ? scheduleRunStatusLabel(activeExecution(job)?.status ?? "running") : job.runs[0] ? scheduleRunStatusLabel(job.runs[0].status) : "Not run yet"}</span>
 					<span class="schedule-value tr-text-metadata u-text-text-muted">{job.cron} · {job.timezone}</span>
 					<span class="tr-text-metadata u-text-text-muted">{job.paused ? "Next dispatch paused" : `Next: ${scheduleTime(job.nextRun, job.timezone)}`}</span>
 				</button>

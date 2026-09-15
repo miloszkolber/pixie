@@ -4,11 +4,12 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { assertProductArchiveLayout, RELEASE_PRODUCTS } from "./build-release.ts";
 import { type CoverageInput, formatCoverageReport, inspectCoverage } from "./check-coverage.ts";
 import {
 	expectedArchiveName,
 	type PackageArchitecture,
-	type PackageVariant,
+	type PackageProduct,
 	RELEASE_MANIFEST_ASSERTION_ID,
 } from "./check-package-artifacts.ts";
 import {
@@ -21,6 +22,7 @@ import {
 	CONTROLLER_IMAGE_ASSERTION_ID,
 	COVERAGE_ASSERTION_ID,
 	type ControllerImageDetail,
+	decodePackageArchiveDetail,
 	decodeProbeDetail,
 	type EvidenceAssertion,
 	type EvidenceBundle,
@@ -38,7 +40,7 @@ const RELEASE_ID_PATTERN = /^sha-[0-9a-f]{12}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const TAR_BLOCK_SIZE = 512;
 
-const VARIANTS = ["assistant", "host"] as const;
+const PRODUCTS = RELEASE_PRODUCTS;
 const ARCHITECTURES = ["amd64", "arm64"] as const;
 
 /**
@@ -57,9 +59,10 @@ const USAGE = [
 	"         [--probe-evidence <other-bundle.json>] [--base-url <origin>]",
 	"",
 	"Inputs may also come from ARTIFACT_DIR, IMAGE_DIR, SOURCE_COMMIT, RELEASE_ID,",
-	"EVIDENCE_OUTPUT and PROBE_EVIDENCE. The artifact directory must hold the four",
-	"commit-named *.tar.gz archives plus checksums.txt, SHA256SUMS or",
-	"release-manifest.json.",
+	"EVIDENCE_OUTPUT and PROBE_EVIDENCE. The artifact directory must hold the",
+	"current commit-named product archives. A release evidence bundle requires the merged",
+	"six-archive checksums.txt and release-manifest.json; native per-architecture",
+	"staging metadata is not final release evidence.",
 	"",
 	"Archive and image inspection is local: archives are decompressed and hashed,",
 	"and the image tar is read as docker-save or OCI layout. No docker daemon,",
@@ -158,22 +161,6 @@ async function readOptional(path: string): Promise<string | null> {
 }
 
 /**
- * Read the staged local release manifest verbatim. Absent or malformed input is
- * returned as null so the collector records a blocked row; the manifest's
- * publication fields are never invented.
- */
-async function readStagedManifest(artifactsDir: string): Promise<Record<string, unknown> | null> {
-	const text = await readOptional(join(artifactsDir, "release-manifest.json"));
-	if (text === null) return null;
-	try {
-		const value = JSON.parse(text) as unknown;
-		return isRecord(value) ? value : null;
-	} catch {
-		return null;
-	}
-}
-
-/**
  * Cross-check staged archive digests against whichever declaration the staging
  * step produced. `checksums.txt` matches build-release.ts; `SHA256SUMS` and
  * `release-manifest.json` cover the other producers.
@@ -205,20 +192,255 @@ async function readDeclaredHashes(artifactsDir: string): Promise<Map<string, str
 	return hashes;
 }
 
-function binaryName(variant: PackageVariant): string {
-	return variant === "assistant" ? "pixie-assistant" : "pixie";
+interface StagedArchiveFact {
+	product: PackageProduct;
+	architecture: PackageArchitecture;
+	name: string;
+	archiveSha256: string;
+	entrypointSha256: string;
+	entries: readonly string[];
+}
+
+function exactStrings(left: readonly string[], right: readonly string[]): boolean {
+	return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function recordStringMap(value: unknown): Record<string, string> | null {
+	if (!isRecord(value)) return null;
+	const result: Record<string, string> = {};
+	for (const [key, entry] of Object.entries(value)) {
+		if (typeof entry !== "string") return null;
+		result[key] = entry;
+	}
+	return result;
+}
+
+function archiveFacts(assertions: readonly EvidenceAssertion[]): StagedArchiveFact[] {
+	const facts: StagedArchiveFact[] = [];
+	for (const assertion of assertions) {
+		if (assertion.kind !== "GATE" || assertion.status !== "pass") continue;
+		const key = assertion.id.startsWith("PKG-ARCHIVE-")
+			? assertion.id.slice("PKG-ARCHIVE-".length)
+			: "";
+		const separator = key.lastIndexOf("-");
+		const product = key.slice(0, separator);
+		const architecture = key.slice(separator + 1);
+		if (!(PRODUCTS as readonly string[]).includes(product)) continue;
+		if (!(ARCHITECTURES as readonly string[]).includes(architecture)) continue;
+		const detail = decodePackageArchiveDetail(assertion.detail);
+		if (
+			detail === null ||
+			assertion.artifact === undefined ||
+			detail.product !== product ||
+			detail.architecture !== architecture
+		)
+			continue;
+		facts.push({
+			product: product as PackageProduct,
+			architecture: architecture as PackageArchitecture,
+			name: assertion.artifact.name,
+			archiveSha256: assertion.artifact.sha256,
+			entrypointSha256: detail.binarySha256,
+			entries: detail.entries,
+		});
+	}
+	return facts;
+}
+
+async function finalManifestAssertion(
+	artifactsDir: string,
+	sourceCommit: string,
+	releaseId: string,
+	assertions: readonly EvidenceAssertion[],
+): Promise<EvidenceAssertion> {
+	const command = "sha256sum --check checksums.txt && jq -e . release-manifest.json";
+	const manifestText = await readOptional(join(artifactsDir, "release-manifest.json"));
+	if (manifestText === null) {
+		return gateAssertion(
+			RELEASE_MANIFEST_ASSERTION_ID,
+			"blocked",
+			"test -f release-manifest.json",
+			"merged release-manifest.json was not found",
+		);
+	}
+	const checksumText = await readOptional(join(artifactsDir, "checksums.txt"));
+	if (checksumText === null) {
+		return gateAssertion(
+			RELEASE_MANIFEST_ASSERTION_ID,
+			"blocked",
+			"test -f checksums.txt",
+			"merged checksums.txt was not found",
+		);
+	}
+	let manifest: unknown;
+	try {
+		manifest = JSON.parse(manifestText);
+	} catch (error) {
+		return gateAssertion(
+			RELEASE_MANIFEST_ASSERTION_ID,
+			"fail",
+			command,
+			`merged release-manifest.json is not valid JSON: ${errorMessage(error)}`,
+		);
+	}
+	const issues: string[] = [];
+	if (!isRecord(manifest)) {
+		issues.push("release-manifest.json root must be a JSON object");
+	} else {
+		if (manifest.schemaVersion !== 2) issues.push("release-manifest.json schemaVersion must be 2");
+		if (manifest.releaseId !== releaseId)
+			issues.push("release-manifest.json releaseId does not match the selected source commit");
+		if (manifest.sourceCommit !== sourceCommit)
+			issues.push("release-manifest.json sourceCommit does not match the selected source commit");
+		if (manifest.cleanSourceTree !== true)
+			issues.push("release-manifest.json must record a clean source tree");
+		if (manifest.completeSet !== true)
+			issues.push("release-manifest.json must record the merged complete six-archive set");
+		if (
+			!Array.isArray(manifest.products) ||
+			!exactStrings(
+				manifest.products.filter((value): value is string => typeof value === "string"),
+				PRODUCTS,
+			)
+		)
+			issues.push(
+				"release-manifest.json products must list the three public products exactly once",
+			);
+		if (
+			!Array.isArray(manifest.architectures) ||
+			!exactStrings(
+				manifest.architectures.filter((value): value is string => typeof value === "string"),
+				ARCHITECTURES,
+			)
+		)
+			issues.push(
+				"release-manifest.json architectures must list linux amd64 and arm64 exactly once",
+			);
+
+		const facts = archiveFacts(assertions);
+		const expected = new Map(
+			PRODUCTS.flatMap((product) =>
+				ARCHITECTURES.map(
+					(architecture) =>
+						[
+							expectedArchiveName(product, architecture, releaseId),
+							{ product, architecture },
+						] as const,
+				),
+			),
+		);
+		const factsByName = new Map(facts.map((fact) => [fact.name, fact]));
+		if (factsByName.size !== expected.size)
+			issues.push("not every expected archive was inspected before validating the merged manifest");
+
+		const hashes = recordStringMap(manifest.archiveHashes);
+		if (hashes === null) {
+			issues.push("release-manifest.json archiveHashes must be a string map");
+		} else {
+			if (!exactStrings(Object.keys(hashes).sort(), [...expected.keys()].sort()))
+				issues.push(
+					"release-manifest.json archiveHashes must contain exactly the six public archives",
+				);
+			for (const [name, fact] of factsByName) {
+				if (hashes[name] !== fact.archiveSha256)
+					issues.push(`release-manifest.json archive hash disagrees with ${name}`);
+			}
+		}
+
+		if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length !== expected.size) {
+			issues.push("release-manifest.json artifacts must contain exactly six records");
+		} else {
+			const manifestArchives = new Set<string>();
+			for (const artifact of manifest.artifacts) {
+				if (!isRecord(artifact)) {
+					issues.push("release-manifest.json artifacts must be objects");
+					continue;
+				}
+				const archive = typeof artifact.archive === "string" ? artifact.archive : "";
+				const expectedProduct = expected.get(archive);
+				if (expectedProduct === undefined || manifestArchives.has(archive)) {
+					issues.push(
+						`release-manifest.json has an unknown or duplicate artifact ${archive || "<missing>"}`,
+					);
+					continue;
+				}
+				manifestArchives.add(archive);
+				if (
+					artifact.product !== expectedProduct.product ||
+					artifact.architecture !== expectedProduct.architecture ||
+					artifact.entrypoint !== expectedProduct.product
+				) {
+					issues.push(`release-manifest.json artifact identity is invalid for ${archive}`);
+				}
+				const fact = factsByName.get(archive);
+				if (
+					fact !== undefined &&
+					(artifact.archiveSha256 !== fact.archiveSha256 ||
+						artifact.entrypointSha256 !== fact.entrypointSha256 ||
+						!Array.isArray(artifact.entries) ||
+						!exactStrings(
+							artifact.entries.filter((value): value is string => typeof value === "string").sort(),
+							[...fact.entries].sort(),
+						))
+				) {
+					issues.push(`release-manifest.json artifact detail disagrees with ${archive}`);
+				}
+			}
+			if (manifestArchives.size !== expected.size)
+				issues.push(
+					"release-manifest.json artifacts do not cover every public product and architecture",
+				);
+		}
+	}
+
+	const checksums = new Map<string, string>();
+	for (const line of checksumText.split("\n")) {
+		if (line.trim() === "") continue;
+		const match = line.match(/^([0-9a-f]{64})\s{2}([^\s]+)$/);
+		if (match === null) {
+			issues.push("checksums.txt contains a malformed checksum line");
+			continue;
+		}
+		const name = match[2] ?? "";
+		if (checksums.has(name)) issues.push(`checksums.txt duplicates ${name}`);
+		checksums.set(name, match[1] ?? "");
+	}
+	const expectedNames = PRODUCTS.flatMap((product) =>
+		ARCHITECTURES.map((architecture) => expectedArchiveName(product, architecture, releaseId)),
+	);
+	if (!exactStrings([...checksums.keys()].sort(), [...expectedNames].sort()))
+		issues.push("checksums.txt must contain exactly the six public archives");
+	for (const fact of archiveFacts(assertions)) {
+		if (checksums.get(fact.name) !== fact.archiveSha256)
+			issues.push(`checksums.txt hash disagrees with ${fact.name}`);
+	}
+	const archiveNames = (await readdir(artifactsDir))
+		.filter((name) => name.endsWith(".tar.gz"))
+		.sort();
+	if (!exactStrings(archiveNames, [...expectedNames].sort()))
+		issues.push("staged release directory must contain exactly the six current public archives");
+	return gateAssertion(
+		RELEASE_MANIFEST_ASSERTION_ID,
+		issues.length === 0 ? "pass" : "fail",
+		command,
+		issues.length === 0 ? manifestText : issues.join("; "),
+	);
+}
+
+function binaryName(product: PackageProduct): string {
+	return product;
 }
 
 async function inspectArchive(
 	artifactsDir: string,
 	releaseId: string,
-	variant: PackageVariant,
+	product: PackageProduct,
 	architecture: PackageArchitecture,
 	declaredHashes: ReadonlyMap<string, string>,
 ): Promise<EvidenceAssertion> {
-	const name = expectedArchiveName(variant, architecture, releaseId);
-	const binary = binaryName(variant);
-	const id = packageArchiveAssertionId(variant, architecture);
+	const name = expectedArchiveName(product, architecture, releaseId);
+	const binary = binaryName(product);
+	const id = packageArchiveAssertionId(product, architecture);
 	const command = `sha256sum ${name} && gzip -dc ${name} | tar -xO -f - ${binary} | sha256sum`;
 	let buffer: Buffer;
 	try {
@@ -269,6 +491,22 @@ async function inspectArchive(
 			detail: `archive does not contain the expected ${binary} executable`,
 		};
 	}
+	try {
+		assertProductArchiveLayout(
+			product,
+			entries.map((entry) => entry.name),
+		);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return {
+			kind: "GATE",
+			id,
+			status: "fail",
+			command,
+			artifact: { name, sha256: archiveSha256 },
+			detail: `archive layout is invalid for ${product}: ${message}`,
+		};
+	}
 	const binarySha256 = sha256(member.content);
 	return {
 		kind: "GATE",
@@ -277,7 +515,7 @@ async function inspectArchive(
 		command,
 		artifact: { name, sha256: archiveSha256 },
 		detail: encodePackageArchiveDetail({
-			variant,
+			product,
 			architecture,
 			entries: entries.map((entry) => entry.name),
 			binary,
@@ -948,13 +1186,13 @@ export async function collectEvidence(options: CollectEvidenceOptions): Promise<
 	const artifactsDir = resolve(options.artifactsDir);
 	const declaredHashes = await readDeclaredHashes(artifactsDir);
 	const assertions: EvidenceAssertion[] = [];
-	for (const variant of VARIANTS) {
+	for (const product of PRODUCTS) {
 		for (const architecture of ARCHITECTURES) {
 			assertions.push(
 				await inspectArchive(
 					artifactsDir,
 					options.releaseId,
-					variant,
+					product,
 					architecture,
 					declaredHashes,
 				),
@@ -963,21 +1201,8 @@ export async function collectEvidence(options: CollectEvidenceOptions): Promise<
 	}
 	const image = await inspectImage(options.imagePath);
 	assertions.push(image.assertion);
-	const manifest = await readStagedManifest(artifactsDir);
 	assertions.push(
-		manifest === null
-			? gateAssertion(
-					RELEASE_MANIFEST_ASSERTION_ID,
-					"blocked",
-					"test -f release-manifest.json",
-					"staged release-manifest.json was not found or is not a JSON object",
-				)
-			: gateAssertion(
-					RELEASE_MANIFEST_ASSERTION_ID,
-					"pass",
-					"cat release-manifest.json",
-					JSON.stringify(manifest),
-				),
+		await finalManifestAssertion(artifactsDir, options.sourceCommit, options.releaseId, assertions),
 	);
 	assertions.push(await inspectCoverageEvidence(options.coveragePath));
 	assertions.push(await inspectPerformanceEvidence(options.performancePath));

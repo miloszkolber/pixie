@@ -179,6 +179,12 @@ export type {
 	});
 
 	$effect(() => {
+		const optionId = activeCompletionId;
+		if (!completionOpen || optionId === undefined) return;
+		document.getElementById(optionId)?.scrollIntoView({ block: "nearest" });
+	});
+
+	$effect(() => {
 		const support = supportsImages;
 		if (support === false && previousSupportsImages !== false && images.length > 0) {
 			images = [];

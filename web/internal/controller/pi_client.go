@@ -318,6 +318,9 @@ func buildAgentProfile(identity, version, bootID string, caps map[string]int, op
 		RenameSession:         operationValue(operationSet, "session.rename"),
 		ArchiveSession:        operationValue(operationSet, "session.archive"),
 		HTTPMCP:               operationValue(operationSet, "mcp.attach"),
+		Administration: operationValue(operationSet, "pi.providers.list") &&
+			operationValue(operationSet, "pi.defaults.read") &&
+			operationValue(operationSet, "pi.preferences.read"),
 	}
 	for _, capability := range []string{"sessions"} {
 		if caps[capability] != 1 {
@@ -604,7 +607,48 @@ func (c *PiClient) SetConfig(ctx context.Context, request piwire.SetSessionConfi
 	}
 	bounded, cancel := c.bounded(ctx)
 	defer cancel()
-	return connection.client.SetSessionConfigOption(bounded, request)
+	response, err := connection.client.SetSessionConfigOption(bounded, request)
+	if err != nil {
+		return piwire.SetSessionConfigOptionResponse{}, err
+	}
+	if err := authoritativeConfigResponse(request, response); err != nil {
+		return piwire.SetSessionConfigOptionResponse{}, err
+	}
+	return response, nil
+}
+
+// Model and thinking mutations can be accepted by Pi and then clamped or
+// rejected by its effective session state. Require the returned selector before
+// a controller caller can publish a requested selection as successful.
+func authoritativeConfigResponse(request piwire.SetSessionConfigOptionRequest, response piwire.SetSessionConfigOptionResponse) error {
+	if request.ValueId == nil {
+		return fmt.Errorf("session.configure request is missing a configuration id")
+	}
+	configID := request.ValueId.ConfigId
+	if configID == "" {
+		return fmt.Errorf("session.configure request is missing a configuration id")
+	}
+	expected := string(request.ValueId.Value)
+	found := false
+	for _, option := range response.ConfigOptions {
+		id, _ := option["id"].(string)
+		if id != configID {
+			continue
+		}
+		found = true
+		typeName, _ := option["type"].(string)
+		current, _ := option["currentValue"].(string)
+		if typeName == "select" && current != "" && current == expected {
+			return nil
+		}
+		if typeName == "select" && current != "" {
+			return fmt.Errorf("Pi agent response returned %q for configuration %q, want %q", current, configID, expected)
+		}
+	}
+	if found {
+		return fmt.Errorf("Pi agent response has invalid authoritative %q configuration", configID)
+	}
+	return fmt.Errorf("Pi agent response is missing authoritative %q configuration", configID)
 }
 
 func (c *PiClient) Close() {
@@ -690,6 +734,26 @@ type piPending struct {
 	reply     chan piReply
 	method    string
 	sessionID string
+}
+
+// sessionCreateUncertainError means session.create may have reached Pi without
+// yielding an authoritative ID to the controller. Callers must retain their
+// pre-dispatch claim and reconcile; retrying creation would risk a second
+// native session.
+type sessionCreateUncertainError struct{ cause error }
+
+func (e *sessionCreateUncertainError) Error() string {
+	if e == nil || e.cause == nil {
+		return "native session creation outcome is uncertain"
+	}
+	return e.cause.Error()
+}
+
+func (e *sessionCreateUncertainError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
 }
 
 type piRPC struct {
@@ -841,6 +905,50 @@ func (r *piRPC) call(ctx context.Context, method string, params, out any) error 
 		return nil
 	}
 }
+
+// create waits for the reply after a successful write even when the request
+// context is cancelled. The host can allocate a native session after receiving
+// the frame; dropping the pending reply on browser/schedule cancellation would
+// discard the only authoritative ID. Connection loss remains explicitly
+// uncertain rather than being retried.
+func (r *piRPC) create(ctx context.Context, params, out any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.serial++
+	id := r.serial
+	ch := make(chan piReply, 1)
+	r.pending[id] = piPending{reply: ch, method: "session.create"}
+	r.mu.Unlock()
+	defer func() { r.mu.Lock(); delete(r.pending, id); r.mu.Unlock() }()
+	raw, err := json.Marshal(map[string]any{"id": id, "method": "session.create", "params": params})
+	if err != nil {
+		return err
+	}
+	r.writeMu.Lock()
+	err = r.socket.Write(ctx, websocket.MessageText, raw)
+	r.writeMu.Unlock()
+	if err != nil {
+		return &sessionCreateUncertainError{cause: err}
+	}
+	select {
+	case <-r.done:
+		return &sessionCreateUncertainError{cause: fmt.Errorf("Pi host connection closed")}
+	case reply := <-ch:
+		if reply.Error != nil {
+			// A protocol reply is proof that the host rejected this request; it
+			// is not an ambiguous transport outcome.
+			return reply.Error
+		}
+		if out != nil {
+			if err := json.Unmarshal(reply.Result, out); err != nil {
+				return &sessionCreateUncertainError{cause: err}
+			}
+		}
+		return nil
+	}
+}
 func (r *piRPC) CallExtension(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	var result json.RawMessage
 	err := r.call(ctx, method, params, &result)
@@ -851,7 +959,7 @@ func (r *piRPC) ListSessions(ctx context.Context, req piwire.ListSessionsRequest
 	return
 }
 func (r *piRPC) NewSession(ctx context.Context, req piwire.NewSessionRequest) (res piwire.NewSessionResponse, err error) {
-	err = r.call(ctx, "session.create", req, &res)
+	err = r.create(ctx, req, &res)
 	return
 }
 func (r *piRPC) LoadSession(ctx context.Context, req piwire.LoadSessionRequest) (res piwire.LoadSessionResponse, err error) {

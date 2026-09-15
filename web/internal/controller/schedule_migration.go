@@ -2,7 +2,6 @@ package controller
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,20 +10,63 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
-// ScheduleMigrationHelperVersion versions these additive MIG-01 schedule
-// inspect/plan helpers. It never changes the schedules.json schema itself.
+// ScheduleMigrationHelperVersion versions the additive inspection and dry-run
+// helpers. Ledger versioning is separate so the existing helper API remains
+// compatible while v2 state is diagnosable.
 const ScheduleMigrationHelperVersion = 1
 
-// Repeatable schedule migration phases mirror the project-root journal:
-// prepared inspects and stages, migrating publishes through checkpoints.
 const (
 	ScheduleMigrationPhasePrepared  = "prepared"
 	ScheduleMigrationPhaseMigrating = "migrating"
+	scheduleLedgerVersion            = 2
 )
 
-// ScheduleLedgerSummary is a read-only dry-run view of schedules.json. It
-// preserves IDs, timezone, occurrence/run identities, native session links,
-// replay records and interrupted/uncertain claims without dispatching work.
+// decodeScheduleLedger accepts the pre-ledger map and the v1 ledger only to
+// migrate them forward. A v2 ledger is deliberately not readable by an older
+// binary: its unknown version must fail before it can dispatch a newer state.
+func decodeScheduleLedger(raw []byte) (map[string]Schedule, []scheduleOperation, bool, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, nil, false, err
+	}
+	if versionRaw, ok := fields["version"]; ok {
+		var version int
+		if err := json.Unmarshal(versionRaw, &version); err != nil {
+			return nil, nil, false, fmt.Errorf("invalid schedule ledger version")
+		}
+		var disk scheduleDisk
+		if err := json.Unmarshal(raw, &disk); err != nil {
+			return nil, nil, false, err
+		}
+		switch version {
+		case 1:
+			if disk.Jobs == nil || len(disk.Operations) > 512 {
+				return nil, nil, false, fmt.Errorf("invalid schedule ledger")
+			}
+			return disk.Jobs, disk.Operations, true, nil
+		case scheduleLedgerVersion:
+			if disk.Jobs == nil || len(disk.Operations) > 512 {
+				return nil, nil, false, fmt.Errorf("invalid schedule ledger")
+			}
+			return disk.Jobs, disk.Operations, false, nil
+		default:
+			return nil, nil, false, fmt.Errorf("unsupported schedule ledger version %d", version)
+		}
+	}
+	var jobs map[string]Schedule
+	if err := json.Unmarshal(raw, &jobs); err != nil {
+		return nil, nil, false, err
+	}
+	if jobs == nil {
+		return nil, nil, false, fmt.Errorf("invalid schedule ledger")
+	}
+	// Pre-v1 maps and v1 jobs had no runtime budget. Nil explicitly preserves
+	// their unlimited behavior after the v2 rewrite.
+	return jobs, nil, true, nil
+}
+
+// ScheduleLedgerSummary is a read-only migration/rollback view. It carries
+// only stable schedule identities and execution counts, never prompt content.
 type ScheduleLedgerSummary struct {
 	Present          bool
 	Version          int
@@ -41,63 +83,50 @@ type ScheduleLedgerSummary struct {
 	PausedCount      int
 }
 
-// InspectScheduleLedger reads schedules.json with no writes, no admission and
-// no dispatch. Unknown files stay untouched; only schedules.json is read. A
-// missing primary with a remaining backup fails closed and never replays the
-// older execution ledger. A newer unsupported schema stays diagnosable here
-// while mutations stay blocked in PlanScheduleMigration.
+// InspectScheduleLedger performs no conversion, write, or dispatch. Unknown
+// versions remain inspectable so rollback logic can fail closed explicitly.
 func InspectScheduleLedger(store persist.Store) (ScheduleLedgerSummary, error) {
-	path := filepath.Join(store.Dir, "schedules.json")
-	raw, _, err := persist.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			if _, backupErr := os.Stat(path + ".bak"); !errors.Is(backupErr, os.ErrNotExist) {
-				return ScheduleLedgerSummary{}, fmt.Errorf("schedule primary is missing; refusing an older execution ledger")
-			}
+	name := filepath.Join(store.Dir, "schedules.json")
+	raw, _, err := persist.ReadFile(name)
+	if os.IsNotExist(err) {
+		if _, _, backupErr := persist.ReadFile(name + ".bak"); os.IsNotExist(backupErr) {
 			return ScheduleLedgerSummary{SchemaSupported: true}, nil
 		}
-		return ScheduleLedgerSummary{}, fmt.Errorf("schedule ledger is unreadable")
+		return ScheduleLedgerSummary{}, fmt.Errorf("schedule state is missing while a backup remains")
 	}
-	var peek struct {
-		Version *int `json:"version"`
+	if err != nil {
+		return ScheduleLedgerSummary{}, fmt.Errorf("schedule state is unreadable")
 	}
-	if err := json.Unmarshal(raw, &peek); err != nil {
-		return ScheduleLedgerSummary{}, fmt.Errorf("schedule ledger is unreadable")
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return ScheduleLedgerSummary{}, fmt.Errorf("schedule state is unreadable")
 	}
-	if peek.Version == nil {
-		var jobs map[string]Schedule
-		if err := persist.Decode(raw, &jobs, nil); err != nil {
-			return ScheduleLedgerSummary{}, fmt.Errorf("schedule ledger is unreadable")
-		}
-		if err := validateSchedules(jobs); err != nil {
-			return ScheduleLedgerSummary{}, err
-		}
-		return summarizeSchedules(jobs, 0, true, 0), nil
+	version := 0
+	if value, ok := fields["version"]; ok && json.Unmarshal(value, &version) != nil {
+		return ScheduleLedgerSummary{}, fmt.Errorf("schedule state is unreadable")
 	}
-	if *peek.Version != 1 {
-		return ScheduleLedgerSummary{Present: true, Version: *peek.Version, SchemaSupported: false}, nil
+	summary := ScheduleLedgerSummary{Present: true, Version: version, Legacy: version == 0, SchemaSupported: version == 0 || version == 1 || version == scheduleLedgerVersion}
+	if !summary.SchemaSupported {
+		return summary, nil
 	}
-	var disk scheduleDisk
-	if err := json.Unmarshal(raw, &disk); err != nil {
-		return ScheduleLedgerSummary{}, fmt.Errorf("schedule ledger is unreadable")
+	jobs, operations, _, err := decodeScheduleLedger(raw)
+	if err != nil {
+		return ScheduleLedgerSummary{}, fmt.Errorf("schedule state is unreadable")
 	}
-	if disk.Version != 1 || disk.Jobs == nil || len(disk.Operations) > 512 {
-		return ScheduleLedgerSummary{}, fmt.Errorf("invalid schedule ledger")
+	if err := validateSchedules(jobs); err != nil {
+		return ScheduleLedgerSummary{}, fmt.Errorf("schedule state is unreadable")
 	}
-	for _, op := range disk.Operations {
-		if op.Key == "" || op.Fingerprint == "" || !json.Valid(op.Result) {
-			return ScheduleLedgerSummary{}, fmt.Errorf("invalid schedule operation")
+	for _, operation := range operations {
+		if operation.Key == "" || operation.Fingerprint == "" || !json.Valid(operation.Result) {
+			return ScheduleLedgerSummary{}, fmt.Errorf("schedule state is unreadable")
 		}
 	}
-	if err := validateSchedules(disk.Jobs); err != nil {
-		return ScheduleLedgerSummary{}, err
-	}
-	return summarizeSchedules(disk.Jobs, disk.Version, false, len(disk.Operations)), nil
+	return summarizeSchedules(jobs, version, version == 0, len(operations)), nil
 }
 
 func summarizeSchedules(jobs map[string]Schedule, version int, legacy bool, operations int) ScheduleLedgerSummary {
 	summary := ScheduleLedgerSummary{Present: true, Version: version, Legacy: legacy, SchemaSupported: true, JobCount: len(jobs), OperationCount: operations}
-	zones := make(map[string]bool)
+	zones := map[string]bool{}
 	for id, job := range jobs {
 		summary.IDs = append(summary.IDs, id)
 		zone := job.Timezone
@@ -114,86 +143,74 @@ func summarizeSchedules(jobs map[string]Schedule, version int, legacy bool, oper
 				summary.SessionLinks++
 			}
 			switch run.Status {
-			case "interrupted":
+			case scheduleRunInterrupted:
 				summary.Interrupted++
-			case "running":
+			case scheduleRunRunning, scheduleRunCancelling, scheduleRunCancellationUnconfirmed:
 				summary.RunningUncertain++
 			}
 		}
 	}
-	sort.Strings(summary.IDs)
 	for zone := range zones {
 		summary.Timezones = append(summary.Timezones, zone)
 	}
+	sort.Strings(summary.IDs)
 	sort.Strings(summary.Timezones)
 	return summary
 }
 
-// ScheduleMigrationPlan is a dry-run conversion description with no writes.
-// Schedules stay project-scoped; migration never dispatches missed jobs.
 type ScheduleMigrationPlan struct {
 	Phase            string
 	JobCount         int
-	Preserved        []string
-	Conflicts        []string
 	DispatchBlocked  bool
 	MutationsBlocked bool
+	Preserved        []string
+	Conflicts        []string
 	Note             string
+	Unresolved       []string
 }
 
-// PlanScheduleMigration derives a repeatable dry-run plan from one inspect
-// pass. Re-running identical inputs is idempotent. Changed inputs conflict at
-// the caller, which must compare input hashes before staging. It performs no
-// writes and never restores an older ledger over dispatched effects.
+// PlanScheduleMigration is a dry-run guard. Runtime migration is only the
+// v1-to-v2 durable conversion in NewSchedules; this helper never writes it.
 func PlanScheduleMigration(summary ScheduleLedgerSummary) (ScheduleMigrationPlan, error) {
+	preserved := []string{"ids", "timezone", "occurrence/run identities", "native session links", "replay records", "interrupted/uncertain claims", "runtime budgets"}
 	if !summary.Present {
 		return ScheduleMigrationPlan{
-			Phase: ScheduleMigrationPhasePrepared, Preserved: []string{},
-			DispatchBlocked: true, Note: "empty schedule ledger; nothing to convert, resume schedules explicitly after migration",
+			Phase: ScheduleMigrationPhasePrepared, Preserved: []string{}, DispatchBlocked: true,
+			Note: "empty schedule ledger; nothing to convert, resume schedules explicitly after migration",
 		}, nil
 	}
+	plan := ScheduleMigrationPlan{Phase: ScheduleMigrationPhasePrepared, JobCount: summary.JobCount, Preserved: preserved, DispatchBlocked: true, Unresolved: []string{}}
 	if !summary.SchemaSupported {
-		return ScheduleMigrationPlan{
-			Phase: ScheduleMigrationPhasePrepared, JobCount: summary.JobCount,
-			Preserved:        []string{"ids", "timezone", "occurrence/run identities", "native session links", "replay records", "interrupted/uncertain claims"},
-			DispatchBlocked:  true,
-			MutationsBlocked: true,
-			Note:             fmt.Sprintf("schedule schema v%d is newer than supported v1; diagnostics remain available while mutations stay blocked", summary.Version),
-		}, nil
+		plan.MutationsBlocked = true
+		plan.Unresolved = append(plan.Unresolved, "unsupported schedule ledger version")
+		plan.Note = fmt.Sprintf("schedule schema v%d is newer than supported v%d; diagnostics remain available while mutations stay blocked", summary.Version, scheduleLedgerVersion)
+		return plan, nil
 	}
-	return ScheduleMigrationPlan{
-		Phase:    ScheduleMigrationPhasePrepared,
-		JobCount: summary.JobCount,
-		Preserved: []string{
-			"ids",
-			"timezone",
-			"occurrence/run identities",
-			"native session links",
-			"replay records",
-			"interrupted/uncertain claims",
-		},
-		DispatchBlocked: true,
-		Note:            "schedules stay project-scoped; migration claims due occurrences without dispatching missed jobs and pauses ambiguous restarts",
-	}, nil
+	plan.Note = "schedules stay project-scoped; migration claims due occurrences without dispatching missed jobs and pauses ambiguous restarts"
+	return plan, nil
 }
 
-// ValidateSchedulePreservation confirms a staged conversion kept every
-// schedule identity, timezone occurrence, run link, replay record and
-// interrupted claim. It never touches storage.
 func ValidateSchedulePreservation(before, after ScheduleLedgerSummary) error {
 	if !before.SchemaSupported || !after.SchemaSupported {
 		return fmt.Errorf("schedule preservation requires supported schemas on both sides")
 	}
-	if len(before.IDs) != len(after.IDs) {
+	if !sameStrings(before.IDs, after.IDs) {
 		return fmt.Errorf("schedule migration lost or invented schedule identities")
-	}
-	for i := range before.IDs {
-		if before.IDs[i] != after.IDs[i] {
-			return fmt.Errorf("schedule migration lost or invented schedule identities")
-		}
 	}
 	if after.RunCount < before.RunCount || after.OperationCount < before.OperationCount {
 		return fmt.Errorf("schedule migration must preserve run and replay records")
 	}
 	return nil
+}
+
+func sameStrings(first, second []string) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	for index := range first {
+		if first[index] != second[index] {
+			return false
+		}
+	}
+	return true
 }

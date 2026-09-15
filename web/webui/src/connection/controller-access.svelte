@@ -14,7 +14,10 @@ let error = $state("");
 
 onMount(() => {
 	void authRequest("/auth/status")
-		.then(async (response) => (response.ok ? (response.json() as Promise<AuthStatus>) : undefined))
+		.then(async (response) => {
+			if (!response.ok) throw new Error(`Controller responded with status ${response.status}.`);
+			return response.json() as Promise<AuthStatus>;
+		})
 		.then((next) => {
 			if (next?.authenticated) onAuthenticated(next.authenticationEnabled === true);
 			else status = next;

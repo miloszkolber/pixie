@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/miloszkolber/pixie/internal/controller"
 	"github.com/miloszkolber/pixie/internal/persist"
+	"github.com/miloszkolber/pixie/internal/workspace"
 )
 
 func TestPiAdminModelsRequireUsableProviderInventory(t *testing.T) {
@@ -336,5 +337,147 @@ func TestPiAdminRefreshModelsReportsIncompleteCanonicalMetadata(t *testing.T) {
 	}
 	if result["complete"] != false || len(result["models"].([]controller.WireModel)) != 1 {
 		t.Fatalf("canonical timeout was reported as complete: %#v", result)
+	}
+}
+
+func TestPiAdminSaveDefaultsRejectsUnknownModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if err := json.Unmarshal(payload, &rpc); err != nil {
+				return
+			}
+			var result any = map[string]any{}
+			switch rpc.Method {
+			case "runtime.hello":
+				result = piInitializeResponse()
+			case "pi.providers.list":
+				result = map[string]any{"entries": []any{map[string]any{
+					"providerId": "available", "configured": true, "available": true,
+					"models": []any{map[string]any{"id": "known"}},
+				}}}
+			case "pi.defaults.save":
+				result = map[string]any{"providerId": "available", "modelId": "known"}
+			}
+			if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", nil)
+	defer client.Close()
+	admin := controller.NewPiAdmin(client, controller.NewSettings(persist.Store{Dir: t.TempDir()}, nil))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	unknown := "missing"
+	if _, err := admin.SaveDefaults(ctx, "available", &unknown); err == nil || !strings.Contains(err.Error(), "unknown model") {
+		t.Fatalf("unknown default model was accepted: %v", err)
+	}
+	if _, err := admin.SaveDefaults(ctx, "missing-provider", nil); err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("unknown default provider did not report unavailable: %v", err)
+	}
+}
+
+func TestPiAdminCreateReleasesOrphanOnConfigureFailure(t *testing.T) {
+	var mu sync.Mutex
+	created := make(map[string]string)
+	var releases []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+				Params map[string]any  `json:"params"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil {
+				return
+			}
+			switch rpc.Method {
+			case "runtime.hello":
+				_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": piInitializeResponse()})
+			case "session.create":
+				cwd, _ := rpc.Params["cwd"].(string)
+				mu.Lock()
+				created["orphan-1"] = cwd
+				mu.Unlock()
+				_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": map[string]any{"sessionId": "orphan-1"}})
+			case "session.configure":
+				_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "error": map[string]any{"code": -32000, "message": "thinking rejected"}})
+			case "session.release":
+				mu.Lock()
+				delete(created, "orphan-1")
+				releases = append(releases, map[string]any{"sessionId": rpc.Params["sessionId"], "cwd": rpc.Params["cwd"]})
+				mu.Unlock()
+				_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": map[string]any{}})
+			default:
+				_ = writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": map[string]any{}})
+			}
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	policy, err := workspace.NewPathPolicy([]string{root}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := persist.Store{Dir: t.TempDir()}
+	projects := workspace.NewProjects(store, policy)
+	project, err := projects.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := controller.NewSessionRecords(store)
+	manager := controller.NewSessionManager(projects, policy, records, controller.NewSessionQueues(store), controller.NewObjectives(store), nil)
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", manager)
+	manager.SetClient(client)
+	defer client.Close()
+
+	cwd := project.Roots[0]
+	if _, err := manager.Create(ctx, project.ID, cwd, nil, "high", "client-1"); err == nil || !strings.Contains(err.Error(), "thinking rejected") {
+		t.Fatalf("configure failure did not surface: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(releases) != 1 || releases[0]["sessionId"] != "orphan-1" || releases[0]["cwd"] != cwd {
+		t.Fatalf("orphan was not released with the same cwd: %#v", releases)
+	}
+	if len(created) != 0 {
+		t.Fatalf("orphan native session remains: %#v", created)
+	}
+	stored, err := records.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range stored {
+		if record.SessionID == "orphan-1" {
+			t.Fatalf("orphan durable association remains: %#v", record)
+		}
 	}
 }

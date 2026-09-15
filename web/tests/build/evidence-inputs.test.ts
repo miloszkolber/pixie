@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { gzipSync } from "node:zlib";
+import { productArchiveLayout } from "../../scripts/build-release.ts";
 import {
 	ACCEPTANCE_IDS,
 	type CoverageInput,
@@ -14,12 +16,15 @@ import {
 	loadReductionsManifest as loadPackageReductionsManifest,
 } from "../../scripts/check-package-artifacts.ts";
 import { inspectPerformance } from "../../scripts/check-performance.ts";
+import { writeDeterministicTarGz } from "../../scripts/deterministic-tar.ts";
 import {
 	defaultReductionManifestPath,
 	expandReductions,
 	loadReductionsManifest,
 	produceEvidenceInputs,
+	productProbeEntrypoint,
 } from "../../scripts/produce-evidence-inputs.ts";
+import { stageArtifacts, writeFixtureTar } from "./staged-evidence-fixture.ts";
 
 const sourceCommit = "0123456789abcdef0123456789abcdef01234567";
 const releaseId = `sha-${sourceCommit.slice(0, 12)}`;
@@ -44,22 +49,47 @@ async function writeExecutable(path: string, script: string): Promise<void> {
 
 interface Fixture {
 	root: string;
-	assistant: string;
-	host: string;
+	artifactsDir: string;
+	web: string;
+	cli: string;
+	full: string;
 }
 
-async function makeFixture(
-	options: { assistantDoctor?: boolean; hostDoctor?: boolean } = {},
-): Promise<Fixture> {
+async function makeFixture(options: { fullDoctor?: boolean } = {}): Promise<Fixture> {
 	const root = await mkdtemp(join(tmpdir(), "pixie-evidence-inputs-"));
-	const assistant = join(root, "pixie-assistant");
-	const host = join(root, "pixie");
-	await writeExecutable(
-		assistant,
-		binaryScript("pixie-assistant", options.assistantDoctor ?? true),
-	);
-	await writeExecutable(host, binaryScript("pixie", options.hostDoctor ?? true));
-	return { root, assistant, host };
+	try {
+		const { artifactsDir } = await stageArtifacts(root, true, sourceCommit, releaseId);
+		const web = join(root, "pixie_web");
+		const cli = join(root, "pixie_cli");
+		const full = join(root, "pixie");
+		await writeExecutable(web, binaryScript("pixie_web", true));
+		await writeExecutable(cli, binaryScript("pixie_cli", true));
+		await writeExecutable(full, binaryScript("pixie", options.fullDoctor ?? true));
+		return { root, artifactsDir, web, cli, full };
+	} catch (error) {
+		await rm(root, { recursive: true, force: true });
+		throw error;
+	}
+}
+
+function binaryPaths(fixture: Fixture): string[] {
+	return [fixture.web, fixture.cli, fixture.full];
+}
+
+async function rewriteArchive(
+	root: string,
+	archive: string,
+	entries: readonly string[],
+): Promise<void> {
+	const source = join(root, "invalid-layout");
+	const files: { name: string; path: string; mode: number }[] = [];
+	for (const name of entries) {
+		const path = join(source, name);
+		await mkdir(dirname(path), { recursive: true });
+		await writeFile(path, `${name}\n`);
+		files.push({ name, path, mode: 0o644 });
+	}
+	await writeDeterministicTarGz(archive, files, 1_700_000_000);
 }
 
 function mandatoryReducedIDs(): string[] {
@@ -73,7 +103,8 @@ test("producer merges every documented reduction and emits measurable inputs", a
 		const result = await produceEvidenceInputs({
 			outputDir,
 			sourceCommit,
-			binaryPaths: [fixture.assistant, fixture.host],
+			artifactsDir: fixture.artifactsDir,
+			binaryPaths: binaryPaths(fixture),
 		});
 
 		const manifest = await loadReductionsManifest(defaultReductionManifestPath());
@@ -105,10 +136,10 @@ test("producer merges every documented reduction and emits measurable inputs", a
 			await loadPackageReductionsManifest(defaultReductionManifestPath()),
 		).map((reduction) => reduction.id);
 		for (const id of [
-			"binary.version/assistant/arm64",
-			"binary.version/host/arm64",
-			"binary.doctor/assistant/arm64",
-			"binary.doctor/host/arm64",
+			"binary.version/pixie_cli/arm64",
+			"binary.version/pixie/arm64",
+			"binary.doctor/pixie_cli/arm64",
+			"binary.doctor/pixie/arm64",
 		]) {
 			expect(packageReductions).not.toContain(id);
 		}
@@ -119,6 +150,42 @@ test("producer merges every documented reduction and emits measurable inputs", a
 		expect(result.coverage.evidence?.every((row) => row.actual === true && row.live === true)).toBe(
 			true,
 		);
+		expect(result.binaries.map((binary) => binary.product)).toEqual([
+			"pixie_web",
+			"pixie_cli",
+			"pixie",
+		]);
+		for (const binary of result.binaries) {
+			expect(await Bun.file(binary.path).exists()).toBe(true);
+		}
+		// Explicit binaries override the extracted probe entrypoints for tests.
+		expect(result.binaries.map((binary) => binary.path)).toEqual(binaryPaths(fixture));
+		for (const executable of [
+			"products/pixie_cli/pixie",
+			"products/pixie_cli/pixie_cli",
+			"products/pixie_cli/runtime/bin/bun",
+			"products/pixie/pixie",
+			"products/pixie/libexec/pixie_full",
+			"products/pixie/libexec/pixie_web",
+			"products/pixie/runtime/bin/bun",
+		]) {
+			expect((await stat(join(outputDir, "binaries", executable))).mode & 0o111).not.toBe(0);
+		}
+		// The assistant is a Bun JavaScript bundle run by the staged runtime, not
+		// an archive executable: a regular 0o644 file with no execute bits.
+		for (const assistant of [
+			"products/pixie_cli/libexec/pixie_assistant.js",
+			"products/pixie/libexec/pixie_assistant.js",
+		]) {
+			const info = await stat(join(outputDir, "binaries", assistant));
+			expect(info.isFile()).toBe(true);
+			expect(info.mode & 0o777).toBe(0o644);
+			expect(info.mode & 0o111).toBe(0);
+		}
+		// Preserve the two frozen rows while measuring only archive-local runtime bundles.
+		expect(
+			result.performance.measurements?.map((measurement) => measurement.variant).sort(),
+		).toEqual(["assistant", "full-host"]);
 
 		// The producer wrote both inputs where the workflow expects them.
 		expect(await Bun.file(result.coveragePath).exists()).toBe(true);
@@ -129,12 +196,13 @@ test("producer merges every documented reduction and emits measurable inputs", a
 });
 
 test("a check the producer did not run stays blocked and is not a live claim", async () => {
-	const fixture = await makeFixture({ hostDoctor: false });
+	const fixture = await makeFixture({ fullDoctor: false });
 	try {
 		const result = await produceEvidenceInputs({
 			outputDir: join(fixture.root, "out"),
 			sourceCommit,
-			binaryPaths: [fixture.assistant, fixture.host],
+			artifactsDir: fixture.artifactsDir,
+			binaryPaths: binaryPaths(fixture),
 		});
 
 		const readiness = result.probes.find((probe) => probe.name === "readiness");
@@ -144,12 +212,10 @@ test("a check the producer did not run stays blocked and is not a live claim", a
 		);
 
 		const doctor = result.probes.find(
-			(probe) => probe.name === "doctor" && probe.variant === "full-host",
+			(probe) => probe.name === "doctor" && probe.product === "pixie",
 		);
 		expect(doctor?.status).toBe("blocked");
-		expect(result.coverage.evidence?.some((row) => row.test === "full-host-amd64-doctor")).toBe(
-			false,
-		);
+		expect(result.coverage.evidence?.some((row) => row.test === "pixie-amd64-doctor")).toBe(false);
 	} finally {
 		await rm(fixture.root, { recursive: true, force: true });
 	}
@@ -161,7 +227,8 @@ test("coverage passes only for executed or approved-reduced rows and fails for a
 		const result = await produceEvidenceInputs({
 			outputDir: join(fixture.root, "out"),
 			sourceCommit,
-			binaryPaths: [fixture.assistant, fixture.host],
+			artifactsDir: fixture.artifactsDir,
+			binaryPaths: binaryPaths(fixture),
 		});
 
 		const coverage = result.coverage as CoverageInput;
@@ -202,7 +269,8 @@ test("performance producer measures native startup evidence, leaves the other ar
 		const result = await produceEvidenceInputs({
 			outputDir: join(fixture.root, "out"),
 			sourceCommit,
-			binaryPaths: [fixture.assistant, fixture.host],
+			artifactsDir: fixture.artifactsDir,
+			binaryPaths: binaryPaths(fixture),
 		});
 
 		const report = inspectPerformance(result.performance);
@@ -233,6 +301,203 @@ test("performance producer measures native startup evidence, leaves the other ar
 		const forged = inspectPerformance({ ...result.performance, measurements });
 		expect(forged.ok).toBe(false);
 		expect(forged.violations.join("\n")).toContain("p50/p95 do not match the recorded samples");
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("producer validates every current archive layout before it writes evidence", async () => {
+	const fixture = await makeFixture();
+	try {
+		const archive = join(fixture.artifactsDir, `pixie_web-${releaseId}-linux-amd64.tar.gz`);
+		await rewriteArchive(fixture.root, archive, [
+			...productArchiveLayout("pixie_web"),
+			"runtime/manifest.json",
+		]);
+
+		const outputDir = join(fixture.root, "out");
+		await expect(
+			produceEvidenceInputs({
+				outputDir,
+				sourceCommit,
+				artifactsDir: fixture.artifactsDir,
+				binaryPaths: binaryPaths(fixture),
+			}),
+		).rejects.toThrow("invalid pixie_web layout");
+		expect(await Bun.file(join(outputDir, "coverage.json")).exists()).toBe(false);
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("producer rejects a Node runtime and a legacy no-extension assistant path", async () => {
+	const fixture = await makeFixture();
+	try {
+		const cliArchive = join(fixture.artifactsDir, `pixie_cli-${releaseId}-linux-amd64.tar.gz`);
+		const runtime = [
+			"runtime/manifest.json",
+			"runtime/bin/bun",
+			"runtime/bun/LICENSE.md",
+			"runtime/node_modules/@earendil-works/pi-coding-agent/package.json",
+		];
+		// Only the pinned Bun runtime may ship, so a bundled Node runtime fails.
+		await rewriteArchive(fixture.root, cliArchive, [
+			...productArchiveLayout("pixie_cli", runtime),
+			"runtime/node/bin/node",
+		]);
+		await expect(
+			produceEvidenceInputs({
+				outputDir: join(fixture.root, "out-node"),
+				sourceCommit,
+				artifactsDir: fixture.artifactsDir,
+				binaryPaths: binaryPaths(fixture),
+			}),
+		).rejects.toThrow("bundles a Node runtime");
+
+		// The legacy compiled-executable name is not the portable JS bundle.
+		await rewriteArchive(
+			fixture.root,
+			cliArchive,
+			productArchiveLayout("pixie_cli", runtime).map((name) =>
+				name === "libexec/pixie_assistant.js" ? "libexec/pixie_assistant" : name,
+			),
+		);
+		await expect(
+			produceEvidenceInputs({
+				outputDir: join(fixture.root, "out-legacy"),
+				sourceCommit,
+				artifactsDir: fixture.artifactsDir,
+				binaryPaths: binaryPaths(fixture),
+			}),
+		).rejects.toThrow("invalid pixie_cli layout");
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("producer rejects legacy pixie-assistant archive names before evidence generation", async () => {
+	const fixture = await makeFixture();
+	try {
+		await writeFile(
+			join(fixture.artifactsDir, `pixie-assistant-${releaseId}-linux-amd64.tar.gz`),
+			"legacy archive",
+		);
+		const outputDir = join(fixture.root, "out");
+		await expect(
+			produceEvidenceInputs({
+				outputDir,
+				sourceCommit,
+				artifactsDir: fixture.artifactsDir,
+				binaryPaths: binaryPaths(fixture),
+			}),
+		).rejects.toThrow("legacy pixie-assistant archive");
+		expect(await Bun.file(join(outputDir, "coverage.json")).exists()).toBe(false);
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("producer probes the product launcher that owns release identity", () => {
+	expect(productProbeEntrypoint("pixie_web")).toBe("pixie_web");
+	expect(productProbeEntrypoint("pixie_cli")).toBe("pixie_cli");
+	expect(productProbeEntrypoint("pixie")).toBe("libexec/pixie_full");
+});
+
+test("producer rejects an archive member that escapes the extraction root", async () => {
+	const fixture = await makeFixture();
+	try {
+		const archive = join(fixture.artifactsDir, `pixie_web-${releaseId}-linux-amd64.tar.gz`);
+		const entries = [
+			...productArchiveLayout("pixie_web"),
+			"runtime/../..",
+			"runtime/../../escaped.txt",
+		];
+		await writeFile(
+			archive,
+			gzipSync(
+				writeFixtureTar(entries.map((name) => ({ name, content: Buffer.from(`${name}\n`) }))),
+			),
+		);
+
+		const outputDir = join(fixture.root, "out");
+		await expect(
+			produceEvidenceInputs({
+				outputDir,
+				sourceCommit,
+				artifactsDir: fixture.artifactsDir,
+				binaryPaths: binaryPaths(fixture),
+			}),
+		).rejects.toThrow("unsafe member path");
+		expect(await Bun.file(join(outputDir, "coverage.json")).exists()).toBe(false);
+		// Validation rejects the archive before the extraction root is created.
+		await expect(stat(join(outputDir, "binaries"))).rejects.toThrow();
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("producer rejects a duplicate archive member before extraction", async () => {
+	const fixture = await makeFixture();
+	try {
+		const archive = join(fixture.artifactsDir, `pixie_web-${releaseId}-linux-amd64.tar.gz`);
+		const layout = productArchiveLayout("pixie_web");
+		const duplicate = layout[layout.length - 1] ?? "pixie_web";
+		await writeFile(
+			archive,
+			gzipSync(
+				writeFixtureTar(
+					[...layout, duplicate].map((name) => ({
+						name,
+						content: Buffer.from(`${name}\n`),
+					})),
+				),
+			),
+		);
+
+		await expect(
+			produceEvidenceInputs({
+				outputDir: join(fixture.root, "out"),
+				sourceCommit,
+				artifactsDir: fixture.artifactsDir,
+				binaryPaths: binaryPaths(fixture),
+			}),
+		).rejects.toThrow("duplicate member");
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("an unsupported doctor command is blocked and never recorded as failed or executed", async () => {
+	const fixture = await makeFixture();
+	try {
+		// The full-suite supervisor answers --version but has no doctor command;
+		// its usage error must not be misread as a failed probe.
+		const usageOnly = `#!/bin/sh
+case "$1" in
+  --version) echo "pixie_full ${releaseId} (revision ${sourceCommit})"; exit 0 ;;
+  *) echo "use serve --assistant-config ABS --web-config ABS" >&2; exit 2 ;;
+esac
+`;
+		await writeExecutable(fixture.full, usageOnly);
+		const result = await produceEvidenceInputs({
+			outputDir: join(fixture.root, "out"),
+			sourceCommit,
+			artifactsDir: fixture.artifactsDir,
+			binaryPaths: binaryPaths(fixture),
+		});
+
+		const doctor = result.probes.find(
+			(probe) => probe.name === "doctor" && probe.product === "pixie",
+		);
+		expect(doctor?.status).toBe("blocked");
+		expect(
+			result.coverage.evidence?.some((row) => /^pixie-(amd64|arm64)-doctor$/.test(row.test ?? "")),
+		).toBe(false);
+		// The identity probe still executed against the supervisor.
+		const version = result.probes.find(
+			(probe) => probe.name === "version" && probe.product === "pixie",
+		);
+		expect(version?.status).toBe("executed");
 	} finally {
 		await rm(fixture.root, { recursive: true, force: true });
 	}

@@ -1,9 +1,16 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { installInstructions } from "../../scripts/build-release.ts";
+import {
+	assertProductArchiveLayout,
+	installInstructions,
+	mergeReleaseArtifacts,
+	productArchiveLayout,
+	RELEASE_PRODUCTS,
+} from "../../scripts/build-release.ts";
 import { writeDeterministicTarGz } from "../../scripts/deterministic-tar.ts";
 
 const packageRoot = resolve(import.meta.dir, "../..");
@@ -40,8 +47,10 @@ function tarEntries(archive: Uint8Array): TarEntry[] {
 		const header = archive.subarray(offset, offset + 512);
 		if (header.every((byte) => byte === 0)) break;
 		const size = tarOctal(header, 124, 12);
+		const prefix = tarString(header, 345, 155);
+		const name = tarString(header, 0, 100);
 		entries.push({
-			name: tarString(header, 0, 100),
+			name: prefix === "" ? name : `${prefix}/${name}`,
 			mode: tarOctal(header, 100, 8),
 			uid: tarOctal(header, 108, 8),
 			gid: tarOctal(header, 116, 8),
@@ -56,6 +65,109 @@ function tarEntries(archive: Uint8Array): TarEntry[] {
 function runTar(cwd: string, args: readonly string[]) {
 	const child = Bun.spawnSync(["tar", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
 	return { exitCode: child.exitCode, stdout: text(child.stdout), stderr: text(child.stderr) };
+}
+
+function fakeElf(architecture: "amd64" | "arm64"): Buffer {
+	const binary = Buffer.alloc(64);
+	binary.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
+	binary[18] = architecture === "amd64" ? 62 : 183;
+	return binary;
+}
+
+function sha256(contents: Uint8Array): string {
+	return createHash("sha256").update(contents).digest("hex");
+}
+
+function fixtureRuntime(architecture: "amd64" | "arm64"): Map<string, Buffer> {
+	const piManifest = Buffer.from(
+		JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "0.85.1", license: "MIT" }),
+	);
+	const files = new Map<string, Buffer>([
+		["runtime/bin/bun", fakeElf(architecture)],
+		["runtime/bun/LICENSE.md", Buffer.from("Bun fixture license\n")],
+		["runtime/node_modules/@earendil-works/pi-coding-agent/package.json", piManifest],
+		[
+			"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js",
+			Buffer.from('import "./chunks/tui.js";\n'),
+		],
+		[
+			"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/chunks/tui.js",
+			Buffer.from("export {};\n"),
+		],
+	]);
+	const bun =
+		architecture === "amd64"
+			? {
+					archive: "bun-linux-x64.zip",
+					sha256: "2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452",
+				}
+			: {
+					archive: "bun-linux-aarch64.zip",
+					sha256: "4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e",
+				};
+	const manifest = Buffer.from(
+		JSON.stringify({
+			schemaVersion: 2,
+			platform: { os: "linux", architecture },
+			bun: { version: "1.4.0", ...bun },
+			rootPackage: { name: "@earendil-works/pi-coding-agent", version: "0.85.1" },
+			packages: [
+				{
+					name: "@earendil-works/pi-coding-agent",
+					version: "0.85.1",
+					license: "MIT",
+					path: "node_modules/@earendil-works/pi-coding-agent",
+				},
+			],
+			files: [...files.entries()].map(([path, content]) => ({
+				path: path.slice("runtime/".length),
+				sha256: sha256(content),
+				size: content.byteLength,
+			})),
+		}),
+	);
+	files.set("runtime/manifest.json", manifest);
+	return files;
+}
+
+async function writeMergeArchive(
+	directory: string,
+	product: (typeof RELEASE_PRODUCTS)[number],
+	architecture: "amd64" | "arm64",
+	releaseId: string,
+): Promise<void> {
+	const stage = join(directory, `${product}-${architecture}`);
+	await mkdir(stage, { recursive: true });
+	const regular = join(stage, "regular");
+	const executable = join(stage, "executable");
+	await writeFile(regular, "release entry\n");
+	await writeFile(executable, fakeElf(architecture));
+	const executableNames: Record<(typeof RELEASE_PRODUCTS)[number], readonly string[]> = {
+		pixie_web: ["pixie_web"],
+		pixie_cli: ["pixie", "pixie_cli"],
+		pixie: ["pixie", "libexec/pixie_full", "libexec/pixie_web"],
+	};
+	const runtime =
+		product === "pixie_cli" || product === "pixie" ? fixtureRuntime(architecture) : new Map();
+	const entries = productArchiveLayout(product, [...runtime.keys()]).map((name) => ({
+		name,
+		path: runtime.has(name)
+			? join(stage, name)
+			: executableNames[product].includes(name)
+				? executable
+				: regular,
+		mode: executableNames[product].includes(name) || name === "runtime/bin/bun" ? 0o755 : 0o644,
+	}));
+	for (const [name, content] of runtime) {
+		const path = join(stage, name);
+		await mkdir(resolve(path, ".."), { recursive: true });
+		await writeFile(path, content);
+	}
+	await writeDeterministicTarGz(
+		join(directory, `${product}-${releaseId}-linux-${architecture}.tar.gz`),
+		entries,
+		sourceCommitTime,
+	);
 }
 
 test("release builder derives one commit identity without publishing or accepting a dirty tree", async () => {
@@ -77,14 +189,41 @@ test("release builder derives one commit identity without publishing or acceptin
 		mode: string;
 		publication: string;
 		architectures: string[];
-		variants: string[];
+		nativeRuntimeArchitecture: string;
+		skippedArchitectures: string[];
+		products: string[];
 	};
 	expect(plan.sourceCommit).toMatch(/^[0-9a-f]{40}$/);
 	expect(plan.releaseId).toBe(`sha-${plan.sourceCommit.slice(0, 12)}`);
 	expect(plan.mode).toBe("validate-only");
 	expect(plan.publication).toBe("disabled");
-	expect(plan.architectures).toEqual(["amd64", "arm64"]);
-	expect(plan.variants).toEqual(["assistant", "host"]);
+	expect(plan.architectures).toEqual([plan.nativeRuntimeArchitecture]);
+	expect(plan.products).toEqual([...RELEASE_PRODUCTS]);
+	expect(plan.skippedArchitectures).toEqual(
+		["amd64", "arm64"].filter((architecture) => architecture !== plan.nativeRuntimeArchitecture),
+	);
+});
+
+test("--architecture all builds only the native architecture and reports the skipped one", async () => {
+	const child = Bun.spawn(
+		["bun", "scripts/build-release.ts", "--architecture", "all", "--dry-run"],
+		{ cwd: packageRoot, stdout: "pipe", stderr: "pipe" },
+	);
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+	expect(exitCode).toBe(0);
+	expect(stderr).toBe("");
+	const plan = JSON.parse(stdout) as {
+		architectures: string[];
+		nativeRuntimeArchitecture: string;
+		skippedArchitectures: string[];
+	};
+	expect(plan.architectures).toEqual([plan.nativeRuntimeArchitecture]);
+	expect(plan.skippedArchitectures).toHaveLength(1);
+	expect(plan.skippedArchitectures).not.toContain(plan.nativeRuntimeArchitecture);
 });
 
 test("release archives are deterministic, regular-file-only, and readable by the installed tar", async () => {
@@ -164,16 +303,154 @@ test("release archives are deterministic, regular-file-only, and readable by the
 	}
 });
 
-test("generated install instructions carry required private configuration", () => {
-	const assistant = installInstructions("assistant");
-	expect(assistant).toContain("~/.config/pixie/pixie.env");
-	expect(assistant).toContain("PIXIE_PI_SECRET_KEY");
-	expect(assistant).not.toContain("PIXIE_MCP_TOKEN");
-	expect(assistant).toContain("agentDir");
+test("deterministic release archives preserve long runtime member paths through ustar prefixes", async () => {
+	const temporary = await mkdtemp(join(tmpdir(), "pixie-release-ustar-"));
+	try {
+		const source = join(temporary, "runtime-file");
+		const archive = join(temporary, "runtime.tar.gz");
+		const name =
+			"runtime/node_modules/@anthropic-ai/sdk/resources/beta/organization/federation/rules/workspaces.d.mts.map";
+		await writeFile(source, "runtime\n");
+		await writeDeterministicTarGz(archive, [{ name, path: source, mode: 0o644 }], sourceCommitTime);
+		expect(tarEntries(gunzipSync(await readFile(archive))).map((entry) => entry.name)).toEqual([
+			name,
+		]);
+		const listed = runTar(temporary, ["-tzf", archive]);
+		expect(listed.exitCode).toBe(0);
+		expect(listed.stdout.trim()).toBe(name);
+	} finally {
+		await rm(temporary, { recursive: true, force: true });
+	}
+});
 
-	const host = installInstructions("host");
-	expect(host).toContain("~/.config/pixie/pixie.env");
-	expect(host).toContain("PIXIE_PI_SECRET_KEY");
-	expect(host).toContain("PIXIE_MCP_TOKEN");
-	expect(host).toContain("piExecutable");
+test("three public product layouts retain the native Pi TUI only in Pi-bearing archives", () => {
+	const runtime = [
+		"runtime/manifest.json",
+		"runtime/bin/bun",
+		"runtime/bun/LICENSE.md",
+		"runtime/node_modules/@earendil-works/pi-coding-agent/package.json",
+		"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js",
+		"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/chunks/tui.js",
+	];
+	expect(productArchiveLayout("pixie_web")).toEqual([
+		"INSTALL.md",
+		"LICENSE",
+		"NOTICE.md",
+		"pixie_web",
+	]);
+	expect(productArchiveLayout("pixie_cli", runtime)).toEqual(
+		expect.arrayContaining([
+			"pixie",
+			"pixie_cli",
+			"libexec/pixie_assistant.js",
+			"THIRD_PARTY_NOTICES.md",
+			...runtime,
+		]),
+	);
+	expect(productArchiveLayout("pixie", runtime)).toEqual(
+		expect.arrayContaining([
+			"pixie",
+			"libexec/pixie_full",
+			"libexec/pixie_assistant.js",
+			"libexec/pixie_web",
+			"THIRD_PARTY_NOTICES.md",
+			...runtime,
+		]),
+	);
+	expect(() =>
+		assertProductArchiveLayout(
+			"pixie",
+			productArchiveLayout("pixie", runtime).filter((entry) => entry !== "libexec/pixie_web"),
+		),
+	).toThrow("layout is invalid");
+	expect(() =>
+		assertProductArchiveLayout("pixie_cli", [
+			...productArchiveLayout("pixie_cli", runtime),
+			"pixie_assistant",
+		]),
+	).toThrow("public root");
+});
+
+test("release archives reject Node, public assistant, RPC, and incomplete Bun layouts", () => {
+	const runtime = [
+		"runtime/manifest.json",
+		"runtime/bin/bun",
+		"runtime/bun/LICENSE.md",
+		"runtime/node_modules/@earendil-works/pi-coding-agent/package.json",
+		"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js",
+		"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/chunks/tui.js",
+	];
+	const cli = productArchiveLayout("pixie_cli", runtime);
+	expect(() =>
+		assertProductArchiveLayout(
+			"pixie_cli",
+			cli.filter((entry) => entry !== "runtime/bin/bun"),
+		),
+	).toThrow("runtime is incomplete");
+	expect(() =>
+		assertProductArchiveLayout("pixie_cli", [
+			...cli.filter((entry) => entry !== "runtime/bin/bun"),
+			"runtime/node/bin/node",
+		]),
+	).toThrow("runtime is incomplete");
+	expect(() => assertProductArchiveLayout("pixie_cli", [...cli, "pixie_assistant.js"])).toThrow(
+		"public root",
+	);
+	expect(() =>
+		assertProductArchiveLayout("pixie_cli", [
+			...cli,
+			"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/rpc-entry.js",
+		]),
+	).toThrow("RPC entrypoint");
+});
+
+test("generated install instructions preserve native Pi ownership and exclusive installation", () => {
+	const cli = installInstructions("pixie_cli");
+	expect(cli).toContain("./pixie");
+	expect(cli).toContain("./pixie_cli serve --config");
+	expect(cli).toContain("Do not co-install");
+
+	const combined = installInstructions("pixie");
+	expect(combined).toContain("libexec/pixie_full");
+	expect(combined).toContain("libexec/pixie_assistant.js");
+	expect(combined).toContain("libexec/pixie_web");
+	expect(combined).toContain("--assistant-config");
+	expect(combined).toContain("--web-config");
+});
+
+test("release merge requires native archives for every product before publishing complete metadata", async () => {
+	const temporary = await mkdtemp(join(tmpdir(), "pixie-release-merge-"));
+	const output = join(temporary, "output");
+	const sourceCommit = "a".repeat(40);
+	const releaseId = `sha-${sourceCommit.slice(0, 12)}`;
+	const identity = { sourceCommit, releaseId, clean: true };
+	try {
+		await mkdir(output);
+		await expect(mergeReleaseArtifacts(output, identity, temporary)).rejects.toThrow(
+			"complete release merge requires regular archive",
+		);
+		expect(await Bun.file(join(output, "checksums.txt")).exists()).toBe(false);
+		for (const architecture of ["amd64", "arm64"] as const)
+			for (const product of RELEASE_PRODUCTS)
+				await writeMergeArchive(output, product, architecture, releaseId);
+
+		const artifacts = await mergeReleaseArtifacts(output, identity, temporary);
+		expect(artifacts).toHaveLength(6);
+		expect((await readFile(join(output, "checksums.txt"), "utf8")).trim().split("\n")).toHaveLength(
+			6,
+		);
+		const manifest = JSON.parse(await readFile(join(output, "release-manifest.json"), "utf8")) as {
+			completeSet: boolean;
+			architectures: string[];
+			artifacts: { entrypointSha256: string }[];
+		};
+		expect(manifest.completeSet).toBe(true);
+		expect(manifest.architectures).toEqual(["amd64", "arm64"]);
+		expect(manifest.artifacts).toHaveLength(6);
+		expect(
+			manifest.artifacts.every((artifact) => /^[0-9a-f]{64}$/.test(artifact.entrypointSha256)),
+		).toBe(true);
+	} finally {
+		await rm(temporary, { recursive: true, force: true });
+	}
 });

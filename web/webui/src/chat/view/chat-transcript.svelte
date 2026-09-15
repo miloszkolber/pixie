@@ -238,6 +238,12 @@ export interface ChatTranscriptHandle {
 				>
 					<ChatTurnView {row} {projectAreaRoot} {onOpenChange} />
 				</li>
+			{:else}
+				{#if loadState === "idle" && transcriptStart <= 0}
+					<li class="chat-transcript-empty u-px-md u-py-sm">
+						<p class="tr-text-metadata u-text-text-muted">No messages yet — send a message below to start.</p>
+					</li>
+				{/if}
 			{/each}
 		</ol>
 		{#if status}
@@ -289,6 +295,7 @@ export interface ChatTranscriptHandle {
 
 	.chat-transcript-load,
 	.chat-transcript-entry,
+	.chat-transcript-empty,
 	.chat-transcript-stream {
 		max-width: 48rem;
 		margin-inline: auto;

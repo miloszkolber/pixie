@@ -1,81 +1,45 @@
 # Release checklist
 
-This is the validate-only checklist for REL-01–REL-04 and PKG-01–PKG-03. It describes the evidence a commit-named release must provide; it does not publish a release or enable a workflow.
+This is a validate-only checklist. It describes evidence required before a separately authorized release; it does not publish a release, an image, a tag, or enable a workflow.
 
 ## Source identity
 
-1. Resolve the selected revision with `git rev-parse --verify 'HEAD^{commit}'` and validate the complete 40-character lowercase SHA.
-2. Derive exactly `sha-<first 12 lowercase hex characters>` once. Use that value unchanged for the Git tag, GitHub Release title/tag, archive names, binary version metadata and Docker tag.
-3. Keep the complete source SHA in binary metadata, OCI revision labels and `release-manifest.json`. Short names are display identity only; they are never authoritative.
-4. Reject semantic-version, timestamp, hash-ordering and workflow-counter fallbacks. A short-ID collision with a different full SHA is a hard failure and must not retarget an existing release.
+1. Resolve the selected revision with `git rev-parse --verify 'HEAD^{commit}'` and validate its complete 40-character lowercase SHA.
+2. Derive `sha-<first 12 lowercase hex characters>` once and retain the complete SHA in the staged manifest.
+3. Reject semantic-version, timestamp, hash-ordering, and workflow-counter fallbacks.
+4. Stop on a short-ID collision with a different full SHA.
 
-## Required staged evidence
+## Public archive candidates
 
-Before promotion, stage all four archives from the same source commit:
+Stage exactly six public Linux archive candidates from one source commit:
 
 ```text
-pixie-assistant-sha-<12>-linux-amd64.tar.gz
-pixie-assistant-sha-<12>-linux-arm64.tar.gz
+pixie_web-sha-<12>-linux-amd64.tar.gz
+pixie_web-sha-<12>-linux-arm64.tar.gz
+pixie_cli-sha-<12>-linux-amd64.tar.gz
+pixie_cli-sha-<12>-linux-arm64.tar.gz
 pixie-sha-<12>-linux-amd64.tar.gz
 pixie-sha-<12>-linux-arm64.tar.gz
 ```
 
-Each archive records its SHA-256, variant, architecture, full source SHA and contained binary name (`pixie-assistant` or `pixie`). The staged release manifest records all archive hashes, the full source SHA, a clean-tree result and checksums. Publication adds SBOM/provenance and Docker image index/platform digests only from verified image evidence; staging never claims attestations that have not been produced.
+Each archive records its SHA-256, product, architecture, full source SHA, and literal public entrypoint. `pixie_web` exposes `pixie_web`; `pixie_cli` exposes `pixie_cli` and the bundled native `pixie`; full `pixie` exposes the bundled native `pixie`. The latter two contain their internal bundled JavaScript host `libexec/pixie_assistant.js`; only full `pixie` contains `libexec/pixie_full` and `libexec/pixie_web`. `pixie_assistant` is never a public archive or entrypoint.
 
-The Docker reference is `ghcr.io/miloszkolber/pixie:sha-<12>`. Verify one multi-architecture index plus runnable `linux/amd64` and `linux/arm64` manifests; attestation descriptors do not replace platform evidence.
+The Pi-bearing archives bundle the pinned Bun `1.4.0` runtime (`runtime/bin/bun`) and Pi `0.85.1`, bundle no Node runtime, retain the normal Pi TUI, exclude Pi RPC, and block Pi self-update. The staged manifest records archive hashes, the complete source SHA, clean-tree result, and checksums. It must not claim SBOM, provenance, image digest, published release, or published image evidence that has not been produced.
 
-## Live evidence production
+## Validation evidence
 
-From `web/`, the evidence job runs the committed producer before the bundle collector:
-
-```sh
-bun run scripts/produce-evidence-inputs.ts \
-  --artifacts <staged-archives> \
-  --output <evidence-dir> \
-  --source-commit <40-hex> \
-  --release-id sha-<12> \
-  --reduction-manifest web/reductions.json \
-  [--base-url <running-host-origin>]
-```
-
-It extracts the native-architecture staged binaries, executes only the checks it can honestly complete (`--version`, `doctor` when supported, and a readiness GET when `--base-url` is supplied), and marks those `actual: true, live: true`. A skipped, unsupported or failed check stays absent or blocked; it never becomes a pass. It then measures at least five fresh-process startup samples per native target with p50/p95 and peak process RSS and writes `coverage.json` and `performance.json`.
-
-`web/reductions.json` records the operator-approved reductions that make the live matrix and the staged-artifact gates runnable. The coverage input reduces the mandatory FC rows the producer does not execute (FC01 is executed), the 14 X rows and Gates 1–5. The performance input reduces only the legacy worker/decoded-buffer fields; the workflow measures both the amd64 targets and the native arm64 targets on `ubuntu-24.04-arm`, then merges them before collection. `packageArtifacts` reduces only the staged-binary live-execution and full-host rows that need a running host: every `readiness`, `lifecycle` and `uninstall` row, host `embedded-UI` rows, and the full-host native-engine facade. Both architectures' `--version`/`doctor` probes are now required from the per-architecture evidence merge. `releaseGate` reduces only publication inputs: Git tag and GitHub Release state, the published `ghcr.io` tag, registry provenance/SBOM, registry image and platform digests, the staged manifest's publication-only fields, and latest-promotion ancestry. Every structural archive/systemd/config/static command check, the static workflow publication-policy checks, source reachability from main, archive/binary identity, archive checksum consistency and the controller-image evidence mapping stay mandatory. A reduced row is not evidence that the behavior passes: `check-package-artifacts` and `release-gate` report it as reduced, never as passing, and an unreduced row without evidence still fails the gate.
-
-The `evidence` job runs `check-package-artifacts --evidence` and `release-gate --evidence`; both load the committed manifest (with `--reductions` or `PIXIE_REDUCTIONS_MANIFEST` as an override) and default to the checked-in file. `release-gate` also reads the staged local `release-manifest.json` the collector embeds, so release ID, source commit, clean-tree, archive hashes and checksums stay mandatory. `automaticMainAuthorized` and `sourceReachableFromMain` default to false and must be explicitly enabled (`PIXIE_AUTOMATIC_MAIN_AUTHORIZED`, `PIXIE_SOURCE_REACHABLE_FROM_MAIN`) by the release job after it verifies them.
-
-The amd64 and native arm64 startup measurements and both architectures' native `--version`/`doctor` probes are real candidate-binary measurements. The reduced rows above remain unproduced: arm64 platform digests, per-feature live coverage, packaged-binary lifecycle/uninstall/embedded-UI and full-host facade checks, Git tag/GitHub Release state, the published OCI tag and digests, registry provenance/SBOM and latest-promotion ancestry. The `linux/arm64` OCI image build and run remain unproven.
-
-The `verify-publication` job runs after `publish` and cannot gate the release it verifies: it confirms the Git tag points at the source commit, the published release is not a draft and carries the four archives plus `checksums.txt` and `release-manifest.json` with matching digests, and the published image index/platform digests and SBOM/provenance attestations match `pixie-image-evidence.json`. The pre-publish `releaseGate` registry rows stay reduced because registry state cannot exist before publication; `latest` is never promoted by this workflow.
-
-## Architecture evidence status
-
-The host campaign exercises `linux/amd64`. Still open and required for a real release: the `linux/arm64` OCI image build and run (verify with Linux BuildKit or a GitHub arm64 runner), a fresh-artifact systemd lifecycle, and the registry digests, SBOM and provenance. The release workflow measures native arm64 performance and executes the arm64 `--version`/`doctor` probes on `ubuntu-24.04-arm`. No amd64 result substitutes for arm64 evidence, and the static gates fail closed on the missing arm64 inputs.
-
-## Validation-only paths
-
-Pull requests, scheduled checks and manual validation paths may derive and test candidate identities, but they must not publish tags, releases, archives or images. Only the explicitly authorized release path for a verified main-commit candidate may promote a complete set.
-
-Documentation-only changes follow the same validate-only path and never create a binary release. Automatic publication is safe only when the repository policy explicitly authorizes it, the candidate is a full SHA reachable from protected `main`, and the publish job is guarded to a main push. A release-tag push must not start another publication loop.
-
-## Collision and retry handling
-
-An existing tag or release with the same `sha-<12>` is reusable only when its recorded full source SHA matches exactly. A different full SHA is a collision and stops publication.
-
-If publication stops after a partial upload, retain the staged payload and immutable identity, do not move `latest`, and retry with the same full source SHA, release ID, artifact hashes and image digests. Existing assets are downloaded and compared by SHA-256: identical payloads are no-ops, while a mismatch stops the retry without overwriting the asset.
-
-The static gate combines identity, package and policy checks:
+Run static package and release checks against the exact candidate artifacts:
 
 ```sh
+bun scripts/check-release-identity.ts
+bun scripts/check-package-artifacts.ts
 bun scripts/release-gate.ts
 ```
 
-Its failure output separates static violations, missing live inputs and reduced live inputs. A green report is not live evidence: both final binaries on both architectures, systemd lifecycle, Docker platform runs, downloaded payload verification, collision/retry behavior and provenance attestations still require real candidate artifacts; the reduced rows in `web/reductions.json` are documented gaps, not results.
+These commands are static gates unless they are supplied separately captured evidence. Archive-layout checks are not proof of a credentialed Pi session, an interactive TUI/extension PTY, arm64 lifecycle, systemd behavior, Docker behavior, update/rollback, or remote publication.
 
-## Current repository evidence
+Required unproven evidence includes live amd64 and arm64 archive behavior, full Docker Compose behavior, real systemd installation/start/stop/restart and upgrade/rollback, real Pi provider credentials, and the declared image/platform/provenance artifacts if publication is later authorized. Canvas containment, Openfig's licensed parser and worker, and the native resource-attachment API remain separate feature blockers.
 
-From `web/`, `bun scripts/check-release-identity.ts`, `bun scripts/check-package-artifacts.ts` and `bun scripts/release-gate.ts` are static checks. The commit release workflow is present and validate-only paths are guarded. With `--evidence`, `check-package-artifacts` and `release-gate` consume the collector's staged bundle and the committed reductions file; they still need the exact-commit archives, the local controller image tar and the executed native binary probes. This checkout still lacks a published tag/release, the published OCI tag/digests and registry provenance/SBOM. Those missing inputs are reported as reduced or missing and are never represented as completed release evidence.
+## Publication boundary
 
-Browser MCP registration is implemented at source: the controller writes one setting into Pi's MCP configuration and reports a bounded probe, and the WebUI exposes the setting under Settings → Browser. Pixie hosts no browser. Compose ships an optional `pixie-browser` service that is not a `pixie` dependency, is not part of the Pixie archive or image, and is not required for controller release. Host verification of registration, probe and that Compose service is recorded in the roadmap and is not release evidence.
-
-The canonical status, release gaps, and sequencing are in the [roadmap](../roadmap/roadmap.md). Other operating documentation remains under [docs](architecture.md).
+This repository has no published release or approved published Docker image. A placeholder image reference or a Compose image field is not publication evidence. Remote publication, tags, releases, images, and deployment require separate authorization.

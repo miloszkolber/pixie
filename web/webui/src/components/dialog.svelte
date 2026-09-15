@@ -108,6 +108,6 @@ $effect(() => {
 
 <style>
 	dialog.dialog--compact {
-		max-width: calc(var(--size-3200) * 3);
+		max-width: 24rem;
 	}
 </style>

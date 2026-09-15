@@ -6,10 +6,13 @@
 		"@modelcontextprotocol/sdk": "1.30.0"
 	},
 	"scripts": {
-		"build": "bun run build:web && bun run build:go",
-		"build:go": "go build -trimpath -o dist/pixie ./cmd",
-		"build:assistant": "CGO_ENABLED=0 go -C ../assistant build -trimpath -o ../web/dist/pixie-assistant ./cmd",
-		"build:host": "bun run build:web && CGO_ENABLED=0 go build -trimpath -o dist/pixie ./cmd",
+		"build": "bun run build:pixie_web",
+		"build:pixie_web": "bun run build:web && bun run build:go",
+		"build:pixie_assistant": "bun build --target=bun --outfile dist/pixie_assistant.js ../assistant/src/serve.ts",
+		"build:pixie_cli": "CGO_ENABLED=0 go build -trimpath -o dist/pixie_cli ./cmd/pixie-cli",
+		"build:pixie": "CGO_ENABLED=0 go build -trimpath -o dist/pixie ./cmd/pixie",
+		"build:pixie_full": "CGO_ENABLED=0 go build -trimpath -o dist/pixie_full ./cmd/pixie-full",
+		"build:go": "go build -trimpath -o dist/pixie_web ./cmd",
 		"build:release": "bun scripts/build-release.ts",
 		"dev:web": "bun --filter @pixie/web dev",
 		"build:web": "bun --filter @pixie/web build",

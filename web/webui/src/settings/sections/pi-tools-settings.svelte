@@ -16,6 +16,7 @@ import {
 	filterTools,
 	isSessionInventoryCurrent,
 	registryModuleStatusLabel,
+	toolInventoryAvailable,
 	uniqueExtensions,
 } from "./pi-tools-settings";
 
@@ -57,6 +58,9 @@ let sessionMcpAvailable = $derived(
 				?.mcp === 1
 		: false,
 );
+let nativeToolInventoryAvailable = $derived(
+	toolInventoryAvailable($appStore.agentProfile?.capabilities),
+);
 let warning = $derived(extensionWarningText(catalog?.warningCount ?? 0));
 
 async function load(): Promise<void> {
@@ -73,7 +77,7 @@ async function load(): Promise<void> {
 		projectId && sessionId && sessionMcpAvailable
 			? getTransport().request("session.extensionList", { projectId, sessionId })
 			: Promise.resolve([]),
-		projectId && sessionId
+		projectId && sessionId && nativeToolInventoryAvailable
 			? getTransport().request("session.toolList", { projectId, sessionId })
 			: Promise.resolve([]),
 	]);
@@ -309,6 +313,10 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 		{#if !hasActiveChat}
 			<p class="u-text-text-muted tr-text-metadata">
 				Open a chat in the current project to manage its effective extensions and tools.
+			</p>
+		{:else if !nativeToolInventoryAvailable}
+			<p class="u-text-text-muted tr-text-metadata">
+				The connected Pi host does not expose a complete active-tool inventory.
 			</p>
 		{:else if !sessionInventoryCurrent}
 			<p role="status" class="u-text-text-muted tr-text-metadata">

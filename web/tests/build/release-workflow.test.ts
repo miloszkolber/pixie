@@ -20,7 +20,7 @@ test("commit release workflow has one source identity derivation and validate-on
 	expect(workflow).toContain("git rev-parse --verify 'HEAD^{commit}'");
 	expect(workflow.match(/RELEASE_ID="sha-\$\{SOURCE_COMMIT:0:12\}"/g) ?? []).toHaveLength(1);
 	expect(workflow).toContain("vars.PIXIE_RELEASE_ENABLED == 'true'");
-	expect(workflow).toContain("--push");
+	expect(workflow).toContain("docker buildx imagetools create");
 	expect(workflow).toContain("partial publication");
 	expect(workflow).toContain("short-ID collision");
 	expect(workflow).toContain("workflow_dispatch revision must be a full 40-character commit SHA");
@@ -63,13 +63,13 @@ test("validation image builds are read-only and carry the source identity as bui
 	expect(validation).toContain('--build-arg "VERSION=$RELEASE_ID"');
 	expect(validation).toContain('--build-arg "REVISION=$SOURCE_COMMIT"');
 	expect(workflow).toContain("  publish-image:");
-	expect(workflow).toContain("id-token: write");
+	expect(workflow).not.toContain("id-token: write");
 	expect(workflow).toContain("containerimage.digest");
 	expect(workflow).toContain("in-toto.io/predicate-type");
 	expect(workflow).toContain("SBOM_PRESENT=false");
 	expect(workflow).not.toContain("sbom: true, provenance: true");
-	expect(workflow).toContain("verify_archive()");
-	expect(workflow).toContain('--version)" == "pixie-assistant $RELEASE_ID');
+	expect(workflow).not.toContain("pixie-assistant");
+	expect(workflow).not.toContain("pixie_assistant");
 });
 
 test("release retries compare immutable asset hashes instead of clobbering", async () => {
@@ -82,18 +82,43 @@ test("release retries compare immutable asset hashes instead of clobbering", asy
 	expect(workflow).toContain("REMOTE_HASH=$(sha256sum");
 	expect(workflow).toContain("different SHA-256; refusing to overwrite");
 	expect(workflow).toContain("already matches ($LOCAL_HASH); skipping upload");
+	expect(workflow).toContain("complete six-archive payload; refusing to publish");
+	expect(workflow).toContain("contains assets outside the complete six-archive payload");
 	expect(workflow).not.toContain("--clobber");
 	expect(workflow).toContain("isDraft == true");
 });
 
 test("validate-only container image carries the source identity as build arguments", async () => {
 	const workflow = await readFile(containerWorkflowPath, "utf8");
+	const repositoryOwner = "$" + "{GITHUB_REPOSITORY_OWNER}";
+	const releaseId = "$" + "{RELEASE_ID}";
 
 	expect(workflow).toContain('RELEASE_ID="sha-${SOURCE_COMMIT:0:12}"');
+	expect(workflow).toContain("--target pixie_web");
+	expect(workflow).toContain(`--tag "ghcr.io/${repositoryOwner}/pixie_web:${releaseId}"`);
 	expect(workflow).toContain('--build-arg "VERSION=${RELEASE_ID}"');
 	expect(workflow).toContain('--build-arg "REVISION=${SOURCE_COMMIT}"');
 	expect(workflow).not.toContain("--push");
 	expect(workflow).not.toContain("packages: write");
+});
+
+test("release image references use the immutable pixie_web GHCR package", async () => {
+	const workflow = await readFile(workflowPath, "utf8");
+	const image = jobBlock(workflow, "image");
+	const publishImage = jobBlock(workflow, "publish-image");
+	const verify = jobBlock(workflow, "verify-publication");
+	const repositoryOwner = "$" + "{GITHUB_REPOSITORY_OWNER}";
+	const releaseId = "$" + "{RELEASE_ID}";
+	const ref = `ghcr.io/${repositoryOwner}/pixie_web:${releaseId}`;
+
+	expect(image).toContain("--target pixie_web");
+	expect(image).toContain(`--tag "${ref}"`);
+	expect(publishImage).toContain(`REF="${ref}"`);
+	expect(publishImage).toContain("docker buildx imagetools create");
+	expect(publishImage).toContain("oci-layout://$STAGED_OCI_LAYOUT@$STAGED_IMAGE_INDEX_DIGEST");
+	expect(workflow).toContain('"/pixie_web:" + $release_id');
+	expect(verify).toContain(`REF="${ref}"`);
+	expect(workflow).not.toContain(`/pixie:${releaseId}`);
 });
 
 function jobBlock(workflow: string, name: string): string {
@@ -111,18 +136,37 @@ test("static source validation does not run live evidence gates", async () => {
 	expect(workflow).not.toContain("release-gate.ts");
 	expect(workflow).toContain("bun run typecheck");
 	expect(workflow).toContain("bun run test");
-	expect(workflow).toContain("name: Test Go assistant module");
+	// The assistant is Bun-only: no Go assistant module and no bridge sidecar
+	// remain to test, while the Bun assistant suite stays mandatory.
+	expect(workflow).toContain("bun run --cwd assistant test");
+	expect(workflow).not.toContain("Test Go assistant module");
+	expect(workflow).not.toContain("assistant/bridge");
 });
 
-test("release stages exact-commit artifacts before evidence and does not gate staging on it", async () => {
+test("release stages each architecture natively, then merges the exact six-archive set before evidence", async () => {
 	const workflow = await readFile(workflowPath, "utf8");
-	const stage = jobBlock(workflow, "stage");
+	const stageAmd64 = jobBlock(workflow, "stage-amd64");
+	const stageArm64 = jobBlock(workflow, "stage-arm64");
+	const merge = jobBlock(workflow, "merge");
 	const image = jobBlock(workflow, "image");
 	const evidence = jobBlock(workflow, "evidence");
 
-	expect(stage).toContain("needs: [validate, identity]");
+	expect(stageAmd64).toContain("needs: [validate, identity]");
+	expect(stageAmd64).toContain("runs-on: ubuntu-latest");
+	expect(stageAmd64).toContain("build:release --architecture amd64");
+	expect(stageAmd64).toContain("checksums-linux-amd64.txt");
+	expect(stageArm64).toContain("needs: [validate, identity]");
+	expect(stageArm64).toContain("runs-on: ubuntu-24.04-arm");
+	expect(stageArm64).toContain("build:release --architecture arm64");
+	expect(stageArm64).toContain("checksums-linux-arm64.txt");
+	expect(workflow).not.toContain("matrix:");
+	expect(merge).toContain("needs: [validate, identity, stage-amd64, stage-arm64]");
+	expect(merge).toContain("build:release:merge");
+	expect(merge).toContain("checksums.txt");
+	expect(merge).toContain("completeSet == true");
+	expect(merge).toContain("(.artifacts | length == 6)");
 	expect(image).toContain("needs: [validate, identity]");
-	expect(evidence).toContain("needs: [validate, identity, stage, image, evidence-arm64]");
+	expect(evidence).toContain("needs: [validate, identity, merge, image, evidence-arm64]");
 	expect(evidence).toContain("pixie-release-${{ needs.identity.outputs.source_commit }}");
 	expect(evidence).toContain("pixie-image-${{ needs.identity.outputs.source_commit }}");
 	expect(evidence).toContain('run_gate "check:coverage" bun run check:coverage');
@@ -139,24 +183,32 @@ test("release produces native arm64 performance and probe evidence before the ga
 	const evidence = jobBlock(workflow, "evidence");
 	const publishImage = jobBlock(workflow, "publish-image");
 
-	expect(arm64).toContain("needs: [validate, identity, stage, image]");
+	expect(arm64).toContain("needs: [validate, identity, merge, image]");
 	expect(arm64).toContain("runs-on: ubuntu-24.04-arm");
 	expect(arm64).toContain("produce-evidence-inputs.ts");
 	expect(arm64).toContain("collect-evidence.ts");
+	// Probes run against the extracted product tree so each launcher keeps its
+	// runtime/ and libexec/ siblings; the bare binaries/ copies are runtime-less.
+	expect(arm64).toContain("products/pixie_cli/pixie_cli");
+	expect(arm64).toContain("products/pixie/libexec/pixie_full");
+	expect(arm64).not.toContain('"$BIN_DIR/pixie_cli"');
+	expect(arm64).not.toContain('"$BIN_DIR/pixie"');
+	expect(evidence).toContain("products/pixie_cli/pixie_cli");
+	expect(evidence).toContain("products/pixie/libexec/pixie_full");
 	expect(arm64).not.toContain("--base-url");
 	expect(arm64).toContain("pixie-performance-arm64-${{ needs.identity.outputs.source_commit }}");
 	expect(arm64).toContain("pixie-probe-evidence-arm64-${{ needs.identity.outputs.source_commit }}");
 	// The arm64 job produces evidence only; the live gates run in `evidence`.
 	expect(arm64).not.toContain("check-package-artifacts.ts");
 	expect(arm64).not.toContain("release-gate.ts");
-	expect(evidence).toContain("needs: [validate, identity, stage, image, evidence-arm64]");
+	expect(evidence).toContain("needs: [validate, identity, merge, image, evidence-arm64]");
 	expect(evidence).toContain("merge-performance.ts");
 	expect(evidence).toContain("pixie-performance-arm64-${{ needs.identity.outputs.source_commit }}");
 	expect(evidence).toContain(
 		"pixie-probe-evidence-arm64-${{ needs.identity.outputs.source_commit }}",
 	);
 	expect(evidence).toContain("--probe-evidence");
-	expect(publishImage).toContain("needs: [validate, identity, stage, image, evidence]");
+	expect(publishImage).toContain("needs: [validate, identity, merge, image, evidence]");
 
 	// The arm64 producer runs before the gate job, which runs before publication.
 	const arm64Index = workflow.indexOf("\n  evidence-arm64:");
@@ -172,8 +224,8 @@ test("publication depends on the passing evidence job and uses the exact source 
 	const publishImage = jobBlock(workflow, "publish-image");
 	const publish = jobBlock(workflow, "publish");
 
-	expect(publishImage).toContain("needs: [validate, identity, stage, image, evidence]");
-	expect(publish).toContain("needs: [validate, identity, stage, image, evidence, publish-image]");
+	expect(publishImage).toContain("needs: [validate, identity, merge, image, evidence]");
+	expect(publish).toContain("needs: [validate, identity, merge, image, evidence, publish-image]");
 	expect(publishImage).toContain("vars.PIXIE_RELEASE_ENABLED == 'true'");
 	expect(publish).toContain("vars.PIXIE_RELEASE_ENABLED == 'true'");
 	expect(workflow).not.toContain("name: pixie-release-${{ github.sha }}");
@@ -181,11 +233,31 @@ test("publication depends on the passing evidence job and uses the exact source 
 	expect(workflow).not.toContain("name: pixie-image-evidence-${{ github.sha }}");
 });
 
+test("publication rejects a post-evidence Dockerfile rebuild and pushes the exact staged OCI index", async () => {
+	const workflow = await readFile(workflowPath, "utf8");
+	const publishImage = jobBlock(workflow, "publish-image");
+
+	expect(publishImage).toContain("Download evidence-gated OCI image artifact");
+	expect(publishImage).toContain("Download evidence gate bundle");
+	expect(publishImage).toContain("pixie-image-${{ needs.identity.outputs.source_commit }}");
+	expect(publishImage).toContain("pixie-evidence-${{ needs.identity.outputs.source_commit }}");
+	expect(publishImage).toContain("EVIDENCE_ARCHIVE_SHA256");
+	expect(publishImage).toContain("EVIDENCE_LAYOUT_DIGEST");
+	expect(publishImage).toContain("STAGED_IMAGE_INDEX_DIGEST");
+	expect(publishImage).toContain('[[ "$INDEX_DIGEST" == "$STAGED_IMAGE_INDEX_DIGEST" ]]');
+	expect(publishImage).toContain('[[ "$PUBLISHED_INDEX_DIGEST" == "$STAGED_IMAGE_INDEX_DIGEST" ]]');
+	expect(publishImage).toContain("docker buildx imagetools create");
+	expect(publishImage).toContain("oci-layout://$STAGED_OCI_LAYOUT@$STAGED_IMAGE_INDEX_DIGEST");
+	expect(publishImage).not.toContain("docker buildx build");
+	expect(publishImage).not.toContain("web/Dockerfile");
+	expect(publishImage).not.toContain("--build-arg");
+});
+
 test("publication is followed by an explicit post-publish verification job", async () => {
 	const workflow = await readFile(workflowPath, "utf8");
 	const verify = jobBlock(workflow, "verify-publication");
 
-	expect(verify).toContain("needs: [identity, stage, evidence, publish-image, publish]");
+	expect(verify).toContain("needs: [identity, merge, evidence, publish-image, publish]");
 	expect(verify).toContain(
 		"if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIXIE_RELEASE_ENABLED == 'true'",
 	);

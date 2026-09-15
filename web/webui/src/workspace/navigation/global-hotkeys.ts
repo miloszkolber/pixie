@@ -8,6 +8,15 @@ export interface GlobalHotkeyActions {
 
 export function initGlobalHotkeys(actions: GlobalHotkeyActions): () => void {
 	const onKeyDown = (event: KeyboardEvent): void => {
+		if (event.isComposing) return;
+		const target = event.target;
+		const inEditable =
+			target instanceof HTMLElement &&
+			(target.isContentEditable ||
+				target instanceof HTMLInputElement ||
+				target instanceof HTMLTextAreaElement ||
+				target instanceof HTMLSelectElement);
+		if (inEditable) return;
 		const isPanelCommand =
 			!event.altKey &&
 			!event.shiftKey &&
@@ -32,10 +41,11 @@ export function initGlobalHotkeys(actions: GlobalHotkeyActions): () => void {
 		) {
 			return;
 		}
+		const historyTarget = selectHistoryTarget(appStoreApi.getState());
+		if (!historyTarget) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const target = selectHistoryTarget(appStoreApi.getState());
-		if (target) appStoreApi.getState().requestHistoryOpen(target);
+		appStoreApi.getState().requestHistoryOpen(historyTarget);
 	};
 	window.addEventListener("keydown", onKeyDown, true);
 	return () => window.removeEventListener("keydown", onKeyDown, true);

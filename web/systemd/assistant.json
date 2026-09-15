@@ -1,5 +1,7 @@
 {
+	"schemaVersion": 2,
 	"host": "127.0.0.1",
 	"port": 3284,
-	"agentDir": "~/.pi/agent"
+	"agentDir": "/var/lib/pixie/pi",
+	"allowSelfRestart": true
 }

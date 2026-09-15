@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { productArchiveLayout } from "../../scripts/build-release.ts";
 import type { PackageArchiveEvidence } from "../../scripts/check-package-artifacts.ts";
 import type { ArchiveEvidence, BinaryEvidence } from "../../scripts/check-release-identity.ts";
 import {
@@ -9,6 +10,7 @@ import {
 
 const sourceCommit = "71590cac48925b31b9d5d3c7d1746ee94b351772";
 const releaseId = `sha-${sourceCommit.slice(0, 12)}`;
+const repositoryOwner = "release-test-owner";
 const hash = "a".repeat(64);
 const amd64Digest = `sha256:${"b".repeat(64)}`;
 const arm64Digest = `sha256:${"c".repeat(64)}`;
@@ -28,35 +30,18 @@ jobs:
     run: validate SOURCE_COMMIT as 40 lowercase characters; RELEASE_ID=sha-\${SOURCE_COMMIT:0:12}
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    run: stage pixie-assistant-sha-71590cac4892-linux-amd64.tar.gz pixie-assistant-sha-71590cac4892-linux-arm64.tar.gz pixie-sha-71590cac4892-linux-amd64.tar.gz pixie-sha-71590cac4892-linux-arm64.tar.gz checksums.txt release-manifest.json SBOM and provenance
+    run: stage pixie_web-sha-71590cac4892-linux-amd64.tar.gz pixie_web-sha-71590cac4892-linux-arm64.tar.gz pixie_cli-sha-71590cac4892-linux-amd64.tar.gz pixie_cli-sha-71590cac4892-linux-arm64.tar.gz pixie-sha-71590cac4892-linux-amd64.tar.gz pixie-sha-71590cac4892-linux-arm64.tar.gz checksums.txt release-manifest.json SBOM and provenance
     run: reject collision; retry partial publication with same payload; never move latest backward
     run: docker buildx build --label org.opencontainers.image.version=\${RELEASE_ID} --label org.opencontainers.image.revision=\${SOURCE_COMMIT} --sbom=true --attest type=provenance --push
 `;
 
-const assistantUnit = `[Unit]
-StartLimitIntervalSec=60
-StartLimitBurst=5
-[Service]
-Type=exec
-ExecStart=%h/.local/bin/pixie-assistant serve --config %h/.config/pixie/assistant.json
-Restart=on-failure
-RestartSec=2
-RestartForceExitStatus=75
-TimeoutStopSec=30
-KillMode=mixed
-UMask=0077
-StandardOutput=journal
-StandardError=journal
-[Install]
-WantedBy=default.target
-`;
+const products = ["pixie_web", "pixie_cli", "pixie"] as const;
 
-const hostUnit = assistantUnit
-	.replaceAll("pixie-assistant", "pixie")
-	.replace("assistant.json", "pixie.json");
-
-function archive(variant: "assistant" | "host", architecture: "amd64" | "arm64"): ArchiveEvidence {
-	const binary = variant === "assistant" ? "pixie-assistant" : "pixie";
+function archive(
+	variant: (typeof products)[number],
+	architecture: "amd64" | "arm64",
+): ArchiveEvidence {
+	const binary = variant;
 	return {
 		name: `${binary}-${releaseId}-linux-${architecture}.tar.gz`,
 		sourceCommit,
@@ -66,9 +51,12 @@ function archive(variant: "assistant" | "host", architecture: "amd64" | "arm64")
 	};
 }
 
-function binary(variant: "assistant" | "host", architecture: "amd64" | "arm64"): BinaryEvidence {
+function binary(
+	variant: (typeof products)[number],
+	architecture: "amd64" | "arm64",
+): BinaryEvidence {
 	return {
-		name: variant === "assistant" ? "pixie-assistant" : "pixie",
+		name: variant,
 		variant,
 		architecture,
 		sourceCommit,
@@ -78,47 +66,44 @@ function binary(variant: "assistant" | "host", architecture: "amd64" | "arm64"):
 }
 
 function packageArchive(
-	variant: "assistant" | "host",
+	product: (typeof products)[number],
 	architecture: "amd64" | "arm64",
 ): PackageArchiveEvidence {
-	const binaryName = variant === "assistant" ? "pixie-assistant" : "pixie";
+	const runtime =
+		product === "pixie_cli" || product === "pixie"
+			? [
+					"runtime/manifest.json",
+					"runtime/bin/bun",
+					"runtime/bun/LICENSE.md",
+					"runtime/node_modules/@earendil-works/pi-coding-agent/package.json",
+					"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js",
+					"runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/chunks/tui.js",
+				]
+			: [];
 	return {
-		name: `${binaryName}-${releaseId}-linux-${architecture}.tar.gz`,
-		entries: [
-			binaryName,
-			`${binaryName}.service`,
-			variant === "assistant" ? "assistant.json" : "pixie.json",
-			"INSTALL.md",
-			"LICENSE",
-			"NOTICE.md",
-		],
+		name: `${product}-${releaseId}-linux-${architecture}.tar.gz`,
+		entries: productArchiveLayout(product, runtime),
 	};
 }
 
 function validCandidate(): ReleaseGateInput {
-	const archives = [
-		archive("assistant", "amd64"),
-		archive("assistant", "arm64"),
-		archive("host", "amd64"),
-		archive("host", "arm64"),
-	];
+	const archives = products.flatMap((product) => [
+		archive(product, "amd64"),
+		archive(product, "arm64"),
+	]);
 	const packageCommand =
 		"--version doctor /readyz signal.NotifyContext serveController Shutdown uninstall";
 	return {
 		identity: {
 			sourceCommit,
 			releaseId,
+			repositoryOwner,
 			tag: { name: releaseId, target: sourceCommit },
 			release: { title: releaseId, tag: releaseId, target: sourceCommit },
 			archives,
-			binaries: [
-				binary("assistant", "amd64"),
-				binary("assistant", "arm64"),
-				binary("host", "amd64"),
-				binary("host", "arm64"),
-			],
+			binaries: products.flatMap((product) => [binary(product, "amd64"), binary(product, "arm64")]),
 			docker: {
-				tag: `ghcr.io/miloszkolber/pixie:${releaseId}`,
+				tag: `ghcr.io/${repositoryOwner}/pixie_web:${releaseId}`,
 				version: releaseId,
 				revision: sourceCommit,
 				indexDigest: amd64Digest,
@@ -145,39 +130,23 @@ function validCandidate(): ReleaseGateInput {
 		},
 		packages: {
 			releaseId,
-			archives: [
-				packageArchive("assistant", "amd64"),
-				packageArchive("assistant", "arm64"),
-				packageArchive("host", "amd64"),
-				packageArchive("host", "arm64"),
-			],
-			units: {
-				"pixie-assistant.service": assistantUnit,
-				"pixie.service": hostUnit,
-			},
-			configs: {
-				"assistant.json": '{"host":"127.0.0.1"}',
-				"pixie.json": '{"host":"127.0.0.1","mode":"full-host"}',
-			},
+			archives: products.flatMap((product) => [
+				packageArchive(product, "amd64"),
+				packageArchive(product, "arm64"),
+			]),
 			commandSources: { "main.go": packageCommand },
 			webuiSources: { "webui.go": "//go:embed all:dist" },
 			embeddedUiFiles: ["dist/index.html"],
-			facadeSources: { "host.go": "func Start() {}" },
-			binaries: [
-				...(["assistant", "host"] as const).flatMap((variant) =>
-					(["amd64", "arm64"] as const).map((architecture) => ({
-						variant,
-						architecture,
-						path: `/release/${variant === "assistant" ? "pixie-assistant" : "pixie"}`,
-						version: releaseId,
-						doctor: true,
-						readiness: true,
-						lifecycle: true,
-						uninstall: true,
-						...(variant === "host" ? { uiEmbedded: true } : {}),
-					})),
-				),
-			],
+			facadeSources: {
+				"assistant/src/serve.ts": "startBunHostFromVerifiedPi(await verifyPiPackage(piPackage))",
+			},
+			binaries: products.flatMap((product) =>
+				(["amd64", "arm64"] as const).map((architecture) => ({
+					product,
+					architecture,
+					path: product,
+				})),
+			),
 		},
 		policy: {
 			workflowSources: { ".github/workflows/release.yml": releaseWorkflow },
@@ -199,12 +168,33 @@ test("valid candidate proves identity, package matrix, labels, provenance and sa
 
 	expect(report.ok).toBe(true);
 	expect(report.facts.releaseId).toBe(releaseId);
-	expect(report.facts.identity.requiredArchives).toHaveLength(4);
+	expect(report.facts.identity.requiredArchives).toHaveLength(6);
 	expect(report.facts.policy.validateOnlyTriggers).toEqual([
 		"pull_request",
 		"schedule",
 		"workflow_dispatch",
 	]);
+});
+
+test("legacy pixie controller image identity fails the release gate", () => {
+	const candidate = validCandidate();
+	if (candidate.identity.docker === undefined)
+		throw new Error("fixture Docker evidence is missing");
+	const report = inspectReleaseGate({
+		...candidate,
+		identity: {
+			...candidate.identity,
+			docker: {
+				...candidate.identity.docker,
+				tag: `ghcr.io/${repositoryOwner}/pixie:${releaseId}`,
+			},
+		},
+	});
+
+	expect(report.ok).toBe(false);
+	expect(report.violations).toContain(
+		`Docker tag must be ghcr.io/${repositoryOwner}/pixie_web:${releaseId}`,
+	);
 });
 
 test("invalid candidate exposes missing live inputs and unsafe publication decisions", () => {

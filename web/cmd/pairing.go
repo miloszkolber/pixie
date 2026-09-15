@@ -43,8 +43,8 @@ type pairingOptions struct {
 }
 
 // handlePairingCommand dispatches the operator pairing ceremony when the first
-// argument selects one. It is shared by the full-host and controller-only
-// entrypoints so both builds expose the same commands.
+// argument selects one. It is used by the controller-only entrypoint so the
+// controller build exposes the same commands.
 func handlePairingCommand(args []string, stdout io.Writer) (bool, error) {
 	if len(args) == 0 {
 		return false, nil
@@ -201,7 +201,7 @@ func normalizePairingHostIdentity(value string) string {
 	return "pi:" + value
 }
 
-// readAgentHostIdentity reads the stable host identity the Go host persists in
+// readAgentHostIdentity reads the stable host identity the Bun host persists in
 // the selected agent directory and returns the AgentProfile form.
 func readAgentHostIdentity(agentDir string) (string, error) {
 	path := filepath.Join(agentDir, "pixie", "host-identity.json")
@@ -261,13 +261,13 @@ func writePairingOutput(stdout io.Writer, asJSON bool, action string, output pai
 		if action == "rotate-pairing" {
 			secretLabel = "new secret"
 		}
-		if _, err := fmt.Fprintf(stdout, "pixie %s: %s deletion authority %s (generation %d)\n  host:    %s\n  storage: %s\n", action, output.Status, output.AuthorityBindingID, output.Generation, output.HostIdentity, output.StorageKey); err != nil {
+		if _, err := fmt.Fprintf(stdout, "pixie_web %s: %s deletion authority %s (generation %d)\n  host:    %s\n  storage: %s\n", action, output.Status, output.AuthorityBindingID, output.Generation, output.HostIdentity, output.StorageKey); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintf(stdout, "Store this pairing %s out of band now. It is shown once and never stored in plaintext:\n%s\n", secretLabel, output.Secret)
 		return err
 	case "revoke-pairing":
-		_, err := fmt.Fprintf(stdout, "pixie revoke-pairing: revoked deletion authority %s (generation %d)\ndestructive recovery stays blocked until an explicit `pixie pair` with the verified host and storage\n", output.AuthorityBindingID, output.Generation)
+		_, err := fmt.Fprintf(stdout, "pixie_web revoke-pairing: revoked deletion authority %s (generation %d)\ndestructive recovery stays blocked until an explicit `pixie_web pair` with the verified host and storage\n", output.AuthorityBindingID, output.Generation)
 		return err
 	default:
 		return fmt.Errorf("unknown pairing command %q", action)

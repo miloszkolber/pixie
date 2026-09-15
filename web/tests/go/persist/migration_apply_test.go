@@ -140,6 +140,122 @@ func TestMigrationBackupsAreRestrictiveWithHashes(t *testing.T) {
 	}
 }
 
+func TestMigrationApplyRejectsUnsafeOrUnmanagedNamesBeforeFilesystemChanges(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		file string
+	}{
+		{name: "empty", file: ""},
+		{name: "absolute", file: "absolute-victim.json"},
+		{name: "parent traversal", file: "../victim.json"},
+		{name: "nested traversal", file: "nested/../../victim.json"},
+		{name: "nested file", file: "nested/victim.json"},
+		{name: "unmanaged file", file: "custom-sidecar.json"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "data")
+			victim := filepath.Join(root, "victim.json")
+			if err := os.WriteFile(victim, []byte("{\"victim\":\"prior\"}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			name := test.file
+			if test.name == "absolute" {
+				name = filepath.Join(root, name)
+			}
+			plan := persist.NewStagedPlan(dir, dir, "host-identity", "v1/pi", map[string]string{}, persist.PhasePrepared)
+			_, outcome, err := persist.ApplyStagedMigration(dir, plan, map[string][]byte{name: []byte("{\"candidate\":true}\n")}, persist.MigrationFaults{})
+			if err == nil {
+				t.Fatal("unsafe or unmanaged migration file must be rejected")
+			}
+			if outcome.Kind != persist.OutcomeKnownUncommitted || outcome.Stage != persist.StageValidate || outcome.PrimaryVisible || outcome.MustReconcileLedger() {
+				t.Fatalf("unsafe or unmanaged file must not publish: %#v", outcome)
+			}
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Fatalf("rejected migration must not create its data directory: %v", err)
+			}
+			raw, err := os.ReadFile(victim)
+			if err != nil || string(raw) != "{\"victim\":\"prior\"}\n" {
+				t.Fatalf("rejected migration altered the victim: %q %v", raw, err)
+			}
+			for _, suffix := range []string{".bak", ".migration-staged"} {
+				if _, err := os.Stat(victim + suffix); !os.IsNotExist(err) {
+					t.Fatalf("rejected migration created victim%s: %v", suffix, err)
+				}
+			}
+		})
+	}
+}
+
+func TestMigrationReadFailuresAbortBeforeBackupStagingOrPrimary(t *testing.T) {
+	for _, kind := range []string{"non-regular", "unreadable"} {
+		t.Run(kind, func(t *testing.T) {
+			if kind == "unreadable" && os.Geteuid() == 0 {
+				t.Skip("root can read mode-000 files")
+			}
+			dir := t.TempDir()
+			mcpPrior := "{\"modules\":\"prior\"}\n"
+			migrationWriteJSON(t, dir, "mcp-modules.json", mcpPrior, 0o600)
+			configPath := filepath.Join(dir, "config.json")
+			configPrior := "{\"config\":\"prior\"}\n"
+			if kind == "non-regular" {
+				if err := os.Mkdir(configPath, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				migrationWriteJSON(t, dir, "config.json", configPrior, 0o600)
+				if err := os.Chmod(configPath, 0); err != nil {
+					t.Fatal(err)
+				}
+				defer os.Chmod(configPath, 0o600)
+			}
+
+			records, err := persist.BackupMigrationInputs(dir, []string{"mcp-modules.json", "config.json"})
+			if err == nil || len(records) != 0 {
+				t.Fatalf("input read failure must abort backup without records: %#v %v", records, err)
+			}
+			plan := persist.NewStagedPlan(dir, dir, "host-identity", "v1/pi", map[string]string{}, persist.PhasePrepared)
+			_, outcome, err := persist.ApplyStagedMigration(dir, plan, map[string][]byte{
+				"config.json":      []byte("{\"config\":\"candidate\"}\n"),
+				"mcp-modules.json": []byte("{\"modules\":\"candidate\"}\n"),
+			}, persist.MigrationFaults{})
+			if err == nil {
+				t.Fatal("input read failure must abort migration")
+			}
+			if outcome.Kind != persist.OutcomeKnownUncommitted || outcome.Stage != persist.StageValidate || outcome.PrimaryVisible || outcome.MustReconcileLedger() {
+				t.Fatalf("input read failure must be known-uncommitted before writes: %#v", outcome)
+			}
+			for _, name := range []string{
+				"config.json.bak", "mcp-modules.json.bak",
+				"config.json.migration-staged", "mcp-modules.json.migration-staged",
+				persist.MigrationReceiptName,
+			} {
+				if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+					t.Fatalf("input read failure must not create %s: %v", name, err)
+				}
+			}
+			mcp, err := os.ReadFile(filepath.Join(dir, "mcp-modules.json"))
+			if err != nil || string(mcp) != mcpPrior {
+				t.Fatalf("input read failure altered the readable primary: %q %v", mcp, err)
+			}
+			if kind == "non-regular" {
+				info, err := os.Stat(configPath)
+				if err != nil || !info.IsDir() {
+					t.Fatalf("non-regular primary was altered: %#v %v", info, err)
+				}
+				return
+			}
+			if err := os.Chmod(configPath, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config, err := os.ReadFile(configPath)
+			if err != nil || string(config) != configPrior {
+				t.Fatalf("unreadable primary was altered: %q %v", config, err)
+			}
+		})
+	}
+}
+
 func TestMigrationApplyPublishesInOrderWithReceipt(t *testing.T) {
 	dir := t.TempDir()
 	plan := persist.NewStagedPlan(dir, dir, "host-identity", "v1/pi", map[string]string{}, persist.PhasePrepared)
@@ -194,6 +310,142 @@ func TestMigrationApplyConflictsOnChangedInputs(t *testing.T) {
 	}
 	if outcome.Kind != persist.OutcomeKnownUncommitted || outcome.PrimaryVisible {
 		t.Fatalf("conflict must stay known-uncommitted: %#v", outcome)
+	}
+}
+
+func TestMigrationApplyBlocksMissingPrimaryWithRetainedOrUnreadableBackup(t *testing.T) {
+	for _, test := range []struct {
+		name                  string
+		makeBackup            func(t *testing.T, path string)
+		wantError             string
+		assertBackupUntouched func(t *testing.T, path string)
+	}{
+		{
+			name: "retained backup",
+			makeBackup: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.WriteFile(path, []byte("{\"version\":1,\"jobs\":{},\"operations\":[]}\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantError: "backup remains",
+			assertBackupUntouched: func(t *testing.T, path string) {
+				t.Helper()
+				raw, err := os.ReadFile(path)
+				if err != nil || string(raw) != "{\"version\":1,\"jobs\":{},\"operations\":[]}\n" {
+					t.Fatalf("retained backup changed: %q %v", raw, err)
+				}
+			},
+		},
+		{
+			name: "unreadable backup",
+			makeBackup: func(t *testing.T, path string) {
+				t.Helper()
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantError: "backup is unreadable",
+			assertBackupUntouched: func(t *testing.T, path string) {
+				t.Helper()
+				info, err := os.Stat(path)
+				if err != nil || !info.IsDir() {
+					t.Fatalf("unreadable backup was altered: %#v %v", info, err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			primary := filepath.Join(dir, "schedules.json")
+			backup := primary + ".bak"
+			migrationWriteJSON(t, dir, "schedules.json", "{\"version\":1,\"jobs\":{},\"operations\":[]}\n", 0o600)
+			test.makeBackup(t, backup)
+			backupBefore, err := os.Lstat(backup)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(primary); err != nil {
+				t.Fatal(err)
+			}
+
+			plan := persist.NewStagedPlan(dir, dir, "host-identity", "v1/pi", map[string]string{}, persist.PhasePrepared)
+			_, outcome, err := persist.ApplyStagedMigration(dir, plan, map[string][]byte{
+				"schedules.json": []byte("{\"version\":1,\"jobs\":{\"candidate\":{}},\"operations\":[]}\n"),
+			}, persist.MigrationFaults{})
+			if err == nil || !strings.Contains(err.Error(), "migration recovery conflict") || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("missing primary with %s must conflict: %v", test.name, err)
+			}
+			if outcome.Kind != persist.OutcomeKnownUncommitted || outcome.Stage != persist.StageValidate || outcome.PrimaryVisible || outcome.MustReconcileLedger() {
+				t.Fatalf("recovery conflict must be known-uncommitted before writes: %#v", outcome)
+			}
+			for _, name := range []string{"schedules.json", "schedules.json.migration-staged", persist.MigrationReceiptName} {
+				if _, statErr := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(statErr) {
+					t.Fatalf("recovery conflict must not create %s: %v", name, statErr)
+				}
+			}
+			test.assertBackupUntouched(t, backup)
+			backupAfter, err := os.Lstat(backup)
+			if err != nil || !os.SameFile(backupBefore, backupAfter) {
+				t.Fatalf("recovery conflict must not replace the backup: %#v %#v %v", backupBefore, backupAfter, err)
+			}
+		})
+	}
+}
+
+func TestMigrationApplyValidatesWholeBatchBeforeBackupOrStaging(t *testing.T) {
+	dir := t.TempDir()
+	prior := "{\"ok\":\"prior\"}\n"
+	migrationWriteJSON(t, dir, "config.json", prior, 0o600)
+	plan := persist.NewStagedPlan(dir, dir, "host-identity", "v1/pi", map[string]string{}, persist.PhasePrepared)
+	_, outcome, err := persist.ApplyStagedMigration(dir, plan, map[string][]byte{
+		"config.json":    []byte("{\"ok\":\"candidate\"}\n"),
+		"schedules.json": []byte("not json"),
+	}, persist.MigrationFaults{})
+	if err == nil {
+		t.Fatal("an invalid later staged file must reject the whole batch")
+	}
+	if outcome.Kind != persist.OutcomeKnownUncommitted || outcome.Stage != persist.StageValidate || outcome.PrimaryVisible || outcome.MustReconcileLedger() {
+		t.Fatalf("invalid staging must be known-uncommitted before backup: %#v", outcome)
+	}
+	primary, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil || string(primary) != prior {
+		t.Fatalf("invalid batch must preserve the primary: %q %v", primary, err)
+	}
+	for _, name := range []string{"config.json.bak", "config.json.migration-staged", "schedules.json.migration-staged"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("invalid batch must not leave %s: %v", name, err)
+		}
+	}
+}
+
+func TestMigrationApplySecondPrimaryFailureIsDurabilityUncertain(t *testing.T) {
+	dir := t.TempDir()
+	configPrior := "{\"config\":\"prior\"}\n"
+	schedulePrior := "{\"schedule\":\"prior\"}\n"
+	migrationWriteJSON(t, dir, "config.json", configPrior, 0o600)
+	migrationWriteJSON(t, dir, "schedules.json", schedulePrior, 0o600)
+	plan := persist.NewStagedPlan(dir, dir, "host-identity", "v1/pi", map[string]string{}, persist.PhasePrepared)
+	_, outcome, err := persist.ApplyStagedMigration(dir, plan, map[string][]byte{
+		"config.json":    []byte("{\"config\":\"candidate\"}\n"),
+		"schedules.json": []byte("{\"schedule\":\"candidate\"}\n"),
+	}, persist.MigrationFaults{FailPrimaryAt: 2, FailPrimary: errors.New("injected second primary failure")})
+	if err == nil {
+		t.Fatal("second primary failure must report an error")
+	}
+	if outcome.Kind != persist.OutcomeDurabilityUncertain || outcome.Stage != persist.StagePrimary || !outcome.PrimaryVisible || !outcome.MustReconcileLedger() {
+		t.Fatalf("partial primary publication must be uncertain: %#v", outcome)
+	}
+	if outcome.MayDispatch() {
+		t.Fatal("partial primary publication must block dependent work")
+	}
+	config, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil || string(config) != "{\"config\":\"candidate\"}\n" {
+		t.Fatalf("first primary must remain visible for reconciliation: %q %v", config, err)
+	}
+	schedule, err := os.ReadFile(filepath.Join(dir, "schedules.json"))
+	if err != nil || string(schedule) != schedulePrior {
+		t.Fatalf("failed second primary must keep its prior value: %q %v", schedule, err)
 	}
 }
 

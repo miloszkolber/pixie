@@ -1,31 +1,32 @@
 # Pi integration
 
-The target `pixie_assistant` is a Bun host that runs Pi sessions in-process through the operator's installed Pi SDK, resolved from that installation at runtime and never bundled. It replaces the interim Go host's `pi --mode rpc` child processes and the separate administration bridge. Pi owns provider credentials, models, settings and native JSONL sessions under the selected agent directory, normally `~/.pi/agent`.
+`pixie_assistant` is the archive-internal host bundle `libexec/pixie_assistant.js`, run by the pinned Bun `1.4.0` runtime `runtime/bin/bun`, used by the two Pi-bearing products. It runs Pi sessions in-process through their bundled `@earendil-works/pi-coding-agent` SDK at version `0.85.1`. There is no `pi --mode rpc` child model, bridge sidecar, external Pi discovery, or public `pixie_assistant` command. Pi owns provider credentials, models, settings, native JSONL sessions, tools, extensions, and trust under the selected agent directory, normally `~/.pi/agent`.
 
-Until the Bun host lands, the interim Go `pixie_assistant` starts the selected public `pi` executable in RPC mode and uses the opt-in administration bridge in `assistant/bridge/` for provider, settings, extension and MCP administration. The Go host does not embed an SDK or require Bun at runtime. Both the RPC child model and the bridge are retired with the in-process host.
+`pixie_cli` bundles Bun `1.4.0`, the Pi SDK and host, and `pixie` bundles Bun `1.4.0`, the Pi SDK, host, and controller; no Node runtime is bundled. Both expose `pixie` as the regular native Pi command and TUI, exclude Pi RPC, and block Pi self-update. The root `pixie` command opens Pi's native TUI through `runtime/bin/bun runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js`. `pixie_web` remains controller-only, never contains or starts Pi, and uses the host's authenticated loopback protocol rather than a Pi execution fallback.
 
 ## Feature ownership
 
-The table records the intended owner, not proof that the interim Go adapter currently exposes every operation. Unimplemented operations stay absent or false and fail closed; the open gaps in the [roadmap](../roadmap/roadmap.md) remain.
+The table records ownership, not universal API availability. The host returns a complete operation set with `runtime.hello`; the controller gates a negotiated false or missing operation before calling it. A handled route can still fail with a capability error when the selected public Pi API lacks the required member. See the [SDK coverage inventory](sdk-coverage.md).
 
 | Feature | Implementation |
 | --- | --- |
-| Chat, streaming, cancellation, steering, images, compaction, forks | Native Pi execution, projected by Pixie |
-| Run settlement, retry, compaction and lifecycle annotations | Native Pi events; Go separates acceptance from settlement and returns the terminal reason, pending real-provider event-order evidence |
+| Chat, streaming, cancellation, images, compaction, forks | Native Pi execution, projected by Pixie when the negotiated operation and selected public API support it |
+| Steering | Not exposed by the current host: Pi `0.85.1` has no public run identifier that safely binds a steering request |
+| Run settlement, retry, compaction and lifecycle annotations | Native Pi events; the host separates acceptance from settlement and returns the terminal reason, pending real-provider event-order evidence |
 | Extension dialogs (`select`, `confirm`, `input`, `editor`) | Generic host UI bridge, projected by Pixie; pending dialogs replay on reload |
 | Extension status, widget, title, working-message hints | Generic host projections, fanned out by Pixie; terminal-only interfaces stay unavailable |
-| Providers, API keys, OAuth, models, defaults, thinking | Native Pi model/auth/settings APIs; secrets stay on the host |
+| Providers, API keys, OAuth, models, defaults, thinking | Native Pi model/auth/settings APIs where available; secrets stay on the host and provider configuration is not universally available |
 | Project grouping, file attachments, history search, durable follow-ups | Pixie records and transcript projection |
 | Defined agents and delegation | Pixie authoring API for native Markdown definitions, optional native subagent extension for execution |
 | Plans | Upstream `todo` tool via the `rpiv-todo` extension |
-| MCP tools, Browser MCP | Operator-installed upstream MCP adapter; Pixie registers the chosen browser endpoint and Pi dials it directly |
+| MCP tools, Browser MCP | Pixie manages its own configured connection records and registers the chosen browser endpoint; Pi dials the endpoint directly and no universal public Pi MCP/tool API is assumed |
 | Signet | Operator-owned external service with a Pi-native file extension; no Pixie MCP connection |
 | Goals, tasks and questions | Pixie session-scoped MCP |
 | Schedules | Pixie storage and runner; ordinary Pi sessions, no Pi scheduling extension |
 
 ## Assistant protocol
 
-The wire contract between the controller and the Pi host service. The host translates these frames onto native Pi APIs; the protocol is the stable surface that keeps the host service swappable.
+The wire contract between the controller and the Pi host service. The host translates supported frames onto public Pi APIs; it is not Pi RPC and is not a claim that every catalogued operation exists.
 
 **Transport.** The service listens on loopback `/pi` over WebSocket. Requests carry `Authorization: Bearer <PIXIE_PI_SECRET_KEY>`; connections without a valid bearer are rejected, and browser `Origin` headers are refused. Frames are JSON text. The host bounds frames and pending requests, and unsupported operations are absent or false and fail closed. Stable authority feeds deletion binding; production host v2 and durable pairing remain roadmap work.
 
@@ -35,7 +36,7 @@ The wire contract between the controller and the Pi host service. The host trans
 { "id": 1, "method": "runtime.hello", "params": { "protocolVersion": 1 } }
 ```
 
-The result carries `protocolVersion` (`1`), a stable `runtimeId`, a fresh `bootId` for the current host process, the host's reported `version`, and a capability map. `sessions`, `providers` and `agents` are always `1`; optional feature groups (for example `mcp`, `llama`) appear only when a supported native runtime is loaded. Clients must check capability versions before using their methods.
+The result carries `protocolVersion` (`1`), a stable `runtimeId`, a fresh `bootId` for the current host process, the host's reported `version`, `sessions` and `agents` capability groups, and an exhaustive `operationSet`. Clients must check the operation set before using optional methods.
 
 **Frames.** Client requests are `{ "id": <positive safe integer>, "method": string, "params": object }`; the first request must be `runtime.hello` with `params.protocolVersion` set to `1`. The host does not coerce IDs or params. Replies are `{ "id", "result" }` or `{ "id", "error": { "code", "message" } }`. Events carry a `method` and `params` without an id; `session.event` frames carry `sessionId` and a monotonically increasing `sequence` used by snapshot checkpoints.
 
@@ -52,21 +53,21 @@ The result carries `protocolVersion` (`1`), a stable `runtimeId`, a fresh `bootI
 
 | Group | Shape |
 | --- | --- |
-| `runtime.hello`, `runtime.capabilities` | Service identity, protocol version and capability versions |
+| `runtime.hello` | Service identity, protocol version, capability groups, and negotiated operation set |
 | `runtime.restart` | End the process for the service manager; enabled per deployment with `PIXIE_ALLOW_SELF_RESTART=1` and rejected otherwise. The accepted request blocks new work, replies `ok`, and the production entrypoint drains for up to 25 seconds before exiting with status 75 ([deployment](deployment.md)) |
 | `pi.extensions.list` / `configure`, `pi.sources.*` | Native resource inventory, deferred configuration and Markdown agent definitions |
 | `pi.providers.*`, `pi.defaults.*`, `pi.preferences.*`, `provider.login*` | Provider catalog, credentials and OAuth flows; secrets never leave the host |
-| `session.create` / `fork` / `load` / `list` / `prompt` / `steer` / `abort` / `queue*` / `delete` / `rename` / `archive` / `setModel` / `setThinkingLevel` and related | Session lifecycle, runs and configuration |
+| `session.create` / `fork` / `load` / `list` / `prompt` / `cancel` / `configure` / `rename` and related | Session lifecycle, runs, and configuration where an operation is negotiated and its public Pi member exists |
 | `session.goal*`, `session.plan*`, `session.stats`, `session.commands`, `session.agentMentions` | Application projections on top of native sessions |
 | Capability methods (`mcp.*`, `llama` feature surface) | Versioned groups advertised in the welcome capabilities |
 
-Unknown methods return an error frame. Features are gated by capability versions, not assumed.
+Unknown methods return an error frame. `runtime.capabilities` is catalogued but not implemented by the host, and controller `pi.capabilities` is a derived view of `runtime.hello`; neither is a Pi runtime call. Features are gated by the negotiated operation set, not assumed.
 
 **Versioning.** `protocolVersion` changes only for breaking wire changes. Within a version the protocol is additive: new methods, fields and capability groups join without a bump, and optional features stay behind capability versions. The controller negotiates at `runtime.hello` and refuses incompatible hosts.
 
-**Projection and lifecycle.** The Go host projects transcript, tool, usage, run, lifecycle, UI, history, dialog, and attachment state where implemented. It owns one immutable child per logical session in the admitted cwd, verifies exact identity before every operation, blocks prompt until settlement, and advertises only negotiated capabilities. Its transcript projection remains narrower than the full retained feature set; do not infer complete parity from source repairs.
+**Projection and lifecycle.** The host projects transcript, tool, usage, run, lifecycle, UI, history, dialog, and attachment state where implemented. It verifies exact identity before every operation, blocks prompt until settlement, and advertises only negotiated capabilities. Its transcript projection remains narrower than the full retained feature set; do not infer complete parity from source repairs.
 
-The Go host keeps a durable session registry, reloads an exact session file on demand, and degrades readiness while a lost session awaits reload. Production integration remains subject to the roadmap audit.
+The host keeps a durable session registry, reloads an exact session file on demand, and degrades readiness while a lost session awaits reload. Production integration remains subject to the roadmap audit.
 
 | Native event or entry | Pixie presentation |
 | --- | --- |
@@ -78,7 +79,7 @@ The Go host keeps a durable session registry, reloads an exact session file on d
 | Hidden custom messages and internal entries | Kept by Pi; omitted from the displayed transcript |
 | Agent/turn bookkeeping | Pi internal; Pixie uses host run boundaries for completion |
 
-Use separate sessions for simultaneous Pi CLI and host work. Pi does not coordinate concurrent writes to the same session across processes. The host takes an exclusive lock for its own agent-directory service.
+Use separate sessions for simultaneous Pi CLI and host work. Pi does not coordinate concurrent writes to the same session across processes. The host takes an exclusive lock for its own agent-directory service, but host-local mutation cannot coordinate arbitrary external writers.
 
 ## Extensions
 
@@ -87,6 +88,8 @@ The host loads ordinary Pi resources through the native resource loader. Install
 Native project trust controls project resources. User/global resources load under the native configuration. Saved trust or resource changes apply on a subsequent native load; do not assume changing configuration changes an already resident session.
 
 Extension registration adds services and tools; it does not replace prompts, intercept tools or add execution policies. TUI-specific extension interfaces are not rendered in the Web UI. Optional controls require supported versions and an exhaustive negotiated operation set.
+
+The host is not a Pi extension. An extension lives only inside a Pi process and runs under the TUI runtime; it cannot own a durable multi-session registry, provider/model/settings or MCP mutation, or deletion authority, and it would expose the controller secret to every loaded extension and the model's bash tool. A dedicated owner-locked host process remains required. An in-TUI extension can only ever be an optional additive surface that never owns sessions or the loopback endpoint. See the [bundled native interface](sdk-coverage.md#bundled-native-interface).
 
 **Inventory and configuration.** Settings → Extensions distinguishes configured resources from extensions loaded in a resident session. Missing sources stay visible; inspection does not install packages, import extension code or create/reload a session. Non-resident sessions have no live loaded inventory. Loaded versions/interface support remain unknown when native metadata does not supply them.
 
@@ -98,11 +101,11 @@ A successful save reports `saved=true`, `loaded=false` and `reload=deferred`. Re
 
 Pending requests replay on session load. Browser replies use `session.uiReply`/`session.uiCancel`; the controller calls host `session.uiResponse`/`session.uiCancel`. All clients dismiss a settled request. History questionnaire cards are read-only tool-result recaps. Without a reliable tool-call association, active requests stay session-level rather than being attached by guessed timing or tool name.
 
-Each session permits 16 pending dialogs. Passive status/widget collections each permit 16 keys; widgets accept string arrays, not component factories. Text is escaped, ordinary passive updates are bounded, and clears remain deliverable. Passive state currently clears on connection/context loss and is not replayed. A transient extension title does not rename the saved conversation.
+Each session permits 16 pending dialogs. Passive status/widget collections each permit 16 keys; widgets accept string arrays, not component factories. Text is escaped, ordinary passive updates are bounded, and clears remain deliverable. Passive state currently clears on connection/context loss and is not replayed. A transient extension title does not rename the saved conversation. Terminal input, custom TUI factories, footers, headers, autocomplete, and composer APIs remain native-TUI-only.
 
-Terminal input, custom TUI factories, footers/headers, autocomplete and composer get/set/paste APIs are unsupported. The multiline editor dialog has its own draft. Stop and session teardown cancel pending interactions. Generic extension liveness can keep background work resident without redefining native run settlement.
+The multiline editor dialog has its own draft. Stop and session teardown cancel pending interactions. Generic extension liveness can keep background work resident without redefining native run settlement.
 
-The Go host implements the blocking dialogs through raw native `extension_ui_request`/`extension_ui_response` frames; the [roadmap](../roadmap/roadmap.md) records required behavior and the remaining fidelity work. Do not assume every bridge method is available.
+The host implements the blocking dialogs through native `extension_ui_request`/`extension_ui_response` frames; the [roadmap](../roadmap/roadmap.md) records required behavior and the remaining fidelity work. Do not assume every bridge method is available.
 
 **Agent definitions.** Definitions live in `<agentDir>/agents/*.md` and `<project>/.pi/agents/*.md`. Pixie's `pi.sources.*` API provides Markdown CRUD and `@agent` discovery without registering model tools or implementing delegation.
 
@@ -110,9 +113,7 @@ Frontmatter includes `name`, `description` and optional `model`; unspecified fie
 
 ## MCP
 
-**Native Pi MCP client.** The operator-installed native adapter is the only Pi MCP runtime. The host discovers the public runtime-snapshot interface and registers session connections through runtime-register APIs. Native tools remain the model-facing interface. The Pi MCP client uses the pinned upstream `pi-mcp-adapter` runtime unchanged, with no custom transport.
-
-Identical attachments are idempotent; conflicting definitions fail. Global saved connections and session membership are distinct. Native `{mcpServers: ...}` configuration is not rewritten by the host's connection administration. Without a compatible adapter, MCP administration stays unavailable and baseline sessions remain usable.
+**Host MCP configuration.** The host keeps bounded configured and per-session connection records for supported HTTP/streamable-HTTP definitions. Global records and session membership are distinct. This is Pixie host policy, not evidence of a universal public Pi MCP runtime, attachment API, or tool inventory; baseline sessions remain usable when an optional connection capability is unavailable.
 
 **Pixie MCP publisher.** The main Pixie process publishes its workspace modules to trusted MCP clients on the application listener. It is separate from the Pi MCP client and from the external browser endpoint.
 
@@ -124,13 +125,13 @@ Identical attachments are idempotent; conflicting definitions fail. Global saved
 | `/health`, `/livez` | Process liveness (application listener) |
 | `/readyz` | Application readiness, `200` or `503` |
 
-Requests use `Authorization: Bearer <PIXIE_MCP_TOKEN>`. The catalog contains module IDs, names, paths, transport, state and an opaque revision. Canvas and Design are the registered modules and both default to disabled. `PIXIE_MCP_MODULES` and `PIXIE_MCP_DISABLED_MODULES` are retired and ignored; setting either logs a startup warning pointing at the Tools UI. Publication enablement lives in the Pixie persist store (`mcp-modules.json`) and in the Tools UI in-process section (Enabled, Status, Endpoint), exposed as `mcpRegistry.catalog` / `mcpRegistry.moduleSetEnabled`. The `mcpAdapter.status` projection surfaces the Pi-side adapter state (connected, cached, failed, needs-auth, not-connected, disabled) and stays fail-open when the adapter is not loaded.
+Requests use `Authorization: Bearer <PIXIE_MCP_TOKEN>`. The catalog contains module IDs, names, paths, transport, state and an opaque revision. Canvas and Design are the registered modules and both default to disabled. `PIXIE_MCP_MODULES` and `PIXIE_MCP_DISABLED_MODULES` are retired and ignored; setting either logs a startup warning pointing at the Tools UI. Publication enablement lives in the Pixie persist store (`mcp-modules.json`) and in the Tools UI in-process section (Enabled, Status, Endpoint), exposed as `mcpRegistry.catalog` / `mcpRegistry.moduleSetEnabled`.
 
-**Browser MCP endpoint.** Pixie hosts no browser. Pi is the MCP client and connects directly to an operator-chosen external browser MCP endpoint. Pixie stores one setting in `config.json`, registers it in Pi's effective `mcpServers` configuration and reports a bounded probe; the Settings → Browser section exposes name, URL, an enabled toggle, register/update and remove. The endpoint may be unauthenticated, and hardening, network isolation and egress belong to the deployment; Pixie never proxies MCP traffic and fails closed when the setting is disabled or Pi administration is unavailable. See [security](security.md) for the trust boundary.
+**Browser MCP endpoint.** Browser MCP is an external pointer, not a Pixie module or browser. Pi is the MCP client and connects directly to an operator-chosen endpoint. Pixie stores one setting in `config.json`, registers it in Pi's effective `mcpServers` configuration and reports a bounded probe; the Settings → Browser section exposes name, URL, an enabled toggle, register/update and remove. The endpoint may be unauthenticated, and hardening, network isolation and egress belong to the deployment; Pixie never proxies MCP traffic and fails closed when the setting is disabled or Pi administration is unavailable. See [security](security.md) for the trust boundary.
 
 ## Local models and memory
 
-Local llama.cpp is an optional native Pi feature. The operator selects it through the installed Pi distribution and supplies `LLAMA_BASE_URL` and optional native credentials/`LLAMA_API_KEY`; the supervised child receives those native names. Model selection, refresh and inference run through Pi; `/llama` management requires terminal UI. A requested profile fails explicitly when its required provider is unavailable.
+Local llama.cpp is an optional native Pi feature. When the bundled Pi runtime supports it, the operator supplies `LLAMA_BASE_URL` and optional native credentials/`LLAMA_API_KEY`; the native Pi session receives those native names. Model selection, refresh and inference run through Pi; `/llama` management remains native-TUI-only. A requested profile fails explicitly when its required provider is unavailable.
 
 Signet is operator-owned and loads through Pi's normal file-extension discovery. Its daemon, configuration and enablement are not managed by Pixie and are not a Pixie MCP connection. Other unfamiliar native extensions follow the same native loading and supported UI boundaries.
 

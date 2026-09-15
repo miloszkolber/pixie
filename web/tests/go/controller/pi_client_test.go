@@ -85,7 +85,7 @@ func TestPiClientFramesPiAndOrdersNotifications(t *testing.T) {
 		t.Fatalf("notification was not handled before the response: %#v", methods)
 	}
 	_, profile, err := client.Profile(ctx)
-	if err != nil || profile.BootID != "fixture-boot" || !profile.Pi || !profile.Compatible || !profile.Operations.DeleteSession || !profile.Operations.PromptImage || !profile.Operations.HTTPMCP {
+	if err != nil || profile.BootID != "fixture-boot" || !profile.Pi || !profile.Compatible || !profile.Operations.DeleteSession || !profile.Operations.PromptImage || !profile.Operations.HTTPMCP || !profile.Operations.Administration {
 		t.Fatalf("unexpected capability profile: %#v, %v", profile, err)
 	}
 	select {
@@ -147,6 +147,72 @@ func TestPiClientV1HelloBytesUnchanged(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("v1 hello was not sent")
+	}
+}
+
+func TestPiClientDrainsCreateReplyAfterRequestCancellation(t *testing.T) {
+	createReceived := make(chan struct{}, 1)
+	releaseCreate := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil {
+				return
+			}
+			switch rpc.Method {
+			case "runtime.hello":
+				if err := writeRPC(connection, map[string]any{"id": rpc.ID, "result": piInitializeResponse()}); err != nil {
+					return
+				}
+			case "session.create":
+				createReceived <- struct{}{}
+				<-releaseCreate
+				_ = writeRPC(connection, map[string]any{"id": rpc.ID, "result": map[string]any{"sessionId": "late-session"}})
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", nil)
+	defer client.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type createResult struct {
+		response piwire.NewSessionResponse
+		err      error
+	}
+	created := make(chan createResult, 1)
+	go func() {
+		response, err := client.NewSession(ctx, piwire.NewSessionRequest{Cwd: "/project"})
+		created <- createResult{response: response, err: err}
+	}()
+	select {
+	case <-createReceived:
+	case <-time.After(5 * time.Second):
+		t.Fatal("host did not receive session.create")
+	}
+	cancel()
+	close(releaseCreate)
+	select {
+	case result := <-created:
+		if result.err != nil || result.response.SessionId != "late-session" {
+			t.Fatalf("late create reply was not reconciled: %#v", result)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("create did not settle after the host replied")
 	}
 }
 
@@ -388,6 +454,47 @@ func TestPiClientUsesOperationSetWithoutProviderAdministrationGate(t *testing.T)
 		default:
 			return
 		}
+	}
+}
+
+func TestPiClientAdministrationRequiresMinimalOperationSet(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil || rpc.Method != "runtime.hello" {
+				return
+			}
+			result := piInitializeResponse()
+			operations := result["operationSet"].(map[string]bool)
+			delete(operations, "pi.preferences.read")
+			if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", nil)
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, profile, err := client.Profile(ctx)
+	if err != nil {
+		t.Fatalf("profile: %v", err)
+	}
+	if !profile.Compatible || profile.Operations.Administration {
+		t.Fatalf("administration was claimed with pi.preferences.read unavailable: %#v", profile)
 	}
 }
 

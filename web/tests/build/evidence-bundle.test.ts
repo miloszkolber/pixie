@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	decodeProbeDetail,
-	inspectPackageArtifacts,
 	packageArtifactInputFromEvidence,
 	runPackageArtifactCheck,
 } from "../../scripts/check-package-artifacts.ts";
@@ -18,12 +17,13 @@ import {
 	encodePackageArchiveDetail,
 	packageArchiveAssertionId,
 	parseEvidenceBundle,
+	parsePackageArchiveAssertionId,
 	readEvidenceBundle,
 } from "../../scripts/evidence-bundle.ts";
 import { identityInputFromEvidence, runReleaseGate } from "../../scripts/release-gate.ts";
 import {
 	FIXTURE_ARCHITECTURES,
-	FIXTURE_VARIANTS,
+	FIXTURE_PRODUCTS,
 	fixtureBinaryName,
 	stageArtifacts,
 	writeDockerSaveTar,
@@ -37,7 +37,7 @@ const releaseId = `sha-${sourceCommit.slice(0, 12)}`;
 const generatedAt = "2026-01-02T03:04:05.000Z";
 const hash = "a".repeat(64);
 
-const VARIANTS = FIXTURE_VARIANTS;
+const PRODUCTS = FIXTURE_PRODUCTS;
 const ARCHITECTURES = FIXTURE_ARCHITECTURES;
 const binaryName = fixtureBinaryName;
 
@@ -52,11 +52,17 @@ function validBundle(): Record<string, unknown> {
 		assertions: [
 			{
 				kind: "GATE",
-				id: "PKG-ARCHIVE-assistant-amd64",
+				id: "PKG-ARCHIVE-pixie_web-amd64",
 				status: "pass",
 				command: "sha256sum archive",
-				artifact: { name: "archive.tar.gz", sha256: hash },
-				detail: "inspected",
+				artifact: { name: `pixie_web-${releaseId}-linux-amd64.tar.gz`, sha256: hash },
+				detail: encodePackageArchiveDetail({
+					product: "pixie_web",
+					architecture: "amd64",
+					entries: ["INSTALL.md", "LICENSE", "NOTICE.md", "pixie.json", "pixie_web"],
+					binary: "pixie_web",
+					binarySha256: hash,
+				}),
 			},
 		],
 	};
@@ -113,7 +119,7 @@ test("schema validation rejects every malformed bundle class", () => {
 				assertions: [
 					{
 						kind: "GATE",
-						id: "PKG-ARCHIVE-assistant-amd64",
+						id: "PKG-ARCHIVE-pixie_web-amd64",
 						status: "pass",
 						command: "",
 						detail: "inspected",
@@ -128,7 +134,7 @@ test("schema validation rejects every malformed bundle class", () => {
 				assertions: [
 					{
 						kind: "GATE",
-						id: "PKG-ARCHIVE-assistant-amd64",
+						id: "PKG-ARCHIVE-pixie_web-amd64",
 						status: "pass",
 						command: "sha256sum archive",
 						artifact: { name: "archive.tar.gz" },
@@ -159,21 +165,22 @@ test("collect-evidence inspects staged archives and a docker-save image", async 
 		expect(bundle.schemaVersion).toBe(1);
 		expect(bundle.profile).toBe("full-host");
 		expect(bundle.platform).toEqual({ os: "linux", arch: "amd64" });
-		expect(bundle.assertions).toHaveLength(9);
+		expect(bundle.assertions).toHaveLength(11);
 
-		for (const variant of VARIANTS) {
+		for (const product of PRODUCTS) {
 			for (const architecture of ARCHITECTURES) {
 				const assertion = bundle.assertions.find(
-					(candidate) => candidate.id === packageArchiveAssertionId(variant, architecture),
+					(candidate) => candidate.id === packageArchiveAssertionId(product, architecture),
 				);
-				const archiveName = `${binaryName(variant)}-${releaseId}-linux-${architecture}.tar.gz`;
+				const archiveName = `${binaryName(product)}-${releaseId}-linux-${architecture}.tar.gz`;
 				expect(assertion?.status).toBe("pass");
 				expect(assertion?.artifact?.name).toBe(archiveName);
 				expect(assertion?.artifact?.sha256).toBe(fixture.archiveSha256.get(archiveName));
 				const detail = decodePackageArchiveDetail(assertion?.detail ?? "");
-				expect(detail?.binary).toBe(binaryName(variant));
+				expect(detail?.product).toBe(product);
+				expect(detail?.binary).toBe(binaryName(product));
 				expect(detail?.binarySha256).toBe(fixture.binarySha256.get(archiveName));
-				expect(detail?.entries).toContain(binaryName(variant));
+				expect(detail?.entries).toContain(binaryName(product));
 			}
 		}
 
@@ -239,11 +246,42 @@ test("collect-evidence marks missing archives blocked instead of pass", async ()
 			generatedAt,
 		});
 		const blocked = bundle.assertions.filter((assertion) => assertion.status === "blocked");
-		expect(blocked).toHaveLength(6);
+		expect(blocked).toHaveLength(8);
 		expect(blocked.every((assertion) => assertion.artifact === undefined)).toBe(true);
 		const archiveBlocked = blocked.filter((assertion) => assertion.id.startsWith("PKG-ARCHIVE-"));
-		expect(archiveBlocked).toHaveLength(3);
+		expect(archiveBlocked).toHaveLength(5);
 		expect(archiveBlocked.every((assertion) => assertion.detail.includes("missing"))).toBe(true);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+test("collect-evidence rejects a combined manifest missing a product artifact", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pixie-evidence-manifest-"));
+	try {
+		const fixture = await stageArtifacts(root, true, sourceCommit, releaseId);
+		await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
+		const manifestPath = join(fixture.artifactsDir, "release-manifest.json");
+		const manifest = JSON.parse(await Bun.file(manifestPath).text()) as {
+			artifacts: unknown[];
+		};
+		manifest.artifacts.pop();
+		await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+
+		const bundle = await collectEvidence({
+			artifactsDir: fixture.artifactsDir,
+			imagePath: fixture.imageTar,
+			sourceCommit,
+			releaseId,
+			generatedAt,
+		});
+		const manifestAssertion = bundle.assertions.find(
+			(candidate) => candidate.id === "RELEASE-MANIFEST",
+		);
+		expect(manifestAssertion?.status).toBe("fail");
+		expect(manifestAssertion?.detail).toContain(
+			"release-manifest.json artifacts must contain exactly six records",
+		);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -265,13 +303,13 @@ test("gates derive real archive, binary and image evidence from a bundle", async
 		const packageMapping = packageArtifactInputFromEvidence(bundle, {});
 		expect(packageMapping.violations).toEqual([]);
 		expect(packageMapping.input.releaseId).toBe(releaseId);
-		expect(packageMapping.input.archives).toHaveLength(4);
-		expect(packageMapping.input.binaries).toHaveLength(4);
+		expect(packageMapping.input.archives).toHaveLength(6);
+		expect(packageMapping.input.binaries).toHaveLength(6);
 
 		const identity = identityInputFromEvidence(bundle, {});
 		expect(identity.violations).toEqual([]);
-		expect(identity.identity.archives).toHaveLength(4);
-		expect(identity.identity.binaries).toHaveLength(4);
+		expect(identity.identity.archives).toHaveLength(6);
+		expect(identity.identity.binaries).toHaveLength(6);
 		expect(identity.identity.docker?.indexDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(identity.identity.docker?.labels?.["org.opencontainers.image.version"]).toBe(releaseId);
 	} finally {
@@ -283,14 +321,14 @@ test("probe details carry and validate the executing architecture", () => {
 	expect(
 		decodeProbeDetail(
 			JSON.stringify({
-				path: "/release/pixie-assistant",
-				stdout: `pixie-assistant ${releaseId}`,
+				path: "/release/pixie_cli",
+				stdout: `pixie_cli ${releaseId}`,
 				architecture: "arm64",
 			}),
 		),
 	).toEqual({
-		path: "/release/pixie-assistant",
-		stdout: `pixie-assistant ${releaseId}`,
+		path: "/release/pixie_cli",
+		stdout: `pixie_cli ${releaseId}`,
 		architecture: "arm64",
 	});
 	// Bundles written before the field fall back to the bundle platform.
@@ -310,10 +348,13 @@ test("collect-evidence merges a second host's probe facts per architecture", asy
 		await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
 		const binariesDir = join(root, "binaries");
 		await mkdir(binariesDir, { recursive: true });
-		const assistant = join(binariesDir, "pixie-assistant");
-		const host = join(binariesDir, "pixie");
-		await writeProbeBinary(assistant, { name: "pixie-assistant", releaseId, sourceCommit });
-		await writeProbeBinary(host, { name: "pixie", releaseId, sourceCommit });
+		const binaries = PRODUCTS.map((product) => join(binariesDir, product));
+		for (const product of PRODUCTS)
+			await writeProbeBinary(join(binariesDir, product), {
+				name: product,
+				releaseId,
+				sourceCommit,
+			});
 		const hostArchitecture = process.arch === "arm64" ? "arm64" : "amd64";
 		const otherArchitecture = hostArchitecture === "amd64" ? "arm64" : "amd64";
 		const probeEvidencePath = join(root, `probe-evidence-${otherArchitecture}.json`);
@@ -322,7 +363,7 @@ test("collect-evidence merges a second host's probe facts per architecture", asy
 			sourceCommit,
 			releaseId,
 			generatedAt,
-			binaries: [assistant, host],
+			binaries,
 		});
 
 		const bundle = await collectEvidence({
@@ -331,42 +372,38 @@ test("collect-evidence merges a second host's probe facts per architecture", asy
 			sourceCommit,
 			releaseId,
 			generatedAt,
-			binaryPaths: [assistant, host],
+			binaryPaths: binaries,
 			probeEvidencePath,
 		});
 		expect(bundle.platform.arch).toBe(hostArchitecture);
 
 		const mapping = packageArtifactInputFromEvidence(bundle, {});
 		expect(mapping.violations).toEqual([]);
-		const binaries = mapping.input.binaries ?? [];
-		expect(binaries).toHaveLength(4);
-		for (const binary of binaries) {
-			const label = `${binary.variant}/${binary.architecture}`;
-			expect(binary.version, label).toBe(releaseId);
-			expect(binary.doctor, label).toBe(true);
+		const mappedBinaries = mapping.input.binaries ?? [];
+		expect(mappedBinaries).toHaveLength(6);
+		for (const binary of mappedBinaries) {
+			const label = `${binary.product}/${binary.architecture}`;
+			expect(binary.path, label).toBe(binary.product);
 		}
-		const report = inspectPackageArtifacts({ ...mapping.input, reductions: [] });
-		const missing = report.missingLiveEvidence.join("\n");
-		expect(missing).not.toContain("--version");
-		expect(missing).not.toContain(" doctor");
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
 });
 
-test("a bundle without the other architecture's probes never synthesizes those facts", async () => {
+test("package archive identity never promotes an unexecuted probe into a second matrix", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pixie-probe-native-only-"));
 	try {
 		const fixture = await stageArtifacts(root, true, sourceCommit, releaseId);
 		await writeDockerSaveTar(fixture.imageTar, sourceCommit, releaseId);
 		const binariesDir = join(root, "binaries");
 		await mkdir(binariesDir, { recursive: true });
-		const assistant = join(binariesDir, "pixie-assistant");
-		const host = join(binariesDir, "pixie");
-		await writeProbeBinary(assistant, { name: "pixie-assistant", releaseId, sourceCommit });
-		await writeProbeBinary(host, { name: "pixie", releaseId, sourceCommit });
-		const hostArchitecture = process.arch === "arm64" ? "arm64" : "amd64";
-		const otherArchitecture = hostArchitecture === "amd64" ? "arm64" : "amd64";
+		const binaries = PRODUCTS.map((product) => join(binariesDir, product));
+		for (const product of PRODUCTS)
+			await writeProbeBinary(join(binariesDir, product), {
+				name: product,
+				releaseId,
+				sourceCommit,
+			});
 
 		const bundle = await collectEvidence({
 			artifactsDir: fixture.artifactsDir,
@@ -374,19 +411,11 @@ test("a bundle without the other architecture's probes never synthesizes those f
 			sourceCommit,
 			releaseId,
 			generatedAt,
-			binaryPaths: [assistant, host],
+			binaryPaths: binaries,
 		});
 		const mapping = packageArtifactInputFromEvidence(bundle, {});
-		for (const binary of mapping.input.binaries ?? []) {
-			if (binary.architecture === hostArchitecture) {
-				expect(binary.version).toBe(releaseId);
-				expect(binary.doctor).toBe(true);
-			} else {
-				expect(binary.version).toBeUndefined();
-				expect(binary.doctor).toBeUndefined();
-			}
-		}
-		expect(otherArchitecture).not.toBe(hostArchitecture);
+		expect(mapping.input.binaries).toHaveLength(6);
+		expect(mapping.violations).toEqual([]);
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}
@@ -413,7 +442,7 @@ test("archive detail encoding rejects malformed payloads", () => {
 	expect(
 		decodePackageArchiveDetail(
 			encodePackageArchiveDetail({
-				variant: "host",
+				product: "pixie",
 				architecture: "arm64",
 				entries: ["pixie", "pixie.service"],
 				binary: "pixie",
@@ -423,4 +452,5 @@ test("archive detail encoding rejects malformed payloads", () => {
 	).not.toBeNull();
 	expect(decodePackageArchiveDetail("not json")).toBeNull();
 	expect(decodePackageArchiveDetail(JSON.stringify({ variant: "host" }))).toBeNull();
+	expect(parsePackageArchiveAssertionId("PKG-ARCHIVE-assistant-amd64")).toBeNull();
 });

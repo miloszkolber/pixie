@@ -7,6 +7,8 @@ const TAR_BLOCK_SIZE = 512;
 const TAR_END_BLOCKS = 2;
 const TAR_NAME_OFFSET = 0;
 const TAR_NAME_LENGTH = 100;
+const TAR_PREFIX_OFFSET = 345;
+const TAR_PREFIX_LENGTH = 155;
 const TAR_MODE_OFFSET = 100;
 const TAR_UID_OFFSET = 108;
 const TAR_GID_OFFSET = 116;
@@ -34,7 +36,13 @@ function compareBytes(left: Uint8Array, right: Uint8Array): number {
 	return left.byteLength - right.byteLength;
 }
 
-function archiveNameBytes(name: string): Uint8Array {
+interface ArchivePathParts {
+	name: Uint8Array;
+	prefix: Uint8Array;
+	full: Uint8Array;
+}
+
+function archiveNameBytes(name: string): ArchivePathParts {
 	if (
 		name.length === 0 ||
 		name.startsWith("/") ||
@@ -43,10 +51,18 @@ function archiveNameBytes(name: string): Uint8Array {
 	) {
 		throw new Error(`release archive entry has an unsafe name: ${JSON.stringify(name)}`);
 	}
-	const bytes = UTF8.encode(name);
-	if (bytes.byteLength > TAR_NAME_LENGTH)
+	const full = UTF8.encode(name);
+	if (full.byteLength <= TAR_NAME_LENGTH) return { name: full, prefix: new Uint8Array(), full };
+	if (full.byteLength > TAR_NAME_LENGTH + TAR_PREFIX_LENGTH)
 		throw new Error(`release archive entry name is too long for ustar: ${JSON.stringify(name)}`);
-	return bytes;
+	for (let index = name.length - 1; index > 0; index -= 1) {
+		if (name[index] !== "/") continue;
+		const prefix = UTF8.encode(name.slice(0, index));
+		const basename = UTF8.encode(name.slice(index + 1));
+		if (prefix.byteLength <= TAR_PREFIX_LENGTH && basename.byteLength <= TAR_NAME_LENGTH)
+			return { name: basename, prefix, full };
+	}
+	throw new Error(`release archive entry name is too long for ustar: ${JSON.stringify(name)}`);
 }
 
 function writeOctal(
@@ -91,11 +107,11 @@ async function readRegularFile(path: string): Promise<Buffer> {
 	}
 }
 
-function tarHeader(name: Uint8Array, mode: number, size: number, mtime: number): Buffer {
+function tarHeader(name: ArchivePathParts, mode: number, size: number, mtime: number): Buffer {
 	if (!Number.isSafeInteger(mode) || mode < 0 || mode > 0o7777)
 		throw new Error("release archive mode must be a portable file mode");
 	const header = Buffer.alloc(TAR_BLOCK_SIZE);
-	header.set(name, TAR_NAME_OFFSET);
+	header.set(name.name, TAR_NAME_OFFSET);
 	writeOctal(header, TAR_MODE_OFFSET, 8, mode, "mode");
 	writeOctal(header, TAR_UID_OFFSET, 8, 0, "owner");
 	writeOctal(header, TAR_GID_OFFSET, 8, 0, "group");
@@ -105,6 +121,7 @@ function tarHeader(name: Uint8Array, mode: number, size: number, mtime: number):
 	header[TAR_TYPE_OFFSET] = "0".charCodeAt(0);
 	header.set(UTF8.encode("ustar\0"), TAR_MAGIC_OFFSET);
 	header.set(UTF8.encode("00"), TAR_VERSION_OFFSET);
+	header.set(name.prefix, TAR_PREFIX_OFFSET);
 	let checksum = 0;
 	for (const byte of header) checksum += byte;
 	const checksumText = checksum.toString(8).padStart(6, "0");
@@ -134,21 +151,21 @@ export async function writeDeterministicTarGz(
 	if (!Number.isSafeInteger(mtime) || mtime < 0)
 		throw new Error("release archive mtime must be a non-negative integer");
 	const ordered = entries
-		.map((entry) => ({ ...entry, nameBytes: archiveNameBytes(entry.name) }))
-		.sort((left, right) => compareBytes(left.nameBytes, right.nameBytes));
+		.map((entry) => ({ ...entry, archivePath: archiveNameBytes(entry.name) }))
+		.sort((left, right) => compareBytes(left.archivePath.full, right.archivePath.full));
 	for (let index = 1; index < ordered.length; index += 1) {
 		const previous = ordered[index - 1];
 		const current = ordered[index];
 		if (previous === undefined || current === undefined)
 			throw new Error("release archive ordering changed unexpectedly");
-		if (compareBytes(previous.nameBytes, current.nameBytes) === 0)
+		if (compareBytes(previous.archivePath.full, current.archivePath.full) === 0)
 			throw new Error(`release archive has duplicate entry: ${JSON.stringify(current.name)}`);
 	}
 
 	const blocks: Buffer[] = [];
 	for (const entry of ordered) {
 		const content = await readRegularFile(entry.path);
-		blocks.push(tarHeader(entry.nameBytes, entry.mode, content.byteLength, mtime), content);
+		blocks.push(tarHeader(entry.archivePath, entry.mode, content.byteLength, mtime), content);
 		const padding = (TAR_BLOCK_SIZE - (content.byteLength % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE;
 		if (padding !== 0) blocks.push(Buffer.alloc(padding));
 	}

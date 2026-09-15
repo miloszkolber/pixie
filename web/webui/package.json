@@ -11,21 +11,17 @@
 		"mewa:check": "bun scripts/check-mewa.ts",
 		"mewa:sync": "bun scripts/sync-mewa.ts",
 		"typography:generate": "bun scripts/generate-typography.ts",
-		"typography:validate": "bun scripts/validate-typography.ts",
 		"typography:check": "bun scripts/generate-typography.ts --check",
 		"colors:generate": "bun scripts/generate-colors.ts",
 		"colors:check": "bun scripts/generate-colors.ts --check"
 	},
 	"dependencies": {
 		"@pixie/shared": "workspace:*",
-		"@modelcontextprotocol/ext-apps": "1.7.5",
-		"@modelcontextprotocol/sdk": "1.30.0",
 		"@shikijs/langs": "4.2.0",
 		"micromark": "catalog:",
 		"micromark-extension-gfm": "catalog:",
 		"shiki": "4.2.0",
-		"svelte": "catalog:",
-		"zod": "4.5.4"
+		"svelte": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

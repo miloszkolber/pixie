@@ -321,7 +321,8 @@ function classifyReleaseRow(message: string): string | null {
 	if (/\bimage index\b/i.test(message)) return "registry.image-index";
 	if (/linux\/arm64\b/.test(message)) return "registry.platform-digest/arm64";
 	if (/linux\/amd64\b/.test(message)) return "registry.platform-digest/amd64";
-	if (/complete four-archive\/image set/.test(message)) return "manifest.complete-set";
+	if (/complete (?:four-archive|three-product\/six-archive) image set/.test(message))
+		return "manifest.complete-set";
 	if (/^latest\b/i.test(message)) return "latest.promotion";
 	return null;
 }

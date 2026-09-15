@@ -35,6 +35,30 @@ func newSessionManagerWithPublisher(t *testing.T, publish controller.SessionPubl
 }
 
 func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map[string]any, promptRequests chan<- map[string]any, initialize map[string]any, publish controller.SessionPublisher, observers ...func(string, map[string]any)) (*controller.SessionManager, *controller.PiClient, workspace.Project, persist.Store) {
+	return newSessionManagerWithFixtureBehavior(t, loadUpdates, promptRequests, initialize, publish, sessionFixtureBehavior{}, observers...)
+}
+
+type sessionFixtureBehavior struct {
+	configure func(map[string]any) (result any, handled bool)
+}
+
+func sessionFixtureConfigOptions(provider, model, thinking string) []any {
+	return []any{
+		map[string]any{"id": "provider", "name": "Provider", "category": "provider", "type": "select", "currentValue": provider, "options": []any{map[string]any{"value": provider, "name": provider}}},
+		map[string]any{"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": model, "options": []any{map[string]any{"value": model, "name": model}}},
+		map[string]any{"id": "thinking", "name": "Thinking", "category": "thinking", "type": "select", "currentValue": thinking, "options": []any{map[string]any{"value": "off", "name": "off"}, map[string]any{"value": "low", "name": "low"}, map[string]any{"value": "medium", "name": "medium"}, map[string]any{"value": "high", "name": "high"}, map[string]any{"value": "max", "name": "max"}}},
+	}
+}
+
+func sessionFixtureProjection(sessionID, provider, model, thinking string) map[string]any {
+	return map[string]any{
+		"sessionId":     sessionID,
+		"configOptions": sessionFixtureConfigOptions(provider, model, thinking),
+		"metadata":      map[string]any{"providerId": provider, "modelId": model, "thinkingLevel": thinking},
+	}
+}
+
+func newSessionManagerWithFixtureBehavior(t *testing.T, loadUpdates []map[string]any, promptRequests chan<- map[string]any, initialize map[string]any, publish controller.SessionPublisher, behavior sessionFixtureBehavior, observers ...func(string, map[string]any)) (*controller.SessionManager, *controller.PiClient, workspace.Project, persist.Store) {
 	t.Helper()
 	ctx := t.Context()
 	root := t.TempDir()
@@ -53,6 +77,13 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 		t.Fatal(err)
 	}
 	manager := controller.NewSessionManager(projects, policy, records, controller.NewSessionQueues(store), controller.NewObjectives(store), publish)
+	var configMu sync.Mutex
+	provider, model, thinking := "test", "initial", "low"
+	projection := func(sessionID string) map[string]any {
+		configMu.Lock()
+		defer configMu.Unlock()
+		return sessionFixtureProjection(sessionID, provider, model, thinking)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		connection, err := websocket.Accept(response, request, nil)
 		if err != nil {
@@ -80,6 +111,7 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 			case "runtime.hello":
 				result = initialize
 			case "session.load":
+				result = projection("chat")
 				for _, loadUpdate := range loadUpdates {
 					if snapshot, ok := loadUpdate["__snapshot"]; ok {
 						result = snapshot
@@ -99,9 +131,31 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 					}
 				}
 			case "session.create":
-				result = map[string]any{"sessionId": "created-session", "capabilities": map[string]any{"sessions": 1, "mcp": 1}}
+				result = projection("created-session")
+				result.(map[string]any)["capabilities"] = map[string]any{"sessions": 1, "mcp": 1}
 			case "session.fork":
-				result = map[string]any{"sessionId": "forked-session", "capabilities": map[string]any{"sessions": 1, "mcp": 1}}
+				result = projection("forked-session")
+				result.(map[string]any)["capabilities"] = map[string]any{"sessions": 1, "mcp": 1}
+			case "session.configure":
+				if behavior.configure != nil {
+					if configured, handled := behavior.configure(rpc.Params); handled {
+						result = configured
+						break
+					}
+				}
+				configMu.Lock()
+				configID, _ := rpc.Params["configId"].(string)
+				value, _ := rpc.Params["value"].(string)
+				switch configID {
+				case "provider":
+					provider = value
+				case "model":
+					model = value
+				case "thinking", "thinking_level", "thinkingLevel":
+					thinking = value
+				}
+				result = sessionFixtureProjection("chat", provider, model, thinking)
+				configMu.Unlock()
 			case "session.prompt":
 				if promptRequests != nil {
 					promptRequests <- map[string]any{"connection": connection, "id": rpc.ID, "params": rpc.Params}
@@ -127,6 +181,86 @@ func newSessionManagerWithInitializeAndPublisher(t *testing.T, loadUpdates []map
 type publishedEvent struct {
 	channel string
 	data    any
+}
+
+func TestCreateModelPublishesOnlyTheAuthoritativeSelection(t *testing.T) {
+	manager, _, project, _ := newSessionManager(t, nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	created, err := manager.Create(ctx, project.ID, project.Roots[0], &controller.WireModel{ID: "selected", Name: "Selected", Provider: "test", Available: true}, "high", "client-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, ok := created["model"].(*controller.WireModel)
+	if !ok || model.Provider != "test" || model.ID != "selected" {
+		t.Fatalf("created model projection: %#v", created["model"])
+	}
+	if thinking, _ := created["thinkingLevel"].(string); thinking != "high" {
+		t.Fatalf("created thinking projection: %#v", created["thinkingLevel"])
+	}
+}
+
+func TestSetModelAndReconnectUseTheAuthoritativeConfigProjection(t *testing.T) {
+	manager, client, project, _ := newSessionManager(t, nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.SetModel(ctx, "chat", controller.WireModel{ID: "selected", Name: "Selected", Provider: "test", Available: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.SetThinking(ctx, "chat", "high"); err != nil {
+		t.Fatal(err)
+	}
+	client.Reset()
+	reloaded, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := reloaded["summary"].(controller.SessionSummary)
+	if summary.Model == nil || summary.Model.Provider != "test" || summary.Model.ID != "selected" || summary.ThinkingLevel != "high" {
+		t.Fatalf("reconnected authoritative projection: %#v", summary)
+	}
+}
+
+func TestCreateRejectsMissingThinkingProjectionAndReleasesTheNativeSession(t *testing.T) {
+	var releases []map[string]any
+	manager, _, project, store := newSessionManagerWithFixtureBehavior(
+		t,
+		nil,
+		nil,
+		piInitializeResponse(),
+		nil,
+		sessionFixtureBehavior{configure: func(params map[string]any) (any, bool) {
+			if params["configId"] == "thinking" {
+				return map[string]any{"configOptions": []any{}}, true
+			}
+			return nil, false
+		}},
+		func(method string, params map[string]any) {
+			if method == "session.release" {
+				releases = append(releases, maps.Clone(params))
+			}
+		},
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := manager.Create(ctx, project.ID, project.Roots[0], nil, "high", "client-a"); err == nil || !strings.Contains(err.Error(), "missing authoritative \"thinking\" configuration") {
+		t.Fatalf("missing thinking projection was accepted: %v", err)
+	}
+	if len(releases) != 1 || releases[0]["sessionId"] != "created-session" || releases[0]["cwd"] != project.Roots[0] {
+		t.Fatalf("native session was not released with its admitted cwd: %#v", releases)
+	}
+	records, err := controller.NewSessionRecords(store).List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.SessionID == "created-session" {
+			t.Fatalf("failed create retained a durable session record: %#v", record)
+		}
+	}
 }
 
 func TestUserObjectiveAndThinkingMutationsPublishAuthoritativeState(t *testing.T) {
@@ -1061,7 +1195,7 @@ func TestSetModelRejectsMismatchedSuccessResponse(t *testing.T) {
 	}
 
 	err := manager.SetModel(ctx, "chat", controller.WireModel{ID: "new-model", Provider: "new-provider"})
-	if err == nil || !strings.Contains(err.Error(), "returned \"new-provider\"/\"different-model\"") {
+	if err == nil || !strings.Contains(err.Error(), "returned \"different-model\" for configuration \"model\", want \"new-model\"") {
 		t.Fatalf("mismatched switch error: %v", err)
 	}
 	calls, _ := agent.snapshot()
