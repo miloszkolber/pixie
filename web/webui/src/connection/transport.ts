@@ -27,6 +27,10 @@ interface RawStreamFrame {
  * envelope validator requires `data` on every channel frame. `cause` is the
  * already-parsed JSON value; this narrows it without loosening the shared
  * contract.
+ *
+ * The controller emits `baseRev` on every framed channel frame, including 0 on
+ * a full snapshot, so requiring it here is the agreed wire contract. A frame
+ * without it stays on the legacy unframed path.
  */
 function isStreamFrame(cause: unknown): cause is RawStreamFrame {
 	if (typeof cause !== "object" || cause === null) return false;

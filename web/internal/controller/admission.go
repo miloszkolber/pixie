@@ -11,10 +11,16 @@ import (
 // is quiescing these are refused so an update or rollback can let in-flight work
 // settle first. Stop/UI-cancel and read-only inspection stay available so an
 // operator can always observe or interrupt a drain.
+//
+// Queueing a message or retrying a blocked one ends in scheduleFollowUp, which
+// can dispatch a fresh prompt. Both are therefore run-creating admission and
+// are refused during drain so no queued prompt enters the quiesce window.
 var drainGatedMethods = map[string]bool{
-	"session.create": true,
-	"session.fork":   true,
-	"session.prompt": true,
+	"session.create":     true,
+	"session.fork":       true,
+	"session.prompt":     true,
+	"session.queueAdd":   true,
+	"session.queueRetry": true,
 }
 
 // ErrControllerQuiescing is the typed refusal returned to a caller that asks

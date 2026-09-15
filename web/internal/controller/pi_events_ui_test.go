@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	piwire "github.com/miloszkolber/pixie/shared/piprotocol"
@@ -110,5 +111,51 @@ func TestProjectNativeUiUnknownMethodIsDropped(t *testing.T) {
 	}
 	if len(sink.updates) != 0 || len(sink.extensions) != 0 {
 		t.Fatalf("unknown UI method projected: updates=%#v extensions=%#v", sink.updates, sink.extensions)
+	}
+}
+
+// AUX-32 residual egress: agent_end carries the full native message array, so
+// the browser projection must replace it with a bounded, sanitized stop/retry
+// summary. A hostile tool-result string must never enter the published event.
+func TestProjectAgentEndDropsRawMessages(t *testing.T) {
+	const hostile = "tool result Bearer raw-bearer-secret-value"
+	sink := &recordingPiEvents{}
+	raw := json.RawMessage(`{"sessionId":"s1","event":{"type":"agent_end","willRetry":true,"messages":[{"role":"toolResult","toolCallId":"t1","content":[{"type":"text","text":"` + hostile + `"}]}]}}`)
+	if err := projectPiEvent(context.Background(), sink, raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.updates) != 1 || sink.updates[0].Update["sessionUpdate"] != "agent_end" {
+		t.Fatalf("agent_end projection = %#v", sink.updates)
+	}
+	update := sink.updates[0].Update
+	if update["willRetry"] != true {
+		t.Fatalf("agent_end retry class lost: %#v", update)
+	}
+	if _, exists := update["messages"]; exists {
+		t.Fatalf("agent_end projected the raw messages array: %#v", update)
+	}
+	if encoded, _ := json.Marshal(update); strings.Contains(string(encoded), hostile) {
+		t.Fatalf("hostile tool result reached the projection: %s", encoded)
+	}
+	summary, ok := update["summary"].(map[string]any)
+	if !ok || summary["messageCount"] != 1 {
+		t.Fatalf("bounded summary missing: %#v", update["summary"])
+	}
+}
+
+// AUX-14: the host projects the native session-entry id onto user messages, so
+// the replay projection must carry it into the controller update. The transcript
+// stores it and the browser uses it for "Edit from here".
+func TestProjectReplayMessageForwardsUserEntryId(t *testing.T) {
+	sink := &recordingPiEvents{}
+	raw := json.RawMessage(`{"sessionId":"s1","event":{"type":"replay_message","message":{"role":"user","content":"hello","messageId":"u1","entryId":"entry-42"}}}`)
+	if err := projectPiEvent(context.Background(), sink, raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.updates) != 1 || sink.updates[0].Update["sessionUpdate"] != "user_message_chunk" {
+		t.Fatalf("user replay projection = %#v", sink.updates)
+	}
+	if sink.updates[0].Update["entryId"] != "entry-42" {
+		t.Fatalf("entryId not forwarded: %#v", sink.updates[0].Update)
 	}
 }

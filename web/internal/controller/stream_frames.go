@@ -55,7 +55,9 @@ func (t *streamTracker) reset() {
 
 // stamp builds one channel frame. It returns the encoded frame bytes. An
 // appendable list payload produces a delta carrying rev/baseRev/appended; the
-// first frame and any broken chain carry the full data and baseRev 0.
+// first frame and any broken chain carry the full data and baseRev 0. Every
+// frame carries baseRev so a client can tell a full snapshot (baseRev 0) from
+// a delta without guessing from omitted fields.
 func (t *streamTracker) stamp(channel string, payload []byte) []byte {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -139,12 +141,14 @@ func jsonEqual(left, right json.RawMessage) bool {
 }
 
 // streamFrame is the wire shape for one channel frame. JSON field names stay
-// additive so an older client ignores the framing metadata.
+// additive so an older client ignores the framing metadata. baseRev is not
+// optional: 0 marks a full snapshot and a non-zero value names the predecessor
+// revision of an append delta, so the field is always emitted.
 type streamFrame struct {
 	Channel  string          `json:"channel"`
 	Data     json.RawMessage `json:"data,omitempty"`
 	Seq      uint64          `json:"seq,omitempty"`
 	Rev      uint64          `json:"rev,omitempty"`
-	BaseRev  uint64          `json:"baseRev,omitempty"`
+	BaseRev  uint64          `json:"baseRev"`
 	Appended json.RawMessage `json:"appended,omitempty"`
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -14,6 +15,35 @@ import (
 
 	"github.com/coder/websocket"
 )
+
+// aux16FrameFixtureEnv makes TestAUX16ServerFrameFixture emit real stream
+// frames for the Web UI round-trip test instead of being skipped.
+const aux16FrameFixtureEnv = "PIXIE_AUX16_FRAME_FIXTURE"
+
+// aux16FrameFixturePrefix tags the emitted JSON line so the Bun test can find
+// it without depending on `go test -v` line prefixes.
+const aux16FrameFixturePrefix = "AUX16_FRAME_FIXTURE="
+
+// TestAUX16ServerFrameFixture emits frames actually produced by the server's
+// stream tracker so the Web UI transport test consumes the same bytes the
+// controller sends. It is skipped unless the round-trip test asks for it, so a
+// plain `go test ./...` never depends on Bun.
+func TestAUX16ServerFrameFixture(t *testing.T) {
+	if os.Getenv(aux16FrameFixtureEnv) != "1" {
+		t.Skip("stream frames are emitted only for the webui round-trip test")
+	}
+	tracker := newStreamTracker()
+	frames := []string{
+		string(tracker.stamp("project.updated", []byte(`[{"id":"a"}]`))),
+		string(tracker.stamp("project.updated", []byte(`[{"id":"a"},{"id":"b"}]`))),
+		string(tracker.stamp("project.updated", []byte(`[{"id":"a"},{"id":"b"},{"id":"c"}]`))),
+	}
+	encoded, err := json.Marshal(frames)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s%s", aux16FrameFixturePrefix, encoded)
+}
 
 type countingHandler struct {
 	calls atomic.Int32
@@ -125,6 +155,15 @@ func TestWebSocketStreamFramesSnapshotFirstAndDeltaOnAppend(t *testing.T) {
 	}
 	if err := json.Unmarshal(raw, &snapshot); err != nil {
 		t.Fatal(err)
+	}
+	// A snapshot must carry baseRev explicitly. Decoding into uint64 cannot
+	// distinguish an omitted field from 0, so check the raw object as well.
+	var snapshotFields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &snapshotFields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := snapshotFields["baseRev"]; !ok {
+		t.Fatalf("snapshot frame omitted baseRev: %s", raw)
 	}
 	if snapshot.Channel != "project.updated" || snapshot.Seq != 1 || snapshot.Rev != 1 || snapshot.BaseRev != 0 || string(snapshot.Data) != `[{"id":"a"}]` {
 		t.Fatalf("snapshot frame = %s", raw)

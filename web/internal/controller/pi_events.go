@@ -140,6 +140,13 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		if value, ok := content.(string); ok {
 			content = []any{map[string]any{"type": "text", "text": value}}
 		}
+		// AUX-14: the host projects the native session-entry id onto user
+		// messages. Carry it so the controller transcript keeps the exact entry
+		// "Edit from here" branches from; a message without one stays entry-less.
+		entryID := ""
+		if role == "user" {
+			entryID = textValue(message["entryId"])
+		}
 		for _, value := range contentBlocks(content) {
 			block := mapValue(value)
 			kind := "agent_message_chunk"
@@ -160,7 +167,11 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 					block = map[string]any{"type": "image", "data": source["data"], "mimeType": source["mediaType"]}
 				}
 			}
-			if err := emit(kind, map[string]any{"messageId": messageID, "content": block}); err != nil {
+			update := map[string]any{"messageId": messageID, "content": block}
+			if entryID != "" {
+				update["entryId"] = entryID
+			}
+			if err := emit(kind, update); err != nil {
 				return err
 			}
 		}
@@ -206,7 +217,9 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		return emit("plan", map[string]any{"entries": event["entries"]})
 	case "extension_error":
 		return extension("status_message", map[string]any{"status": map[string]any{"type": "notice", "message": event["error"]}})
-	case "agent_start", "agent_end", "agent_settled",
+	case "agent_end":
+		return emit("agent_end", projectAgentEnd(event))
+	case "agent_start", "agent_settled",
 		"compaction_start", "compaction_end",
 		"auto_retry_start", "auto_retry_end",
 		"summarization_retry_scheduled", "summarization_retry_finished",
@@ -237,6 +250,35 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 
 // nativeUiRequestEvent is the raw Pi RPC extension UI request frame type.
 const nativeUiRequestEvent = "extension_ui_request"
+
+// AUX-32: Pi's agent_end payload carries the full native message array, which
+// can embed a hostile tool result. The browser-visible event never forwards
+// that array; it carries only a bounded, sanitized stop/retry summary. The
+// failure/stop class stays visible through willRetry, stopReason and the
+// redacted errorMessage while arbitrary native text does not cross the boundary.
+func projectAgentEnd(event map[string]any) map[string]any {
+	update := map[string]any{"willRetry": event["willRetry"] == true}
+	messages := arrayValue(event["messages"])
+	if len(messages) == 0 {
+		return update
+	}
+	summary := map[string]any{"messageCount": len(messages)}
+	for index := len(messages) - 1; index >= 0; index-- {
+		message := mapValue(messages[index])
+		if textValue(message["role"]) != "assistant" {
+			continue
+		}
+		if stop := textValue(message["stopReason"]); stop != "" {
+			summary["stopReason"] = stop
+		}
+		if failure := textValue(message["errorMessage"]); failure != "" {
+			summary["errorMessage"] = normalizeNativeEventText(failure)
+		}
+		break
+	}
+	update["summary"] = summary
+	return update
+}
 
 // projectNativeUiEvent translates one raw Pi extension_ui_request frame into
 // the controller's UI update shapes. Blocking dialogs become ui_request;

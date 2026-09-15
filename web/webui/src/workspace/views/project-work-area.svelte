@@ -3,7 +3,9 @@ import { onMount } from "svelte";
 import type { Component } from "svelte";
 import { PROTOCOL_VERSION, type Project, type RuntimeStatusReport } from "@pixie/shared";
 import ChatView from "../../chat/chat-view.svelte";
+import { setSessionBranchContext } from "../../chat/session/session-branch-context";
 import SessionLifecycleMenu from "../../chat/session/session-lifecycle-controls.svelte";
+import { sessionForkParams } from "../../chat/session/session-lifecycle";
 import Button from "../../components/button.svelte";
 import ErrorBoundary from "../../components/error-boundary.svelte";
 import { isChunkLoadError } from "../../components/error-boundary-state";
@@ -64,6 +66,7 @@ import {
 	hydrateChatResource,
 	initProjectAreaChatReconciliation,
 } from "../navigation/chat-reconciliation";
+import { openChatInTab } from "../navigation/open-chat";
 import { startChatSession } from "../navigation/start-chat";
 import PanelHeader from "../panel-header.svelte";
 import AddProjectMenu from "../projects/add-project-menu.svelte";
@@ -317,6 +320,12 @@ let secondaryTab = $derived(
 let activeCanvasTab = $derived(secondaryTab?.kind === "canvas" ? secondaryTab : null);
 let activeDesignTab = $derived(secondaryTab?.kind === "design" ? secondaryTab : null);
 let sessionStreaming = $derived(selectTabSessionStreaming($appStore, projectAreaId));
+// AUX-14: the work area owns lifecycle actions. The per-turn transcript
+// affordance resolves the selected native entry id and delegates the in-file
+// branch here, where the active session target is known.
+setSessionBranchContext({
+	editFromHere: (entryId: string) => void editFromHere(entryId),
+});
 let connected = $derived($appStore.status === "connected");
 let connectionGeneration = $derived($appStore.connectionGeneration);
 let hasSecondarySelection = $derived(secondarySelection !== null);
@@ -800,6 +809,26 @@ function showActivity(): void {
 
 function startChat(): void {
 	void startChatSession(projectAreaId);
+}
+
+// AUX-14: branch the active chat in-file from the selected native entry. The
+// request keeps entryId so the controller routes it to a sibling branch; an
+// edit request without a native entry fails closed instead of degrading into a
+// new-file fork.
+async function editFromHere(entryId: string): Promise<void> {
+	const tab = primaryTab;
+	const nativeEntry = entryId.trim();
+	if (!tab || nativeEntry === "") return;
+	const target = { projectId: projectAreaId, sessionId: tab.sessionId, title: tab.name };
+	try {
+		const summary = await getTransport().request(
+			"session.fork",
+			sessionForkParams(target, nativeEntry),
+		);
+		await openChatInTab(projectAreaId, summary.sessionId);
+	} catch (cause) {
+		toast.error(errorText(cause), "Couldn't edit from here");
+	}
 }
 
 function openCanvasTab(sessionId: string | null = activeSessionId): void {

@@ -55,6 +55,33 @@ func TestPiDistinctMessageIDs(t *testing.T) {
 	}
 }
 
+// AUX-14: the host projects the native Pi session-entry id onto user messages.
+// The replay projection must carry it into the stored transcript and the
+// browser-facing message_start event, while assistant/tool messages stay
+// entry-less, so "Edit from here" can branch from the exact native entry.
+func TestPiReplayProjectsUserMessageEntryId(t *testing.T) {
+	m, _, p, _ := newSessionManager(t, []map[string]any{
+		{"__native": map[string]any{"type": "replay_message", "message": map[string]any{"role": "user", "content": "branch here", "messageId": "u1", "entryId": "entry-42"}}},
+		{"__native": map[string]any{"type": "replay_message", "message": map[string]any{"role": "assistant", "content": "reply", "messageId": "a1"}}},
+	}, nil)
+	result, err := m.Messages(t.Context(), "chat", p.ID, p.Roots[0], "review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, ok := result["messages"].([]any)
+	if !ok || len(messages) != 2 {
+		t.Fatalf("projected transcript = %#v", result["messages"])
+	}
+	user, _ := messages[0].(map[string]any)
+	if got, _ := user["entryId"].(string); got != "entry-42" {
+		t.Fatalf("user entryId = %q, want entry-42 (message %#v)", got, user)
+	}
+	assistant, _ := messages[1].(map[string]any)
+	if _, exists := assistant["entryId"]; exists {
+		t.Fatalf("assistant message carried an entryId: %#v", assistant)
+	}
+}
+
 func TestPiMessageUsageIsReplacedByIdentity(t *testing.T) {
 	updates := []map[string]any{}
 	for _, tokens := range []int{100, 100, 120} {

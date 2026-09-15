@@ -10,8 +10,75 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/miloszkolber/pixie/internal/diagnostics"
 	piwire "github.com/miloszkolber/pixie/shared/piprotocol"
 )
+
+// nativeEventTextMaxBytes bounds one native Pi/SDK update text value before it
+// enters controller session state or a browser projection. Native error text
+// can embed credentials, URLs or absolute paths, so it is reduced through the
+// shared diagnostics sanitizer instead of a second controller-local pattern
+// set. The caller keeps the typed failure class (event type or stop reason).
+const nativeEventTextMaxBytes = 2048
+
+// nativeFailureSummary is the stable, secret-free fallback for a native
+// failure whose message was empty or entirely redacted.
+const nativeFailureSummary = "The Pi agent reported a failure."
+
+// nativeErrorTextFields are the native update keys that carry free-form
+// Pi/SDK failure text. Session, run, tool and entry identifiers are never
+// sanitized, so required correlation values survive unchanged.
+var nativeErrorTextFields = [...]string{"error", "errorMessage", "error_message", "finalError", "final_error"}
+
+// normalizeNativeEventText reduces one native Pi/SDK update string to a
+// bounded, secret-free summary using the shared diagnostics redaction rules.
+func normalizeNativeEventText(text string) string {
+	return diagnostics.SanitizeDiagnosticText(text, nativeEventTextMaxBytes)
+}
+
+// normalizeNativeFailureValue redacts the free-form text inside a native error
+// value of an unknown shape. Maps and slices are traversed so a structured
+// error cannot smuggle text past the boundary; scalar values are unchanged.
+func normalizeNativeFailureValue(value any) any {
+	switch typed := value.(type) {
+	case string:
+		return normalizeNativeEventText(typed)
+	case map[string]any:
+		if typed == nil {
+			return typed
+		}
+		clone := make(map[string]any, len(typed))
+		for key, item := range typed {
+			clone[key] = normalizeNativeFailureValue(item)
+		}
+		return clone
+	case []any:
+		if typed == nil {
+			return typed
+		}
+		clone := make([]any, len(typed))
+		for index, item := range typed {
+			clone[index] = normalizeNativeFailureValue(item)
+		}
+		return clone
+	default:
+		return value
+	}
+}
+
+// normalizeNativeErrorFields redacts the known error-bearing fields of an
+// event map. Unknown fields, including identifiers and forward-compatible
+// future payloads, pass through untouched.
+func normalizeNativeErrorFields(event map[string]any) map[string]any {
+	for _, key := range nativeErrorTextFields {
+		value, exists := event[key]
+		if !exists {
+			continue
+		}
+		event[key] = normalizeNativeFailureValue(value)
+	}
+	return event
+}
 
 type sessionUpdateOrigin uint8
 
@@ -156,7 +223,19 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 				event[key] = value
 			}
 		}
+		// AUX-32: the native agent_end payload can carry the full message array
+		// with a hostile tool result. The host projection already replaces it
+		// with a bounded summary; drop it here as well so no sender can relay
+		// raw native transcript text to the browser or the published stream.
+		if kind == "agent_end" {
+			delete(event, "messages")
+		}
 		event["type"] = kind
+		// Native lifecycle events travel as run annotations, but a retry or
+		// compaction failure can still carry a raw provider error. Redact the
+		// known error fields before they reach the browser; identifiers and
+		// unknown fields are preserved.
+		event = normalizeNativeErrorFields(event)
 		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": event})
 		if kind == "agent_settled" && wakeQueue {
 			m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "complete", "status": "complete"}})
@@ -256,7 +335,7 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 			if role == "user" && consumeEchoImage(entry, image) {
 				return nil
 			}
-			appendMessageBlock(entry, role, image, textValue(update["messageId"]))
+			appendMessageBlock(entry, role, image, textValue(update["messageId"]), textValue(update["entryId"]))
 			entry.stats.TotalMessages = len(entry.messages)
 			if role == "user" {
 				return []map[string]any{{"type": "message_start", "message": entry.messages[len(entry.messages)-1]}}
@@ -274,7 +353,7 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 		if role == "user" && consumeEchoText(entry, text) {
 			return nil
 		}
-		appendMessageBlock(entry, role, map[string]any{"type": "text", "text": text}, textValue(update["messageId"]))
+		appendMessageBlock(entry, role, map[string]any{"type": "text", "text": text}, textValue(update["messageId"]), textValue(update["entryId"]))
 		entry.streaming = true
 		entry.stats.TotalMessages = len(entry.messages)
 		if role == "user" {
@@ -336,6 +415,13 @@ func applySessionUpdate(entry *sessionEntry, kind string, update map[string]any,
 
 	case "tool_call_update":
 		toolID := textValue(update["toolCallId"])
+		if failure, exists := update["error"]; exists && failure != nil {
+			// A native tool failure becomes the persisted transcript result and is
+			// copied into tool details. Redact it before either use; the failed
+			// status still carries the failure class.
+			update = maps.Clone(update)
+			update["error"] = normalizeNativeFailureValue(failure)
+		}
 		var projectedCall map[string]any
 		for index := len(entry.messages) - 1; index >= 0 && projectedCall == nil; index-- {
 			message := mapValue(entry.messages[index])
@@ -690,7 +776,7 @@ type messageUsage struct {
 func applyPiOnlyUpdate(entry *sessionEntry, kind string, update map[string]any) []map[string]any {
 	switch kind {
 	case "native_lifecycle":
-		event := mapValue(update["event"])
+		event := normalizeNativeErrorFields(maps.Clone(mapValue(update["event"])))
 		switch textValue(event["type"]) {
 		case "compaction_start":
 			entry.compactionActive = true
@@ -802,7 +888,10 @@ func applyPiOnlyUpdate(entry *sessionEntry, kind string, update map[string]any) 
 	case "status_message":
 		status := mapValue(update["status"])
 		kind := textValue(status["type"])
-		message := textValue(status["message"])
+		// Native status text is free-form and can embed credentials, URLs or
+		// absolute paths. Reduce it at this boundary before it is persisted in
+		// the settlement or projected as an activity/error event.
+		message := normalizeNativeEventText(textValue(status["message"]))
 		if kind == "notice" || kind == "progress" {
 			return []map[string]any{{"type": "activity", "status": kind, "text": clipUTF16(message, 4000)}}
 		}
@@ -814,6 +903,11 @@ func applyPiOnlyUpdate(entry *sessionEntry, kind string, update map[string]any) 
 		}
 		lowerKind := strings.ToLower(kind)
 		if strings.Contains(lowerKind, "error") || strings.Contains(lowerKind, "fail") {
+			// Keep the stable failure class even when redaction removed every
+			// native detail; the browser must not turn an error into success.
+			if message == "" {
+				message = nativeFailureSummary
+			}
 			entry.streaming = false
 			entry.settlement = &SessionSettlement{StopReason: "error", ErrorMessage: message}
 			return []map[string]any{{"type": "error", "error": message}}
@@ -834,8 +928,12 @@ func terminalStatusKind(kind string) bool {
 
 func appendMessageBlock(entry *sessionEntry, role string, block map[string]any, identity ...string) {
 	messageID := ""
+	entryID := ""
 	if len(identity) > 0 {
 		messageID = identity[0]
+	}
+	if len(identity) > 1 {
+		entryID = identity[1]
 	}
 	differentMessage := false
 	if len(entry.messages) > 0 && messageID != "" {
@@ -845,10 +943,23 @@ func appendMessageBlock(entry *sessionEntry, role string, block map[string]any, 
 		if role == "user" {
 			entry.userResourceBytes = 0
 		}
-		entry.messages = append(entry.messages, map[string]any{"role": role, "content": []any{block}, "messageId": messageID})
+		message := map[string]any{"role": role, "content": []any{block}, "messageId": messageID}
+		// AUX-14: keep the native session-entry id on the projected user message
+		// so "Edit from here" branches from the exact native entry. Other roles
+		// and entry-less messages carry no field.
+		if entryID != "" {
+			message["entryId"] = entryID
+		}
+		entry.messages = append(entry.messages, message)
 		return
 	}
 	message := mapValue(entry.messages[len(entry.messages)-1])
+	if entryID != "" && textValue(message["entryId"]) == "" {
+		// A later fragment of the same message repeats the id; a distinct
+		// message without enough identity keeps the first entry rather than
+		// silently retargeting the branch.
+		message["entryId"] = entryID
+	}
 	content, ok := message["content"].([]any)
 	if !ok {
 		if text, textOK := message["content"].(string); textOK {

@@ -11,6 +11,7 @@ import RenameSessionDialog from "./rename-session-dialog.svelte";
 import {
 	editFromHereActionState,
 	forkActionState,
+	sessionForkParams,
 	type SessionLifecycleTarget,
 	unsupportedLifecycleReason,
 } from "./session-lifecycle";
@@ -70,7 +71,7 @@ function fork(): void {
 	forkBusy = true;
 	forkError = null;
 	void getTransport()
-		.request("session.fork", { projectId: target.projectId, sessionId: target.sessionId })
+		.request("session.fork", sessionForkParams(target))
 		.then(async (summary) => {
 			menu?.hidePopover();
 			await openChatInTab(target.projectId, summary.sessionId);
@@ -91,7 +92,7 @@ function editFromHere(): void {
 	branchBusy = true;
 	branchError = null;
 	void getTransport()
-		.request("session.fork", { projectId: target.projectId, sessionId: target.sessionId, entryId })
+		.request("session.fork", sessionForkParams(target, entryId))
 		.then(async (summary) => {
 			menu?.hidePopover();
 			await openChatInTab(target.projectId, summary.sessionId);

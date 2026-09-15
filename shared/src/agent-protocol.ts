@@ -48,6 +48,13 @@ export type StopReason = string;
 
 export interface UserMessage {
 	messageId?: string;
+	/**
+	 * Native Pi session-entry id this user message was read from, when the host
+	 * could project one. It is the same identity `session.fork` accepts for an
+	 * in-file sibling branch ("Edit from here"). Absent for a message the SDK
+	 * exposes no stable entry id for; callers must not fabricate one.
+	 */
+	entryId?: string;
 	role: "user";
 	content: string | (TextContent | ImageContent | TextResourceAttachmentMarker)[];
 	timestamp?: number;
@@ -209,6 +216,21 @@ export interface SessionLifecycleChangedPayload {
 }
 
 export type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage;
+
+/**
+ * Bounded, secret-free summary of Pi's `agent_end` annotation. The raw native
+ * `messages` array is never forwarded to the browser: it can carry hostile tool
+ * results. Only the stop/retry class and counts cross the boundary.
+ */
+export interface AgentEndSummary {
+	/** Number of native messages the SDK reported, without their content. */
+	messageCount?: number;
+	/** Last assistant stop reason, when Pi reported one. */
+	stopReason?: string;
+	/** Redacted failure text, when the last assistant message carried one. */
+	errorMessage?: string;
+}
+
 export type AgentEvent =
 	| {
 			type:
@@ -260,7 +282,7 @@ export type AgentEvent =
 	| { type: "tool_execution_start"; toolCallId: string }
 	| { type: "tool_execution_update"; toolCallId: string; partialResult: unknown }
 	| { type: "tool_execution_end"; toolCallId: string; isError: boolean; result: unknown }
-	| { type: "agent_end"; messages: AgentMessage[]; willRetry: boolean }
+	| { type: "agent_end"; willRetry: boolean; summary?: AgentEndSummary }
 	| { type: "agent_settled"; terminal: AgentSettlement | null }
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| {

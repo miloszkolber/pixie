@@ -21,7 +21,7 @@ func TestAdmissionGateRefusesNewWorkWhileDraining(t *testing.T) {
 	if !gate.Quiescing() {
 		t.Fatal("BeginDrain did not enter the quiescing state")
 	}
-	for _, method := range []string{"session.create", "session.fork", "session.prompt"} {
+	for _, method := range []string{"session.create", "session.fork", "session.prompt", "session.queueAdd", "session.queueRetry"} {
 		if gate.TryAdmit(method) {
 			t.Fatalf("%s was admitted while draining", method)
 		}
@@ -79,6 +79,41 @@ func TestAdmissionGateWaitsForAdmittedWork(t *testing.T) {
 	case <-drained:
 	case <-time.After(2 * time.Second):
 		t.Fatal("WaitForDrain did not observe the released prompt")
+	}
+}
+
+// AUX-19: queueing a message or retrying a blocked one can schedule a
+// follow-up prompt, so both are run-creating admission. An admission granted
+// before the drain is retained and accounted for by WaitForDrain, while new
+// queueAdd/queueRetry work is refused for the whole quiesce window.
+func TestAdmissionGateAccountsForQueuedFollowUpAdmission(t *testing.T) {
+	gate := NewAdmissionGate(0)
+	if !gate.TryAdmit("session.queueAdd") {
+		t.Fatal("queueAdd was refused before drain began")
+	}
+	gate.BeginDrain()
+	for _, method := range []string{"session.queueAdd", "session.queueRetry"} {
+		if gate.TryAdmit(method) {
+			t.Fatalf("%s was admitted while draining", method)
+		}
+	}
+	drained := make(chan struct{})
+	go func() {
+		gate.WaitForDrain(context.Background())
+		close(drained)
+	}()
+	select {
+	case <-drained:
+		t.Fatal("WaitForDrain settled before the admitted queued follow-up released")
+	case <-time.After(20 * time.Millisecond):
+	}
+	if !gate.Release() {
+		t.Fatal("release did not report the in-flight set empty")
+	}
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitForDrain did not observe the released queued follow-up")
 	}
 }
 

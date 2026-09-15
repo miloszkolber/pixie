@@ -117,6 +117,32 @@ describe("Bun host session parity dispatch", () => {
 		expectProjection(rawFrames(raw.socket).at(-1) as HostFrame, "test", "beta", "high");
 	});
 
+	// AUX-14: the SDK AgentMessage has no stable id, so the host must project the
+	// native session-entry id from the SDK's own fork selector onto user messages.
+	// It must survive both the create snapshot and session.getMessages, and must
+	// never be attached to a non-user message.
+	test("projects the native session-entry id for user messages only", async () => {
+		const session = new FakeSession("entries");
+		session.messages.push(
+			{ role: "user", content: "branch me", messageId: "u1", timestamp: 1 },
+			{ role: "assistant", content: [{ type: "text", text: "ok" }], messageId: "a1" },
+		);
+		session.userMessagesForForking = [{ entryId: "entry-42", text: "branch me" }];
+		const raw = rawHost(session);
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({ id: 2, method: "session.create", params: { cwd: process.cwd() } });
+		const created = rawFrames(raw.socket).at(-1)?.result as {
+			messages?: Array<Record<string, unknown>>;
+		};
+		expect(created.messages?.[0]?.entryId).toBe("entry-42");
+		expect(created.messages?.[1]?.entryId).toBeUndefined();
+		await raw.send({ id: 3, method: "session.getMessages", params: { sessionId: "entries" } });
+		const fetched = rawFrames(raw.socket).at(-1)?.result as {
+			messages?: Array<Record<string, unknown>>;
+		};
+		expect(fetched.messages?.[0]?.entryId).toBe("entry-42");
+	});
+
 	test("configures thinking and model, then serves stats/messages/commands/queues", async () => {
 		const session = new FakeSession("parity");
 		session.modelRuntime = {

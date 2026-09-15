@@ -121,6 +121,13 @@ export interface PiSession {
 	compact?(customInstructions?: string): Promise<unknown>;
 	setSessionName?(name: string): void | Promise<void>;
 	getSessionStats?(): unknown | Promise<unknown>;
+	// AUX-14: the SDK's own fork selector. It exposes the native session-entry
+	// id for each text-bearing user message, which the AgentMessage array does
+	// not carry. Optional so a narrower Pi omits the projection instead of failing.
+	getUserMessagesForForking?(): readonly {
+		readonly entryId: string;
+		readonly text: string;
+	}[];
 	getAvailableThinkingLevels?(): readonly unknown[];
 	setModel?(model: unknown, options?: unknown): Promise<void>;
 	setThinkingLevel?(level: unknown, options?: unknown): void | Promise<void>;
@@ -1251,6 +1258,48 @@ function repairDanglingToolCalls(messages: readonly unknown[]): {
 	return { messages: repairedMessages, repaired };
 }
 
+// The SDK joins text content blocks with a newline; mirror it so a projected
+// message matches the fork selector's own text extraction.
+function userContentText(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	const parts: string[] = [];
+	for (const block of content) {
+		if (isRecord(block) && block.type === "text" && typeof block.text === "string") {
+			parts.push(block.text);
+		}
+	}
+	return parts.join("\n");
+}
+
+// AUX-14: the SDK's AgentMessage has no stable id, so Pi's native session-entry
+// id must be projected separately for "Edit from here". getUserMessagesForForking
+// is the SDK's own fork selector: it returns {entryId, text} per text-bearing
+// user message in entry order. Match projected user messages to those entries in
+// order, skipping compacted-away entries, so a displayed turn gets the exact
+// native entry. A message the SDK exposes no entry id for keeps none rather than
+// being given a display row or a fabricated one.
+function projectUserMessageEntryIds(session: PiSession, messages: readonly unknown[]): unknown[] {
+	const raw = session.getUserMessagesForForking?.();
+	const forking = Array.isArray(raw) ? raw : [];
+	if (forking.length === 0) return messages as unknown[];
+	let cursor = 0;
+	return messages.map((message) => {
+		if (!isRecord(message) || message.role !== "user") return message;
+		const text = userContentText(message.content);
+		if (text === "") return message;
+		for (let index = cursor; index < forking.length; index += 1) {
+			const candidate = forking[index];
+			if (!candidate || candidate.text !== text) continue;
+			cursor = index + 1;
+			return typeof candidate.entryId === "string" && candidate.entryId !== ""
+				? { ...message, entryId: candidate.entryId }
+				: message;
+		}
+		return message;
+	});
+}
+
 // --- MCP servers (filesystem layers + bounded probe) ---
 
 // In-process mutex serializes file writers so concurrent read-modify-write
@@ -2321,8 +2370,16 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		resident: ResidentSession,
 	): { messages: unknown[]; repaired: number } => {
 		const messages = resident.session.messages ? [...resident.session.messages] : [];
-		if (resident.session.isStreaming !== false) return { messages, repaired: 0 };
-		return repairDanglingToolCalls(messages);
+		// AUX-14: project the native entry id for user messages so a browser turn
+		// can branch in-file. Repair first; synthetic results never carry an id.
+		const projected =
+			resident.session.isStreaming !== false
+				? { messages, repaired: 0 }
+				: repairDanglingToolCalls(messages);
+		return {
+			messages: projectUserMessageEntryIds(resident.session, projected.messages),
+			repaired: projected.repaired,
+		};
 	};
 
 	const snapshot = (resident: ResidentSession): Record<string, unknown> => {

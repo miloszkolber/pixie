@@ -76,6 +76,9 @@ export class FakeSession implements PiSession {
 	extensionRunner?: PiSession["extensionRunner"];
 	promptTemplates?: PiSession["promptTemplates"];
 	resourceLoader?: PiSession["resourceLoader"];
+	// AUX-14: the SDK's fork selector maps a text-bearing user message to its
+	// native session-entry id. Tests set it to prove the host projects entryId.
+	userMessagesForForking: Array<{ entryId: string; text: string }> = [];
 
 	constructor(readonly sessionId: string) {}
 
@@ -152,6 +155,10 @@ export class FakeSession implements PiSession {
 
 	getAvailableThinkingLevels(): readonly unknown[] {
 		return this.thinkingLevels;
+	}
+
+	getUserMessagesForForking(): readonly { readonly entryId: string; readonly text: string }[] {
+		return this.userMessagesForForking;
 	}
 
 	async setModel(model: unknown): Promise<void> {
