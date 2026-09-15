@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { HOST_OPERATIONS } from "../../shared/src/generated/protocol-catalog.ts";
+import {
+	HOST_OPERATION_STATUS,
+	HOST_OPERATIONS,
+} from "../../shared/src/generated/protocol-catalog.ts";
 import {
 	type BunServerFactory,
 	type BunWebSocket,
@@ -710,6 +713,13 @@ describe("Bun host operationSet truthfulness", () => {
 		});
 		const hello = rawFrames(raw.socket).at(-1)?.result;
 		expect(Object.keys(hello?.operationSet ?? {}).sort()).toEqual([...HOST_OPERATIONS].sort());
+		// Every advertised bit is derived from the catalog status, except the
+		// opt-in restart route which stays false unless explicitly enabled.
+		for (const name of HOST_OPERATIONS) {
+			const expected =
+				name === "runtime.restart" ? false : HOST_OPERATION_STATUS[name] === "available";
+			expect(hello?.operationSet?.[name]).toBe(expected);
+		}
 		for (const name of [
 			"session.configure",
 			"session.fork",
@@ -731,6 +741,7 @@ describe("Bun host operationSet truthfulness", () => {
 			"pi.mcp.servers.read",
 			"pi.mcp.servers.probe",
 			"pi.providers.list",
+			"pi.providers.config.read",
 			"pi.defaults.read",
 			"pi.preferences.read",
 			"pi.extensions.list",
@@ -745,11 +756,22 @@ describe("Bun host operationSet truthfulness", () => {
 			"session.steer",
 			"session.prompt.resource",
 			"mcp.attach",
+			"pi.session.info",
+			"pi.session.steer",
 			"pi.tools.list",
 			"pi.tools.call",
+			"runtime.capabilities",
+			"pi.subagent.execute",
+			"pi.todo.plan",
+			"pi.llama",
+			"pi.native-extensions",
 		]) {
 			expect(hello?.operationSet?.[name]).toBe(false);
 		}
+		// A catalogued-but-unavailable route fails closed with the catalog's
+		// stated reason instead of inventing an implementation.
+		await raw.send({ id: 5, method: "pi.session.steer", params: {} });
+		expect(rawFrames(raw.socket).at(-1)?.error?.message).toContain("public run identifier");
 		await raw.send({ id: 2, method: "session.delete", params: {} });
 		expect(rawFrames(raw.socket).at(-1)).toEqual(
 			expect.objectContaining({
@@ -1447,6 +1469,120 @@ describe("Bun host admin parity", () => {
 		expect((await waitForId(raw.socket, 9)).result).toEqual({ ok: true });
 		await raw.send({ id: 10, method: "provider.loginBegin", params: { loginId: "missing" } });
 		expect((await waitForId(raw.socket, 10)).error?.message).toContain("cannot be started");
+	});
+
+	test("reads typed provider configuration presence without leaking secrets or paths", async () => {
+		const secretValue = "sk-live-do-not-leak";
+		const sdk = {
+			ModelRuntime: {
+				create: async () => ({
+					getProviders: () => [
+						{
+							id: "test",
+							name: "Test",
+							auth: {
+								apiKey: { login: true, value: secretValue },
+								path: "/home/operator/.pi/auth.json",
+							},
+						},
+					],
+					getProviderAuthStatus: () => ({
+						configured: true,
+						source: "environment",
+						label: "/home/operator/.pi/auth.json",
+					}),
+					isUsingOAuth: () => false,
+					getModels: () => [],
+				}),
+			},
+		};
+		const raw = rawHost(new FakeSession("provider-config"), { sdk });
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({ id: 2, method: "pi.providers.config.read", params: { providerId: "test" } });
+		const result = (await waitForId(raw.socket, 2)).result as unknown as {
+			providerId: string;
+			configured: boolean;
+			source: string;
+			fields: Array<{ name: string; isSet: boolean; source: string }>;
+		};
+		expect(result).toEqual({
+			providerId: "test",
+			configured: true,
+			source: "environment",
+			fields: [{ name: "api_key", isSet: true, source: "environment" }],
+		});
+		const serialized = JSON.stringify(result);
+		expect(serialized).not.toContain(secretValue);
+		expect(serialized).not.toContain("/home/operator");
+		for (const field of result.fields)
+			expect(Object.keys(field).sort()).toEqual(["isSet", "name", "source"]);
+	});
+
+	test("reports an unconfigured provider without claiming an explicit field", async () => {
+		const sdk = {
+			ModelRuntime: {
+				create: async () => ({
+					getProviders: () => [{ id: "test", name: "Test", auth: { apiKey: { login: true } } }],
+					getProviderAuthStatus: () => ({ configured: false, source: "fallback" }),
+					isUsingOAuth: () => false,
+					getModels: () => [],
+				}),
+			},
+		};
+		const raw = rawHost(new FakeSession("provider-config-default"), { sdk });
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({ id: 2, method: "pi.providers.config.read", params: { providerId: "test" } });
+		const result = (await waitForId(raw.socket, 2)).result as unknown as {
+			fields: Array<{ isSet: boolean }>;
+		};
+		expect(result.fields.length).toBeGreaterThan(0);
+		expect(result.fields.every((field) => field.isSet === false)).toBe(true);
+	});
+
+	test("rejects an unknown provider instead of fabricating configuration", async () => {
+		const sdk = {
+			ModelRuntime: {
+				create: async () => ({
+					getProviders: () => [],
+					getProviderAuthStatus: () => ({ configured: true, source: "stored" }),
+					isUsingOAuth: () => false,
+					getModels: () => [],
+				}),
+			},
+		};
+		const raw = rawHost(new FakeSession("provider-config-unknown"), { sdk });
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({ id: 2, method: "pi.providers.config.read", params: { providerId: "ghost" } });
+		expect((await waitForId(raw.socket, 2)).error?.message).toContain("Unknown provider");
+	});
+
+	test("validates provider deletion against the typed projection before mutating", async () => {
+		let logouts = 0;
+		const sdk = {
+			ModelRuntime: {
+				create: async () => ({
+					getProviders: () => [{ id: "test", name: "Test", auth: { apiKey: { login: true } } }],
+					getProviderAuthStatus: () => ({ configured: true, source: "stored" }),
+					isUsingOAuth: () => false,
+					getModels: () => [],
+					logout: async () => {
+						logouts += 1;
+					},
+				}),
+			},
+		};
+		const raw = rawHost(new FakeSession("provider-delete"), { sdk });
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({
+			id: 2,
+			method: "pi.providers.config.delete",
+			params: { providerId: "ghost" },
+		});
+		expect((await waitForId(raw.socket, 2)).error?.message).toContain("Unknown provider");
+		expect(logouts).toBe(0);
+		await raw.send({ id: 3, method: "pi.providers.config.delete", params: { providerId: "test" } });
+		expect((await waitForId(raw.socket, 3)).result).toEqual({ ok: true });
+		expect(logouts).toBe(1);
 	});
 
 	test("completes loginStart, loginBegin, prompt, and loginReply on one login", async () => {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -159,28 +160,104 @@ func runtimeConfigFor(path string, mode runMode) (runtimeConfigFile, error) {
 }
 
 func runUtilityCommand(command, path string, stdout io.Writer) error {
-	if path != "" {
-		if !filepath.IsAbs(path) {
-			return errors.New("--config must be an absolute path")
+	switch command {
+	case "doctor":
+		return runDoctor(path, stdout)
+	case "uninstall":
+		// Uninstall remains configuration-bound: a malformed selection is
+		// rejected rather than silently ignored. It is still non-destructive.
+		if err := validateConfigObject(path); err != nil {
+			return err
 		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("read config: %w", err)
-		}
-		var value map[string]any
-		if err := json.Unmarshal(content, &value); err != nil || value == nil {
-			return errors.New("config must be a JSON object")
-		}
+		_, err := fmt.Fprintf(stdout, "%s uninstall: stop and remove the selected user unit and binary\n", runtimeCLIName)
+		return err
+	default:
+		return fmt.Errorf("unknown utility command %q", command)
 	}
-	if command == "doctor" {
-		_, err := fmt.Fprintf(stdout, "%s doctor: configuration is readable (%s)\n", runtimeCLIName, path)
+}
+
+func validateConfigObject(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if !filepath.IsAbs(path) {
+		return errors.New("--config must be an absolute path")
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(content, &value); err != nil || value == nil {
+		return errors.New("config must be a JSON object")
+	}
+	return nil
+}
+
+// runDoctor is a read-only controller preflight. It prints only bounded check
+// codes and fixed remediation text: no path, endpoint, credential or raw error.
+func runDoctor(path string, stdout io.Writer) error {
+	facts, err := controllerRecoveryFacts(path, os.LookupEnv)
+	if err != nil {
 		return err
 	}
-	// Uninstall is intentionally non-destructive. The package provides the
-	// binary/unit/configuration evidence and leaves native Pi state untouched;
-	// operators stop and remove the selected unit explicitly.
-	_, err := fmt.Fprintf(stdout, "%s uninstall: stop and remove the selected user unit and binary\n", runtimeCLIName)
-	return err
+	report := diagnostics.AssessRecovery(facts)
+	if _, err := fmt.Fprintf(stdout, "%s doctor: summary=%s\n", runtimeCLIName, report.Summary); err != nil {
+		return err
+	}
+	for _, check := range report.Checks {
+		if _, err := fmt.Fprintf(stdout, "%s doctor: %s\n", runtimeCLIName, diagnostics.FormatRecoveryCheck(check)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// controllerRecoveryFacts validates the controller configuration and reads the
+// shared dial knobs. It never dials the host, so reachability stays unknown.
+func controllerRecoveryFacts(path string, lookup func(string) (string, bool)) (diagnostics.RecoveryFacts, error) {
+	facts := diagnostics.RecoveryFacts{RestartCount: -1}
+	readable := true
+	if path != "" {
+		if !filepath.IsAbs(path) {
+			return facts, errors.New("--config must be an absolute path")
+		}
+		readable = validateConfigObject(path) == nil
+	}
+	facts.ConfigReadable = &readable
+
+	hostConfigured := false
+	if value, ok := lookup("PIXIE_PI_SECRET_KEY"); ok && strings.TrimSpace(value) != "" {
+		hostConfigured = true
+	}
+	facts.HostConfigured = &hostConfigured
+	facts.PortMismatch = dialPortMismatch(lookup)
+	return facts, nil
+}
+
+// dialPortMismatch flags PIXIE_PI_PORT and PIXIE_PI_URL that name different
+// ports. A missing or portless value is not a mismatch.
+func dialPortMismatch(lookup func(string) (string, bool)) *bool {
+	mismatch := false
+	portRaw, hasPort := lookup("PIXIE_PI_PORT")
+	urlRaw, hasURL := lookup("PIXIE_PI_URL")
+	if !hasPort || !hasURL {
+		return &mismatch
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(portRaw))
+	if err != nil {
+		return &mismatch
+	}
+	parsed, err := url.Parse(strings.TrimSpace(urlRaw))
+	if err != nil || parsed.Port() == "" {
+		return &mismatch
+	}
+	urlPort, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		return &mismatch
+	}
+	mismatch = urlPort != port
+	return &mismatch
 }
 
 // controllerPort reads PIXIE_CONTROLLER_PORT with the compiled default.

@@ -38,6 +38,7 @@ type RuntimeDiagnosticsReport struct {
 	Runs                   RuntimeDiagnosticsRuns                   `json:"runs"`
 	DeletionReconciliation RuntimeDiagnosticsDeletionReconciliation `json:"deletionReconciliation"`
 	Schedule               RuntimeDiagnosticsSchedule               `json:"schedule"`
+	Health                 RuntimeDiagnosticsHealth                 `json:"health"`
 	Remediation            []string                                 `json:"remediation"`
 }
 

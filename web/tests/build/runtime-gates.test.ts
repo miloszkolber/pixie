@@ -101,7 +101,14 @@ test("controller executable fixtures exercise mode boundaries without live Pi cl
 		expect(version.stdout).toMatch(/^pixie_web \S+ \(revision \S+\)\s*$/);
 		const doctor = run([controllerBinary, "doctor"]);
 		expect(doctor.exitCode).toBe(0);
-		expect(doctor.stdout).toBe("pixie_web doctor: configuration is readable ()\n");
+		// The bounded recovery report is multi-line and environment-dependent; assert
+		// the stable shape and the always-present readable-configuration fact rather
+		// than a frozen string.
+		expect(doctor.stdout).toMatch(/^pixie_web doctor: summary=\S+/);
+		expect(doctor.stdout).toContain("pixie_web doctor: config.readable=ok");
+		for (const line of doctor.stdout.trimEnd().split("\n")) {
+			expect(line).toMatch(/^pixie_web doctor: /);
+		}
 		const uninstall = run([controllerBinary, "uninstall"]);
 		expect(uninstall.exitCode).toBe(0);
 		expect(uninstall.stdout).toBe(

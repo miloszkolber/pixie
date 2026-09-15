@@ -300,6 +300,12 @@ func (c *PiClient) initialize(ctx context.Context, connection *piConnection) (Ag
 // by SessionManager and the publisher. It is shared by the v1 and v2 paths so
 // capability and fail-closed semantics cannot drift between them.
 func buildAgentProfile(identity, version, bootID string, caps map[string]int, operationSet map[string]bool) AgentProfile {
+	// The generated catalog is the single source of host operation names. A host
+	// cannot negotiate a route outside that catalog; unknown keys are dropped
+	// before any optional route can be authorized. Catalog availability itself is
+	// enforced where the operation set is generated (the Bun host), so the
+	// controller never invents support from a catalog name.
+	operationSet = catalogOperationSet(operationSet)
 	p := AgentProfile{
 		Name: "Pi", Version: version, BootID: bootID, Pi: true,
 		Compatible: true, MissingRequired: []string{}, Capabilities: caps,
@@ -341,6 +347,23 @@ func buildAgentProfile(identity, version, bootID string, caps map[string]int, op
 		p.Operations = AgentOperations{}
 	}
 	return p
+}
+
+// catalogOperationSet drops negotiated keys the generated host catalog does not
+// know. It preserves the advertised value for every catalogued operation so a
+// legacy v1 host fixture keeps its explicit negotiation semantics.
+func catalogOperationSet(values map[string]bool) map[string]bool {
+	if values == nil {
+		return nil
+	}
+	result := make(map[string]bool, len(values))
+	for key, value := range values {
+		if !piwire.CatalogHostOperationSet[key] {
+			continue
+		}
+		result[key] = value
+	}
+	return result
 }
 
 func cloneBoolMap(values map[string]bool) map[string]bool {
@@ -571,7 +594,13 @@ func promptContainsEmbeddedContext(request piwire.PromptRequest) bool {
 }
 
 func unsupportedAgentCapability(capability string) error {
-	return &codedError{code: "UNSUPPORTED_AGENT_CAPABILITY", message: "Connected agent does not support " + capability}
+	message := "Connected agent does not support " + capability
+	// A catalogued route fails closed with the catalog's stated reason so the UI
+	// can explain why (for example, steering has no public Pi run identifier).
+	if reason := piwire.CatalogHostOperationReasons[capability]; reason != "" {
+		message += ": " + reason
+	}
+	return &codedError{code: "UNSUPPORTED_AGENT_CAPABILITY", message: message}
 }
 
 func (c *PiClient) Cancel(ctx context.Context, sessionID string) error {

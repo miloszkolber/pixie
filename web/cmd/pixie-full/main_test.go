@@ -9,7 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/ownerlock"
 )
 
@@ -23,12 +25,23 @@ func TestParseArgumentsAcceptsOnlyCombinedCommandSurface(t *testing.T) {
 	if arguments.command != commandServe || arguments.assistantConfig != "/tmp/assistant.json" || arguments.webConfig != "/tmp/web.json" {
 		t.Fatalf("parseArguments returned %#v", arguments)
 	}
+	doctor, err := parseArguments([]string{
+		"doctor", "--assistant-config", "/tmp/assistant.json", "--web-config", "/tmp/web.json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doctor.command != commandDoctor {
+		t.Fatalf("doctor command = %#v", doctor)
+	}
 	for _, values := range [][]string{
 		{"version"},
 		{"-h"},
 		{"serve", "--assistant-config=/tmp/assistant.json", "--web-config", "/tmp/web.json", "extra"},
 		{"serve", "--assistant-config", "assistant.json", "--web-config", "/tmp/web.json"},
 		{"serve", "--assistant-config", "/tmp/assistant.json", "--version", "/tmp/web.json"},
+		{"doctor"},
+		{"doctor", "--assistant-config", "relative.json", "--web-config", "/tmp/web.json"},
 	} {
 		if _, err := parseArguments(values); err == nil {
 			t.Fatalf("parseArguments(%q) accepted an unsupported form", values)
@@ -263,6 +276,148 @@ func TestFullSupervisorReportsOwnerLockContentionAsExitCode73(t *testing.T) {
 		t.Fatalf("second owner started (clean=%t) despite an active lock", clean)
 	} else if !ownerlock.IsContended(err) || ownerlock.ExitCode(err) != ownerlock.ContentionExitCode {
 		t.Fatalf("owner contention error = %v, want exit code %d", err, ownerlock.ContentionExitCode)
+	}
+}
+
+func TestApplyRunIdentityExportsOnlyOpaqueIdentifiers(t *testing.T) {
+	identity := diagnostics.RunIdentity{
+		BootID: "d1b2c3d4-1111-2222-3333-444455556666",
+		RunID:  "run-0123456789abcdef0123456789abcdef",
+	}
+	invocation := childInvocation{env: map[string]string{"PIXIE_PI_SECRET_KEY": strings.Repeat("s", 32)}}
+	applyRunIdentity(&invocation, identity)
+	if invocation.env[diagnostics.BootIdentityEnvironment] != identity.BootID || invocation.env[diagnostics.RunIdentityEnvironment] != identity.RunID {
+		t.Fatalf("identity environment = %#v", invocation.env)
+	}
+	if invocation.env["PIXIE_PI_SECRET_KEY"] != strings.Repeat("s", 32) {
+		t.Fatalf("existing environment was clobbered: %#v", invocation.env)
+	}
+	hostile := childInvocation{env: map[string]string{}}
+	applyRunIdentity(&hostile, diagnostics.RunIdentity{BootID: "Bearer bearer-token-value", RunID: "/home/alice/.pi"})
+	if len(hostile.env) != 0 {
+		t.Fatalf("hostile identity was exported: %#v", hostile.env)
+	}
+}
+
+func TestDiagnoseFactsReportsArchivePackageLockAndAgentDirectory(t *testing.T) {
+	root := t.TempDir()
+	writeArchiveFile(t, filepath.Join(root, "libexec", "pixie_full"))
+	writeArchiveModule(t, filepath.Join(root, "libexec", "pixie_assistant.js"))
+	writeArchiveFile(t, filepath.Join(root, "libexec", "pixie_web"))
+	writeRuntimeExecutable(t, filepath.Join(root, "runtime", "bin", "bun"), hostELFMachine(t))
+	if err := os.MkdirAll(filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	if err := os.MkdirAll(agentDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "assistant.json")
+	config := fmt.Sprintf(`{"schemaVersion":2,"host":"127.0.0.1","port":3284,"agentDir":%q,"allowSelfRestart":false}`, agentDir)
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parsed := arguments{command: commandDoctor, assistantConfig: configPath, webConfig: "/tmp/web.json"}
+	facts := diagnoseFacts(parsed, []string{"PIXIE_PI_SECRET_KEY=" + strings.Repeat("s", 32)}, filepath.Join(root, "libexec", "pixie_full"))
+	if facts.ConfigReadable == nil || !*facts.ConfigReadable {
+		t.Fatalf("config readable = %#v", facts.ConfigReadable)
+	}
+	if facts.PiPackagePresent == nil || !*facts.PiPackagePresent || facts.PiPackageValid == nil || !*facts.PiPackageValid {
+		t.Fatalf("pi package facts = %#v", facts)
+	}
+	if facts.AgentDirWritable == nil || !*facts.AgentDirWritable {
+		t.Fatalf("agent dir writable = %#v", facts.AgentDirWritable)
+	}
+	if facts.OwnerLockHeld == nil || *facts.OwnerLockHeld {
+		t.Fatalf("owner lock held = %#v", facts.OwnerLockHeld)
+	}
+	if facts.HostConfigured == nil || !*facts.HostConfigured {
+		t.Fatalf("host configured = %#v", facts.HostConfigured)
+	}
+	if facts.RestartCount != 0 {
+		t.Fatalf("restart count = %d", facts.RestartCount)
+	}
+}
+
+func TestPixieFullDoctorOutputOmitsPathsAndEndpoints(t *testing.T) {
+	root := t.TempDir()
+	writeArchiveFile(t, filepath.Join(root, "libexec", "pixie_full"))
+	writeArchiveModule(t, filepath.Join(root, "libexec", "pixie_assistant.js"))
+	writeArchiveFile(t, filepath.Join(root, "libexec", "pixie_web"))
+	writeRuntimeExecutable(t, filepath.Join(root, "runtime", "bin", "bun"), hostELFMachine(t))
+	if err := os.MkdirAll(filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	if err := os.MkdirAll(agentDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "assistant.json")
+	config := fmt.Sprintf(`{"schemaVersion":2,"host":"127.0.0.1","port":3284,"agentDir":%q,"allowSelfRestart":false}`, agentDir)
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parsed := arguments{command: commandDoctor, assistantConfig: configPath, webConfig: "/tmp/web.json"}
+	report := diagnostics.AssessRecovery(diagnoseFacts(parsed, []string{}, filepath.Join(root, "libexec", "pixie_full")))
+	var output strings.Builder
+	for _, check := range report.Checks {
+		output.WriteString(diagnostics.FormatRecoveryCheck(check))
+		output.WriteByte('\n')
+	}
+	for _, forbidden := range []string{root, agentDir, configPath, "Bearer "} {
+		if strings.Contains(output.String(), forbidden) {
+			t.Fatalf("doctor output leaked %q: %s", forbidden, output.String())
+		}
+	}
+}
+
+func TestPixieFullPortMismatchIsDetectedFromDialKnobs(t *testing.T) {
+	mismatch := dialPortMismatch(func(key string) (string, bool) {
+		switch key {
+		case "PIXIE_PI_PORT":
+			return "3284", true
+		case "PIXIE_PI_URL":
+			return "ws://127.0.0.1:9999/pi", true
+		default:
+			return "", false
+		}
+	})
+	if mismatch == nil || !*mismatch {
+		t.Fatalf("mismatch = %#v", mismatch)
+	}
+	match := dialPortMismatch(func(key string) (string, bool) {
+		switch key {
+		case "PIXIE_PI_PORT":
+			return "3284", true
+		case "PIXIE_PI_URL":
+			return "ws://127.0.0.1:3284/pi", true
+		default:
+			return "", false
+		}
+	})
+	if match == nil || *match {
+		t.Fatalf("matching ports reported a mismatch: %#v", match)
+	}
+}
+
+func TestStartChildRetainsBoundedStderr(t *testing.T) {
+	ring := diagnostics.NewStderrRing()
+	child, err := startChild(childInvocation{
+		path: "/bin/sh",
+		args: []string{"-c", "printf 'child-boot-line\\n' >&2"},
+		env:  map[string]string{},
+	}, ring)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-child.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("managed child did not exit")
+	}
+	summary := ring.Snapshot()
+	if summary.Retained != 1 || !strings.Contains(summary.Entries[0].Text, "child-boot-line") {
+		t.Fatalf("retained stderr = %#v", summary)
 	}
 }
 

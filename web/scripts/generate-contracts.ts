@@ -11,10 +11,24 @@ export interface AdminErrorCodeDefinition {
 	reason: string;
 }
 
+export type HostOperationStatus = "available" | "unavailable" | "absent";
+
+export const HOST_OPERATION_STATUSES: readonly HostOperationStatus[] = [
+	"available",
+	"unavailable",
+	"absent",
+];
+
+export interface HostOperationDefinition {
+	name: string;
+	status: HostOperationStatus;
+	reason?: string;
+}
+
 export interface ProtocolCatalog {
 	schemaVersion: number;
 	operations: {
-		host: string[];
+		host: HostOperationDefinition[];
 		controller: string[];
 	};
 	thinkingLevels: string[];
@@ -50,6 +64,46 @@ function requireStringArray(value: unknown, label: string): string[] {
 	return result;
 }
 
+function isHostOperationStatus(value: unknown): value is HostOperationStatus {
+	return (
+		typeof value === "string" && (HOST_OPERATION_STATUSES as readonly string[]).includes(value)
+	);
+}
+
+/**
+ * Host operations carry an explicit implementation status. `available` routes
+ * are the only ones a host may negotiate; `unavailable` and `absent` routes
+ * stay catalogued so callers can fail closed with a stated reason.
+ */
+function parseHostOperations(value: unknown): HostOperationDefinition[] {
+	if (!Array.isArray(value) || value.length === 0)
+		fail("operations.host must be a non-empty array");
+	const result: HostOperationDefinition[] = [];
+	const names = new Set<string>();
+	for (let index = 0; index < value.length; index += 1) {
+		const entry = value[index];
+		if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+			fail(`operations.host[${index}] must be an object`);
+		}
+		const record = entry as Record<string, unknown>;
+		const name = requireString(record.name, `operations.host[${index}].name`);
+		if (names.has(name)) fail(`operations.host contains duplicate operation ${name}`);
+		names.add(name);
+		if (!isHostOperationStatus(record.status)) {
+			fail(`operations.host[${index}].status must be one of ${HOST_OPERATION_STATUSES.join(", ")}`);
+		}
+		if (record.status === "available") {
+			if (record.reason !== undefined)
+				fail(`operations.host[${index}] is available and must not carry a reason`);
+			result.push({ name, status: record.status });
+			continue;
+		}
+		const reason = requireString(record.reason, `operations.host[${index}].reason`);
+		result.push({ name, status: record.status, reason });
+	}
+	return result;
+}
+
 /** Validates the schema shape so a malformed edit fails generation instead of emitting partial artifacts. */
 export function parseProtocolCatalog(raw: unknown): ProtocolCatalog {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
@@ -69,7 +123,7 @@ export function parseProtocolCatalog(raw: unknown): ProtocolCatalog {
 		fail("operations must be an object");
 	}
 	const operationRecord = operations as Record<string, unknown>;
-	const host = requireStringArray(operationRecord.host, "operations.host");
+	const host = parseHostOperations(operationRecord.host);
 	const controller = requireStringArray(operationRecord.controller, "operations.controller");
 	const thinkingLevels = requireStringArray(record.thinkingLevels, "thinkingLevels");
 	const promptContentBlockTypes = requireStringArray(
@@ -140,16 +194,59 @@ function goStringBoolMap(values: readonly string[], indent = "\t"): string {
 	return keys.map((key) => `${indent}${key}:${" ".repeat(width - key.length + 1)}true,`).join("\n");
 }
 
+/** Match Biome's 100-column wrapping: break the value onto its own indented line. */
+function renderRecordEntry(key: string, value: string, indent = "\t"): string {
+	const inline = `${indent}${JSON.stringify(key)}: ${JSON.stringify(value)},`;
+	if (inline.length < 100) return inline;
+	return `${indent}${JSON.stringify(key)}:\n${indent}\t${JSON.stringify(value)},`;
+}
+
+function renderStatusRecord(host: readonly HostOperationDefinition[]): string {
+	const lines = host.map((entry) => renderRecordEntry(entry.name, entry.status));
+	return [
+		"export const HOST_OPERATION_STATUS: Record<HostOperation, HostOperationStatus> = {",
+		...lines,
+		"};",
+	].join("\n");
+}
+
+function renderReasonRecord(host: readonly HostOperationDefinition[]): string {
+	const entries = host.filter((entry) => entry.reason !== undefined);
+	if (entries.length === 0)
+		return "export const HOST_OPERATION_REASONS: Partial<Record<HostOperation, string>> = {};";
+	return [
+		"export const HOST_OPERATION_REASONS: Partial<Record<HostOperation, string>> = {",
+		...entries.map((entry) => renderRecordEntry(entry.name, entry.reason as string)),
+		"};",
+	].join("\n");
+}
+
 export function renderTypeScript(catalog: ProtocolCatalog): string {
 	const { host, controller } = catalog.operations;
+	const available = host.filter((entry) => entry.status === "available").map((entry) => entry.name);
 	return [
 		`// ${GENERATED_HEADER}`,
 		"",
 		`export const PROTOCOL_CATALOG_SCHEMA_VERSION = ${catalog.schemaVersion};`,
 		"",
-		renderExportedStringArray("HOST_OPERATIONS", host),
+		renderExportedStringArray(
+			"HOST_OPERATIONS",
+			host.map((entry) => entry.name),
+		),
 		"",
 		"export type HostOperation = (typeof HOST_OPERATIONS)[number];",
+		"",
+		renderExportedStringArray("HOST_OPERATION_STATUSES", [...HOST_OPERATION_STATUSES]),
+		"",
+		"export type HostOperationStatus = (typeof HOST_OPERATION_STATUSES)[number];",
+		"",
+		renderStatusRecord(host),
+		"",
+		renderExportedStringArray("HOST_AVAILABLE_OPERATIONS", available),
+		"",
+		"export type HostAvailableOperation = (typeof HOST_AVAILABLE_OPERATIONS)[number];",
+		"",
+		renderReasonRecord(host),
 		"",
 		renderExportedStringArray("CONTROLLER_METHODS", controller),
 		"",
@@ -175,8 +272,28 @@ export function renderTypeScript(catalog: ProtocolCatalog): string {
 	].join("\n");
 }
 
+function goStringMap(
+	entries: readonly { readonly key: string; readonly value: string }[],
+	indent = "\t",
+): string {
+	if (entries.length === 0) return "";
+	const keys = entries.map((entry) => JSON.stringify(entry.key));
+	const width = Math.max(...keys.map((key) => key.length));
+	return entries
+		.map((entry, index) => {
+			const key = keys[index] ?? "";
+			return `${indent}${key}:${" ".repeat(width - key.length + 1)}${JSON.stringify(entry.value)},`;
+		})
+		.join("\n");
+}
+
 export function renderGo(catalog: ProtocolCatalog): string {
 	const { host, controller } = catalog.operations;
+	const names = host.map((entry) => entry.name);
+	const available = host.filter((entry) => entry.status === "available").map((entry) => entry.name);
+	const reasons = host
+		.filter((entry) => entry.reason !== undefined)
+		.map((entry) => ({ key: entry.name, value: entry.reason as string }));
 	return [
 		`// ${GENERATED_HEADER}`,
 		"",
@@ -185,14 +302,48 @@ export function renderGo(catalog: ProtocolCatalog): string {
 		"// CatalogSchemaVersion is the protocol catalog schema revision.",
 		`const CatalogSchemaVersion = ${catalog.schemaVersion}`,
 		"",
-		"// CatalogHostOperations lists the exact host native operation keys advertised by operationSet.",
+		"// Host operation implementation statuses. Only CatalogHostOperationAvailable",
+		"// routes may be negotiated by a host; the other statuses stay catalogued so",
+		"// callers can fail closed with a stated reason.",
+		"const (",
+		'\tCatalogHostOperationAvailable   = "available"',
+		'\tCatalogHostOperationUnavailable = "unavailable"',
+		'\tCatalogHostOperationAbsent      = "absent"',
+		")",
+		"",
+		"// CatalogHostOperations lists every catalogued host operation key.",
 		"var CatalogHostOperations = []string{",
-		stringLiteralList(host),
+		stringLiteralList(names),
 		"}",
 		"",
-		"// CatalogHostOperationSet indexes CatalogHostOperations for exact lookup.",
+		"// CatalogHostOperationSet indexes CatalogHostOperations for exact membership lookup.",
 		"var CatalogHostOperationSet = map[string]bool{",
-		goStringBoolMap(host),
+		goStringBoolMap(names),
+		"}",
+		"",
+		"// CatalogHostOperationStatus records the explicit implementation status per operation.",
+		"var CatalogHostOperationStatus = map[string]string{",
+		goStringMap(host.map((entry) => ({ key: entry.name, value: entry.status }))),
+		"}",
+		"",
+		"// CatalogHostAvailableOperations lists the operations a host may advertise.",
+		"var CatalogHostAvailableOperations = []string{",
+		stringLiteralList(available),
+		"}",
+		"",
+		"// CatalogHostAvailableOperationSet indexes CatalogHostAvailableOperations.",
+		"var CatalogHostAvailableOperationSet = map[string]bool{",
+		goStringBoolMap(available),
+		"}",
+		"",
+		"// CatalogHostOperationReasons records why a non-available operation stays unavailable.",
+		"var CatalogHostOperationReasons = map[string]string{",
+		goStringMap(reasons),
+		"}",
+		"",
+		"// CatalogHostOperationIsAvailable reports whether the catalog marks an operation available.",
+		"func CatalogHostOperationIsAvailable(name string) bool {",
+		"\treturn CatalogHostAvailableOperationSet[name]",
 		"}",
 		"",
 		"// CatalogControllerMethods lists the browser/controller method names from ws-protocol.ts.",

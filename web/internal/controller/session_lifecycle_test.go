@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -54,5 +55,17 @@ func TestClampThinkingPreservesUnknownNativeLevel(t *testing.T) {
 	}
 	if level != "native-extra" {
 		t.Fatalf("clamped unknown thinking level = %q, want native-extra", level)
+	}
+}
+
+// Process-local partial-create scratch must not survive a controlled shutdown;
+// otherwise a long-lived controller would accumulate claims for sessions whose
+// creation never committed.
+func TestSessionManagerShutdownDropsPartialCreateScratch(t *testing.T) {
+	manager := NewSessionManager(nil, nil, nil, nil, nil, nil)
+	manager.scheduleCreationRoots["partial-native-session"] = "/project"
+	manager.shutdown(context.Background())
+	if len(manager.scheduleCreationRoots) != 0 {
+		t.Fatalf("partial-create scratch survived shutdown: %#v", manager.scheduleCreationRoots)
 	}
 }

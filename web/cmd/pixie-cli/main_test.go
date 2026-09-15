@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/ownerlock"
 )
 
@@ -155,6 +156,25 @@ func TestPixieCLIReportsOwnerLockContentionAsExitCode73(t *testing.T) {
 	}
 	if !ownerlock.IsContended(err) || ownerlock.ExitCode(err) != ownerlock.ContentionExitCode {
 		t.Fatalf("owner contention error = %v, want exit code %d", err, ownerlock.ContentionExitCode)
+	}
+}
+
+func TestPixieCLIInjectsOpaqueRunIdentityAndRejectsHostileValues(t *testing.T) {
+	identity := diagnostics.RunIdentity{
+		BootID: "d1b2c3d4-1111-2222-3333-444455556666",
+		RunID:  "run-0123456789abcdef0123456789abcdef",
+	}
+	environment := withRunIdentity([]string{"HOME=/home/operator", "PIXIE_PI_SECRET_KEY=" + strings.Repeat("s", 32)}, identity)
+	values := environmentMap(environment)
+	if values[diagnostics.BootIdentityEnvironment] != identity.BootID || values[diagnostics.RunIdentityEnvironment] != identity.RunID {
+		t.Fatalf("identity environment = %#v", values)
+	}
+	if values["HOME"] != "/home/operator" || values["PIXIE_PI_SECRET_KEY"] != strings.Repeat("s", 32) {
+		t.Fatalf("identity injection clobbered native values: %#v", values)
+	}
+	hostile := withRunIdentity([]string{"HOME=/home/operator"}, diagnostics.RunIdentity{BootID: "Bearer bearer-token-value"})
+	if _, present := environmentMap(hostile)[diagnostics.BootIdentityEnvironment]; present {
+		t.Fatalf("hostile identity was exported: %#v", hostile)
 	}
 }
 

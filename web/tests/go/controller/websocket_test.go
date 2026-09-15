@@ -330,6 +330,104 @@ func TestTrustedProxyRequiresControllerAuthAtWebSocketAdmission(t *testing.T) {
 	connection.CloseNow()
 }
 
+// inflightHandler executes each admitted request exactly once, blocking until
+// released. It gives the reconnect-coalescing test a deterministic in-flight
+// window.
+type inflightHandler struct {
+	started    chan struct{}
+	release    chan struct{}
+	executions atomic.Int32
+}
+
+func (h *inflightHandler) Handle(_ context.Context, _ string, _ json.RawMessage, _ string) (any, error) {
+	h.executions.Add(1)
+	select {
+	case h.started <- struct{}{}:
+	default:
+	}
+	<-h.release
+	return map[string]any{"executions": h.executions.Load()}, nil
+}
+
+func TestWebSocketShedsConnectionsBeyondControllerBound(t *testing.T) {
+	server, err := controller.NewWebSocketServer(&countingHandler{}, nil, controller.AuthConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close(context.Background())
+	host := httptest.NewServer(server)
+	defer host.Close()
+	setWebSocketListenerPort(t, server, host)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	connections := make([]*websocket.Conn, 0, controller.BrowserMaxConnections)
+	for index := 0; index < controller.BrowserMaxConnections; index++ {
+		connection := dialBrowserSocket(t, ctx, host.URL, "storm-"+strconv.Itoa(index))
+		// Round-trip so the server has registered this identity before the next
+		// dial; otherwise the handshake could finish before replace runs.
+		if err := connection.Write(ctx, websocket.MessageText, []byte(`{"id":"probe","method":"ping","params":{}}`)); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := connection.Read(ctx); err != nil {
+			t.Fatal(err)
+		}
+		connections = append(connections, connection)
+	}
+	_, response, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(host.URL, "http")+"/?client=overflow", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": {host.URL}},
+	})
+	if err == nil || response == nil || response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("connection beyond the controller bound was accepted: response=%v err=%v", response, err)
+	}
+}
+
+func TestWebSocketReconnectDuringInflightExecutionCoalesces(t *testing.T) {
+	handler := &inflightHandler{started: make(chan struct{}, 1), release: make(chan struct{})}
+	server, err := controller.NewWebSocketServer(handler, nil, controller.AuthConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close(context.Background())
+	host := httptest.NewServer(server)
+	defer host.Close()
+	setWebSocketListenerPort(t, server, host)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	request := []byte(`{"id":"same","method":"mutate","params":{"value":1}}`)
+
+	first := dialBrowserSocket(t, ctx, host.URL, "resume")
+	if err := first.Write(ctx, websocket.MessageText, request); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-handler.started:
+	case <-ctx.Done():
+		t.Fatal("handler did not start")
+	}
+	first.CloseNow()
+
+	reconnected := dialBrowserSocket(t, ctx, host.URL, "resume")
+	if err := reconnected.Write(ctx, websocket.MessageText, request); err != nil {
+		t.Fatal(err)
+	}
+	close(handler.release)
+	_, raw, err := reconnected.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		OK     bool           `json:"ok"`
+		Result map[string]any `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil || !response.OK || response.Result["executions"] != float64(1) {
+		t.Fatalf("reconnect response = %s, %v", raw, err)
+	}
+	if handler.executions.Load() != 1 {
+		t.Fatalf("reconnect re-executed the in-flight request: executions=%d", handler.executions.Load())
+	}
+}
+
 func TestWebSocketAuthorityIsCheckedBeforeOriginAndUpgrade(t *testing.T) {
 	const (
 		publicOrigin    = "https://pixie.example"

@@ -87,7 +87,13 @@ func (c *ReplayCache) Run(ctx context.Context, client, id, fingerprint string, e
 	if err == nil {
 		weight = len(value)
 	}
-	if namespace.weight+weight > c.maxWeight || c.aggregate != nil && !c.aggregate.TryAcquireOrdinary(weight) {
+	if c.clients[client] != namespace {
+		// The namespace was released while this execution was in flight (for
+		// example the owning socket disconnected). Waiters still receive the
+		// result through their own pointer, but the detached namespace must not
+		// reserve aggregate bytes that nothing can release.
+		entry.result = nil
+	} else if namespace.weight+weight > c.maxWeight || c.aggregate != nil && !c.aggregate.TryAcquireOrdinary(weight) {
 		// Existing waiters own the in-flight result. Keep only its fingerprint in
 		// the cache so later retries cannot repeat an already executed mutation.
 		entry.result = nil
@@ -161,5 +167,25 @@ func (c *ReplayCache) release(entry *replayEntry) {
 	if c.aggregate != nil && entry.reserved > 0 {
 		c.aggregate.ReleaseOrdinary(entry.reserved)
 		entry.reserved = 0
+	}
+}
+
+// ReleaseClient drops a client namespace unconditionally, releasing every
+// settled reservation. An execution still in flight keeps ownership of its
+// result for its current waiters but will not reserve bytes once it settles
+// because the namespace is no longer registered.
+func (c *ReplayCache) ReleaseClient(client string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	namespace := c.clients[client]
+	if namespace == nil {
+		return
+	}
+	delete(c.clients, client)
+	for _, entry := range namespace.requests {
+		if entry.settled {
+			namespace.weight -= entry.weight
+			c.release(entry)
+		}
 	}
 }

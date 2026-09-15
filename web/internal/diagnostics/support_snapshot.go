@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -47,13 +48,19 @@ var (
 	supportBearerPattern              = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+`)
 	supportSensitiveAssignmentPattern = regexp.MustCompile(`(?i)\b([a-z][a-z0-9_.-]*(?:token|secret|password|api[_-]?key|key)[a-z0-9_.-]*)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)`)
 	supportSensitiveLabelPattern      = regexp.MustCompile(`(?i)\b(?:token|api[_ -]?key|access[_ -]?token|bearer[_ -]?token|secret|password)\s*(?::|=)\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)`)
-	supportAPIKeyPattern              = regexp.MustCompile(`(?i)\b(?:(?:sk|pk|rk|api|gh[pousr]|xox[baprs])[_-][A-Za-z0-9_-]{12,}|AKIA[A-Z0-9]{16})\b`)
-	supportIdentifierPattern          = regexp.MustCompile(`(?i)\b(?:project|session|chat)(?:[_ -]?id)?\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)`)
-	supportIdentifierMentionPattern   = regexp.MustCompile(`(?i)\b(?:project|session|chat)(?:[_ -]?id)?\s+(?:"[^"]*"|'[^']*'|[A-Za-z0-9_-]{3,})`)
+	// A label separated by whitespace ("Authorization: token abc") is as common
+	// as an assignment. Prefer a false positive over retaining the value.
+	supportSensitivePrefixPattern   = regexp.MustCompile(`(?i)\b(?:token|api[_ -]?key|access[_ -]?token|bearer[_ -]?token|secret|password)\s+[A-Za-z0-9._~+/=-]{6,}`)
+	supportAPIKeyPattern            = regexp.MustCompile(`(?i)\b(?:(?:sk|pk|rk|api|gh[pousr]|xox[baprs])[_-][A-Za-z0-9_-]{12,}|AKIA[A-Z0-9]{16})\b`)
+	supportIdentifierPattern        = regexp.MustCompile(`(?i)\b(?:project|session|chat)(?:[_ -]?id)?\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)`)
+	supportIdentifierMentionPattern = regexp.MustCompile(`(?i)\b(?:project|session|chat)(?:[_ -]?id)?\s+(?:"[^"]*"|'[^']*'|[A-Za-z0-9_-]{3,})`)
 	// URL values are removed before this expression runs. What remains is a
-	// filesystem location in a normal error message or assignment.
-	supportUnixPathPattern    = regexp.MustCompile(`(^|[\s\("'=:])/(?:[^\s\'"<>,;:)\]}]+)`)
-	supportWindowsPathPattern = regexp.MustCompile(`(?i)\b[A-Z]:\\(?:[^\s\'"<>,;:)\]}]+)`)
+	// filesystem location in a normal error message or assignment. The path is
+	// matched after any delimiter that is not a word, dot or slash so bracketed
+	// and quoted locations are redacted too.
+	supportUnixPathPattern    = regexp.MustCompile(`(^|[^\w./])/(?:[^\s'"<>,;:)\]}]+)`)
+	supportWindowsPathPattern = regexp.MustCompile(`(?i)\b[A-Z]:\\(?:[^\s'"<>,;:)\]}]+)`)
+	supportUNCPattern         = regexp.MustCompile(`\\\\[^\s'"<>,;:)\]}]+`)
 	// Support snapshots retain build identity only when it is a known release
 	// format. Arbitrary linker values could otherwise carry credentials or IDs.
 	supportBuildVersionPattern  = regexp.MustCompile(`^(?:0\.0\.0-dev|sha-[0-9a-f]{12}|v?[0-9]+\.[0-9]+\.[0-9]+)$`)
@@ -62,14 +69,19 @@ var (
 )
 
 // SupportSnapshot is the complete JSON support-export boundary. It contains
-// only the fields below: controller runtime facts and structured controller
-// request outcomes. It never gathers logs, configs, transcripts, paths,
-// project/session identities, endpoint addresses, credentials, or raw errors.
+// only the fields below: the process run identity, bounded health transitions,
+// optional retained child stderr, controller runtime facts and structured
+// controller request outcomes. It never gathers logs, configs, transcripts,
+// paths, project/session identities, endpoint addresses, credentials, or raw
+// errors.
 type SupportSnapshot struct {
-	SchemaVersion int                    `json:"schemaVersion"`
-	GeneratedAt   string                 `json:"generatedAt"`
-	Runtime       SupportSnapshotRuntime `json:"runtime"`
-	Events        []ControllerEvent      `json:"events"`
+	SchemaVersion     int                    `json:"schemaVersion"`
+	GeneratedAt       string                 `json:"generatedAt"`
+	Identity          *RunIdentity           `json:"identity,omitempty"`
+	HealthTransitions []HealthTransition     `json:"healthTransitions,omitempty"`
+	ChildStderr       *StderrSummary         `json:"childStderr,omitempty"`
+	Runtime           SupportSnapshotRuntime `json:"runtime"`
+	Events            []ControllerEvent      `json:"events"`
 }
 
 // SupportSnapshotRuntime is the explicit allowlist of diagnostic facts. Nil
@@ -80,6 +92,17 @@ type SupportSnapshotRuntime struct {
 	ActiveRunCount        *int                    `json:"activeRunCount,omitempty"`
 	RetainedDeletionCount *int                    `json:"retainedDeletionCount,omitempty"`
 	Schedule              SupportSnapshotSchedule `json:"schedule"`
+	// Identity, when set, overrides the process/environment identity. A
+	// directly launched controller leaves it nil and the marshaler resolves the
+	// supervisor-exported identity.
+	Identity *RunIdentity `json:"-"`
+	// HealthTransitions is the controller-owned bounded transition history,
+	// mapped from controller types by the caller. This package only sanitizes
+	// and bounds it.
+	HealthTransitions []HealthTransition `json:"-"`
+	// ChildStderr is the bounded summary of any child processes this process
+	// owns. The controller owns none, so it is normally nil.
+	ChildStderr *StderrSummary `json:"-"`
 }
 
 type SupportSnapshotHost struct {
@@ -160,6 +183,14 @@ func (r *ControllerEventRing) Snapshot() []ControllerEvent {
 // snapshots do not use it because text redaction cannot safely turn arbitrary
 // handler or error text into a shareable diagnostic.
 func SanitizeDiagnosticDetail(value string) string {
+	return SanitizeDiagnosticText(value, maxSupportDetailBytes)
+}
+
+// SanitizeDiagnosticText applies the same credential, identifier and path
+// redaction as SanitizeDiagnosticDetail with an explicit bound. It is exported
+// for bounded diagnostic surfaces such as retained child stderr; the result is
+// never a shareable guarantee for arbitrary text, only a best-effort redaction.
+func SanitizeDiagnosticText(value string, limit int) string {
 	value = normalizeDiagnosticText(value)
 	if value == "" {
 		return ""
@@ -168,12 +199,14 @@ func SanitizeDiagnosticDetail(value string) string {
 	value = supportBearerPattern.ReplaceAllString(value, "Bearer [redacted]")
 	value = supportSensitiveAssignmentPattern.ReplaceAllString(value, "$1=[redacted]")
 	value = supportSensitiveLabelPattern.ReplaceAllString(value, "[redacted credential]")
+	value = supportSensitivePrefixPattern.ReplaceAllString(value, "[redacted credential]")
 	value = supportAPIKeyPattern.ReplaceAllString(value, "[redacted credential]")
 	value = supportIdentifierPattern.ReplaceAllString(value, "[redacted identifier]")
 	value = supportIdentifierMentionPattern.ReplaceAllString(value, "[redacted identifier]")
 	value = supportUnixPathPattern.ReplaceAllString(value, "$1[redacted path]")
+	value = supportUNCPattern.ReplaceAllString(value, "[redacted path]")
 	value = supportWindowsPathPattern.ReplaceAllString(value, "[redacted path]")
-	return truncateUTF8(strings.TrimSpace(value), maxSupportDetailBytes)
+	return truncateUTF8(strings.TrimSpace(value), limit)
 }
 
 func normalizeDiagnosticText(value string) string {
@@ -202,10 +235,13 @@ func truncateUTF8(value string, limit int) string {
 func MarshalSupportSnapshot(runtime SupportSnapshotRuntime, events []ControllerEvent) (json.RawMessage, error) {
 	runtime = sanitizedSupportRuntime(runtime)
 	snapshot := SupportSnapshot{
-		SchemaVersion: SupportSnapshotSchemaVersion,
-		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
-		Runtime:       runtime,
-		Events:        sanitizedSupportEvents(events),
+		SchemaVersion:     SupportSnapshotSchemaVersion,
+		GeneratedAt:       time.Now().UTC().Format(time.RFC3339),
+		Identity:          resolveSupportIdentity(runtime.Identity),
+		HealthTransitions: SanitizeHealthTransitions(runtime.HealthTransitions),
+		ChildStderr:       sanitizedStderrSummary(runtime.ChildStderr),
+		Runtime:           runtime,
+		Events:            sanitizedSupportEvents(events),
 	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
@@ -215,6 +251,24 @@ func MarshalSupportSnapshot(runtime SupportSnapshotRuntime, events []ControllerE
 		return nil, fmt.Errorf("support snapshot exceeds the %d-byte limit", SupportSnapshotMaxBytes)
 	}
 	return json.RawMessage(payload), nil
+}
+
+// resolveSupportIdentity prefers an explicitly supplied identity, then the
+// process identity set by the entrypoint, then the supervisor-exported
+// environment. Only a sanitized identity is returned.
+func resolveSupportIdentity(explicit *RunIdentity) *RunIdentity {
+	if explicit != nil {
+		if sanitized, ok := SanitizeRunIdentity(*explicit); ok {
+			return &sanitized
+		}
+	}
+	if sanitized, ok := SanitizeRunIdentity(ProcessRunIdentity()); ok {
+		return &sanitized
+	}
+	if sanitized, ok := SanitizeRunIdentity(RunIdentityFromEnvironment(os.LookupEnv)); ok {
+		return &sanitized
+	}
+	return nil
 }
 
 func sanitizedSupportRuntime(value SupportSnapshotRuntime) SupportSnapshotRuntime {

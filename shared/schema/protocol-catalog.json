@@ -3,86 +3,349 @@
 	"schemaVersion": 1,
 	"operations": {
 		"host": [
-			"session.list",
-			"session.create",
-			"session.load",
-			"session.prompt",
-			"session.cancel",
-			"session.configure",
-			"session.delete",
-			"session.fork",
-			"session.steer",
-			"session.rename",
-			"session.archive",
-			"session.release",
-			"runtime.release",
-			"runtime.releaseToTui",
-			"session.prompt.image",
-			"session.prompt.resource",
-			"session.uiResponse",
-			"session.uiCancel",
-			"pi.session.info",
-			"pi.session.rename",
-			"pi.session.archive",
-			"pi.session.unarchive",
-			"pi.session.steer",
-			"pi.tools.list",
-			"pi.tools.call",
-			"runtime.capabilities",
-			"runtime.restart",
-			"pi.reload",
-			"pi.slash-commands.list",
-			"pi.providers.list",
-			"pi.providers.canonical-model-info",
-			"pi.providers.inventory.refresh",
-			"pi.providers.readiness.check",
-			"provider.loginStart",
-			"provider.loginBegin",
-			"provider.loginReply",
-			"provider.loginCancel",
-			"pi.providers.config.read",
-			"pi.providers.config.delete",
-			"pi.defaults.read",
-			"pi.defaults.save",
-			"pi.defaults.clear",
-			"pi.preferences.read",
-			"pi.preferences.save",
-			"pi.preferences.reset",
-			"pi.extensions.list",
-			"pi.extensions.configure",
-			"pi.sources.list",
-			"pi.sources.create",
-			"pi.sources.update",
-			"pi.sources.delete",
-			"pi.agent-mentions.list",
-			"pi.subagent.execute",
-			"pi.todo.plan",
-			"pixie.goals.questions",
-			"mcp.attach",
-			"pi.config.extensions.list",
-			"pi.config.extensions.add",
-			"pi.config.extensions.set-enabled",
-			"pi.config.extensions.remove",
-			"pi.session.extensions.list",
-			"pi.session.extensions.add",
-			"pi.session.extensions.remove",
-			"adapter.status",
-			"adapter.registerBrowser",
-			"adapter.session.forget",
-			"pi.llama",
-			"pi.native-extensions",
-			"pi.mcp.servers.read",
-			"pi.mcp.servers.upsert",
-			"pi.mcp.servers.remove",
-			"pi.mcp.servers.probe",
-			"session.clone",
-			"session.compact",
-			"session.commands",
-			"session.followUp",
-			"session.clearQueue",
-			"session.getMessages",
-			"session.stats",
-			"session.switch"
+			{
+				"name": "session.list",
+				"status": "available"
+			},
+			{
+				"name": "session.create",
+				"status": "available"
+			},
+			{
+				"name": "session.load",
+				"status": "available"
+			},
+			{
+				"name": "session.prompt",
+				"status": "available"
+			},
+			{
+				"name": "session.cancel",
+				"status": "available"
+			},
+			{
+				"name": "session.configure",
+				"status": "available"
+			},
+			{
+				"name": "session.delete",
+				"status": "absent",
+				"reason": "Session deletion is controller-owned recoverable state; the host does not dispatch a Pi delete route."
+			},
+			{
+				"name": "session.fork",
+				"status": "available"
+			},
+			{
+				"name": "session.steer",
+				"status": "unavailable",
+				"reason": "Pi 0.85.1 exposes no public run identifier to bind a steering request to the active run."
+			},
+			{
+				"name": "session.rename",
+				"status": "available"
+			},
+			{
+				"name": "session.archive",
+				"status": "absent",
+				"reason": "Archive is controller-owned state, not a Pi session operation."
+			},
+			{
+				"name": "session.release",
+				"status": "available"
+			},
+			{
+				"name": "runtime.release",
+				"status": "available"
+			},
+			{
+				"name": "runtime.releaseToTui",
+				"status": "unavailable",
+				"reason": "There is no public TUI handoff from the in-process host."
+			},
+			{
+				"name": "session.prompt.image",
+				"status": "available"
+			},
+			{
+				"name": "session.prompt.resource",
+				"status": "unavailable",
+				"reason": "Pi 0.85.1 exposes no public text-resource attachment API."
+			},
+			{
+				"name": "session.uiResponse",
+				"status": "available"
+			},
+			{
+				"name": "session.uiCancel",
+				"status": "available"
+			},
+			{
+				"name": "pi.session.info",
+				"status": "unavailable",
+				"reason": "Pi 0.85.1 exposes no public nonresident session metadata beyond SessionManager.list."
+			},
+			{
+				"name": "pi.session.rename",
+				"status": "absent",
+				"reason": "Resident sessions rename through session.rename; there is no separate nonresident route."
+			},
+			{
+				"name": "pi.session.archive",
+				"status": "absent",
+				"reason": "Archive is controller-owned state."
+			},
+			{
+				"name": "pi.session.unarchive",
+				"status": "absent",
+				"reason": "Archive is controller-owned state."
+			},
+			{
+				"name": "pi.session.steer",
+				"status": "unavailable",
+				"reason": "Pi 0.85.1 exposes no public run identifier to bind steering to the active run."
+			},
+			{
+				"name": "pi.tools.list",
+				"status": "unavailable",
+				"reason": "Pi 0.85.1 exposes no public bounded, secret-free tool inventory API."
+			},
+			{
+				"name": "pi.tools.call",
+				"status": "unavailable",
+				"reason": "Pi 0.85.1 exposes no public tool invocation API for the host."
+			},
+			{
+				"name": "runtime.capabilities",
+				"status": "unavailable",
+				"reason": "runtime.hello already returns negotiated capability groups and the exhaustive operation set."
+			},
+			{
+				"name": "runtime.restart",
+				"status": "available"
+			},
+			{
+				"name": "pi.reload",
+				"status": "absent",
+				"reason": "Host reload is runtime.restart; there is no separate Pi reload route."
+			},
+			{
+				"name": "pi.slash-commands.list",
+				"status": "available"
+			},
+			{
+				"name": "pi.providers.list",
+				"status": "available"
+			},
+			{
+				"name": "pi.providers.canonical-model-info",
+				"status": "available"
+			},
+			{
+				"name": "pi.providers.inventory.refresh",
+				"status": "available"
+			},
+			{
+				"name": "pi.providers.readiness.check",
+				"status": "available"
+			},
+			{
+				"name": "provider.loginStart",
+				"status": "available"
+			},
+			{
+				"name": "provider.loginBegin",
+				"status": "available"
+			},
+			{
+				"name": "provider.loginReply",
+				"status": "available"
+			},
+			{
+				"name": "provider.loginCancel",
+				"status": "available"
+			},
+			{
+				"name": "pi.providers.config.read",
+				"status": "available"
+			},
+			{
+				"name": "pi.providers.config.delete",
+				"status": "available"
+			},
+			{
+				"name": "pi.defaults.read",
+				"status": "available"
+			},
+			{
+				"name": "pi.defaults.save",
+				"status": "available"
+			},
+			{
+				"name": "pi.defaults.clear",
+				"status": "available"
+			},
+			{
+				"name": "pi.preferences.read",
+				"status": "available"
+			},
+			{
+				"name": "pi.preferences.save",
+				"status": "available"
+			},
+			{
+				"name": "pi.preferences.reset",
+				"status": "available"
+			},
+			{
+				"name": "pi.extensions.list",
+				"status": "available"
+			},
+			{
+				"name": "pi.extensions.configure",
+				"status": "available"
+			},
+			{
+				"name": "pi.sources.list",
+				"status": "available"
+			},
+			{
+				"name": "pi.sources.create",
+				"status": "available"
+			},
+			{
+				"name": "pi.sources.update",
+				"status": "available"
+			},
+			{
+				"name": "pi.sources.delete",
+				"status": "available"
+			},
+			{
+				"name": "pi.agent-mentions.list",
+				"status": "available"
+			},
+			{
+				"name": "pi.subagent.execute",
+				"status": "unavailable",
+				"reason": "Pi 0.85.1 exposes no public subagent execution API."
+			},
+			{
+				"name": "pi.todo.plan",
+				"status": "absent",
+				"reason": "Plan state is controller-owned; no public Pi plan API exists."
+			},
+			{
+				"name": "pixie.goals.questions",
+				"status": "absent",
+				"reason": "Goal questions are a controller-owned surface."
+			},
+			{
+				"name": "mcp.attach",
+				"status": "unavailable",
+				"reason": "Per-session MCP attachment has no public Pi API; configured servers are managed through pi.mcp.servers.*."
+			},
+			{
+				"name": "pi.config.extensions.list",
+				"status": "available"
+			},
+			{
+				"name": "pi.config.extensions.add",
+				"status": "available"
+			},
+			{
+				"name": "pi.config.extensions.set-enabled",
+				"status": "available"
+			},
+			{
+				"name": "pi.config.extensions.remove",
+				"status": "available"
+			},
+			{
+				"name": "pi.session.extensions.list",
+				"status": "available"
+			},
+			{
+				"name": "pi.session.extensions.add",
+				"status": "available"
+			},
+			{
+				"name": "pi.session.extensions.remove",
+				"status": "available"
+			},
+			{
+				"name": "adapter.status",
+				"status": "absent",
+				"reason": "The legacy administration bridge and its adapter routes were removed."
+			},
+			{
+				"name": "adapter.registerBrowser",
+				"status": "absent",
+				"reason": "The legacy administration bridge and its adapter routes were removed."
+			},
+			{
+				"name": "adapter.session.forget",
+				"status": "absent",
+				"reason": "The legacy administration bridge and its adapter routes were removed."
+			},
+			{
+				"name": "pi.llama",
+				"status": "unavailable",
+				"reason": "llama.cpp management remains native-TUI-only; no public SDK route exists."
+			},
+			{
+				"name": "pi.native-extensions",
+				"status": "unavailable",
+				"reason": "Native extensions use the specific pi.extensions.* and pi.config.extensions.* routes."
+			},
+			{
+				"name": "pi.mcp.servers.read",
+				"status": "available"
+			},
+			{
+				"name": "pi.mcp.servers.upsert",
+				"status": "available"
+			},
+			{
+				"name": "pi.mcp.servers.remove",
+				"status": "available"
+			},
+			{
+				"name": "pi.mcp.servers.probe",
+				"status": "available"
+			},
+			{
+				"name": "session.clone",
+				"status": "available"
+			},
+			{
+				"name": "session.compact",
+				"status": "available"
+			},
+			{
+				"name": "session.commands",
+				"status": "available"
+			},
+			{
+				"name": "session.followUp",
+				"status": "available"
+			},
+			{
+				"name": "session.clearQueue",
+				"status": "available"
+			},
+			{
+				"name": "session.getMessages",
+				"status": "available"
+			},
+			{
+				"name": "session.stats",
+				"status": "available"
+			},
+			{
+				"name": "session.switch",
+				"status": "available"
+			}
 		],
 		"controller": [
 			"project.open",

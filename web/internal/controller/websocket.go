@@ -65,7 +65,34 @@ const (
 	maxConcurrentWSRequests = BrowserOrdinaryInflightPerEngine
 )
 
+// BrowserMaxConnections bounds every tracked browser identity: an active
+// socket and a disconnected client still inside its replay-reap grace period
+// both count. Reconnect load above this bound is shed before it can grow
+// sockets, per-socket writers, replay namespaces or reap timers without limit.
+const BrowserMaxConnections = 64
+
+const (
+	// reconnectWindow and reconnectMaxAttempts throttle a single client
+	// identity's upgrade rate; reconnectBaseBackoff..reconnectMaxBackoff cap
+	// the penalty. Only upgrades beyond the burst are delayed, so a normal
+	// network drop or page reload reconnects immediately.
+	reconnectWindow      = 10 * time.Second
+	reconnectMaxAttempts = 6
+	reconnectBaseBackoff = time.Second
+	reconnectMaxBackoff  = 30 * time.Second
+)
+
 var clientKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+// reconnectState is the process-local reconnect budget for one client key. It
+// is only recorded while the identity is tracked, so the map stays bounded by
+// BrowserMaxConnections.
+type reconnectState struct {
+	windowStart  time.Time
+	attempts     int
+	blockedUntil time.Time
+	backoff      time.Duration
+}
 
 // IsBrowserControlMethod reports whether a browser method uses the reserved
 // control lane. Only Stop (session.abort) and UI cancellation
@@ -327,6 +354,7 @@ type WebSocketServer struct {
 	clientLifecycle sync.Mutex
 	sockets         map[string]browserSocket
 	reapTimers      map[string]*time.Timer
+	reconnects      map[string]reconnectState
 	inflight        chan struct{}
 	admission       *BrowserAdmission
 	aggregate       *AggregateByteAdmission
@@ -342,7 +370,7 @@ type browserSocket struct {
 func NewWebSocketServer(handler Handler, welcome Welcome, config AuthConfig) (*WebSocketServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	aggregate := NewAggregateByteAdmission(BrowserAggregateMaxBytes, BrowserControlReserveBytes)
-	server := &WebSocketServer{Handler: handler, Welcome: welcome, Auth: config, replay: NewReplayCacheWithAdmission(aggregate), ctx: ctx, cancel: cancel, sockets: make(map[string]browserSocket), reapTimers: make(map[string]*time.Timer), inflight: make(chan struct{}, maxConcurrentWSRequests), aggregate: aggregate}
+	server := &WebSocketServer{Handler: handler, Welcome: welcome, Auth: config, replay: NewReplayCacheWithAdmission(aggregate), ctx: ctx, cancel: cancel, sockets: make(map[string]browserSocket), reapTimers: make(map[string]*time.Timer), reconnects: make(map[string]reconnectState), inflight: make(chan struct{}, maxConcurrentWSRequests), aggregate: aggregate}
 	server.admission = NewBrowserAdmissionWithAggregate(BrowserAdmissionLimits{}, aggregate)
 	if config.Enabled {
 		auth, err := NewAuth(config.ControllerToken)
@@ -380,6 +408,18 @@ func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.
 			return
 		}
 	}
+	// Shed excess load before the upgrade handshake. An already-tracked
+	// identity is always allowed through so a reconnect at capacity is not
+	// mistaken for a new storm; replace performs the authoritative check under
+	// lock.
+	clientKey := request.URL.Query().Get("client")
+	if !clientKeyPattern.MatchString(clientKey) {
+		clientKey = "anon-" + identifier.New()
+	}
+	if !s.hasConnectionCapacity(clientKey) {
+		http.Error(response, "connection capacity reached", http.StatusServiceUnavailable)
+		return
+	}
 	connection, err := websocket.Accept(response, request, &websocket.AcceptOptions{
 		CompressionMode: websocket.CompressionDisabled,
 		// IsExpectedOrigin already enforced the exact public origin above. The
@@ -391,13 +431,12 @@ func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.
 	}
 	connection.SetReadLimit(maxWSRequestBytes)
 	defer connection.CloseNow()
-	clientKey := request.URL.Query().Get("client")
-	if !clientKeyPattern.MatchString(clientKey) {
-		clientKey = "anon-" + identifier.New()
-	}
-	output := newSocketOutput(connection, s.aggregate)
+	output := newSocketOutput(connection, s.aggregate, clientKey)
 	defer output.stop()
-	if !s.replace(clientKey, browserSocket{connection: connection, expiresAt: expiresAt, output: output}) {
+	if admitted, reason := s.replace(clientKey, browserSocket{connection: connection, expiresAt: expiresAt, output: output}); !admitted {
+		if reason != "" {
+			_ = connection.Close(websocket.StatusTryAgainLater, reason)
+		}
 		return
 	}
 	defer s.remove(clientKey, connection)
@@ -647,13 +686,35 @@ func writeJSON(ctx context.Context, connection *websocket.Conn, value any) error
 	return connection.Write(bounded, websocket.MessageText, payload)
 }
 
-func (s *WebSocketServer) replace(clientKey string, socket browserSocket) bool {
+func (s *WebSocketServer) hasConnectionCapacity(clientKey string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, active := s.sockets[clientKey]
+	_, pending := s.reapTimers[clientKey]
+	return active || pending || len(s.sockets)+len(s.reapTimers) < BrowserMaxConnections
+}
+
+// replace admits a browser socket under the connection and reconnect bounds.
+// It returns false with a non-empty reason when a new identity exceeds tracked
+// capacity or the reconnect budget; an empty reason means the server is
+// shutting down. Replacing an already-tracked identity never counts as new.
+func (s *WebSocketServer) replace(clientKey string, socket browserSocket) (bool, string) {
 	s.clientLifecycle.Lock()
 	defer s.clientLifecycle.Unlock()
 	s.mu.Lock()
 	if s.ctx.Err() != nil {
 		s.mu.Unlock()
-		return false
+		return false, ""
+	}
+	_, active := s.sockets[clientKey]
+	_, pending := s.reapTimers[clientKey]
+	if !active && !pending && len(s.sockets)+len(s.reapTimers) >= BrowserMaxConnections {
+		s.mu.Unlock()
+		return false, "controller connection capacity reached; retry shortly"
+	}
+	if _, ok := s.allowReconnectLocked(clientKey, time.Now()); !ok {
+		s.mu.Unlock()
+		return false, "reconnect rate limited; retry shortly"
 	}
 	previous := s.sockets[clientKey]
 	s.sockets[clientKey] = socket
@@ -666,7 +727,45 @@ func (s *WebSocketServer) replace(clientKey string, socket browserSocket) bool {
 		previous.output.stop()
 		previous.connection.CloseNow()
 	}
-	return true
+	return true, ""
+}
+
+// allowReconnectLocked applies a per-identity token bucket. time.Now carries
+// its monotonic reading here, so a wall-clock jump cannot extend a backoff.
+func (s *WebSocketServer) allowReconnectLocked(clientKey string, now time.Time) (time.Duration, bool) {
+	if s.reconnects == nil {
+		s.reconnects = make(map[string]reconnectState)
+	}
+	state := s.reconnects[clientKey]
+	if !state.blockedUntil.IsZero() {
+		if now.Before(state.blockedUntil) {
+			return state.blockedUntil.Sub(now), false
+		}
+		state.blockedUntil = time.Time{}
+	}
+	if state.windowStart.IsZero() || now.Sub(state.windowStart) > reconnectWindow {
+		state.windowStart = now
+		state.attempts = 0
+		state.backoff = 0
+	}
+	state.attempts++
+	if state.attempts > reconnectMaxAttempts {
+		backoff := state.backoff
+		if backoff <= 0 {
+			backoff = reconnectBaseBackoff
+		}
+		state.blockedUntil = now.Add(backoff)
+		state.backoff = backoff * 2
+		if state.backoff > reconnectMaxBackoff {
+			state.backoff = reconnectMaxBackoff
+		}
+		state.attempts = 0
+		state.windowStart = now
+		s.reconnects[clientKey] = state
+		return backoff, false
+	}
+	s.reconnects[clientKey] = state
+	return 0, true
 }
 
 func (s *WebSocketServer) remove(clientKey string, connection *websocket.Conn) {
@@ -706,6 +805,7 @@ func (s *WebSocketServer) reapClient(clientKey string, timer *time.Timer) {
 		s.mu.Unlock()
 		return
 	}
+	delete(s.reconnects, clientKey)
 	s.mu.Unlock()
 	if s.ClientReaped != nil {
 		s.ClientReaped(clientKey)
@@ -745,9 +845,12 @@ func (s *WebSocketServer) Close(ctx context.Context) {
 		timer.Stop()
 	}
 	s.reapTimers = make(map[string]*time.Timer)
+	s.reconnects = make(map[string]reconnectState)
 	s.mu.Unlock()
 	for _, socket := range sockets {
-		_ = socket.connection.CloseNow()
+		if socket.connection != nil {
+			_ = socket.connection.CloseNow()
+		}
 	}
 	settled := make(chan struct{})
 	go func() {

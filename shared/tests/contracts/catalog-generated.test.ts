@@ -16,6 +16,10 @@ import {
 import {
 	ADMIN_ERROR_CODES,
 	CONTROLLER_METHODS,
+	HOST_AVAILABLE_OPERATIONS,
+	HOST_OPERATION_REASONS,
+	HOST_OPERATION_STATUS,
+	HOST_OPERATION_STATUSES,
 	HOST_OPERATIONS,
 	PROMPT_CONTENT_BLOCK_TYPES,
 	THINKING_LEVELS,
@@ -25,25 +29,41 @@ const base = import.meta.dir;
 const packageDir = resolve(base, "..", "..");
 const schema = loadProtocolCatalog(join(packageDir, SCHEMA_RELATIVE_PATH));
 
-/**
- * Reads the Bun host's implemented-operation allowlist from its TypeScript
- * source. The shared schema stays the single source of truth: the Bun host
- * derives its advertised operationSet from the generated HOST_OPERATIONS
- * catalog, so drift here is a real failure.
- */
-function extractBunImplementedOperations(source: string): string[] {
-	const block = source.match(/const IMPLEMENTED_OPERATIONS = new Set\(\[([\s\S]*?)\]\)/);
-	if (block === null) throw new Error("IMPLEMENTED_OPERATIONS literal not found");
-	return [...(block[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? "");
-}
-
 test("generated TypeScript catalog matches the schema", () => {
 	expect(schema.schemaVersion).toBe(1);
-	expect(schema.operations.host).toEqual([...HOST_OPERATIONS]);
+	expect(schema.operations.host.map((entry) => entry.name)).toEqual([...HOST_OPERATIONS]);
 	expect(schema.operations.controller).toEqual([...CONTROLLER_METHODS]);
 	expect(schema.thinkingLevels).toEqual([...THINKING_LEVELS]);
 	expect(schema.promptContentBlockTypes).toEqual([...PROMPT_CONTENT_BLOCK_TYPES]);
 	expect(schema.adminErrorCodes).toEqual(ADMIN_ERROR_CODES.map((entry) => ({ ...entry })));
+});
+
+test("every host operation carries an explicit implementation status", () => {
+	const statusByName = HOST_OPERATION_STATUS as Record<string, string>;
+	const reasonByName = HOST_OPERATION_REASONS as Record<string, string | undefined>;
+	const availableNames: readonly string[] = HOST_AVAILABLE_OPERATIONS;
+	expect(schema.operations.host.length).toBeGreaterThan(0);
+	expect(new Set(HOST_OPERATIONS).size).toBe(HOST_OPERATIONS.length);
+	expect(new Set(HOST_OPERATION_STATUSES)).toEqual(new Set(["available", "unavailable", "absent"]));
+	for (const entry of schema.operations.host) {
+		expect(statusByName[entry.name]).toBe(entry.status);
+		if (entry.status === "available") {
+			expect(availableNames).toContain(entry.name);
+			expect(entry.reason).toBeUndefined();
+			continue;
+		}
+		expect(availableNames).not.toContain(entry.name);
+		expect(typeof entry.reason).toBe("string");
+		expect((entry.reason ?? "").length).toBeGreaterThan(0);
+		expect(reasonByName[entry.name]).toBe(entry.reason);
+	}
+	// A negotiated host can only advertise the available subset, and that subset
+	// is exactly what the schema marks available.
+	expect([...availableNames]).toEqual(
+		schema.operations.host
+			.filter((entry) => entry.status === "available")
+			.map((entry) => entry.name),
+	);
 });
 
 test("committed generated TypeScript and Go files are the schema renderings", () => {
@@ -59,11 +79,15 @@ test("committed generated TypeScript and Go files are the schema renderings", ()
 test("Bun host operation set derives from the shared catalog", () => {
 	const source = readFileSync(join(packageDir, "..", "assistant", "src", "host.ts"), "utf8");
 	expect(source).toContain("../../shared/src/generated/protocol-catalog");
+	expect(source).toContain("HOST_AVAILABLE_OPERATIONS");
 	expect(source).toContain("HOST_OPERATIONS.map");
-	const implemented = extractBunImplementedOperations(source);
-	expect(implemented.length).toBeGreaterThan(0);
-	expect(new Set(implemented).size).toBe(implemented.length);
-	expect(schema.operations.host).toEqual([...HOST_OPERATIONS]);
+	// The host must not reintroduce a hand-maintained implemented-operation
+	// allowlist that can drift from the catalog statuses.
+	expect(source).not.toContain("IMPLEMENTED_OPERATIONS");
+	expect(source).not.toMatch(/new Set\(\[\s*"session\./);
+	expect(HOST_AVAILABLE_OPERATIONS.length).toBeGreaterThan(0);
+	expect(HOST_AVAILABLE_OPERATIONS.length).toBeLessThan(HOST_OPERATIONS.length);
+	expect(new Set(HOST_AVAILABLE_OPERATIONS).size).toBe(HOST_AVAILABLE_OPERATIONS.length);
 });
 
 test("thinking levels and prompt content block types match the schema", () => {

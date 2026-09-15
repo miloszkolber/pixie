@@ -18,7 +18,11 @@ import {
 import { isIP } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { HOST_OPERATIONS } from "../../shared/src/generated/protocol-catalog.ts";
+import {
+	HOST_AVAILABLE_OPERATIONS,
+	HOST_OPERATION_REASONS,
+	HOST_OPERATIONS,
+} from "../../shared/src/generated/protocol-catalog.ts";
 import { loadVerifiedPiPublicApi, type VerifiedPiPackage } from "./probe.ts";
 
 const MIN_SECRET_LENGTH = 32;
@@ -53,63 +57,14 @@ const PROVIDER_AUTH_TIMEOUT_MS = 5_000;
 const PROVIDER_REFRESH_TIMEOUT_MS = 25_000;
 const LOGIN_TIMEOUT_MS = 600_000;
 
-const IMPLEMENTED_OPERATIONS = new Set([
-	"session.list",
-	"session.create",
-	"session.load",
-	"session.prompt",
-	"session.cancel",
-	"session.configure",
-	"session.fork",
-	"session.clone",
-	"session.getMessages",
-	"session.stats",
-	"session.compact",
-	"session.rename",
-	"session.commands",
-	"session.followUp",
-	"session.clearQueue",
-	"session.switch",
-	"session.release",
-	"runtime.release",
-	"session.uiResponse",
-	"session.uiCancel",
-	"session.prompt.image",
-	"pi.sources.list",
-	"pi.sources.create",
-	"pi.sources.update",
-	"pi.sources.delete",
-	"pi.agent-mentions.list",
-	"pi.mcp.servers.read",
-	"pi.mcp.servers.upsert",
-	"pi.mcp.servers.remove",
-	"pi.mcp.servers.probe",
-	"pi.providers.list",
-	"pi.providers.readiness.check",
-	"pi.providers.inventory.refresh",
-	"pi.providers.canonical-model-info",
-	"pi.defaults.read",
-	"pi.defaults.save",
-	"pi.defaults.clear",
-	"pi.preferences.read",
-	"pi.preferences.save",
-	"pi.preferences.reset",
-	"pi.extensions.list",
-	"pi.extensions.configure",
-	"pi.config.extensions.list",
-	"pi.config.extensions.add",
-	"pi.config.extensions.set-enabled",
-	"pi.config.extensions.remove",
-	"pi.session.extensions.list",
-	"pi.session.extensions.add",
-	"pi.session.extensions.remove",
-	"pi.slash-commands.list",
-	"provider.loginStart",
-	"provider.loginBegin",
-	"provider.loginReply",
-	"provider.loginCancel",
-	"pi.providers.config.delete",
-]);
+// The host implementation status lives in the shared protocol catalog. Only
+// routes the catalog marks available may be advertised; every other catalogued
+// route stays in the exhaustive operationSet as false with a stated reason.
+const AVAILABLE_OPERATIONS = new Set<string>(HOST_AVAILABLE_OPERATIONS);
+
+function unavailableReason(operation: string): string | undefined {
+	return (HOST_OPERATION_REASONS as Record<string, string | undefined>)[operation];
+}
 
 export interface PiSession {
 	readonly sessionId: string;
@@ -301,7 +256,7 @@ function operationSet(allowRestart: boolean): Record<string, boolean> {
 	return Object.fromEntries(
 		HOST_OPERATIONS.map((operation) => [
 			operation,
-			operation === "runtime.restart" ? allowRestart : IMPLEMENTED_OPERATIONS.has(operation),
+			operation === "runtime.restart" ? allowRestart : AVAILABLE_OPERATIONS.has(operation),
 		]),
 	);
 }
@@ -2029,6 +1984,11 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		getModel(provider: string, model: string): Record<string, unknown> | undefined;
 		getAvailable(provider?: unknown, options?: unknown): Promise<Array<Record<string, unknown>>>;
 		checkAuth(providerId: string, options?: unknown): Promise<unknown>;
+		getProviderAuthStatus?(
+			providerId: string,
+		): { configured?: boolean; source?: string } | undefined;
+		isUsingOAuth?(providerId: string): boolean;
+		listCredentials?(options?: unknown): Promise<readonly unknown[]>;
 		refresh(options?: unknown): Promise<{ errors?: Map<string, unknown> }>;
 		login(providerId: string, type: string, interaction: Record<string, unknown>): Promise<unknown>;
 		logout(providerId: string, options?: unknown): Promise<unknown>;
@@ -2186,6 +2146,42 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				}),
 		);
 		return { entries };
+	};
+
+	// Pi's AuthStatus.source is a fixed enum and never a credential value. Map
+	// explicit sources to field-presence flags so settings can be inspected
+	// before mutation without ever returning a key, token, URL or filesystem path.
+	const EXPLICIT_AUTH_SOURCES = new Set([
+		"stored",
+		"runtime",
+		"environment",
+		"models_json_key",
+		"models_json_command",
+	]);
+
+	const providerConfigProjection = (
+		runtime: Awaited<ReturnType<typeof sdkModelRuntime>>,
+		providerId: string,
+	): Record<string, unknown> => {
+		const provider = runtime
+			.getProviders()
+			.map((entry) => entry as Record<string, unknown>)
+			.find((entry) => String(entry.id) === providerId);
+		if (!provider) throw new HostError(`Unknown provider ${JSON.stringify(providerId)}`);
+		const auth = isRecord(provider.auth) ? provider.auth : {};
+		const status = runtime.getProviderAuthStatus?.(providerId);
+		const source = typeof status?.source === "string" ? status.source : "unknown";
+		const configured = status?.configured === true;
+		const oauth = runtime.isUsingOAuth?.(providerId) === true;
+		const explicit = configured && EXPLICIT_AUTH_SOURCES.has(source);
+		const fields: Array<Record<string, unknown>> = [];
+		if (auth.apiKey || configured) {
+			fields.push({ name: "api_key", isSet: explicit && !oauth, source });
+		}
+		if (oauth || auth.oauth || auth.oauthFlow) {
+			fields.push({ name: "oauth", isSet: oauth, source });
+		}
+		return { providerId, configured, source, fields };
 	};
 
 	const slashCommands = async (params: Record<string, unknown>): Promise<unknown> => {
@@ -3376,9 +3372,17 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				logins.delete(login.id);
 				return { ok: true };
 			}
+			case "pi.providers.config.read": {
+				const runtime = await sdkModelRuntime();
+				return providerConfigProjection(runtime, asString(params, "providerId"));
+			}
 			case "pi.providers.config.delete": {
 				const runtime = await sdkModelRuntime();
-				await runtime.logout(asString(params, "providerId"));
+				const providerId = asString(params, "providerId");
+				// Validate the mutation against the same typed provider projection
+				// used for reads before clearing credentials.
+				providerConfigProjection(runtime, providerId);
+				await runtime.logout(providerId);
 				return { ok: true };
 			}
 			case "runtime.restart": {
@@ -3395,10 +3399,15 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				}, RESTART_DRAIN_MS);
 				return { ok: true };
 			}
-			default:
+			default: {
+				// A catalogued route that is unavailable fails closed with the
+				// catalog's stated reason; an unknown route is a protocol error.
+				const reason = unavailableReason(method);
+				if (reason) throw new CapabilityError(reason);
 				throw new HostError(
 					`operation ${JSON.stringify(method)} is unsupported by the Bun assistant`,
 				);
+			}
 		}
 	};
 
@@ -3572,7 +3581,8 @@ export function createBunHost(options: BunHostOptions): BunHost {
 					request.id,
 					-32004,
 					"capability_unavailable",
-					`operation ${JSON.stringify(request.method)} is unsupported by the Bun assistant`,
+					unavailableReason(request.method) ??
+						`operation ${JSON.stringify(request.method)} is unsupported by the Bun assistant`,
 				);
 				return;
 			}

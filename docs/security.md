@@ -12,6 +12,28 @@ Pixie is for one trusted user. Pi tools and configured MCP subprocesses run with
 
 **Untrusted page content.** Pixie does not fetch, render or contain pages. Browser tool results reach Pi and the model through the external server; treat page content, snapshots and tool output as untrusted data, never instructions. A successful probe or tool call is a liveness signal, not containment evidence.
 
+## Browser MCP threat model
+
+Pixie stores the browser endpoint as one setting, writes only its own entry into Pi's effective `mcpServers` configuration, and reports a bounded probe. Pi then connects to the endpoint directly. The endpoint, its browser runtime and their host access sit outside Pixie's process and trust boundary, so the threats below follow from that split; each states the operator's control and the limit on what Pixie can do.
+
+**Loopback versus network exposure.** A loopback endpoint is reachable by every local process and by browser pages that can reach loopback; a network-bound endpoint is reachable by every peer that can route to it. Binding `127.0.0.1` or `::1` narrows the reachable set but does not make the endpoint trusted, and binding `0.0.0.0`, a LAN address or a public address exposes the full tool surface. Pixie neither binds the endpoint nor enforces its listen address; only the operator controls this.
+
+**DNS rebinding and origin confusion.** A page can resolve an attacker-controlled name to loopback and send requests to a loopback endpoint, and a plain HTTP MCP endpoint that does not validate `Host` and `Origin` cannot distinguish that page from Pi. The endpoint then acts as a confused deputy that drives browser, file or shell tools for the page. Pixie sends its own probe requests and cannot make the endpoint validate origin, and it cannot inspect the traffic Pi sends. Only the operator's `Host`/`Origin` checks or network placement prevent this.
+
+**Unauthenticated or weakly authenticated endpoints.** The setting accepts any `http(s)` URL without embedded credentials and Pi sends the operator's configured headers to the endpoint; Pixie injects no Pixie credential. An endpoint with no authentication, a shared or default token, or a token visible to pages admits any caller that can reach it. Pixie does not audit, rotate or require endpoint authentication, so the operator owns the credential and its scope.
+
+**Tool-result prompt injection reaching the model.** Page text, DOM and accessibility snapshots, console output, downloads and other tool results travel through the endpoint into Pi's model context. That content is attacker-controlled data and can contain instructions; Pi runs with the host user's authority and can execute tools, so a successful injection can read or change files, reach the network or run commands. Pixie does not intercept, filter or rewrite Pi tools or prompts. The operator must minimize the exposed tools, treat tool output as untrusted data, and review consequential model actions.
+
+**Egress from tools.** Browser navigation, fetch tools and file tools reach arbitrary hosts, including loopback services such as Pi and the controller and other machines on the host network; the endpoint process can also make its own outbound connections. Pixie does not restrict endpoint egress. The operator must network-isolate the endpoint and allow only the destinations the task requires.
+
+**Socket and file access.** The endpoint and its browser runtime hold host filesystem and IPC access: profile and download directories, screenshots and other artifacts, lock files, and DevTools or control sockets that other local processes may connect to. Pixie does not scope, mount or monitor endpoint file or socket access. A separate user, container or host reduces the reachable set, but it is a boundary only when the operator configures and verifies it.
+
+**Crash cleanup.** Pixie does not own or supervise the endpoint process. After a crash or forced stop, locks, sockets, profile directories, downloads and partial files can remain, and the next start can reuse stale state. Pixie reports a failed probe but performs no cleanup. The operator must give the endpoint its own restart, state-directory and cleanup policy.
+
+**External writer racing filesystem replacement.** Pixie writes its own MCP entry through an in-process mutation chain and validate-first atomic replacement, and it refuses to mutate when another configuration layer collides or cannot be inspected. That serializes only Pixie's own writes: another process that edits Pi's `mcp.json` can interleave with Pixie's read-modify-replace, so one writer's change can be lost or a rename can win the race. Pixie cannot coordinate an arbitrary external writer. The operator must keep one writer for that configuration or use an explicit idle handoff with the other owner terminated.
+
+**No sandbox and fail-closed enablement.** Pixie provides no sandbox for the endpoint, the browser process behind it, or the tool results it returns. Enable the Browser contribution only when the operator enforces the whole boundary: bind the endpoint to loopback or an explicitly authenticated network boundary, require a strong credential, validate `Host` and `Origin`, expose only the tools the task needs, restrict egress, and isolate the endpoint from Pixie state, Pi credentials and admitted project mounts with its own crash and cleanup policy. Pixie deliberately cannot enforce any of these controls, and Docker hardening, a read-only root, dropped capabilities, a non-root user and host-local locks are defense in depth, not isolation from another process that shares the host or UID. When that boundary is missing, the Browser contribution should not be enabled.
+
 **Credentials.**
 
 | Boundary | Credential |

@@ -400,6 +400,37 @@ func TestScheduleDeadlineKeepsLateNativeCreateUntilLinkAndReleaseReconcile(t *te
 	}
 }
 
+func TestScheduleDeadlineIgnoresCorruptedWallStart(t *testing.T) {
+	started := make(chan struct{}, 1)
+	schedules, job := runtimeTestSchedule(t, ScheduleRuntimePolicy{DefaultMaxRuntime: time.Second, DeadlinesEnabled: true}, func(ctx context.Context, _ Schedule, admitted func(string) error) error {
+		if err := admitted("native-monotonic"); err != nil {
+			return err
+		}
+		started <- struct{}{}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	defer schedules.Close(context.Background())
+	schedules.SetCancellationHandler(func(context.Context, string) (ScheduleCancellationOutcome, error) {
+		return ScheduleCancellationOutcome{Confirmed: true}, nil
+	})
+	runtimeTestRun(t, schedules, job)
+	<-started
+	// Simulate a backward wall-clock jump immediately after the run started:
+	// the durable timestamp now appears to be in the future. The live deadline
+	// must still be governed by elapsed monotonic runtime.
+	schedules.mu.Lock()
+	corrupted := schedules.jobs[job.ID]
+	corrupted.Runs[0].StartedAt = time.Now().Add(time.Hour)
+	schedules.jobs[job.ID] = corrupted
+	schedules.mu.Unlock()
+	time.Sleep(1100 * time.Millisecond)
+	schedules.Watchdog(time.Now())
+	if run := waitForScheduleRun(t, schedules, scheduleRunTimedOut); run.FinishedAt == nil {
+		t.Fatal("deadline did not fire despite elapsed monotonic runtime")
+	}
+}
+
 func TestScheduleV1MigrationKeepsUnlimitedBudgetsAndFailsUnknownVersions(t *testing.T) {
 	store := persist.Store{Dir: t.TempDir()}
 	legacy := Schedule{ID: "legacy", ProjectID: "project", Root: "/project", Prompt: "Review", Cron: "0 9 * * *", Timezone: "UTC", NextRun: time.Now().Add(time.Hour), Runs: []ScheduleRun{}}

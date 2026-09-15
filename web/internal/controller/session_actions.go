@@ -61,7 +61,7 @@ func (m *SessionManager) Prompt(ctx context.Context, sessionID, text string, ima
 			return unsupportedAgentCapability("image prompts")
 		}
 		if len(resources) > 0 && !profile.Operations.PromptEmbeddedContext {
-			return unsupportedAgentCapability("text resource prompts")
+			return unsupportedAgentCapability("session.prompt.resource")
 		}
 	}
 	entry.state.Lock()
@@ -387,7 +387,7 @@ func (m *SessionManager) Steer(ctx context.Context, sessionID, text string, imag
 		return err
 	}
 	if !profile.Operations.Steer {
-		return unsupportedAgentCapability("session steering")
+		return unsupportedAgentCapability("session.steer")
 	}
 	if len(images) > 0 && !profile.Operations.PromptImage {
 		return unsupportedAgentCapability("image prompts")

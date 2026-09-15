@@ -149,6 +149,7 @@ type Schedules struct {
 		spec cron.Schedule
 	}
 	running         map[string]context.CancelFunc
+	runStarted      map[string]time.Time
 	cancelling      map[string]bool
 	pending         map[string]ScheduleRun
 	pendingCreation map[string]schedulePendingCreation
@@ -263,7 +264,7 @@ func NewSchedulesWithRuntime(store persist.Store, validateRoot func(string, stri
 	if runtime.DefaultMaxRuntime < 0 || runtime.DefaultMaxRuntime%time.Second != 0 {
 		return nil, fmt.Errorf("invalid schedule runtime policy")
 	}
-	s := &Schedules{store: store, jobs: map[string]Schedule{}, running: map[string]context.CancelFunc{}, cancelling: map[string]bool{}, pending: map[string]ScheduleRun{}, pendingCreation: map[string]schedulePendingCreation{}, run: run, runtime: runtime, validateRoot: validateRoot, stop: make(chan struct{}), failures: map[string]time.Time{}, compiled: map[string]struct {
+	s := &Schedules{store: store, jobs: map[string]Schedule{}, running: map[string]context.CancelFunc{}, runStarted: map[string]time.Time{}, cancelling: map[string]bool{}, pending: map[string]ScheduleRun{}, pendingCreation: map[string]schedulePendingCreation{}, run: run, runtime: runtime, validateRoot: validateRoot, stop: make(chan struct{}), failures: map[string]time.Time{}, compiled: map[string]struct {
 		key  string
 		spec cron.Schedule
 	}{}}
@@ -496,6 +497,7 @@ func (s *Schedules) finishLocked(id string, run ScheduleRun) error {
 		return err
 	}
 	delete(s.running, id)
+	delete(s.runStarted, id)
 	delete(s.pending, id)
 	return nil
 }
@@ -638,11 +640,13 @@ func (s *Schedules) reconcileCancellation(id, runID string) {
 			// not retain a dead local runner entry that would prevent an explicit
 			// schedule.stop retry from reconciling it.
 			delete(s.running, id)
+			delete(s.runStarted, id)
 			delete(s.pending, id)
 			s.failed(id, time.Now(), err)
 			return
 		}
 		delete(s.running, id)
+		delete(s.runStarted, id)
 		delete(s.pending, id)
 		delete(s.cancelling, id)
 		return
@@ -660,6 +664,7 @@ func (s *Schedules) reconcileCancellation(id, runID string) {
 		s.failed(id, time.Now(), err)
 	}
 	delete(s.running, id)
+	delete(s.runStarted, id)
 	delete(s.pending, id)
 	delete(s.cancelling, id)
 }
@@ -715,12 +720,14 @@ func (s *Schedules) retainCreationUncertainLocked(id, runID string, cause error)
 	index := scheduleRunIndex(job, runID)
 	if index < 0 {
 		delete(s.running, id)
+		delete(s.runStarted, id)
 		return nil
 	}
 	run := &job.Runs[index]
 	if pending, ok := s.pendingCreation[id]; ok && pending.runID == runID {
 		if run.SessionID != "" && run.SessionID != pending.sessionID {
 			delete(s.running, id)
+			delete(s.runStarted, id)
 			return fmt.Errorf("schedule native session link conflicts with the pending creation")
 		}
 		run.SessionID = pending.sessionID
@@ -737,6 +744,7 @@ func (s *Schedules) retainCreationUncertainLocked(id, runID string, cause error)
 	}
 	err := s.save(job)
 	delete(s.running, id)
+	delete(s.runStarted, id)
 	delete(s.pending, id)
 	return err
 }
@@ -762,7 +770,10 @@ func (s *Schedules) tick(now time.Time) {
 	if s.runtime.DeadlinesEnabled {
 		for id, job := range s.jobs {
 			run := unsettledScheduleRun(job)
-			if run == nil || run.Status != scheduleRunRunning || job.MaxRuntimeSeconds == nil || now.Before(run.StartedAt.Add(time.Duration(*job.MaxRuntimeSeconds)*time.Second)) {
+			if run == nil || run.Status != scheduleRunRunning || job.MaxRuntimeSeconds == nil {
+				continue
+			}
+			if !scheduleDeadlineExceeded(now, s.runStarted[id], run.StartedAt, *job.MaxRuntimeSeconds) {
 				continue
 			}
 			s.failed(id, now, func() error {
@@ -784,6 +795,18 @@ func (s *Schedules) tick(now time.Time) {
 // Watchdog evaluates due deadlines without modifying policy configuration. It
 // exists for focused tests and uses the same ticker path as the live runner.
 func (s *Schedules) Watchdog(now time.Time) { s.tick(now) }
+
+// scheduleDeadlineExceeded reports whether maxSeconds of elapsed runtime have
+// passed. A live run has a process-local start that carries its monotonic
+// reading, so a wall-clock jump cannot shorten or extend its deadline. A run
+// recovered from disk has no monotonic reading; its persisted wall timestamp
+// is the only available source and the comparison is wall-based by necessity.
+func scheduleDeadlineExceeded(now, localStart, persistedStart time.Time, maxSeconds int64) bool {
+	if localStart.IsZero() {
+		localStart = persistedStart
+	}
+	return !now.Before(localStart.Add(time.Duration(maxSeconds) * time.Second))
+}
 
 func (s *Schedules) startLocked(id string, now time.Time) error {
 	if s.closed {
@@ -817,6 +840,10 @@ func (s *Schedules) startLocked(id string, now time.Time) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.running[id] = cancel
+	// Keep a process-local start reading with its monotonic component so the
+	// deadline watchdog measures elapsed runtime instead of trusting the wall
+	// clock. The durable StartedAt remains a calendar timestamp for the ledger.
+	s.runStarted[id] = now
 	s.work.Add(1)
 	go func() {
 		defer s.work.Done()
@@ -902,6 +929,7 @@ func (s *Schedules) startLocked(id string, now time.Time) error {
 					s.failed(id, time.Now(), saveErr)
 				}
 				delete(s.running, id)
+				delete(s.runStarted, id)
 			}
 			s.mu.Unlock()
 			return

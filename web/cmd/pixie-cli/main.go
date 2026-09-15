@@ -11,10 +11,12 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/miloszkolber/pixie/cmd/internal/assistantconfig"
 	"github.com/miloszkolber/pixie/cmd/internal/processgroup"
 	"github.com/miloszkolber/pixie/cmd/internal/runtimeexec"
+	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/ownerlock"
 )
 
@@ -105,6 +107,8 @@ func run(parsed arguments, inherited []string) (int, error) {
 		return 0, err
 	}
 	lookup := func(key string) (string, bool) { value, ok := parent[key]; return value, ok }
+	identity := diagnostics.ResolveProcessRunIdentity(lookup, time.Now())
+	diagnostics.SetProcessRunIdentity(identity)
 	agentDir, err := ownerlock.ResolveAgentDir(config.AgentDir, lookup)
 	if err != nil {
 		return 0, err
@@ -125,7 +129,9 @@ func run(parsed arguments, inherited []string) (int, error) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	code, err := processgroup.Run(assistantInvocation(paths, parsed, parent), signals)
+	invocation := assistantInvocation(paths, parsed, parent)
+	invocation.Environment = withRunIdentity(invocation.Environment, identity)
+	code, err := processgroup.Run(invocation, signals)
 	if err != nil && code == 0 {
 		return 0, errors.New("could not run bundled pixie_assistant")
 	}
@@ -177,6 +183,20 @@ func environmentSlice(values map[string]string) []string {
 		result = append(result, key+"="+values[key])
 	}
 	return result
+}
+
+// withRunIdentity exports the launcher's opaque boot/run identifiers to the
+// managed host without touching any other environment value.
+func withRunIdentity(environment []string, identity diagnostics.RunIdentity) []string {
+	exported := identity.Environment()
+	if len(exported) == 0 {
+		return environment
+	}
+	values := environmentMap(environment)
+	for key, value := range exported {
+		values[key] = value
+	}
+	return environmentSlice(values)
 }
 
 func resolveArchivePaths(executable string) (archivePaths, error) {

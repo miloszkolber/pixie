@@ -5,19 +5,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/miloszkolber/pixie/cmd/internal/assistantconfig"
 	"github.com/miloszkolber/pixie/cmd/internal/runtimeexec"
+	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/ownerlock"
 )
 
@@ -37,6 +42,7 @@ type commandKind uint8
 
 const (
 	commandServe commandKind = iota
+	commandDoctor
 	commandVersion
 	commandHelp
 )
@@ -87,6 +93,11 @@ func main() {
 	case commandHelp:
 		fmt.Fprintln(os.Stdout, usage())
 		return
+	case commandDoctor:
+		if err := runDoctor(parsed, os.Environ(), os.Stdout); err != nil {
+			fail(err)
+		}
+		return
 	}
 
 	signals := make(chan os.Signal, 1)
@@ -108,13 +119,13 @@ func fail(err error) {
 }
 
 func usage() string {
-	return "usage: pixie_full serve --assistant-config ABS --web-config ABS"
+	return "usage: pixie_full serve --assistant-config ABS --web-config ABS | pixie_full doctor --assistant-config ABS --web-config ABS"
 }
 
 // parseArguments deliberately keeps the internal full-service surface small.
 func parseArguments(values []string) (arguments, error) {
 	if len(values) == 0 {
-		return arguments{}, errors.New("use `serve --assistant-config ABS --web-config ABS`, `--version`, or `--help`")
+		return arguments{}, errors.New("use `serve --assistant-config ABS --web-config ABS`, `doctor --assistant-config ABS --web-config ABS`, `--version`, or `--help`")
 	}
 	if len(values) == 1 {
 		switch values[0] {
@@ -124,18 +135,23 @@ func parseArguments(values []string) (arguments, error) {
 			return arguments{command: commandHelp}, nil
 		}
 	}
-	if values[0] != "serve" {
+	var command commandKind
+	switch values[0] {
+	case "serve":
+		command = commandServe
+	case "doctor":
+		command = commandDoctor
+	default:
 		return arguments{}, fmt.Errorf(
-			"unknown command %q; use `serve --assistant-config ABS --web-config ABS`, `--version`, or `--help`",
+			"unknown command %q; use `serve --assistant-config ABS --web-config ABS`, `doctor --assistant-config ABS --web-config ABS`, `--version`, or `--help`",
 			values[0],
 		)
 	}
 	if len(values) != 5 {
-		return arguments{}, errors.New("use `serve --assistant-config ABS --web-config ABS`, `--version`, or `--help`")
+		return arguments{}, errors.New("use `serve --assistant-config ABS --web-config ABS`, `doctor --assistant-config ABS --web-config ABS`, `--version`, or `--help`")
 	}
 
-	var parsed arguments
-	parsed.command = commandServe
+	parsed := arguments{command: command}
 	for index := 1; index < len(values); index += 2 {
 		flag, value := values[index], values[index+1]
 		if strings.TrimSpace(value) == "" {
@@ -203,6 +219,126 @@ func resolvedLoopbackHost(value string) (string, error) {
 		return "127.0.0.1", nil
 	}
 	return "", errors.New("combined pixie requires assistant host 127.0.0.1 or localhost")
+}
+
+// runDoctor is a read-only preflight. It never starts a child, writes state or
+// prints a path, endpoint, credential or raw error: only bounded check codes
+// and fixed remediation text.
+func runDoctor(parsed arguments, inherited []string, stdout io.Writer) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return errors.New("could not resolve the combined pixie executable")
+	}
+	report := diagnostics.AssessRecovery(diagnoseFacts(parsed, inherited, executable))
+	if _, err := fmt.Fprintf(stdout, "pixie_full doctor: summary=%s\n", report.Summary); err != nil {
+		return err
+	}
+	for _, check := range report.Checks {
+		if _, err := fmt.Fprintf(stdout, "pixie_full doctor: %s\n", diagnostics.FormatRecoveryCheck(check)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// diagnoseFacts gathers the supervisor recovery facts without mutating the
+// agent directory or acquiring the owner lock.
+func diagnoseFacts(parsed arguments, inherited []string, executable string) diagnostics.RecoveryFacts {
+	parent := environmentMap(inherited)
+	lookup := func(key string) (string, bool) { value, ok := parent[key]; return value, ok }
+	facts := diagnostics.RecoveryFacts{RestartCount: -1}
+
+	hostConfigured := false
+	if secret, ok := lookup("PIXIE_PI_SECRET_KEY"); ok && strings.TrimSpace(secret) != "" {
+		hostConfigured = true
+	}
+	facts.HostConfigured = &hostConfigured
+	facts.PortMismatch = dialPortMismatch(lookup)
+
+	config, configErr := assistantconfig.Load(parsed.assistantConfig)
+	configReadable := configErr == nil
+	facts.ConfigReadable = &configReadable
+
+	if _, err := resolveArchivePaths(executable); err == nil {
+		present, valid := true, true
+		facts.PiPackagePresent = &present
+		facts.PiPackageValid = &valid
+	} else {
+		present, valid := false, false
+		facts.PiPackagePresent = &present
+		facts.PiPackageValid = &valid
+	}
+
+	if agentDir := selectedAgentDir(config.AgentDir, lookup); agentDir != "" {
+		facts.AgentDirWritable = directoryWritable(agentDir)
+		facts.OwnerLockHeld = diagnostics.OwnerLockHeld(agentDir)
+		facts.RestartCount = diagnostics.NewStartLedger(filepath.Join(agentDir, "pixie", "restarts.json")).Recent()
+	}
+	return facts
+}
+
+// selectedAgentDir resolves the native override, then the service config, then
+// HOME without creating or canonicalizing the directory.
+func selectedAgentDir(configAgentDir string, lookup func(string) (string, bool)) string {
+	if value, ok := lookup("PI_CODING_AGENT_DIR"); ok && strings.TrimSpace(value) != "" {
+		return filepath.Clean(strings.TrimSpace(value))
+	}
+	if strings.TrimSpace(configAgentDir) != "" {
+		return filepath.Clean(strings.TrimSpace(configAgentDir))
+	}
+	if home, ok := lookup("HOME"); ok && filepath.IsAbs(strings.TrimSpace(home)) {
+		return filepath.Join(strings.TrimSpace(home), ".pi", "agent")
+	}
+	return ""
+}
+
+// directoryWritable reports whether the directory (or its existing parent when
+// the directory itself is absent) is writable. Unknown stays nil.
+func directoryWritable(path string) *bool {
+	if path == "" {
+		return nil
+	}
+	target := path
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		target = filepath.Dir(path)
+		if target == path {
+			return nil
+		}
+		if info, err := os.Stat(target); err != nil || !info.IsDir() {
+			return nil
+		}
+	}
+	if err := syscall.Access(target, 0x2); err != nil {
+		writable := false
+		return &writable
+	}
+	writable := true
+	return &writable
+}
+
+// dialPortMismatch flags PIXIE_PI_PORT and PIXIE_PI_URL that name different
+// ports. A missing or portless value is not a mismatch.
+func dialPortMismatch(lookup func(string) (string, bool)) *bool {
+	mismatch := false
+	portRaw, hasPort := lookup("PIXIE_PI_PORT")
+	urlRaw, hasURL := lookup("PIXIE_PI_URL")
+	if !hasPort || !hasURL {
+		return &mismatch
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(portRaw))
+	if err != nil {
+		return &mismatch
+	}
+	parsed, err := url.Parse(strings.TrimSpace(urlRaw))
+	if err != nil || parsed.Port() == "" {
+		return &mismatch
+	}
+	urlPort, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		return &mismatch
+	}
+	mismatch = urlPort != port
+	return &mismatch
 }
 
 func requireSecret(lookup func(string) (string, bool)) (string, error) {
@@ -458,6 +594,9 @@ func supervise(parsed arguments, inherited []string, signals <-chan os.Signal) (
 		return false, err
 	}
 	lookup := func(key string) (string, bool) { value, ok := parent[key]; return value, ok }
+	identity := diagnostics.ResolveProcessRunIdentity(lookup, time.Now())
+	diagnostics.SetProcessRunIdentity(identity)
+	logger := supervisorLogger()
 	secret, err := requireSecret(lookup)
 	if err != nil {
 		return false, err
@@ -483,7 +622,15 @@ func supervise(parsed arguments, inherited []string, signals <-chan os.Signal) (
 	if err != nil {
 		return false, err
 	}
+	// Record this start before launching children. Only the lock owner reaches
+	// this point, so the bounded ledger has a single writer.
+	ledger := diagnostics.NewStartLedger(filepath.Join(agentDir, "pixie", "restarts.json"))
+	if starts := ledger.Record(); starts >= diagnostics.RestartLoopThreshold {
+		logger.Warn("supervisor restart loop detected", "code", "supervisor.restart_loop", "starts", starts)
+	}
 	assistantInvocation, controllerInvocation := childInvocations(paths, parsed, endpoint, parent)
+	applyRunIdentity(&assistantInvocation, identity)
+	applyRunIdentity(&controllerInvocation, identity)
 
 	select {
 	case <-signals:
@@ -491,7 +638,9 @@ func supervise(parsed arguments, inherited []string, signals <-chan os.Signal) (
 	default:
 	}
 
-	assistant, err := startChild(assistantInvocation)
+	assistantStderr := diagnostics.NewStderrRing()
+	controllerStderr := diagnostics.NewStderrRing()
+	assistant, err := startChild(assistantInvocation, assistantStderr)
 	if err != nil {
 		return false, errors.New("could not start bundled assistant")
 	}
@@ -499,9 +648,11 @@ func supervise(parsed arguments, inherited []string, signals <-chan os.Signal) (
 	shutdown := func(initial syscall.Signal) error {
 		return stopAndReap(children, initial)
 	}
+	logger.Info("bundled assistant started", "component", "assistant")
 
 	receivedSignal, err := waitForAssistantReady(endpoint, secret, assistant, signals)
 	if err != nil {
+		logChildExit(logger, "assistant", assistantStderr)
 		if drainErr := shutdown(syscall.SIGTERM); drainErr != nil {
 			return false, drainErr
 		}
@@ -514,29 +665,34 @@ func supervise(parsed arguments, inherited []string, signals <-chan os.Signal) (
 		return true, nil
 	}
 	if assistant.exited() {
+		logChildExit(logger, "assistant", assistantStderr)
 		if drainErr := shutdown(syscall.SIGTERM); drainErr != nil {
 			return false, drainErr
 		}
 		return false, errors.New("bundled assistant exited before controller startup")
 	}
 
-	controller, err := startChild(controllerInvocation)
+	controller, err := startChild(controllerInvocation, controllerStderr)
 	if err != nil {
+		logChildExit(logger, "assistant", assistantStderr)
 		if drainErr := shutdown(syscall.SIGTERM); drainErr != nil {
 			return false, drainErr
 		}
 		return false, errors.New("could not start bundled controller")
 	}
 	children = append(children, controller)
+	logger.Info("bundled controller started", "component", "controller")
 
 	for {
 		select {
 		case <-assistant.done:
+			logChildExit(logger, "assistant", assistantStderr)
 			if err := shutdown(syscall.SIGTERM); err != nil {
 				return false, err
 			}
 			return false, errors.New("bundled assistant exited")
 		case <-controller.done:
+			logChildExit(logger, "controller", controllerStderr)
 			if err := shutdown(syscall.SIGTERM); err != nil {
 				return false, err
 			}
@@ -550,12 +706,40 @@ func supervise(parsed arguments, inherited []string, signals <-chan os.Signal) (
 	}
 }
 
-func startChild(invocation childInvocation) (*childProcess, error) {
+// supervisorLogger tags every supervisor log line with the process run
+// identity that the entrypoint already recorded.
+func supervisorLogger() *slog.Logger {
+	return diagnostics.NewLogger("pixie_full", diagnostics.NormalizeBuild(version, revision))
+}
+
+// applyRunIdentity exports the supervisor identity to a managed child. The
+// values are opaque identifiers, never credentials.
+func applyRunIdentity(invocation *childInvocation, identity diagnostics.RunIdentity) {
+	for key, value := range identity.Environment() {
+		invocation.env[key] = value
+	}
+}
+
+// logChildExit emits the bounded, redacted stderr tail for one managed child.
+func logChildExit(logger *slog.Logger, component string, ring *diagnostics.StderrRing) {
+	summary := ring.Snapshot()
+	logger.Error("managed child exited",
+		"component", component,
+		"retainedStderrLines", summary.Retained,
+		"droppedStderrLines", summary.Dropped,
+		"retainedStderrBytes", summary.Bytes,
+		"stderr", summary.Entries,
+	)
+}
+
+func startChild(invocation childInvocation, stderr *diagnostics.StderrRing) (*childProcess, error) {
 	command := exec.Command(invocation.path, invocation.args...)
 	command.Env = environmentSlice(invocation.env)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
+	// Retain first, then mirror to the live console: a console write failure
+	// must not lose the redacted retention the operator may need after a crash.
+	command.Stderr = io.MultiWriter(stderr, os.Stderr)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		return nil, err

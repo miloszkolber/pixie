@@ -160,8 +160,12 @@ func TestRunUtilityCommandIsReadOnlyAndConfigBound(t *testing.T) {
 	if err := runUtilityCommand("doctor", path, &doctor); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := doctor.String(), "pixie_web doctor: configuration is readable ("+path+")\n"; got != want {
-		t.Fatalf("doctor output = %q, want %q", got, want)
+	output := doctor.String()
+	if !strings.Contains(output, "pixie_web doctor: summary=") || !strings.Contains(output, "config.readable=ok") || !strings.Contains(output, "host.ready=") {
+		t.Fatalf("doctor output = %q", output)
+	}
+	if strings.Contains(output, path) || strings.Contains(output, t.TempDir()) {
+		t.Fatalf("doctor output leaked a path: %q", output)
 	}
 	var uninstall bytes.Buffer
 	if err := runUtilityCommand("uninstall", path, &uninstall); err != nil {
@@ -169,5 +173,47 @@ func TestRunUtilityCommandIsReadOnlyAndConfigBound(t *testing.T) {
 	}
 	if got, want := uninstall.String(), "pixie_web uninstall: stop and remove the selected user unit and binary\n"; got != want {
 		t.Fatalf("uninstall output = %q, want %q", got, want)
+	}
+	var rejected bytes.Buffer
+	if err := runUtilityCommand("uninstall", "relative.json", &rejected); err == nil {
+		t.Fatal("uninstall accepted a relative config path")
+	}
+	if err := runUtilityCommand("uninstall", filepath.Join(t.TempDir(), "missing.json"), &rejected); err == nil {
+		t.Fatal("uninstall accepted a missing config file")
+	}
+}
+
+func TestControllerDoctorReportsUnreadableConfigWithoutExposingPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.json")
+	var doctor bytes.Buffer
+	if err := runUtilityCommand("doctor", path, &doctor); err != nil {
+		t.Fatal(err)
+	}
+	output := doctor.String()
+	if !strings.Contains(output, "config.readable=failed code=config.unreadable") {
+		t.Fatalf("doctor output = %q", output)
+	}
+	if strings.Contains(output, path) {
+		t.Fatalf("doctor output leaked the config path: %q", output)
+	}
+}
+
+func TestControllerDoctorFlagsDialPortMismatch(t *testing.T) {
+	t.Setenv("PIXIE_PI_PORT", "3284")
+	t.Setenv("PIXIE_PI_URL", "ws://127.0.0.1:9999/pi")
+	facts, err := controllerRecoveryFacts("", os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.PortMismatch == nil || !*facts.PortMismatch {
+		t.Fatalf("port mismatch = %#v", facts.PortMismatch)
+	}
+	t.Setenv("PIXIE_PI_URL", "ws://127.0.0.1:3284/pi")
+	facts, err = controllerRecoveryFacts("", os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.PortMismatch == nil || *facts.PortMismatch {
+		t.Fatalf("matching ports reported a mismatch: %#v", facts.PortMismatch)
 	}
 }

@@ -108,6 +108,33 @@ func ValidateMigrationCheckpoint(checkpoint MigrationCheckpoint) error {
 // known-uncommitted; faults at or after the primary rename report
 // durability-uncertain with the visible primaries left for reconciliation.
 // They never authorize restoring an old backup over a visible primary.
+//
+// Failure-mode matrix for the injected storage faults (all pre-rename, so all
+// known-uncommitted; the rename is the only visibility point):
+//
+//	injection                              outcome stage   outcome kind
+//	BackupReplace.FailCreateTemp           backup          known-uncommitted
+//	BackupReplace.FailWrite (ENOSPC)       backup          known-uncommitted
+//	BackupReplace.FailFileSync             backup          known-uncommitted
+//	BackupReplace.FailRename               backup          known-uncommitted
+//	StagingReplace.FailCreateTemp          backup          known-uncommitted
+//	StagingReplace.FailWrite (ENOSPC)      backup          known-uncommitted
+//	StagingReplace.ShortWrite              backup          known-uncommitted
+//	StagingReplace.FailFileSync            backup          known-uncommitted
+//	StagingReplace.FailRename              backup          known-uncommitted
+//	PrimaryReplace.FailCreateTemp          primary         known-uncommitted
+//	PrimaryReplace.FailWrite (ENOSPC)      primary         known-uncommitted
+//	PrimaryReplace.ShortWrite              primary         known-uncommitted
+//	PrimaryReplace.FailFileSync            primary         known-uncommitted
+//	PrimaryReplace.FailRename              primary         known-uncommitted
+//	FailPrimaryAt/ FailPrimary             primary         durability-uncertain when a prior primary published
+//	FailAfterPrimary / FailBeforeSync      primary/dir-sync durability-uncertain
+//	FailAfterSync / FailBeforeReceipt      dir-sync         durability-uncertain
+//	FailAfterReceipt / FailResponseDelivery acknowledge      durability-uncertain
+//
+// Faults before the primary rename leave prior primaries intact and are
+// known-uncommitted. This is injected-failure behavior, not measured
+// power-loss atomicity across multiple renames.
 type MigrationFaults struct {
 	FailBeforeInventory error
 	FailAfterInventory  error
@@ -127,11 +154,23 @@ type MigrationFaults struct {
 	FailBeforeReceipt    error
 	FailAfterReceipt     error
 	FailResponseDelivery error
+
+	// BackupReplace, StagingReplace and PrimaryReplace inject filesystem
+	// failures into the three write sequences. See the matrix above.
+	// PrimaryReplaceAt limits PrimaryReplace to one one-based publication
+	// position; zero applies it to every primary. It lets a test fail a later
+	// primary after an earlier one published.
+	BackupReplace    ReplaceFaults
+	StagingReplace   ReplaceFaults
+	PrimaryReplace   ReplaceFaults
+	PrimaryReplaceAt int
 }
 
 // MigrationRollbackFaults injects deterministic interruption into rollback.
 // Rollback never rewinds ledger authority: an interrupted restore stays
-// unresolved until the validated primaries are reread.
+// unresolved until the validated primaries are reread. RestoreReplace injects
+// a pre-rename storage failure; the first restore failure stays
+// known-uncommitted and a later one is durability-uncertain.
 type MigrationRollbackFaults struct {
 	FailBeforeRestore error
 	FailAfterRestore  error
@@ -139,6 +178,8 @@ type MigrationRollbackFaults struct {
 	FailAfterSync     error
 	FailBeforeReceipt error
 	FailAfterReceipt  error
+	RestoreReplace    ReplaceFaults
+	RestoreReplaceAt  int
 }
 
 // RedactRoot reports a filesystem root without leaking absolute user paths,
@@ -241,6 +282,14 @@ type BackupRecord struct {
 // the caller. Backups use 0600; the directory uses 0700. It never restores a
 // backup over a primary and never touches unknown files.
 func BackupMigrationInputs(dir string, files []string) ([]BackupRecord, error) {
+	return backupMigrationInputsWithFaults(dir, files, ReplaceFaults{})
+}
+
+// backupMigrationInputsWithFaults is BackupMigrationInputs with injected
+// pre-rename storage failures. It reads and hashes the whole batch before the
+// first backup write, so a read failure leaves no backup generation. A backup
+// write failure is pre-rename and therefore cannot change a primary.
+func backupMigrationInputsWithFaults(dir string, files []string, faults ReplaceFaults) ([]BackupRecord, error) {
 	if err := validateMigrationFiles(files); err != nil {
 		return nil, err
 	}
@@ -267,7 +316,7 @@ func BackupMigrationInputs(dir string, files []string) ([]BackupRecord, error) {
 		name, raw := input.name, input.raw
 		digest := sha256.Sum256(raw)
 		record := BackupRecord{File: name, Hash: hex.EncodeToString(digest[:]), Size: int64(len(raw))}
-		if err := AtomicReplace(filepath.Join(dir, name+".bak"), raw, 0o600); err != nil {
+		if err := atomicReplaceWithFaults(filepath.Join(dir, name+".bak"), raw, 0o600, faults); err != nil {
 			return nil, fmt.Errorf("backup %s: %w", name, err)
 		}
 		records = append(records, record)
@@ -319,6 +368,13 @@ func validateConvertedFiles(staged map[string][]byte, declared []string) ([]stri
 // 16 MiB bound, requires valid JSON for .json primaries, and refuses to stage
 // unknown paths outside the declared file set. Staging never publishes.
 func StageConvertedFiles(dir string, staged map[string][]byte, declared []string) error {
+	return stageConvertedFilesWithFaults(dir, staged, declared, ReplaceFaults{})
+}
+
+// stageConvertedFilesWithFaults is StageConvertedFiles with injected
+// pre-rename storage failures. The whole declared batch is validated before
+// the first staged write, and staging never publishes a primary.
+func stageConvertedFilesWithFaults(dir string, staged map[string][]byte, declared []string, faults ReplaceFaults) error {
 	names, err := validateConvertedFiles(staged, declared)
 	if err != nil {
 		return err
@@ -328,7 +384,7 @@ func StageConvertedFiles(dir string, staged map[string][]byte, declared []string
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o700); err != nil {
 			return err
 		}
-		if err := AtomicReplace(filepath.Join(dir, stagedName(name)), data, 0o600); err != nil {
+		if err := atomicReplaceWithFaults(filepath.Join(dir, stagedName(name)), data, 0o600, faults); err != nil {
 			return fmt.Errorf("stage %s: %w", name, err)
 		}
 	}
@@ -390,8 +446,15 @@ func syncDir(dir string) error {
 // is reported until the outcome is established. It never overwrites a visible
 // primary with an old backup to manufacture a failed-no-change result.
 func ApplyStagedMigration(dir string, plan StagedPlan, staged map[string][]byte, faults MigrationFaults) (MigrationReceipt, PublishOutcome, error) {
+	// publishedFiles accumulates the primaries this run made visible so a
+	// partial multi-file publication reports exactly which authority/dependent
+	// files callers must reconcile.
+	var publishedFiles []string
 	failure := func(stage PublishStage, kind OutcomeKind, visible, reconcile bool, err error) (MigrationReceipt, PublishOutcome, error) {
 		return MigrationReceipt{}, PublishOutcome{Kind: kind, Stage: stage, PrimaryVisible: visible, MustReconcile: reconcile}, err
+	}
+	failureVisible := func(stage PublishStage, kind OutcomeKind, err error) (MigrationReceipt, PublishOutcome, error) {
+		return MigrationReceipt{}, PublishOutcome{Kind: kind, Stage: stage, PrimaryVisible: true, MustReconcile: true, Published: append([]string(nil), publishedFiles...)}, err
 	}
 	if err := ValidateMigrationPhase(plan.Phase); err != nil {
 		return failure(StageValidate, OutcomeKnownUncommitted, false, false, err)
@@ -432,7 +495,7 @@ func ApplyStagedMigration(dir string, plan StagedPlan, staged map[string][]byte,
 	if faults.FailBeforeBackup != nil {
 		return failure(StageBackup, OutcomeKnownUncommitted, false, false, fmt.Errorf("migration backup interrupted: %w", faults.FailBeforeBackup))
 	}
-	if _, err := BackupMigrationInputs(dir, declared); err != nil {
+	if _, err := backupMigrationInputsWithFaults(dir, declared, faults.BackupReplace); err != nil {
 		return failure(StageBackup, OutcomeKnownUncommitted, false, false, err)
 	}
 	if faults.FailAfterBackup != nil {
@@ -441,7 +504,7 @@ func ApplyStagedMigration(dir string, plan StagedPlan, staged map[string][]byte,
 	if faults.FailBeforeStaging != nil {
 		return failure(StageBackup, OutcomeKnownUncommitted, false, false, fmt.Errorf("migration staging interrupted: %w", faults.FailBeforeStaging))
 	}
-	if err := StageConvertedFiles(dir, staged, declared); err != nil {
+	if err := stageConvertedFilesWithFaults(dir, staged, declared, faults.StagingReplace); err != nil {
 		return failure(StageBackup, OutcomeKnownUncommitted, false, false, err)
 	}
 	if faults.FailAfterStaging != nil {
@@ -451,10 +514,9 @@ func ApplyStagedMigration(dir string, plan StagedPlan, staged map[string][]byte,
 		return failure(StagePrimary, OutcomeKnownUncommitted, false, false, fmt.Errorf("migration primary interrupted: %w", faults.FailBeforePrimary))
 	}
 	outputHashes := make(map[string]string, len(staged))
-	published := false
 	primaryFailure := func(err error) (MigrationReceipt, PublishOutcome, error) {
-		if published {
-			return failure(StagePrimary, OutcomeDurabilityUncertain, true, true, err)
+		if len(publishedFiles) > 0 {
+			return failureVisible(StagePrimary, OutcomeDurabilityUncertain, err)
 		}
 		return failure(StagePrimary, OutcomeKnownUncommitted, false, false, err)
 	}
@@ -466,27 +528,31 @@ func ApplyStagedMigration(dir string, plan StagedPlan, staged map[string][]byte,
 		if faults.FailPrimary != nil && faults.FailPrimaryAt == index+1 {
 			return primaryFailure(fmt.Errorf("migration primary for %s: %w", name, faults.FailPrimary))
 		}
-		if err := AtomicReplace(filepath.Join(dir, name), raw, 0o600); err != nil {
+		primaryReplace := faults.PrimaryReplace
+		if faults.PrimaryReplaceAt != 0 && faults.PrimaryReplaceAt != index+1 {
+			primaryReplace = ReplaceFaults{}
+		}
+		if err := atomicReplaceWithFaults(filepath.Join(dir, name), raw, 0o600, primaryReplace); err != nil {
 			return primaryFailure(fmt.Errorf("migration primary for %s: %w", name, err))
 		}
-		published = true
+		publishedFiles = append(publishedFiles, name)
 		digest := sha256.Sum256(raw)
 		outputHashes[name] = hex.EncodeToString(digest[:])
 	}
 	if faults.FailAfterPrimary != nil {
-		return failure(StagePrimary, OutcomeDurabilityUncertain, true, true, fmt.Errorf("migration primary interrupted; primaries may be visible: %w", faults.FailAfterPrimary))
+		return failureVisible(StagePrimary, OutcomeDurabilityUncertain, fmt.Errorf("migration primary interrupted; primaries may be visible: %w", faults.FailAfterPrimary))
 	}
 	if faults.FailBeforeSync != nil {
-		return failure(StageDirSync, OutcomeDurabilityUncertain, true, true, fmt.Errorf("migration dir-sync interrupted: %w", faults.FailBeforeSync))
+		return failureVisible(StageDirSync, OutcomeDurabilityUncertain, fmt.Errorf("migration dir-sync interrupted: %w", faults.FailBeforeSync))
 	}
 	if err := syncDir(dir); err != nil {
-		return failure(StageDirSync, OutcomeDurabilityUncertain, true, true, err)
+		return failureVisible(StageDirSync, OutcomeDurabilityUncertain, err)
 	}
 	if faults.FailAfterSync != nil {
-		return failure(StageDirSync, OutcomeDurabilityUncertain, true, true, fmt.Errorf("migration dir-sync interrupted: %w", faults.FailAfterSync))
+		return failureVisible(StageDirSync, OutcomeDurabilityUncertain, fmt.Errorf("migration dir-sync interrupted: %w", faults.FailAfterSync))
 	}
 	if faults.FailBeforeReceipt != nil {
-		return failure(StageDirSync, OutcomeDurabilityUncertain, true, true, fmt.Errorf("migration receipt interrupted: %w", faults.FailBeforeReceipt))
+		return failureVisible(StageDirSync, OutcomeDurabilityUncertain, fmt.Errorf("migration receipt interrupted: %w", faults.FailBeforeReceipt))
 	}
 	receipt := MigrationReceipt{
 		Plan:            plan,
@@ -496,30 +562,56 @@ func ApplyStagedMigration(dir string, plan StagedPlan, staged map[string][]byte,
 		Unresolved:      []string{},
 	}
 	if err := receipt.Validate(); err != nil {
-		return failure(StageDirSync, OutcomeDurabilityUncertain, true, true, err)
+		return failureVisible(StageDirSync, OutcomeDurabilityUncertain, err)
 	}
 	serialized, err := MarshalValidated(MigrationReceiptName, receipt, func(value MigrationReceipt) error { return value.Validate() })
 	if err != nil {
-		return failure(StageDirSync, OutcomeDurabilityUncertain, true, true, err)
+		return failureVisible(StageDirSync, OutcomeDurabilityUncertain, err)
 	}
 	if err := AtomicReplace(filepath.Join(dir, MigrationReceiptName), serialized, 0o600); err != nil {
-		return failure(StageDirSync, OutcomeDurabilityUncertain, true, true, err)
+		return failureVisible(StageDirSync, OutcomeDurabilityUncertain, err)
 	}
 	if err := syncDir(dir); err != nil {
-		return failure(StageDirSync, OutcomeDurabilityUncertain, true, true, err)
+		return failureVisible(StageDirSync, OutcomeDurabilityUncertain, err)
 	}
 	if faults.FailAfterReceipt != nil {
-		return failure(StageAcknowledge, OutcomeDurabilityUncertain, true, true, fmt.Errorf("migration receipt interrupted: %w", faults.FailAfterReceipt))
+		return failureVisible(StageAcknowledge, OutcomeDurabilityUncertain, fmt.Errorf("migration receipt interrupted: %w", faults.FailAfterReceipt))
 	}
 	if faults.FailResponseDelivery != nil {
-		return failure(StageAcknowledge, OutcomeDurabilityUncertain, true, true, fmt.Errorf("migration response interrupted: %w", faults.FailResponseDelivery))
+		return failureVisible(StageAcknowledge, OutcomeDurabilityUncertain, fmt.Errorf("migration response interrupted: %w", faults.FailResponseDelivery))
 	}
 	// Best-effort staging cleanup never masks an installed outcome.
 	for _, name := range declared {
 		_ = os.Remove(filepath.Join(dir, stagedName(name)))
 	}
 	_ = syncDir(dir)
-	return receipt, PublishOutcome{Kind: OutcomeInstalled, Stage: StageAcknowledge, PrimaryVisible: true}, nil
+	return receipt, PublishOutcome{Kind: OutcomeInstalled, Stage: StageAcknowledge, PrimaryVisible: true, Published: append([]string(nil), publishedFiles...)}, nil
+}
+
+// ReconcileMigrationPrimaries rereads and validates every declared primary
+// after a durability-uncertain multi-file publication. It reads only the
+// primaries named by the caller, never a backup or a staged file, and performs
+// no writes. A missing, unreadable or invalid primary keeps reconciliation
+// unresolved so recovery cannot prefer a stale generation. Callers should pass
+// PublishOutcome.Published so only primaries that may have changed are read.
+func ReconcileMigrationPrimaries(dir string, files []string) (map[string][]byte, error) {
+	if err := validateMigrationFiles(files); err != nil {
+		return nil, err
+	}
+	validated := make(map[string][]byte, len(files))
+	for _, name := range files {
+		raw, _, err := ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, fmt.Errorf("reconcile migration primary %s: %w", name, err)
+		}
+		if filepath.Ext(name) == ".json" && !json.Valid(raw) {
+			return nil, fmt.Errorf("reconcile migration primary %s is not valid JSON", name)
+		}
+		verified := make([]byte, len(raw))
+		copy(verified, raw)
+		validated[name] = verified
+	}
+	return validated, nil
 }
 
 // AuthorityLedgerFiles are the durable authorities that must never be
@@ -621,10 +713,20 @@ type RollbackReceipt struct {
 // is retained for source compatibility and is intentionally ignored. It never
 // rewinds monotonic claims by silently discarding the visible primary: blocked
 // ledgers are left untouched and reported as unresolved. A no-backup rollback
-// is a no-op success.
+// is a no-op success. RestoreReplaceAt limits RestoreReplace to one one-based
+// restore position; zero applies it to every restore.
+// Failure-mode matrix for the restore storage faults:
+//
+//	RestoreReplace.FailCreateTemp/FailWrite/FailFileSync/FailRename
+//	  first selected restore  -> known-uncommitted (no primary replaced)
+//	  later selected restore  -> durability-uncertain with Published naming
+//	                             the already-restored primaries
+//	FailAfterRestore/FailBeforeSync/FailAfterSync/FailBeforeReceipt/FailAfterReceipt
+//	  -> durability-uncertain once at least one primary was restored
+//	blocked authority ledger -> known-uncommitted, primaries untouched
 func ApplyMigrationRollback(dir string, files []string, faults MigrationRollbackFaults, _ bool) (RollbackReceipt, PublishOutcome, error) {
 	failure := func(stage PublishStage, kind OutcomeKind, visible, reconcile bool, receipt RollbackReceipt, err error) (RollbackReceipt, PublishOutcome, error) {
-		return receipt, PublishOutcome{Kind: kind, Stage: stage, PrimaryVisible: visible, MustReconcile: reconcile}, err
+		return receipt, PublishOutcome{Kind: kind, Stage: stage, PrimaryVisible: visible, MustReconcile: reconcile, Published: append([]string(nil), receipt.RestoredFiles...)}, err
 	}
 	if err := validateMigrationFiles(files); err != nil {
 		return failure(StageValidate, OutcomeKnownUncommitted, false, false, RollbackReceipt{}, err)
@@ -649,7 +751,15 @@ func ApplyMigrationRollback(dir string, files []string, faults MigrationRollback
 		return failure(StageValidate, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback refuses to restore older queue/schedule/deletion snapshots; retain the current authority and reconcile it explicitly"))
 	}
 	sorted := append([]string(nil), plan.Files...)
-	restored := []string{}
+	// Validate the whole selected backup batch before the first restore so a
+	// malformed later member cannot leave a partial runnable restore. An
+	// oversized or non-JSON backup is rejected known-uncommitted, before any
+	// primary is replaced, and never replayed as authority.
+	type restoreInput struct {
+		name string
+		raw  []byte
+	}
+	restores := make([]restoreInput, 0, len(sorted))
 	for _, name := range sorted {
 		if AuthorityLedgerFiles[name] {
 			continue
@@ -661,14 +771,25 @@ func ApplyMigrationRollback(dir string, files []string, faults MigrationRollback
 		if len(backup) > maxJSONBytes {
 			return failure(StageBackup, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback backup for %s exceeds the %d-byte limit", name, maxJSONBytes))
 		}
-		if err := AtomicReplace(filepath.Join(dir, name), backup, 0o600); err != nil {
+		if filepath.Ext(name) == ".json" && !json.Valid(backup) {
+			return failure(StageBackup, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback backup for %s is not valid JSON; refuse to restore a stale or corrupt generation", name))
+		}
+		restores = append(restores, restoreInput{name: name, raw: backup})
+	}
+	restored := []string{}
+	for index, input := range restores {
+		restoreReplace := faults.RestoreReplace
+		if faults.RestoreReplaceAt != 0 && faults.RestoreReplaceAt != index+1 {
+			restoreReplace = ReplaceFaults{}
+		}
+		if err := atomicReplaceWithFaults(filepath.Join(dir, input.name), input.raw, 0o600, restoreReplace); err != nil {
 			if len(restored) > 0 {
 				receipt.RestoredFiles = append([]string(nil), restored...)
-				return failure(StagePrimary, OutcomeDurabilityUncertain, true, true, receipt, fmt.Errorf("rollback restore for %s: %w", name, err))
+				return failure(StagePrimary, OutcomeDurabilityUncertain, true, true, receipt, fmt.Errorf("rollback restore for %s: %w", input.name, err))
 			}
-			return failure(StagePrimary, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback restore for %s: %w", name, err))
+			return failure(StagePrimary, OutcomeKnownUncommitted, false, false, receipt, fmt.Errorf("rollback restore for %s: %w", input.name, err))
 		}
-		restored = append(restored, name)
+		restored = append(restored, input.name)
 	}
 	if faults.FailAfterRestore != nil {
 		receipt.RestoredFiles = restored

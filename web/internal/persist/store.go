@@ -107,27 +107,82 @@ func Write[T any](s Store, name string, value T, validate func(T) error) error {
 	return err
 }
 
-func AtomicReplace(target string, data []byte, mode os.FileMode) error {
+// ReplaceFaults injects deterministic filesystem failures into the staged
+// temp-file replacement sequence. A nil entry disables that fault. Callers
+// inject realistic error values such as syscall.ENOSPC (disk full),
+// os.ErrPermission (permission denied) or a rename error and observe the same
+// typed publication outcome production would report. ShortWrite simulates a
+// partial write by persisting only that many payload bytes; the length check
+// then reports io.ErrShortWrite. Injected faults never fall back to an
+// in-place write of the target.
+type ReplaceFaults struct {
+	FailCreateTemp error
+	FailChmod      error
+	FailWrite      error
+	FailFileSync   error
+	FailClose      error
+	FailRename     error
+	ShortWrite     int
+}
+
+// atomicReplaceWithFaults stages data in a restrictive temp file in target's
+// directory, flushes it, then renames it over target. The rename is the only
+// visibility point, so a failure at any earlier step leaves the previous
+// target intact and removes the temp file. It never writes to target directly.
+func atomicReplaceWithFaults(target string, data []byte, mode os.FileMode, faults ReplaceFaults) error {
+	if faults.FailCreateTemp != nil {
+		return faults.FailCreateTemp
+	}
 	temporary, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".*.tmp")
 	if err != nil {
 		return err
 	}
 	temporaryName := temporary.Name()
 	defer os.Remove(temporaryName)
+	if faults.FailChmod != nil {
+		temporary.Close()
+		return faults.FailChmod
+	}
 	if err := temporary.Chmod(mode); err != nil {
 		temporary.Close()
 		return err
 	}
-	if _, err := temporary.Write(data); err != nil {
+	if faults.FailWrite != nil {
+		temporary.Close()
+		return faults.FailWrite
+	}
+	payload := data
+	if faults.ShortWrite > 0 && faults.ShortWrite < len(data) {
+		payload = data[:faults.ShortWrite]
+	}
+	written, err := temporary.Write(payload)
+	if err == nil && written != len(data) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
 		temporary.Close()
 		return err
+	}
+	if faults.FailFileSync != nil {
+		temporary.Close()
+		return faults.FailFileSync
 	}
 	if err := temporary.Sync(); err != nil {
 		temporary.Close()
 		return err
 	}
+	if faults.FailClose != nil {
+		return faults.FailClose
+	}
 	if err := temporary.Close(); err != nil {
 		return err
 	}
+	if faults.FailRename != nil {
+		return faults.FailRename
+	}
 	return os.Rename(temporaryName, target)
+}
+
+func AtomicReplace(target string, data []byte, mode os.FileMode) error {
+	return atomicReplaceWithFaults(target, data, mode, ReplaceFaults{})
 }

@@ -11,6 +11,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { type BunHost, startBunHostFromVerifiedPi } from "./host.ts";
+import { redactHostLogText } from "./log.ts";
 import { PI_CODING_AGENT_PACKAGE, type VerifiedPiPackage, verifyPiPackage } from "./probe.ts";
 
 // Keep in sync with assistant/package.json version.
@@ -69,7 +70,9 @@ export interface ResolvedConfig {
 }
 
 function fail(message: string): never {
-	console.error(`pixie_assistant: ${message}`);
+	// Host diagnostics are redacted so an error path can never export a bearer
+	// token, credential value, endpoint URL or absolute filesystem path.
+	console.error(`pixie_assistant: ${redactHostLogText(message)}`);
 	process.exit(1);
 }
 
@@ -703,10 +706,16 @@ async function runDoctor(
 	}
 	const verified = await verifiedPiOrFail(resolved.piPackage);
 	requirePiVersion(verified);
-	console.log(`pixie_assistant doctor: config=${configPath.trim() === "" ? "(none)" : configPath}`);
 	console.log(
-		`host=${resolved.host} port=${resolved.port} agentDir=${resolved.agentDir} ` +
-			`piPackage=${resolved.piPackage} allowSelfRestart=${resolved.allowSelfRestart}`,
+		redactHostLogText(
+			`pixie_assistant doctor: config=${configPath.trim() === "" ? "(none)" : configPath}`,
+		),
+	);
+	console.log(
+		redactHostLogText(
+			`host=${resolved.host} port=${resolved.port} agentDir=${resolved.agentDir} ` +
+				`piPackage=${resolved.piPackage} allowSelfRestart=${resolved.allowSelfRestart}`,
+		),
 	);
 	console.log(pairedAssistantPortNote(resolved.port));
 	console.log(`pi=${verified.packageName}@${verified.packageVersion}`);
@@ -751,7 +760,9 @@ async function runServe(resolved: ResolvedConfig): Promise<void> {
 				]);
 				process.exit(0);
 			} catch (error) {
-				console.error(`pixie_assistant: shutdown failed: ${errorMessage(error)}`);
+				console.error(
+					`pixie_assistant: shutdown failed: ${redactHostLogText(errorMessage(error))}`,
+				);
 				process.exit(1);
 			}
 		})();

@@ -43,9 +43,13 @@ func normalizeBuildValue(value, fallback string) string {
 }
 
 func NewLogger(component string, build BuildInfo) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stderr, nil)).With(
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With(
 		"component", component,
 		"version", build.Version,
 		"revision", build.Revision,
 	)
+	if attributes := RunIdentityLoggerAttributes(ProcessRunIdentity()); len(attributes) > 0 {
+		logger = logger.With(attributes...)
+	}
+	return logger
 }

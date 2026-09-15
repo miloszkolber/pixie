@@ -151,3 +151,40 @@ func TestSupportSnapshotDropsInvalidFactsRatherThanClaimingThem(t *testing.T) {
 }
 
 func boolPointer(value bool) *bool { return &value }
+
+func TestSupportSnapshotSanitizesChildStderrAndEnvironmentIdentity(t *testing.T) {
+	t.Setenv(diagnostics.BootIdentityEnvironment, "Bearer bearer-token-value")
+	t.Setenv(diagnostics.RunIdentityEnvironment, "/home/alice/.pi")
+	ringShell := map[string]string{
+		"child stderr": "https://url-user:url-password@example.invalid/?token=query-token-value sk_live_hostile-api-token-value /home/alice/.pi/agent",
+	}
+	var entries []diagnostics.StderrEntry
+	for _, text := range ringShell {
+		entries = append(entries, diagnostics.StderrEntry{At: "2026-09-15T12:00:00Z", Text: text})
+	}
+	for index := 0; index < diagnostics.DefaultStderrMaxLines+8; index++ {
+		entries = append(entries, diagnostics.StderrEntry{At: "2026-09-15T12:00:00Z", Text: fmt.Sprintf("safe line %d", index)})
+	}
+	payload, err := diagnostics.MarshalSupportSnapshot(diagnostics.SupportSnapshotRuntime{
+		ChildStderr: &diagnostics.StderrSummary{Entries: entries, Dropped: 1},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(payload)
+	for _, forbidden := range []string{"bearer-token-value", "url-user", "url-password", "example.invalid", "query-token-value", "hostile-api-token-value", "alice"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("support snapshot leaked %q: %s", forbidden, text)
+		}
+	}
+	var snapshot diagnostics.SupportSnapshot
+	if err := json.Unmarshal(payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Identity != nil {
+		t.Fatalf("hostile environment identity was exported: %#v", snapshot.Identity)
+	}
+	if snapshot.ChildStderr == nil || snapshot.ChildStderr.Retained > diagnostics.DefaultStderrMaxLines || snapshot.ChildStderr.Bytes > diagnostics.DefaultStderrMaxBytes {
+		t.Fatalf("child stderr summary = %#v", snapshot.ChildStderr)
+	}
+}

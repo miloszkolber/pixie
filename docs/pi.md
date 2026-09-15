@@ -11,11 +11,11 @@ The table records ownership, not universal API availability. The host returns a 
 | Feature | Implementation |
 | --- | --- |
 | Chat, streaming, cancellation, images, compaction, forks | Native Pi execution, projected by Pixie when the negotiated operation and selected public API support it |
-| Steering | Not exposed by the current host: Pi `0.85.1` has no public run identifier that safely binds a steering request |
+| Steering | Not exposed by the current host: Pi `0.85.1` has no public run identifier that safely binds a steering request. Both `session.steer` and `pi.session.steer` are catalogued `unavailable` with that reason and fail closed |
 | Run settlement, retry, compaction and lifecycle annotations | Native Pi events; the host separates acceptance from settlement and returns the terminal reason, pending real-provider event-order evidence |
 | Extension dialogs (`select`, `confirm`, `input`, `editor`) | Generic host UI bridge, projected by Pixie; pending dialogs replay on reload |
 | Extension status, widget, title, working-message hints | Generic host projections, fanned out by Pixie; terminal-only interfaces stay unavailable |
-| Providers, API keys, OAuth, models, defaults, thinking | Native Pi model/auth/settings APIs where available; secrets stay on the host and provider configuration is not universally available |
+| Providers, API keys, OAuth, models, defaults, thinking | Native Pi model/auth/settings APIs where available; secrets stay on the host. A typed provider configuration provenance projection (`pi.providers.config.read`) reports field presence and a fixed source enum only, so settings can explain defaults or unknown before mutation, but provider configuration is not universally available |
 | Project grouping, file attachments, history search, durable follow-ups | Pixie records and transcript projection |
 | Defined agents and delegation | Pixie authoring API for native Markdown definitions, optional native subagent extension for execution |
 | Plans | Upstream `todo` tool via the `rpiv-todo` extension |
@@ -26,7 +26,7 @@ The table records ownership, not universal API availability. The host returns a 
 
 ## Assistant protocol
 
-The wire contract between the controller and the Pi host service. The host translates supported frames onto public Pi APIs; it is not Pi RPC and is not a claim that every catalogued operation exists.
+The wire contract between the controller and the Pi host service. The host translates supported frames onto public Pi APIs; it is not Pi RPC. The generated catalog (`shared/schema/protocol-catalog.json`) is the single source of host operation names and their `available`/`unavailable`/`absent` status; the host advertises only `available` routes and every other catalogued route fails closed with its stated reason.
 
 **Transport.** The service listens on loopback `/pi` over WebSocket. Requests carry `Authorization: Bearer <PIXIE_PI_SECRET_KEY>`; connections without a valid bearer are rejected, and browser `Origin` headers are refused. Frames are JSON text. The host bounds frames and pending requests, and unsupported operations are absent or false and fail closed. Stable authority feeds deletion binding; production host v2 and durable pairing remain roadmap work.
 
@@ -36,7 +36,7 @@ The wire contract between the controller and the Pi host service. The host trans
 { "id": 1, "method": "runtime.hello", "params": { "protocolVersion": 1 } }
 ```
 
-The result carries `protocolVersion` (`1`), a stable `runtimeId`, a fresh `bootId` for the current host process, the host's reported `version`, `sessions` and `agents` capability groups, and an exhaustive `operationSet`. Clients must check the operation set before using optional methods.
+The result carries `protocolVersion` (`1`), a stable `runtimeId`, a fresh `bootId` for the current host process, the host's reported `version`, `sessions` and `agents` capability groups, and an exhaustive `operationSet` derived from the catalog: an operation is true when the catalog marks it `available`, except `runtime.restart`, which also requires the deployment to enable it. `runtime.hello` therefore cannot claim an unimplemented route, and the host never advertises the `tools` group. Clients must check the operation set before using optional methods.
 
 **Frames.** Client requests are `{ "id": <positive safe integer>, "method": string, "params": object }`; the first request must be `runtime.hello` with `params.protocolVersion` set to `1`. The host does not coerce IDs or params. Replies are `{ "id", "result" }` or `{ "id", "error": { "code", "message" } }`. Events carry a `method` and `params` without an id; `session.event` frames carry `sessionId` and a monotonically increasing `sequence` used by snapshot checkpoints.
 
@@ -56,12 +56,12 @@ The result carries `protocolVersion` (`1`), a stable `runtimeId`, a fresh `bootI
 | `runtime.hello` | Service identity, protocol version, capability groups, and negotiated operation set |
 | `runtime.restart` | End the process for the service manager; enabled per deployment with `PIXIE_ALLOW_SELF_RESTART=1` and rejected otherwise. The accepted request blocks new work, replies `ok`, and the production entrypoint drains for up to 25 seconds before exiting with status 75 ([deployment](deployment.md)) |
 | `pi.extensions.list` / `configure`, `pi.sources.*` | Native resource inventory, deferred configuration and Markdown agent definitions |
-| `pi.providers.*`, `pi.defaults.*`, `pi.preferences.*`, `provider.login*` | Provider catalog, credentials and OAuth flows; secrets never leave the host |
+| `pi.providers.*`, `pi.defaults.*`, `pi.preferences.*`, `provider.login*` | Provider catalog, credentials, OAuth flows and a typed, secret-free configuration provenance projection (`pi.providers.config.read`); secrets never leave the host |
 | `session.create` / `fork` / `load` / `list` / `prompt` / `cancel` / `configure` / `rename` and related | Session lifecycle, runs, and configuration where an operation is negotiated and its public Pi member exists |
 | `session.goal*`, `session.plan*`, `session.stats`, `session.commands`, `session.agentMentions` | Application projections on top of native sessions |
 | Capability methods (`mcp.*`, `llama` feature surface) | Versioned groups advertised in the welcome capabilities |
 
-Unknown methods return an error frame. `runtime.capabilities` is catalogued but not implemented by the host, and controller `pi.capabilities` is a derived view of `runtime.hello`; neither is a Pi runtime call. Features are gated by the negotiated operation set, not assumed.
+Unknown methods return an error frame. `runtime.capabilities` is intentionally unavailable, not missing: `runtime.hello` already returns the negotiated capability groups and the exhaustive operation set, and controller `pi.capabilities` is a derived view of `runtime.hello`; neither is a Pi runtime call. Features are gated by the negotiated operation set, not assumed.
 
 **Versioning.** `protocolVersion` changes only for breaking wire changes. Within a version the protocol is additive: new methods, fields and capability groups join without a bump, and optional features stay behind capability versions. The controller negotiates at `runtime.hello` and refuses incompatible hosts.
 
@@ -134,5 +134,25 @@ Requests use `Authorization: Bearer <PIXIE_MCP_TOKEN>`. The catalog contains mod
 Local llama.cpp is an optional native Pi feature. When the bundled Pi runtime supports it, the operator supplies `LLAMA_BASE_URL` and optional native credentials/`LLAMA_API_KEY`; the native Pi session receives those native names. Model selection, refresh and inference run through Pi; `/llama` management remains native-TUI-only. A requested profile fails explicitly when its required provider is unavailable.
 
 Signet is operator-owned and loads through Pi's normal file-extension discovery. Its daemon, configuration and enablement are not managed by Pixie and are not a Pixie MCP connection. Other unfamiliar native extensions follow the same native loading and supported UI boundaries.
+
+## Observability and recovery
+
+A supervised installation records a boot identity and a per-run identity. `PIXIE_BOOT_ID` is stable across restarts on the same host boot (or archive session) and `PIXIE_RUN_ID` is unique per launcher invocation; a directly launched process generates both. The entrypoint sanitizes the values against fixed identifier formats, stores them on the process, and the supervisor exports them to its managed children. Only opaque identifiers cross that boundary, never a path, token or endpoint (`web/internal/diagnostics/identity.go:37-176`).
+
+Host diagnostics redact secret-shaped and path-shaped values at their emission boundary: bearer tokens, credential-shaped values, endpoint URLs, absolute paths and long opaque tokens are replaced before text is printed. The supervisor keeps a bounded, redacted tail of each managed child's stderr rather than the full stream, with line, count, byte and age caps per ring (`assistant/src/log.ts:47-70`, `assistant/src/serve.ts:73-76`, `web/internal/diagnostics/stderr.go:11-20`, `web/internal/diagnostics/stderr.go:126-146`).
+
+The controller exposes a bounded, secret-free health history. It records at most 32 transitions across allowlisted components (`agent`, `application`, `schedule`) and stable state tokens only, and the support-export boundary re-sanitizes and bounds the same shape (`web/internal/controller/runtime.go:38-122`, `web/internal/diagnostics/transitions.go:8-10`).
+
+`pixie_web doctor [--config ABS]` and the internal `pixie_full doctor --assistant-config ABS --web-config ABS` print a read-only recovery report: a `summary=` value plus one line per check with a stable ID, status, code and fixed remediation text. The report carries no path, endpoint, credential or raw error (`web/internal/diagnostics/recovery.go:65-211`, `web/cmd/runtime.go:162-231`, `web/cmd/pixie-full/main.go:227-242`).
+
+The support snapshot stays behind controller authentication and includes only bounded, already-sanitized fields: run identity, health transitions, a retained child-stderr summary, runtime facts and controller request outcomes. It never collects the assistant or system logs wholesale (`web/internal/diagnostics/support_snapshot.go:71-95`, `web/internal/controller/runtime.go:347-350`).
+
+## Resilience and persistence
+
+A Browser WebSocket connection is bounded. The controller tracks at most 64 identities — an active socket and a disconnected client still inside its replay-reap grace period both count — and a reconnect beyond a short burst is delayed by a per-identity attempt/backoff gate (six attempts per ten seconds, then a 1–30 second exponential penalty). Slow-client buffering is bounded to 256 queued items and 32 MiB per socket on top of a 64 MiB aggregate admission budget, and a socket that exceeds its lane is closed with a reconnect request. Disconnecting a socket releases its private replay namespace and aggregate reservations, so retained-response budget does not leak across reloads (`web/internal/controller/websocket.go:68-84`, `web/internal/controller/websocket.go:700-770`, `web/internal/controller/socket_output.go:33-34`, `web/internal/controller/socket_output.go:140-155`, `web/internal/controller/replay.go:177-190`).
+
+Schedule deadlines use a process-local start reading that carries its monotonic clock component, so a wall-clock jump cannot shorten or extend a live run's deadline. A run recovered from disk has no monotonic reading and falls back to its persisted wall timestamp (`web/internal/controller/schedules.go:804-810`).
+
+Application JSON publication classifies every result as `known-uncommitted` (the declared commit point was not reached, so the prior primary is intact or no primary existed) or `durability-uncertain` (the new primary is visible but the directory sync or reply step did not confirm). Injected-failure tests cover disk-full (`ENOSPC`), permission denial, short write, rename, file and directory fsync, and staging/publication crash outcomes, and a partial multi-file result names the primaries it made visible. This is injected-failure evidence, not measured power-loss atomicity (`web/internal/persist/store_outcomes.go:45-190`, `web/internal/persist/migration_apply.go:111-140`, `web/internal/persist/crash_consistency_test.go:21-70`).
 
 See [deployment](deployment.md) for host installation and [security](security.md) for the trust boundary.

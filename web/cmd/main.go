@@ -17,6 +17,8 @@ import (
 
 func main() {
 	build := diagnostics.NormalizeBuild(version, revision)
+	identity := diagnostics.ResolveProcessRunIdentity(os.LookupEnv, time.Now())
+	diagnostics.SetProcessRunIdentity(identity)
 	slog.SetDefault(diagnostics.NewLogger(runtimeCLIName, build))
 	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
 		fmt.Printf("%s %s (revision %s)\n", runtimeCLIName, build.Version, build.Revision)

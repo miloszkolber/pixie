@@ -49,6 +49,18 @@ test("provider cards gate readiness controls and expose safe status states", asy
 	}
 });
 
+test("provider cards explain configuration provenance before mutation", async () => {
+	const source = await Bun.file(
+		new URL("../../../webui/src/settings/sections/provider-card.svelte", import.meta.url),
+	).text();
+	// The controller projects Pi's typed, secret-free configuration provenance;
+	// the card explains defaults/unknown instead of offering a blind mutation.
+	expect(source).toContain('provider.configuration === "defaults"');
+	expect(source).toContain('provider.configuration === "unknown"');
+	expect(source).toContain("Default connection only");
+	expect(source).toContain("Configuration could not be verified");
+});
+
 test("a deferred readiness result cannot survive provider replacement or logout invalidation", () => {
 	const checking = { revision: 4, status: "checking" as const };
 	const afterStatusReplacement = invalidateProviderReadiness(checking);

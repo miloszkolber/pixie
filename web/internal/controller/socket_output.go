@@ -13,6 +13,7 @@ import (
 // events and responses. Responses remain recoverable through the replay cache.
 type socketOutput struct {
 	connection *websocket.Conn
+	clientKey  string
 	queue      chan socketOutputItem
 	replay     *ReplayCache
 	aggregate  *AggregateByteAdmission
@@ -28,10 +29,13 @@ type socketOutputItem struct {
 	reserved int
 }
 
-const socketOutputBudget = 32 * 1024 * 1024
+const (
+	socketOutputBudget   = 32 * 1024 * 1024
+	socketOutputMaxItems = 256
+)
 
-func newSocketOutput(connection *websocket.Conn, aggregate *AggregateByteAdmission) *socketOutput {
-	return &socketOutput{connection: connection, queue: make(chan socketOutputItem, 256), replay: NewReplayCacheWithAdmission(aggregate), aggregate: aggregate}
+func newSocketOutput(connection *websocket.Conn, aggregate *AggregateByteAdmission, clientKey string) *socketOutput {
+	return &socketOutput{connection: connection, clientKey: clientKey, queue: make(chan socketOutputItem, socketOutputMaxItems), replay: NewReplayCacheWithAdmission(aggregate), aggregate: aggregate}
 }
 
 // enqueue borrows immutable bytes, which can also belong to the replay cache.
@@ -58,11 +62,11 @@ func (o *socketOutput) enqueueWithLane(ctx context.Context, payload []byte, cont
 	if o.aggregate != nil {
 		if control {
 			if !o.aggregate.TryAcquireControl(len(payload)) {
-				go o.connection.Close(websocket.StatusTryAgainLater, "browser control output limit exceeded")
+				o.failClosed(websocket.StatusTryAgainLater, "browser control output limit exceeded")
 				return fmt.Errorf("browser control output limit exceeded")
 			}
 		} else if !o.aggregate.TryAcquireOrdinary(len(payload)) {
-			go o.connection.Close(websocket.StatusTryAgainLater, "browser aggregate output limit exceeded")
+			o.failClosed(websocket.StatusTryAgainLater, "browser aggregate output limit exceeded")
 			return fmt.Errorf("browser aggregate output limit exceeded")
 		}
 	}
@@ -93,8 +97,24 @@ func (o *socketOutput) enqueueWithLane(ctx context.Context, payload []byte, cont
 	}
 	releaseAdmission()
 	o.closed = true
-	go o.connection.Close(websocket.StatusTryAgainLater, "browser is too slow; reconnect to resume")
+	o.closeWithStatus(websocket.StatusTryAgainLater, "browser is too slow; reconnect to resume")
 	return fmt.Errorf("browser output limit exceeded")
+}
+
+// failClosed stops accepting output for this socket and asks the peer to
+// reconnect. Marking the socket closed before the asynchronous close keeps
+// later publishes from queueing or spawning additional close attempts.
+// Callers hold o.mu.
+func (o *socketOutput) failClosed(code websocket.StatusCode, reason string) {
+	o.closed = true
+	o.closeWithStatus(code, reason)
+}
+
+func (o *socketOutput) closeWithStatus(code websocket.StatusCode, reason string) {
+	if o.connection == nil {
+		return
+	}
+	go o.connection.Close(code, reason)
 }
 
 func (o *socketOutput) run(ctx context.Context) {
@@ -119,13 +139,19 @@ func (o *socketOutput) run(ctx context.Context) {
 
 func (o *socketOutput) stop() {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	o.closed = true
 	for {
 		select {
 		case item := <-o.queue:
 			o.release(item)
 		default:
+			o.mu.Unlock()
+			// Release this socket's private replay namespace and its aggregate
+			// reservations. Without this, every disconnect or replacement would
+			// retain the retained-response budget until process restart.
+			if o.replay != nil {
+				o.replay.ReleaseClient(o.clientKey)
+			}
 			return
 		}
 	}

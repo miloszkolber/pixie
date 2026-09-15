@@ -41,7 +41,15 @@ PIXIE_AUTH_ENABLED=false
 
 # Browser is not configured through the environment. Pixie stores one setting
 # under Settings -> Browser and registers it in Pi's MCP configuration; Pi
-# reaches the operator-chosen external MCP endpoint directly.
+# reaches the operator-chosen external MCP endpoint directly, which is not a
+# Pixie module or Compose service.
+#
+# Fail closed: enable Browser only when the endpoint binds loopback (or an
+# authenticated network boundary), requires a strong credential, validates
+# Host/Origin, exposes only the needed tools, restricts egress, and is isolated
+# from Pixie state and project mounts. Pixie provides no sandbox and cannot
+# enforce these controls; leave Browser disabled when the boundary is missing.
+# Docker hardening is defense in depth, not a sandbox.
 
 # Non-Docker runs only: the Compose service pins PIXIE_DATA_DIR to the
 # container layout below; plain binaries default to $XDG_DATA_HOME/pixie.

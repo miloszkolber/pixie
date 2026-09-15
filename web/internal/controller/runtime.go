@@ -35,6 +35,90 @@ const (
 	DefaultStaticDir = "/app/web"
 )
 
+const (
+	// healthTransitionMaxEntries bounds the retained health history. The ring
+	// keeps state tokens only; a raw error, endpoint or path never enters it.
+	healthTransitionMaxEntries = 32
+)
+
+// HealthTransition is one bounded, secret-free component state change. Only
+// stable state tokens cross this boundary, so operator diagnostics can show a
+// transition history without exporting raw host errors or filesystem paths.
+type HealthTransition struct {
+	At        string `json:"at"`
+	Component string `json:"component"`
+	From      string `json:"from,omitempty"`
+	To        string `json:"to"`
+}
+
+// RuntimeDiagnosticsHealth is the diagnostics projection of the health ring.
+type RuntimeDiagnosticsHealth struct {
+	Transitions []HealthTransition `json:"transitions"`
+}
+
+// healthStates is the complete vocabulary a transition may record. Observe
+// drops anything else, which keeps host-supplied free text out by construction.
+var healthStates = map[string]bool{
+	"unknown":      true,
+	"unconfigured": true,
+	"unreachable":  true,
+	"incompatible": true,
+	"degraded":     true,
+	"ready":        true,
+	"healthy":      true,
+}
+
+// healthTransitionRing records deduplicated health transitions per component.
+// It is safe for concurrent use. now is wall time on purpose: the history is
+// an operator-facing timeline, not an elapsed-time calculation.
+type healthTransitionRing struct {
+	mu      sync.Mutex
+	now     func() time.Time
+	last    map[string]string
+	entries []HealthTransition
+}
+
+func newHealthTransitionRing() *healthTransitionRing {
+	return &healthTransitionRing{now: time.Now, last: make(map[string]string), entries: make([]HealthTransition, 0, healthTransitionMaxEntries)}
+}
+
+// Observe records a state change for a known component. Unknown components and
+// states are ignored rather than stored, so no arbitrary text is retained.
+func (r *healthTransitionRing) Observe(component, state string) {
+	if r == nil || !healthComponents[component] || !healthStates[state] {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if previous, ok := r.last[component]; ok && previous == state {
+		return
+	}
+	event := HealthTransition{At: r.now().UTC().Format(time.RFC3339), Component: component, From: r.last[component], To: state}
+	r.last[component] = state
+	if len(r.entries) == healthTransitionMaxEntries {
+		copy(r.entries, r.entries[1:])
+		r.entries[len(r.entries)-1] = event
+		return
+	}
+	r.entries = append(r.entries, event)
+}
+
+func (r *healthTransitionRing) Snapshot() []HealthTransition {
+	if r == nil {
+		return []HealthTransition{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]HealthTransition(nil), r.entries...)
+}
+
+// healthComponents is the fixed set of observed components.
+var healthComponents = map[string]bool{
+	"agent":       true,
+	"application": true,
+	"schedule":    true,
+}
+
 type RuntimeConfig struct {
 	Host        string
 	Port        int
@@ -76,6 +160,7 @@ type Runtime struct {
 	watches   *workspace.ProjectWatches
 	status    *runtimeStatusProvider
 	registry  *mcpserver.Registry
+	health    *healthTransitionRing
 	errors    chan error
 }
 
@@ -249,17 +334,18 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	watches := workspace.NewProjectWatches(projects, git, publish)
 	requests := &diagnostics.RequestCounter{}
 	events := diagnostics.NewControllerEventRing()
+	healthRing := newHealthTransitionRing()
 	statusProvider := newRuntimeStatusProvider(build, requests, projects, settings, config.StaticDir, client, authConfig, mcpRegistry)
 	statusProvider.schedules = schedules
 	handler := CoreHandler{
 		Schedules: schedules, Projects: projects, Files: files, Sessions: sessions, Settings: settings,
 		Admin: admin, Git: git, Watches: watches, Requests: requests, RuntimeStatus: statusProvider.snapshot,
 		RuntimeDiagnostics: func(ctx context.Context) RuntimeDiagnosticsReport {
-			return runtimeDiagnosticsSnapshot(sessions, statusProvider, runtimePiStatus(ctx, client))
+			return runtimeDiagnosticsSnapshot(healthRing, sessions, statusProvider, runtimePiStatus(ctx, client))
 		},
 		SupportSnapshotAuthEnabled: authConfig.Enabled,
 		SupportSnapshot: func(ctx context.Context) (json.RawMessage, error) {
-			report := runtimeDiagnosticsSnapshot(sessions, statusProvider, runtimePiStatus(ctx, client))
+			report := runtimeDiagnosticsSnapshot(healthRing, sessions, statusProvider, runtimePiStatus(ctx, client))
 			return diagnostics.MarshalSupportSnapshot(supportSnapshotRuntime(build, report), events.Snapshot())
 		},
 		ControllerEvents: events,
@@ -294,7 +380,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 		if recoveries := sessions.DeletionRecoveryStatus(); len(recoveries) > 0 {
 			result["deletionRecovery"] = recoveries
 		}
-		result["diagnostics"] = runtimeDiagnosticsSnapshot(sessions, statusProvider, status)
+		result["diagnostics"] = runtimeDiagnosticsSnapshot(healthRing, sessions, statusProvider, status)
 		if config.AppVersion != "" {
 			result["appVersion"] = config.AppVersion
 		}
@@ -328,7 +414,7 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	}
 	httpHandler.MCPRegistry = mcpRegistry
 	httpHandler.SessionRecords = records
-	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, registry: mcpRegistry}, nil
+	return &Runtime{schedules: schedules, config: config, auth: authConfig, server: &http.Server{Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}, client: client, sessions: sessions, socket: socket, logins: admin.logins, watches: watches, status: statusProvider, registry: mcpRegistry, health: healthRing}, nil
 }
 
 func validateControllerRuntime(host string, port int, auth AuthConfig) error {
@@ -429,14 +515,16 @@ func runtimePiStatus(ctx context.Context, client *PiClient) map[string]any {
 
 // runtimeDiagnosticsSnapshot projects the authenticated operator diagnostics
 // surface from already-collected status. It never includes secrets, endpoints,
-// or filesystem roots, and it never dispatches or clears tombstones.
-func runtimeDiagnosticsSnapshot(sessions *SessionManager, status *runtimeStatusProvider, piStatus map[string]any) RuntimeDiagnosticsReport {
+// or filesystem roots, and it never dispatches or clears tombstones. It also
+// feeds the bounded health-transition ring with stable state tokens only.
+func runtimeDiagnosticsSnapshot(health *healthTransitionRing, sessions *SessionManager, status *runtimeStatusProvider, piStatus map[string]any) RuntimeDiagnosticsReport {
 	report := RuntimeDiagnosticsReport{
 		Capabilities:           RuntimeDiagnosticsCapabilities{},
 		Host:                   RuntimeDiagnosticsHost{},
 		Runs:                   RuntimeDiagnosticsRuns{},
 		DeletionReconciliation: RuntimeDiagnosticsDeletionReconciliation{},
 		Schedule:               RuntimeDiagnosticsSchedule{State: "unknown"},
+		Health:                 RuntimeDiagnosticsHealth{Transitions: []HealthTransition{}},
 		Remediation:            []string{},
 	}
 	if configured, ok := piStatus["configured"].(bool); ok {
@@ -479,8 +567,48 @@ func runtimeDiagnosticsSnapshot(sessions *SessionManager, status *runtimeStatusP
 		report.DeletionReconciliation.Count = &reconciliationCount
 		report.DeletionReconciliation.Records = reconciled
 	}
+	if health != nil {
+		health.Observe("agent", agentHealthState(report))
+		health.Observe("application", applicationHealthState(report))
+		health.Observe("schedule", report.Schedule.State)
+		report.Health.Transitions = health.Snapshot()
+	}
 	report.Remediation = runtimeRemediationHints(report)
 	return report
+}
+
+// agentHealthState reduces the projected host facts to one stable token. An
+// unknown fact stays "unknown" rather than being treated as healthy.
+func agentHealthState(report RuntimeDiagnosticsReport) string {
+	if report.Host.Configured == nil {
+		return "unknown"
+	}
+	if !*report.Host.Configured {
+		return "unconfigured"
+	}
+	if report.Host.Reachable == nil {
+		return "unknown"
+	}
+	if !*report.Host.Reachable {
+		return "unreachable"
+	}
+	if report.Capabilities.Compatible == nil {
+		return "unknown"
+	}
+	if !*report.Capabilities.Compatible {
+		return "incompatible"
+	}
+	return "ready"
+}
+
+func applicationHealthState(report RuntimeDiagnosticsReport) string {
+	if report.Host.ApplicationReady == nil {
+		return "unknown"
+	}
+	if !*report.Host.ApplicationReady {
+		return "degraded"
+	}
+	return "ready"
 }
 
 // supportSnapshotRuntime maps the broader authenticated diagnostics report to
@@ -503,7 +631,26 @@ func supportSnapshotRuntime(build diagnostics.BuildInfo, report RuntimeDiagnosti
 			State:  report.Schedule.State,
 			Reason: report.Schedule.Reason,
 		},
+		HealthTransitions: supportHealthTransitions(report.Health.Transitions),
 	}
+}
+
+// supportHealthTransitions maps the controller-owned ring into the diagnostics
+// transport shape. It copies only the already-validated component/state tokens.
+func supportHealthTransitions(transitions []HealthTransition) []diagnostics.HealthTransition {
+	if len(transitions) == 0 {
+		return nil
+	}
+	result := make([]diagnostics.HealthTransition, 0, len(transitions))
+	for _, transition := range transitions {
+		result = append(result, diagnostics.HealthTransition{
+			At:        transition.At,
+			Component: transition.Component,
+			From:      transition.From,
+			To:        transition.To,
+		})
+	}
+	return result
 }
 
 func boolPointer(value bool) *bool { return &value }
@@ -585,6 +732,9 @@ func runtimeRemediationHints(report RuntimeDiagnosticsReport) []string {
 func (m *SessionManager) shutdown(ctx context.Context) {
 	m.mu.Lock()
 	m.closed = true
+	// Process-local partial-create scratch is not durable state; drop it so a
+	// stopped controller cannot retain a stale native session claim.
+	m.scheduleCreationRoots = map[string]string{}
 	active := make(map[string]uint64)
 	ids := make([]string, 0, len(m.sessions))
 	for id, entry := range m.sessions {
