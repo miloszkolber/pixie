@@ -23,15 +23,15 @@ const (
 	// maxLogCollectionItems bounds how many map, slice or struct entries are
 	// copied from one slog.Any value.
 	maxLogCollectionItems = 256
-	// maxLogConvertedNodes bounds the total number of values one slog.Any
+	// maxLogConvertedNodes bounds the total number of values one bounded
 	// conversion may walk. Per-level width and depth alone cannot bound the
 	// work: a small graph whose children all point at the same next node is
 	// re-walked once per path, and every value the redactor emits is serialized
 	// even when the Go value shares it. Counting each visit stops both the
 	// conversion and its output from growing exponentially.
 	maxLogConvertedNodes = 4096
-	// maxLogConvertedBytes bounds the redacted text one conversion accumulates.
-	// The node budget alone still allows thousands of fields of
+	// maxLogConvertedBytes bounds the redacted text one bounded conversion
+	// accumulates. The node budget alone still allows thousands of fields of
 	// maxLogFieldBytes each; this caps the aggregate size instead.
 	maxLogConvertedBytes = 1 << 18
 	// redactedLogValue is the fixed placeholder substituted whenever a dynamic
@@ -47,7 +47,8 @@ type logVisit struct {
 	ptr  uintptr
 }
 
-// logConversion bounds one slog.Any conversion. The active set breaks cycles on
+// logConversion bounds one attribute conversion. A record's attributes and a
+// WithAttrs batch each share a single instance. The active set breaks cycles on
 // the current path, while the node and byte counters bound the total work and
 // output size so a shared or wide object graph cannot expand without limit.
 type logConversion struct {
@@ -102,8 +103,9 @@ func (c *logConversion) capText(redacted string) string {
 // marshaled and then sanitized, and any kind it cannot safely inspect becomes a
 // fixed placeholder. User methods invoked along the way are recovered so a
 // panicking String/Error/MarshalText cannot terminate the logging goroutine.
-// Each top-level attribute is converted under its own node and byte budget so a
-// shared or pathologically wide object graph cannot expand without bound.
+// Every record's attributes share one node and byte budget, and one WithAttrs
+// batch shares one budget, so a shared or pathologically wide object graph
+// cannot expand without bound by being repeated across attributes.
 type redactingHandler struct {
 	next slog.Handler
 }
@@ -121,8 +123,12 @@ func (h redactingHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (h redactingHandler) Handle(ctx context.Context, record slog.Record) error {
 	redacted := slog.NewRecord(record.Time, record.Level, redactLogText(record.Message), record.PC)
+	// One budget for the whole record: every attribute is charged against it,
+	// so repeating a shared graph across many attributes cannot multiply the
+	// work or the emitted size.
+	state := newLogConversion()
 	record.Attrs(func(attr slog.Attr) bool {
-		redacted.AddAttrs(redactLogAttr(attr, 0, newLogConversion()))
+		redacted.AddAttrs(redactLogAttr(attr, 0, state))
 		return true
 	})
 	return h.next.Handle(ctx, redacted)
@@ -132,9 +138,12 @@ func (h redactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(attrs) == 0 {
 		return h
 	}
+	// Bound the batch at creation time, since the stored attributes are reused
+	// by every later record without being converted again.
+	state := newLogConversion()
 	redacted := make([]slog.Attr, len(attrs))
 	for index, attr := range attrs {
-		redacted[index] = redactLogAttr(attr, 0, newLogConversion())
+		redacted[index] = redactLogAttr(attr, 0, state)
 	}
 	return redactingHandler{next: h.next.WithAttrs(redacted)}
 }
@@ -143,19 +152,24 @@ func (h redactingHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h
 	}
-	return redactingHandler{next: h.next.WithGroup(name)}
+	// A WithGroup name is serialized as an object key just like an attribute
+	// key, so it is sanitized before the inner handler stores it.
+	return redactingHandler{next: h.next.WithGroup(redactLogText(name))}
 }
 
 // redactLogAttr resolves a value and redacts the text-bearing kinds. Resolution
 // happens before the kind switch so a LogValuer cannot smuggle a secret past
-// the wrapper.
+// the wrapper. The attribute key is sanitized like a map key: a caller can put
+// a credential or path in the key itself, and encoding/json would otherwise
+// serialize it verbatim.
 func redactLogAttr(attr slog.Attr, depth int, state *logConversion) slog.Attr {
+	key := state.capText(redactLogText(attr.Key))
 	value := attr.Value.Resolve()
 	if value.Kind() == slog.KindAny && value.Any() == nil {
-		return attr
+		return slog.Attr{Key: key, Value: value}
 	}
 	if depth >= maxLogGroupDepth {
-		return slog.Attr{Key: attr.Key, Value: slog.StringValue(redactedLogValue)}
+		return slog.Attr{Key: key, Value: slog.StringValue(redactedLogValue)}
 	}
 	switch value.Kind() {
 	case slog.KindString:
@@ -163,14 +177,21 @@ func redactLogAttr(attr slog.Attr, depth int, state *logConversion) slog.Attr {
 	case slog.KindAny:
 		value = slog.AnyValue(redactLogDynamic(value.Any(), depth, state))
 	case slog.KindGroup:
+		// A caller-built group can hold arbitrarily many scalar children, which
+		// the per-value dynamic converter would never charge because it only
+		// runs for slog.KindAny. Charge every child and stop at the shared item
+		// and node budgets so a wide group cannot emit megabytes.
 		group := value.Group()
-		redacted := make([]slog.Attr, len(group))
+		redacted := make([]slog.Attr, 0, boundedLogItems(len(group)))
 		for index, child := range group {
-			redacted[index] = redactLogAttr(child, depth+1, state)
+			if index >= maxLogCollectionItems || !state.enter() {
+				break
+			}
+			redacted = append(redacted, redactLogAttr(child, depth+1, state))
 		}
 		value = slog.GroupValue(redacted...)
 	}
-	return slog.Attr{Key: attr.Key, Value: value}
+	return slog.Attr{Key: key, Value: value}
 }
 
 // redactLogDynamic sanitizes the text-like values reachable from a slog.Any.
@@ -351,7 +372,7 @@ func redactLogStruct(reflected reflect.Value, depth int, state *logConversion) a
 			continue
 		}
 		processed++
-		result[state.capText(name)] = redactLogDynamic(reflected.Field(index).Interface(), depth+1, state)
+		result[state.capText(redactLogText(name))] = redactLogDynamic(reflected.Field(index).Interface(), depth+1, state)
 	}
 	return result
 }

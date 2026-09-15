@@ -45,6 +45,12 @@ describe("assistant serve port/host parity", () => {
 		expect(retiredMentions.length).toBeGreaterThan(0);
 		for (const line of retiredMentions) {
 			expect(line).toMatch(/reject|retired|ignored|not supported|unsupported/i);
+			// A rejection sentence must never also assign or recommend the
+			// variable, e.g. "PIXIE_ASSISTANT_PORT=3284 still works" or
+			// "set PIXIE_ASSISTANT_PORT to ...".
+			expect(line).not.toMatch(/PIXIE_ASSISTANT_PORT\s*=/);
+			expect(line).not.toMatch(/\bset(?:ting)?\b[^.\n]*\bPIXIE_ASSISTANT_PORT\b/i);
+			expect(line).not.toMatch(/\bPIXIE_ASSISTANT_PORT\b[^.\n]*\bset(?:ting)?\b[^.\n]*\bto\b/i);
 		}
 	});
 

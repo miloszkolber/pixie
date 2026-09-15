@@ -46,6 +46,37 @@ export const MAX_COLLECTION_ENTRIES = 100;
 export const FIELD_BOUND_PLACEHOLDER = "[truncated]";
 
 /**
+ * Approximate serialized-byte budget for one converted field graph. Conversion
+ * memoizes one result per source object, but the converted graph is shared:
+ * the emit sink serializes it with `JSON.stringify`, which re-expands a shared
+ * subtree once per reference. Every materialized occurrence — including a
+ * repeated reference to an already-converted object — is charged against this
+ * budget, so the serializable output is bounded regardless of sharing. A value
+ * that would exceed the remaining budget becomes `FIELD_BOUND_PLACEHOLDER`.
+ */
+export const MAX_MATERIALIZED_BYTES = 64 * 1024;
+
+/** Serialized length of the placeholder, used by the materialization budget. */
+const PLACEHOLDER_COST = FIELD_BOUND_PLACEHOLDER.length + 2;
+
+/** Conservative upper bound of `JSON.stringify(text).length`. */
+function jsonStringCost(text: string): number {
+	let cost = 2;
+	for (let index = 0; index < text.length; index += 1) {
+		const code = text.charCodeAt(index);
+		if (code === 0x22 || code === 0x5c) cost += 2;
+		else if (code < 0x20 || (code >= 0xd800 && code <= 0xdfff)) cost += 6;
+		else cost += 1;
+	}
+	return cost;
+}
+
+function jsonNumberCost(value: number): number {
+	if (!Number.isFinite(value)) return 4;
+	return Math.max(1, String(value).length);
+}
+
+/**
  * Maximum retained length of one redacted stderr line. The line is redacted
  * first so a truncated tail can never expose raw secret text, then shortened.
  */
@@ -83,22 +114,41 @@ export function redactHostLogText(text: string, secrets: readonly string[] = [])
 }
 
 /**
- * Per-conversion memoization state. `cache` maps each source object to its
- * converted result, so a shared (non-cyclic) reference is converted once and
- * re-used at every position instead of being re-walked per path. `active`
- * tracks the current path only, so a true cycle still becomes a placeholder.
+ * Per-conversion state. `cache` maps each source object to its converted
+ * result plus the serialized cost of one materialization, so a shared
+ * (non-cyclic) reference is converted once instead of being re-walked per
+ * path. `active` tracks the current path only, so a true cycle still becomes
+ * a placeholder. `remaining` is the approximate serialized-byte budget left
+ * for materializations: a repeated reference is charged the full cost of its
+ * subtree again because the emit sink's `JSON.stringify` expands it again.
  */
+interface RedactedField {
+	readonly value: unknown;
+	readonly cost: number;
+}
+
 interface RedactionState {
-	readonly cache: WeakMap<object, unknown>;
+	readonly cache: WeakMap<object, RedactedField>;
 	readonly active: WeakSet<object>;
+	remaining: number;
 }
 
 /** Redact one structured field value without changing its JSON-safe shape. */
 export function redactHostLogField(value: unknown, secrets: readonly string[] = []): unknown {
 	return redactFieldValue(value, secrets, 0, {
-		cache: new WeakMap<object, unknown>(),
+		cache: new WeakMap<object, RedactedField>(),
 		active: new WeakSet<object>(),
-	});
+		remaining: MAX_MATERIALIZED_BYTES,
+	}).value;
+}
+
+/**
+ * Substitute the truncation placeholder once the materialization budget is
+ * spent. The placeholder is still charged so the accounting stays conservative.
+ */
+function placeholderField(state: RedactionState): RedactedField {
+	state.remaining -= PLACEHOLDER_COST;
+	return { value: FIELD_BOUND_PLACEHOLDER, cost: PLACEHOLDER_COST };
 }
 
 function redactFieldValue(
@@ -106,52 +156,114 @@ function redactFieldValue(
 	secrets: readonly string[],
 	depth: number,
 	state: RedactionState,
-): unknown {
-	if (typeof value === "string") return redactHostLogText(value, secrets);
-	if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
-	if (typeof value !== "object") return undefined;
-	if (depth >= MAX_FIELD_DEPTH) return FIELD_BOUND_PLACEHOLDER;
-	if (state.active.has(value)) return FIELD_BOUND_PLACEHOLDER;
-	// The cache bound is what keeps total work linear: one conversion per distinct
-	// source object no matter how many paths reach it. A completed result is never
-	// re-entered, so returning it cannot recurse further.
+): RedactedField {
+	if (state.remaining <= 0) return placeholderField(state);
+	if (typeof value === "string") {
+		const text = redactHostLogText(value, secrets);
+		const cost = jsonStringCost(text);
+		if (cost > state.remaining) return placeholderField(state);
+		state.remaining -= cost;
+		return { value: text, cost };
+	}
+	if (typeof value === "number") {
+		const cost = jsonNumberCost(value);
+		state.remaining -= cost;
+		return { value, cost };
+	}
+	if (typeof value === "boolean") {
+		const cost = value ? 4 : 5;
+		state.remaining -= cost;
+		return { value, cost };
+	}
+	if (value === null) {
+		state.remaining -= 4;
+		return { value: null, cost: 4 };
+	}
+	if (typeof value !== "object") return { value: undefined, cost: 0 };
+	if (depth >= MAX_FIELD_DEPTH) return placeholderField(state);
+	if (state.active.has(value)) return placeholderField(state);
+	// The cache keeps conversion work linear in the number of distinct source
+	// objects. A completed result is never re-entered, so returning it cannot
+	// recurse further. A repeated reference is charged its full materialized
+	// cost, because `JSON.stringify` expands the shared subtree again here.
 	const cached = state.cache.get(value);
-	if (cached !== undefined) return cached;
+	if (cached !== undefined) {
+		if (cached.cost > state.remaining) return placeholderField(state);
+		state.remaining -= cached.cost;
+		return cached;
+	}
 	state.active.add(value);
 	try {
-		let result: unknown;
-		if (Array.isArray(value)) {
-			const array: unknown[] = [];
-			let truncated = false;
-			for (let index = 0; index < value.length; index += 1) {
-				if (array.length >= MAX_COLLECTION_ENTRIES) {
-					truncated = true;
-					break;
-				}
-				array.push(redactFieldValue(value[index], secrets, depth + 1, state));
-			}
-			if (truncated) array.push(FIELD_BOUND_PLACEHOLDER);
-			result = array;
-		} else {
-			const source = value as Record<string, unknown>;
-			const record: Record<string, unknown> = {};
-			let count = 0;
-			for (const key in source) {
-				if (!Object.hasOwn(source, key)) continue;
-				if (count >= MAX_COLLECTION_ENTRIES) {
-					record[FIELD_BOUND_PLACEHOLDER] = true;
-					break;
-				}
-				record[key] = redactFieldValue(source[key], secrets, depth + 1, state);
-				count += 1;
-			}
-			result = record;
-		}
+		const result = Array.isArray(value)
+			? redactFieldArray(value, secrets, depth, state)
+			: redactFieldRecord(value as Record<string, unknown>, secrets, depth, state);
 		state.cache.set(value, result);
 		return result;
 	} finally {
 		state.active.delete(value);
 	}
+}
+
+function redactFieldArray(
+	value: readonly unknown[],
+	secrets: readonly string[],
+	depth: number,
+	state: RedactionState,
+): RedactedField {
+	const array: unknown[] = [];
+	let cost = 2;
+	let childCost = 0;
+	let truncated = false;
+	for (let index = 0; index < value.length; index += 1) {
+		if (array.length >= MAX_COLLECTION_ENTRIES) {
+			truncated = true;
+			break;
+		}
+		const child = redactFieldValue(value[index], secrets, depth + 1, state);
+		array.push(child.value);
+		cost += child.cost + 1;
+		childCost += child.cost;
+	}
+	if (truncated) {
+		array.push(FIELD_BOUND_PLACEHOLDER);
+		cost += PLACEHOLDER_COST + 1;
+	}
+	state.remaining -= cost - childCost;
+	return { value: array, cost };
+}
+
+function redactFieldRecord(
+	source: Record<string, unknown>,
+	secrets: readonly string[],
+	depth: number,
+	state: RedactionState,
+): RedactedField {
+	const record: Record<string, unknown> = {};
+	let cost = 2;
+	let childCost = 0;
+	let count = 0;
+	let truncated = false;
+	for (const key in source) {
+		if (!Object.hasOwn(source, key)) continue;
+		if (count >= MAX_COLLECTION_ENTRIES) {
+			truncated = true;
+			break;
+		}
+		// Keys cross the same redaction as values so a credential label or
+		// bearer token cannot survive as a record key.
+		const redactedKey = redactHostLogText(key, secrets);
+		const child = redactFieldValue(source[key], secrets, depth + 1, state);
+		record[redactedKey] = child.value;
+		cost += jsonStringCost(redactedKey) + 2 + child.cost;
+		childCost += child.cost;
+		count += 1;
+	}
+	if (truncated) {
+		record[FIELD_BOUND_PLACEHOLDER] = true;
+		cost += jsonStringCost(FIELD_BOUND_PLACEHOLDER) + 2 + 4;
+	}
+	state.remaining -= cost - childCost;
+	return { value: record, cost };
 }
 
 /**

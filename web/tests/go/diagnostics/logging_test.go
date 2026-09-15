@@ -498,6 +498,146 @@ func assertNestedAttrShape(t *testing.T, value any, label string) {
 	}
 }
 
+// taggedKeyStruct carries a credential-bearing path in an explicit JSON tag so
+// the handler must sanitize the emitted object key instead of copying the tag
+// name to the JSON encoder.
+type taggedKeyStruct struct {
+	Ordinary string `json:"ordinary-field"`
+	Secret   string `json:"/home/operator/.pi/agent/secret.json"`
+}
+
+// TestLoggerRedactsEmittedKeys is the regression for the key bypass: a
+// credential in a top-level attribute key, in a slog.Group child key and in a
+// struct JSON tag name must be sanitized, while the values and ordinary keys
+// survive.
+func TestLoggerRedactsEmittedKeys(t *testing.T) {
+	const (
+		topLevelKey = "Bearer top-secret-token-abcdefghij"
+		groupKey    = "Bearer group-secret-token-abcdefghij"
+	)
+
+	var output bytes.Buffer
+	logger := diagnostics.NewLoggerWithWriter(&output, "controller", diagnostics.NormalizeBuild("v1.2.3", "unknown"))
+	logWithoutPanic(t, func() {
+		logger.Warn("key redaction",
+			slog.String(topLevelKey, "top-level-benign"),
+			slog.Group("g", slog.String(groupKey, "group-benign")),
+			"holder", taggedKeyStruct{Ordinary: "ordinary-value", Secret: "tag-benign"},
+		)
+	})
+
+	encoded := strings.TrimSpace(output.String())
+	for _, forbidden := range []string{"top-secret-token-abcdefghij", "group-secret-token-abcdefghij", "operator", "secret.json"} {
+		if strings.Contains(encoded, forbidden) {
+			t.Fatalf("emitted key leaked %q: %s", forbidden, encoded)
+		}
+	}
+
+	record := decodeLogRecord(t, encoded)
+	if record["Bearer [redacted]"] != "top-level-benign" {
+		t.Fatalf("top-level key was not redacted in place: %#v", record)
+	}
+	group, ok := record["g"].(map[string]any)
+	if !ok {
+		t.Fatalf("group did not survive: %#v", record["g"])
+	}
+	if group["Bearer [redacted]"] != "group-benign" {
+		t.Fatalf("group child key was not redacted in place: %#v", group)
+	}
+	holder, ok := record["holder"].(map[string]any)
+	if !ok {
+		t.Fatalf("struct holder did not survive: %#v", record["holder"])
+	}
+	if holder["ordinary-field"] != "ordinary-value" {
+		t.Fatalf("ordinary struct key did not survive: %#v", holder)
+	}
+	if holder["[redacted path]"] != "tag-benign" {
+		t.Fatalf("struct JSON tag was not redacted as a key: %#v", holder)
+	}
+}
+
+// TestLoggerBoundsWideSlogGroup is the regression for the unbounded group
+// branch: a caller-built slog.Group with 200,000 scalar children must respect
+// the collection and node budgets, completing promptly and emitting bounded
+// output instead of megabytes.
+func TestLoggerBoundsWideSlogGroup(t *testing.T) {
+	const (
+		childCount = 200_000
+		maxOutput  = 1 << 18
+	)
+	children := make([]any, 0, childCount)
+	for index := 0; index < childCount; index++ {
+		children = append(children, slog.String(fmt.Sprintf("field-%06d", index), "value"))
+	}
+
+	var output bytes.Buffer
+	logger := diagnostics.NewLoggerWithWriter(&output, "controller", diagnostics.NormalizeBuild("v1.2.3", "unknown"))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		logger.Warn("wide group", slog.Group("wide", children...))
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("wide group conversion did not complete within 5s")
+	}
+
+	if size := output.Len(); size > maxOutput {
+		t.Fatalf("wide group output was not bounded: %d bytes", size)
+	}
+	record := decodeLogRecord(t, strings.TrimSpace(output.String()))
+	wide, ok := record["wide"].(map[string]any)
+	if !ok {
+		t.Fatalf("wide group did not survive: %#v", record["wide"])
+	}
+	if len(wide) > 256 {
+		t.Fatalf("wide group emitted %d children past the collection cap", len(wide))
+	}
+	if wide["field-000000"] != "value" {
+		t.Fatalf("leading group child did not survive: %#v", wide["field-000000"])
+	}
+}
+
+// TestLoggerBoundsSharedGraphAcrossRecordAttributes is the regression for the
+// per-attribute budget: 40 attributes that all hold the same shared DAG must
+// share one record budget, so the encoded record stays bounded instead of
+// multiplying the per-attribute output.
+func TestLoggerBoundsSharedGraphAcrossRecordAttributes(t *testing.T) {
+	const (
+		attributeCount = 40
+		maxOutput      = 1 << 20
+	)
+	graph := buildSharedDAG(6)
+	args := make([]any, 0, attributeCount*2)
+	for index := 0; index < attributeCount; index++ {
+		args = append(args, fmt.Sprintf("graph-%02d", index), graph)
+	}
+
+	var output bytes.Buffer
+	logger := diagnostics.NewLoggerWithWriter(&output, "controller", diagnostics.NormalizeBuild("v1.2.3", "unknown"))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		logger.Warn("shared graph attributes", args...)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shared graph record conversion did not complete within 5s")
+	}
+
+	if size := output.Len(); size > maxOutput {
+		t.Fatalf("shared graph record output was not bounded: %d bytes", size)
+	}
+	record := decodeLogRecord(t, strings.TrimSpace(output.String()))
+	if record["graph-00"] == nil {
+		t.Fatalf("first shared graph attribute did not survive: %#v", record)
+	}
+}
+
 func assertRedactedString(t *testing.T, value any, label string) {
 	t.Helper()
 	text, ok := value.(string)

@@ -6,6 +6,7 @@ import {
 	FIELD_BOUND_PLACEHOLDER,
 	MAX_COLLECTION_ENTRIES,
 	MAX_FIELD_DEPTH,
+	MAX_MATERIALIZED_BYTES,
 	MAX_STDERR_LINE_LENGTH,
 	redactHostLogField,
 	redactHostLogText,
@@ -58,6 +59,25 @@ describe("secret-safe host logging", () => {
 		);
 		expect(JSON.stringify(value)).not.toContain("127.0.0.1");
 		expect(JSON.stringify(value)).not.toContain("/var/lib");
+	});
+
+	test("redacts record keys as well as record values", () => {
+		const secret = "k".repeat(48);
+		const value = redactHostLogField(
+			{
+				"Bearer abcdef0123456789": "benign",
+				[`prefix-${secret}`]: "benign",
+				plain: "benign",
+			},
+			[secret],
+		) as Record<string, unknown>;
+		const keys = Object.keys(value).join(" ");
+		expect(keys).not.toContain("abcdef0123456789");
+		expect(keys).not.toContain(secret);
+		expect(keys).toContain("Bearer [redacted]");
+		expect(keys).toContain("plain");
+		expect(JSON.stringify(value)).not.toContain("abcdef0123456789");
+		expect(JSON.stringify(value)).not.toContain(secret);
 	});
 
 	test("bounds a self-referential field graph instead of recursing without limit", () => {
@@ -113,6 +133,34 @@ describe("secret-safe host logging", () => {
 		// objects rather than to the number of root-to-leaf paths.
 		expect(countConvertedNodes(redacted, 1000)).toBeLessThanOrEqual(depth + 1);
 
+		let cursor: unknown = redacted;
+		for (let level = 0; level < depth; level += 1) {
+			cursor = (cursor as Record<string, unknown>).child0;
+		}
+		expect(cursor).toEqual({ leaf: "[path]" });
+	});
+
+	test("bounds the serialized expansion of a shared DAG within the per-level caps", () => {
+		// The same branch-8 depth-7 DAG as above. Memoization converts it to a
+		// small shared graph, but the emit sink's JSON.stringify re-expands the
+		// shared subtree once per path, so without a materialization budget the
+		// serialized form is millions of nodes (~tens of MB).
+		const branching = 8;
+		const depth = 7;
+		let node: Record<string, unknown> = { leaf: "/var/lib/pi-agent/secret.json" };
+		for (let level = 0; level < depth; level += 1) {
+			const parent: Record<string, unknown> = {};
+			for (let child = 0; child < branching; child += 1) parent[`child${child}`] = node;
+			node = parent;
+		}
+
+		const redacted = redactHostLogField(node);
+		const serialized = JSON.stringify(redacted);
+		expect(serialized.length).toBeLessThanOrEqual(MAX_MATERIALIZED_BYTES + 64 * 1024);
+		expect(serialized).not.toContain("/var/lib");
+
+		// The first path is still fully materialized: truncation starts only once
+		// the budget is spent, so redaction still applies before truncation.
 		let cursor: unknown = redacted;
 		for (let level = 0; level < depth; level += 1) {
 			cursor = (cursor as Record<string, unknown>).child0;
