@@ -1,6 +1,7 @@
 import type {
 	ProviderStatus,
 	ProviderStatusReport,
+	RefreshFailure,
 	WireModel,
 	WireModelCost,
 	WireModelCostTier,
@@ -76,19 +77,72 @@ export function filterModels(
 	);
 }
 
-type ModelCatalogResponse = WireModel[] | { models: WireModel[]; complete?: boolean };
+type ModelCatalogResponse =
+	| WireModel[]
+	| { models: WireModel[]; complete?: boolean; failed?: readonly RefreshFailure[] | null };
+
+export interface ModelCatalogResult {
+	models: WireModel[];
+	report: ProviderStatusReport;
+	complete: boolean;
+	failed: RefreshFailure[];
+}
+
+// Older hosts omit `failed` entirely and a future host could send malformed
+// entries, so keep only well-formed provider/reason pairs at this boundary.
+function normalizeRefreshFailures(value: unknown): RefreshFailure[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter(isRefreshFailure);
+}
+
+function isRefreshFailure(value: unknown): value is RefreshFailure {
+	if (typeof value !== "object" || value === null) return false;
+	const entry = value as Partial<RefreshFailure>;
+	return typeof entry.providerId === "string" && typeof entry.reason === "string";
+}
 
 export async function refreshModelCatalog(
 	loadCatalog: () => Promise<ModelCatalogResponse>,
 	loadProviders: () => Promise<ProviderStatusReport>,
-): Promise<{ models: WireModel[]; report: ProviderStatusReport; complete: boolean }> {
+): Promise<ModelCatalogResult> {
 	const catalog = await loadCatalog();
 	const report = await loadProviders();
 	return {
 		models: Array.isArray(catalog) ? catalog : catalog.models,
 		report,
 		complete: Array.isArray(catalog) || catalog.complete !== false,
+		failed: Array.isArray(catalog) ? [] : normalizeRefreshFailures(catalog.failed),
 	};
+}
+
+const MAX_REFRESH_FAILURE_ENTRIES = 3;
+
+// Pi reports a bounded failure code, not the SDK message, but never echo an
+// unrecognised reason either: an older or newer host could still send raw
+// error text that carries credentials, URLs or absolute paths.
+const REFRESH_FAILURE_REASON_LABELS: Readonly<Record<string, string>> = {
+	refresh_failed: "refresh failed",
+};
+
+function refreshFailureReasonLabel(reason: string): string {
+	return REFRESH_FAILURE_REASON_LABELS[reason] ?? "refresh failed";
+}
+
+export function refreshFailureWarning(
+	failed: readonly RefreshFailure[],
+	providers: ReadonlyMap<string, ProviderStatus>,
+): string | null {
+	if (failed.length === 0) return null;
+	const entries: string[] = [];
+	for (const failure of failed) {
+		const name = providerName(failure.providerId, providers).trim() || "an unknown provider";
+		const entry = `${name} (${refreshFailureReasonLabel(failure.reason)})`;
+		if (!entries.includes(entry)) entries.push(entry);
+	}
+	const shown = entries.slice(0, MAX_REFRESH_FAILURE_ENTRIES);
+	const remaining = entries.length - shown.length;
+	const list = remaining > 0 ? `${shown.join(", ")} and ${remaining} more` : shown.join(", ");
+	return `Some providers couldn't refresh: ${list}. Their model lists may be out of date. Refresh again to retry.`;
 }
 
 export function shouldLoadModelCatalog(force: boolean, forceRefreshInFlight: boolean): boolean {

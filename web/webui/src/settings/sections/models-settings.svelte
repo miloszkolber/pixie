@@ -1,5 +1,10 @@
 <script lang="ts">
-import type { ProviderStatus, ProviderStatusReport, WireModel } from "@pixie/shared";
+import type {
+	ProviderStatus,
+	ProviderStatusReport,
+	RefreshFailure,
+	WireModel,
+} from "@pixie/shared";
 import { onMount } from "svelte";
 import Button from "@/components/button.svelte";
 import Icon from "@/components/icon.svelte";
@@ -13,6 +18,7 @@ import {
 	formatTokenCount,
 	providerName,
 	rateText,
+	refreshFailureWarning,
 	refreshModelCatalog,
 	shouldLoadModelCatalog,
 	shouldReloadModelCatalogRevision,
@@ -25,6 +31,7 @@ let query = $state("");
 let loading = $state(true);
 let refreshing = $state(false);
 let failed = $state(false);
+let refreshFailures = $state<RefreshFailure[]>([]);
 let metadataIncomplete = $state(false);
 let busyModel = $state<string | null>(null);
 let bulkBusy = $state(false);
@@ -38,6 +45,7 @@ let observedCatalogRevision = $state<string | null>(null);
 let providerVersion = $derived($appStore.providerVersion);
 let catalogRevision = $derived(`${providerVersion}\u0002${hiddenModelRevision($appStore.config)}`);
 let providers = $derived(new Map(report.providers.map((provider) => [provider.id, provider])));
+let refreshWarning = $derived(refreshFailureWarning(refreshFailures, providers));
 let catalog = $derived(configuredAvailableModels(models, providers));
 let filtered = $derived(filterModels(catalog, providers, query));
 let visibleCount = $derived(catalog.filter((model) => !model.hidden).length);
@@ -77,6 +85,7 @@ async function load(force = false): Promise<void> {
 					models: catalog,
 					report: providerReport,
 					complete: catalog.every((model) => model.metadataComplete === true),
+					failed: [] as RefreshFailure[],
 				}));
 		if (
 			!mounted ||
@@ -88,10 +97,12 @@ async function load(force = false): Promise<void> {
 		models = result.models;
 		report = result.report;
 		metadataIncomplete = !result.complete;
+		refreshFailures = result.failed;
 		failed = false;
 	} catch (error) {
 		if (!mounted || sequence !== loadSequence) return;
 		failed = true;
+		refreshFailures = [];
 		if (force) notifyError(error, "Couldn't refresh models");
 	} finally {
 		if (force && forceRefreshSequence === sequence) forceRefreshInFlight = false;
@@ -280,6 +291,16 @@ async function setAllVisibility(hidden: boolean): Promise<void> {
 			</Button>
 		</div>
 	</div>
+
+	{#if refreshWarning}
+		<p
+			role="status"
+			data-testid="models-refresh-warning"
+			class="u-text-feedback-warning tr-text-metadata"
+		>
+			{refreshWarning}
+		</p>
+	{/if}
 
 	<label class="text-field models-filter u-items-center u-gap-sm">
 		<Icon name="search" size={16} class="u-text-text-muted" />

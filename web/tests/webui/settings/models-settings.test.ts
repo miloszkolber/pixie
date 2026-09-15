@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
-import type { ProviderStatus, WireModel } from "@pixie/shared";
+import type { ProviderStatus, RefreshFailure, WireModel } from "@pixie/shared";
 import {
 	cacheText,
 	configuredAvailableModels,
 	filterModels,
 	formatTokenCount,
 	rateText,
+	refreshFailureWarning,
 	refreshModelCatalog,
 	shouldLoadModelCatalog,
 	shouldReloadModelCatalogRevision,
@@ -131,9 +132,93 @@ test("a forced refresh waits to load provider status and blocks ordinary provide
 		models: [model],
 		report: { providers: [provider] },
 		complete: true,
+		failed: [],
 	});
 	expect(calls).toEqual(["model.refresh", "provider.status"]);
 	expect(shouldLoadModelCatalog(false, false)).toBeTrue();
+});
+
+test("a partial model.refresh keeps the loaded models and surfaces every affected provider", async () => {
+	const failed: RefreshFailure[] = [
+		{ providerId: "provider-a", reason: "refresh_failed" },
+		{ providerId: "provider-b", reason: "refresh_failed" },
+	];
+	const result = await refreshModelCatalog(
+		async () => ({ models: [model], complete: true, failed }),
+		async () => ({ providers: [provider] }),
+	);
+	expect(result.models).toEqual([model]);
+	expect(result.complete).toBeTrue();
+	expect(result.failed).toEqual(failed);
+
+	const providers = new Map([
+		[provider.id, provider],
+		["provider-b", { ...provider, id: "provider-b", name: "Provider B" }],
+	]);
+	const warning = refreshFailureWarning(result.failed, providers);
+	expect(warning).not.toBeNull();
+	expect(warning).toContain("Provider A (refresh failed)");
+	expect(warning).toContain("Provider B (refresh failed)");
+});
+
+test("an absent or empty refresh failure list stays silent", async () => {
+	const legacy = await refreshModelCatalog(
+		async () => ({ models: [model], complete: true }),
+		async () => ({ providers: [provider] }),
+	);
+	expect(legacy.failed).toEqual([]);
+	expect(legacy.complete).toBeTrue();
+	expect(refreshFailureWarning(legacy.failed, new Map())).toBeNull();
+
+	const arrayCatalog = await refreshModelCatalog(
+		async () => [model],
+		async () => ({ providers: [provider] }),
+	);
+	expect(arrayCatalog.failed).toEqual([]);
+
+	const empty = await refreshModelCatalog(
+		async () => ({ models: [model], complete: true, failed: [] }),
+		async () => ({ providers: [provider] }),
+	);
+	expect(refreshFailureWarning(empty.failed, new Map())).toBeNull();
+});
+
+test("a partial refresh warning never echoes raw reason text and the view renders it", async () => {
+	const secretReason =
+		"Authorization: Bearer super-secret-token https://api.example.com/v1 /home/user/.config/pi/credentials.json";
+	const failed: RefreshFailure[] = [{ providerId: "provider-a", reason: secretReason }];
+	const warning = refreshFailureWarning(failed, new Map([[provider.id, provider]]));
+	expect(warning).not.toBeNull();
+	expect(warning).toContain("Provider A (refresh failed)");
+	for (const secret of ["super-secret-token", "Authorization", "https://", "/home/user", ".json"]) {
+		expect(warning ?? "").not.toContain(secret);
+	}
+
+	const source = await Bun.file(
+		new URL("../../../webui/src/settings/sections/models-settings.svelte", import.meta.url),
+	).text();
+	expect(source).toContain('data-testid="models-refresh-warning"');
+	expect(source).toContain(
+		"let refreshWarning = $derived(refreshFailureWarning(refreshFailures, providers))",
+	);
+	expect(source).toContain('role="status"');
+	expect(source).not.toContain("failure.reason");
+});
+
+test("a partial refresh warning bounds the provider list", () => {
+	const providers = new Map(
+		["a", "b", "c", "d", "e"].map((id) => [
+			id,
+			{ ...provider, id, name: `Provider ${id.toUpperCase()}` },
+		]),
+	);
+	const failed: RefreshFailure[] = ["a", "b", "c", "d", "e"].map((id) => ({
+		providerId: id,
+		reason: "refresh_failed",
+	}));
+	const warning = refreshFailureWarning(failed, providers);
+	expect(warning).toContain("and 2 more");
+	expect(warning).not.toContain("Provider D");
 });
 
 test("a revision blocked by a forced refresh remains unobserved and reloads afterward", async () => {
