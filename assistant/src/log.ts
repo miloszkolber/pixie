@@ -82,54 +82,75 @@ export function redactHostLogText(text: string, secrets: readonly string[] = [])
 	return out;
 }
 
+/**
+ * Per-conversion memoization state. `cache` maps each source object to its
+ * converted result, so a shared (non-cyclic) reference is converted once and
+ * re-used at every position instead of being re-walked per path. `active`
+ * tracks the current path only, so a true cycle still becomes a placeholder.
+ */
+interface RedactionState {
+	readonly cache: WeakMap<object, unknown>;
+	readonly active: WeakSet<object>;
+}
+
 /** Redact one structured field value without changing its JSON-safe shape. */
 export function redactHostLogField(value: unknown, secrets: readonly string[] = []): unknown {
-	return redactFieldValue(value, secrets, 0, new WeakSet<object>());
+	return redactFieldValue(value, secrets, 0, {
+		cache: new WeakMap<object, unknown>(),
+		active: new WeakSet<object>(),
+	});
 }
 
 function redactFieldValue(
 	value: unknown,
 	secrets: readonly string[],
 	depth: number,
-	seen: WeakSet<object>,
+	state: RedactionState,
 ): unknown {
 	if (typeof value === "string") return redactHostLogText(value, secrets);
 	if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
 	if (typeof value !== "object") return undefined;
 	if (depth >= MAX_FIELD_DEPTH) return FIELD_BOUND_PLACEHOLDER;
-	if (seen.has(value)) return FIELD_BOUND_PLACEHOLDER;
-	// `seen` tracks the current path only, so a shared (non-cyclic) reference is
-	// still serialized at each position while a true cycle stops immediately.
-	seen.add(value);
+	if (state.active.has(value)) return FIELD_BOUND_PLACEHOLDER;
+	// The cache bound is what keeps total work linear: one conversion per distinct
+	// source object no matter how many paths reach it. A completed result is never
+	// re-entered, so returning it cannot recurse further.
+	const cached = state.cache.get(value);
+	if (cached !== undefined) return cached;
+	state.active.add(value);
 	try {
+		let result: unknown;
 		if (Array.isArray(value)) {
-			const result: unknown[] = [];
+			const array: unknown[] = [];
 			let truncated = false;
 			for (let index = 0; index < value.length; index += 1) {
-				if (result.length >= MAX_COLLECTION_ENTRIES) {
+				if (array.length >= MAX_COLLECTION_ENTRIES) {
 					truncated = true;
 					break;
 				}
-				result.push(redactFieldValue(value[index], secrets, depth + 1, seen));
+				array.push(redactFieldValue(value[index], secrets, depth + 1, state));
 			}
-			if (truncated) result.push(FIELD_BOUND_PLACEHOLDER);
-			return result;
-		}
-		const source = value as Record<string, unknown>;
-		const result: Record<string, unknown> = {};
-		let count = 0;
-		for (const key in source) {
-			if (!Object.hasOwn(source, key)) continue;
-			if (count >= MAX_COLLECTION_ENTRIES) {
-				result[FIELD_BOUND_PLACEHOLDER] = true;
-				break;
+			if (truncated) array.push(FIELD_BOUND_PLACEHOLDER);
+			result = array;
+		} else {
+			const source = value as Record<string, unknown>;
+			const record: Record<string, unknown> = {};
+			let count = 0;
+			for (const key in source) {
+				if (!Object.hasOwn(source, key)) continue;
+				if (count >= MAX_COLLECTION_ENTRIES) {
+					record[FIELD_BOUND_PLACEHOLDER] = true;
+					break;
+				}
+				record[key] = redactFieldValue(source[key], secrets, depth + 1, state);
+				count += 1;
 			}
-			result[key] = redactFieldValue(source[key], secrets, depth + 1, seen);
-			count += 1;
+			result = record;
 		}
+		state.cache.set(value, result);
 		return result;
 	} finally {
-		seen.delete(value);
+		state.active.delete(value);
 	}
 }
 

@@ -11,6 +11,25 @@ import {
 	redactHostLogText,
 } from "../src/log.ts";
 
+/** Count distinct objects reachable from `root`, aborting once `limit` is passed. */
+function countConvertedNodes(root: unknown, limit: number): number {
+	const seen = new WeakSet<object>();
+	const pending: unknown[] = [root];
+	let count = 0;
+	while (pending.length > 0) {
+		const current = pending.pop();
+		if (current === null || typeof current !== "object") continue;
+		if (seen.has(current)) continue;
+		seen.add(current);
+		count += 1;
+		if (count > limit) return count;
+		for (const key of Object.keys(current)) {
+			pending.push((current as Record<string, unknown>)[key]);
+		}
+	}
+	return count;
+}
+
 describe("secret-safe host logging", () => {
 	test("redacts bearer tokens, credential values, URLs and absolute paths", () => {
 		const text =
@@ -71,6 +90,34 @@ describe("secret-safe host logging", () => {
 		expect(depth).toBeLessThanOrEqual(MAX_FIELD_DEPTH);
 		expect(cursor).toBe(FIELD_BOUND_PLACEHOLDER);
 		expect(JSON.stringify(redacted)).not.toContain("/var/lib");
+	});
+
+	test("converts a shared DAG once instead of re-walking it per path", () => {
+		// Only DEPTH + 1 objects exist, but each level points all of its children
+		// at one shared next level, so a path-only visited set expands 8^7 paths.
+		const branching = 8;
+		const depth = 7;
+		let node: Record<string, unknown> = { leaf: "/var/lib/pi-agent/secret.json" };
+		for (let level = 0; level < depth; level += 1) {
+			const parent: Record<string, unknown> = {};
+			for (let child = 0; child < branching; child += 1) parent[`child${child}`] = node;
+			node = parent;
+		}
+
+		const started = performance.now();
+		const redacted = redactHostLogField(node) as Record<string, unknown>;
+		const elapsed = performance.now() - started;
+		expect(elapsed).toBeLessThan(1000);
+
+		// Bounded output: converted nodes stay proportional to the distinct source
+		// objects rather than to the number of root-to-leaf paths.
+		expect(countConvertedNodes(redacted, 1000)).toBeLessThanOrEqual(depth + 1);
+
+		let cursor: unknown = redacted;
+		for (let level = 0; level < depth; level += 1) {
+			cursor = (cursor as Record<string, unknown>).child0;
+		}
+		expect(cursor).toEqual({ leaf: "[path]" });
 	});
 
 	test("caps per-collection entries in a redacted field", () => {

@@ -37,9 +37,15 @@ describe("assistant serve port/host parity", () => {
 		expect(deployment).toContain("config `port`");
 		expect(deployment).toContain("PIXIE_PI_PORT");
 		expect(deployment).toContain("must match");
-		// The retired variable may be named, but only as rejected, never as a
-		// setting an operator should use.
-		expect(deployment).toMatch(/Rejected or retired[^\n]*PIXIE_ASSISTANT_PORT/);
+		// The retired variable may be named, but every mention must be in a
+		// rejection context so the doc never presents it as a usable setting.
+		const retiredMentions = deployment
+			.split("\n")
+			.filter((line) => line.includes("PIXIE_ASSISTANT_PORT"));
+		expect(retiredMentions.length).toBeGreaterThan(0);
+		for (const line of retiredMentions) {
+			expect(line).toMatch(/reject|retired|ignored|not supported|unsupported/i);
+		}
 	});
 
 	test("rejects the deprecated assistant port environment in favor of config port", () => {

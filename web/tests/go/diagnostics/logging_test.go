@@ -359,6 +359,145 @@ func TestLoggerBoundsCyclicDynamicValues(t *testing.T) {
 	}
 }
 
+// sharedDAGNode is a small non-cyclic graph: every node has eight child fields
+// that all point at the same next node, so the number of distinct nodes is
+// linear while the number of distinct paths is 8^depth. That is well inside
+// maxLogCollectionItems and maxLogGroupDepth, so only a total-work bound keeps
+// the conversion from expanding every path.
+type sharedDAGNode struct {
+	Label                          string
+	Child0, Child1, Child2, Child3 *sharedDAGNode
+	Child4, Child5, Child6, Child7 *sharedDAGNode
+}
+
+// buildSharedDAG builds depth levels, each of whose eight children point at the
+// single node below it.
+func buildSharedDAG(depth int) *sharedDAGNode {
+	var next *sharedDAGNode
+	for level := 0; level < depth; level++ {
+		next = &sharedDAGNode{
+			Label:  fmt.Sprintf("level-%d", level),
+			Child0: next, Child1: next, Child2: next, Child3: next,
+			Child4: next, Child5: next, Child6: next, Child7: next,
+		}
+	}
+	return next
+}
+
+// TestLoggerBoundsSharedDAGWork is the regression for the exponential shared
+// graph: every node has eight children all pointing at the same next node,
+// within the per-level width and depth caps, yet re-walking every path expands
+// to 8^depth values. The conversion must finish promptly and emit bounded
+// output rather than walking and allocating every path.
+func TestLoggerBoundsSharedDAGWork(t *testing.T) {
+	const (
+		dagDepth  = 6
+		maxOutput = 1 << 20
+	)
+	graph := buildSharedDAG(dagDepth)
+
+	var output bytes.Buffer
+	logger := diagnostics.NewLoggerWithWriter(&output, "controller", diagnostics.NormalizeBuild("v1.2.3", "unknown"))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		logger.Warn("shared DAG", "graph", graph)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shared DAG conversion did not complete within 5s")
+	}
+
+	if size := output.Len(); size > maxOutput {
+		t.Fatalf("shared DAG output was not bounded: %d bytes", size)
+	}
+	record := decodeLogRecord(t, strings.TrimSpace(output.String()))
+	root, ok := record["graph"].(map[string]any)
+	if !ok {
+		t.Fatalf("shared DAG was not rebuilt as an object: %#v", record["graph"])
+	}
+	if root["Label"] != fmt.Sprintf("level-%d", dagDepth-1) {
+		t.Fatalf("shared DAG root label did not survive: %#v", root["Label"])
+	}
+}
+
+// TestLoggerRedactsNestedAttrKeyInValuePosition is the regression for the
+// nested-Attr leak: an Attr used as a value was re-emitted with its exported
+// Key field, so encoding/json serialized a secret key and dropped the value. A
+// direct value, a map value, a group value and a struct field must all become
+// a plain object with a sanitized key and the redacted value preserved.
+func TestLoggerRedactsNestedAttrKeyInValuePosition(t *testing.T) {
+	const (
+		secretKey   = "Bearer nested-attr-key-secret-token"
+		secretToken = "nested-attr-key-secret-token"
+		attrValue   = "ordinary-attr-value"
+	)
+	nested := slog.String(secretKey, attrValue)
+	holder := struct {
+		Entry slog.Attr
+	}{Entry: nested}
+
+	var output bytes.Buffer
+	logger := diagnostics.NewLoggerWithWriter(&output, "controller", diagnostics.NormalizeBuild("v1.2.3", "unknown"))
+	logWithoutPanic(t, func() {
+		logger.Warn("nested attr",
+			"direct", nested,
+			"mapped", map[string]any{"slot": nested},
+			slog.Group("group", slog.Any("slot", nested)),
+			"field", holder,
+		)
+	})
+
+	encoded := strings.TrimSpace(output.String())
+	if strings.Contains(encoded, secretToken) {
+		t.Fatalf("nested slog.Attr key leaked: %s", encoded)
+	}
+	record := decodeLogRecord(t, encoded)
+
+	assertNestedAttrShape(t, record["direct"], "direct value")
+
+	mapped, ok := record["mapped"].(map[string]any)
+	if !ok {
+		t.Fatalf("mapped holder did not survive: %#v", record["mapped"])
+	}
+	assertNestedAttrShape(t, mapped["slot"], "map value")
+
+	grouped, ok := record["group"].(map[string]any)
+	if !ok {
+		t.Fatalf("group holder did not survive: %#v", record["group"])
+	}
+	assertNestedAttrShape(t, grouped["slot"], "group value")
+
+	field, ok := record["field"].(map[string]any)
+	if !ok {
+		t.Fatalf("struct field holder did not survive: %#v", record["field"])
+	}
+	assertNestedAttrShape(t, field["Entry"], "struct field")
+}
+
+// assertNestedAttrShape checks that a value-position Attr became a plain object
+// with a sanitized key and its redacted value preserved.
+func assertNestedAttrShape(t *testing.T, value any, label string) {
+	t.Helper()
+	object, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("%s was not converted to a plain object: %#v", label, value)
+	}
+	if len(object) != 1 {
+		t.Fatalf("%s did not produce exactly one entry: %#v", label, object)
+	}
+	for key, entry := range object {
+		if key != "Bearer [redacted]" {
+			t.Fatalf("%s key was not sanitized: %#v", label, key)
+		}
+		if entry != "ordinary-attr-value" {
+			t.Fatalf("%s value did not survive: %#v", label, entry)
+		}
+	}
+}
+
 func assertRedactedString(t *testing.T, value any, label string) {
 	t.Helper()
 	text, ok := value.(string)
