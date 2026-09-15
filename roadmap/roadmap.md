@@ -32,36 +32,38 @@ The controller implements web workspace state, sessions, read-only files and Git
 
 The SDK coverage inventory lives in [docs/sdk-coverage.md](../docs/sdk-coverage.md). It separates proven public Pi SDK behavior from Pixie policy, records what is web-covered, native-TUI-only, partial, or unavailable, and is the reference for the coverage work below.
 
+Additive, optional work taken from neighbouring open-source Pi interfaces is planned in [roadmap-aux.md](roadmap-aux.md). Those items are subordinate to this plan and never change the product target or trust model.
+
 ## Open evidence and decisions
 
-1. Real archive runtime evidence is missing for the native TUI and extension PTYs, credentialed Pi, standalone Pi use, arm64, live systemd and Docker, updates and rollback, and remote publication.
-2. `runtime.capabilities`, controller `pi.capabilities`, tools, steering, and provider configuration are not universal public Pi capabilities. The controller must keep negotiating and failing closed rather than treating catalog names as availability.
-3. Public Pi lacks the run identifier needed to bind steering safely, and the resource-attachment API remains unavailable.
+1. The amd64 archive build and release pipeline are demonstrated locally. Real runtime evidence is still missing for the native TUI and extension PTYs, credentialed Pi, standalone Pi use, arm64, live systemd and Docker, updates and rollback, and remote publication.
+2. `runtime.capabilities`, controller `pi.capabilities`, tools, steering, and provider configuration are not universal public Pi capabilities. The controller keeps negotiating the generated catalog and failing closed rather than treating catalog names as availability.
+3. Public Pi lacks the run identifier needed to bind steering safely, and the resource-attachment API remains unavailable; both stay explicitly unavailable rather than emulated.
 
 ## SDK integration coverage
 
 The primary forward work is closing the gap between the public Pi SDK surface and what Pixie exposes. Priorities:
 
-1. Obtain a public Pi run identifier and expose a safe steering contract, or keep steering explicitly unavailable.
-2. Add a public resource-attachment API, or keep resource prompts unavailable rather than rewriting prompts.
-3. Obtain an authoritative per-session tool inventory instead of projecting an unavailable host route.
-4. Define a typed, secret-safe provider and settings configuration contract that is discoverable before mutation.
-5. Keep one negotiated capability source and extend it with tested operation-set and public-SDK evidence for every new route.
-6. Keep the SDK coverage inventory current as Pi releases change, and record proven, partial, and unavailable boundaries without over-claiming.
+1. Obtain a public Pi run identifier and expose a safe steering contract. Upstream API missing; steering is explicitly unavailable and fails closed.
+2. Add a public resource-attachment API. Upstream API missing; resource prompts remain unavailable rather than rewritten.
+3. Obtain an authoritative per-session tool inventory. Upstream API missing; the host does not advertise the tools capability.
+4. Define a typed, secret-safe provider and settings configuration contract that is discoverable before mutation. Implemented as `pi.providers.config.read` plus per-key preference writability and source.
+5. Keep one negotiated capability source and extend it with tested operation-set and public-SDK evidence for every new route. Implemented: the generated catalog is the single source and every available route has host dispatch tests.
+6. Keep the SDK coverage inventory current as Pi releases change, and record proven, partial, and unavailable boundaries without over-claiming. Ongoing.
 
 ## Lifecycle and reliability
 
-These remain after the host replacement and need decisions or evidence.
+These are implemented at source level. The remaining evidence needs a live host, credentials, or filesystem fault injection.
 
-1. **Diagnostics and recovery.** Authenticated runtime diagnostics project negotiated capabilities, host health, active-run count, retained deletion uncertainty, schedule health and remediation. `runtime.supportSnapshot` exports a bounded redacted controller snapshot only when `PIXIE_AUTH_ENABLED=true`; it never collects assistant or system logs. Real operator recovery and scenario coverage remain incomplete.
-2. **Persistence crash consistency.** Staged migrations validate every managed flat ledger input before writes, preserve authority ledgers during rollback, reject retained backups, and classify partial publication as durability-uncertain. Full multi-file power-loss atomicity and real disk-full, permission, rename, and fsync behavior still need filesystem-specific evidence.
-3. **Observability.** The support snapshot supplies bounded controller facts and allowlisted event codes without raw errors. Secret-safe logs across processes, boot and run identities, health-transition history, and child stderr retention remain incomplete.
-4. **Long-lived operations.** New schedules have a persisted configurable 24-hour default budget, while existing schedules remain unlimited and cancellation uncertainty blocks redispatch. WebSocket reconnect storms, slow clients, compaction during disconnect, state growth, artifact cleanup, and clock changes still need bounds.
-5. **Browser-MCP threat model.** The operator-chosen endpoint may be unauthenticated. Pixie never proxies MCP traffic. Loopback access, DNS rebinding, tool-result injection, egress, sockets, and crash cleanup belong to the deployment; the threat model and fail-closed guidance need to be explicit.
+1. **Diagnostics and recovery.** Authenticated runtime diagnostics project negotiated capabilities, host health, active-run count, retained deletion uncertainty, schedule health and remediation. `runtime.supportSnapshot` is auth-gated and never collects assistant or system logs. `pixie_web doctor` and internal `pixie_full doctor` print bounded recovery reports with stable codes, and `pixie_assistant doctor --scenario` proves an isolated host boot. Evidence against a live host and real credentials remains external.
+2. **Persistence crash consistency.** Staged migrations validate every managed flat ledger input before writes, preserve authority ledgers during rollback, reject retained backups, and classify partial publication as durability-uncertain. Injected disk-full, permission, rename, fsync and staging-crash outcomes are covered; real filesystem and power-loss evidence remains external.
+3. **Observability.** Controller and supervisor logs redact secrets, URLs and paths at the emission boundary; boot and run identities, a bounded health-transition history, and a bounded redacted child-stderr ring are implemented. The controller support snapshot is auth-gated and excludes another process's stderr by design; the supervisor surfaces that tail through its logs and `doctor`.
+4. **Long-lived operations.** Connections are capped with a reconnect attempt and backoff gate, slow clients are bounded and shed, per-socket replay reservations are released on disconnect, retained state is capped, schedule deadlines use a monotonic clock, and controller scratch is cleaned on shutdown. New schedules have a persisted configurable 24-hour default budget; existing schedules remain unlimited and cancellation uncertainty blocks redispatch.
+5. **Browser-MCP threat model.** The operator-chosen endpoint may be unauthenticated and Pixie never proxies MCP traffic. The threat model and fail-closed enablement guidance are documented in `docs/security.md`; loopback access, DNS rebinding, tool-result injection, egress, sockets and crash cleanup remain deployment responsibilities.
 
 ## Next steps
 
 1. Exercise the Pi-bearing archives against real Pi, credentials, and lifecycle transitions on both architectures, including the native TUI and extension loading, before treating the source layout as release evidence.
-2. Close the SDK integration coverage priorities above, keeping the coverage inventory and negotiation exhaustive.
-3. Complete the diagnostics, persistence, observability, long-lived-operation, and Browser-MCP threat-model items.
+2. Close the remaining upstream-dependent SDK coverage priorities; the locally actionable ones are implemented.
+3. Gather live evidence for diagnostics, persistence and observability; the source-level lifecycle and resilience work is complete.
 4. Obtain separate authorization before any remote publication or live deployment.

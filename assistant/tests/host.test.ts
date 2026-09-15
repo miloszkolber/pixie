@@ -2013,3 +2013,433 @@ describe("Bun host lifecycle logging", () => {
 		expect(serialized).not.toContain(raw.agentDir);
 	});
 });
+
+describe("Bun host uncovered dispatch routes", () => {
+	const credential = "sk-live-uncovered-credential";
+	const operatorPath = "/home/operator/.pi/auth.json";
+	const operatorUrl = "https://operator:token-value@example.test/mcp";
+
+	function expectSecretFree(
+		value: unknown,
+		logger: ReturnType<typeof createHostLogger>,
+		forbidden: readonly string[],
+	): void {
+		for (const serialized of [JSON.stringify(value), JSON.stringify(logger.entries())]) {
+			for (const needle of forbidden) expect(serialized).not.toContain(needle);
+		}
+	}
+
+	async function helloV2(raw: ReturnType<typeof rawHost>): Promise<HostFrame> {
+		await raw.send({
+			id: 1,
+			method: "runtime.hello",
+			params: { protocolVersion: 1, supportedProtocolVersions: [2, 1], preferProtocolVersion: 2 },
+		});
+		return waitForId(raw.socket, 1);
+	}
+
+	async function waitForFrame(
+		socket: RawSocket,
+		predicate: (frame: HostFrame) => boolean,
+		timeoutMs = 2000,
+	): Promise<HostFrame> {
+		const deadline = Date.now() + timeoutMs;
+		for (;;) {
+			const found = rawFrames(socket).find(predicate);
+			if (found) return found;
+			if (Date.now() > deadline) throw new Error("timed out waiting for host frame");
+			await Bun.sleep(5);
+		}
+	}
+
+	function uiRequestId(frame: HostFrame): string | undefined {
+		const event = frame.params?.event as { type?: unknown; requestId?: unknown } | undefined;
+		return event?.type === "pixie:ui:request" && typeof event.requestId === "string"
+			? event.requestId
+			: undefined;
+	}
+
+	function settingsSdk() {
+		let provider: string | undefined = "seed-provider";
+		let model: string | undefined = "seed-model";
+		return {
+			SettingsManager: {
+				create: () => ({
+					reload: async () => {},
+					flush: async () => {},
+					drainErrors: () => [],
+					getGlobalSettings: () => ({
+						defaultThinkingLevel: undefined,
+						compaction: {},
+						packages: [],
+						extensions: [],
+						apiKey: credential,
+					}),
+					getProjectSettings: () => ({ packages: [], extensions: [] }),
+					getDefaultProvider: () => provider,
+					getDefaultModel: () => model,
+					setDefaultProvider: (value: string | undefined) => {
+						provider = value;
+					},
+					setDefaultModel: (value: string | undefined) => {
+						model = value;
+					},
+					getDefaultThinkingLevel: () => undefined,
+					setDefaultThinkingLevel: (_value: string | undefined) => {},
+					getCompactionReserveTokens: () => 0,
+					setPackages: (_packages: unknown[]) => {},
+					setProjectPackages: (_packages: unknown[]) => {},
+					setExtensionPaths: (_paths: unknown[]) => {},
+					setProjectExtensionPaths: (_paths: unknown[]) => {},
+				}),
+			},
+		};
+	}
+
+	function providerRuntimeSdk(overrides: Record<string, unknown> = {}) {
+		return {
+			ModelRuntime: {
+				create: async () => ({
+					getProviders: () => [{ id: "test", name: "Test", auth: { apiKey: { login: true } } }],
+					getModels: () => [],
+					getModel: () => undefined,
+					getAvailable: async () => [],
+					checkAuth: async () => true,
+					refresh: async () => ({ errors: new Map() }),
+					login: async () => ({}),
+					logout: async () => {},
+					...overrides,
+				}),
+			},
+		};
+	}
+
+	test("saves and clears Pi defaults with bounded, secret-free responses", async () => {
+		const logger = createHostLogger({ secrets: [credential] });
+		const raw = rawHost(new FakeSession("defaults"), {
+			sdk: settingsSdk(),
+			logger,
+			protocol: "auto",
+		});
+		const forbidden = [credential, operatorPath, operatorUrl, raw.agentDir, secret];
+		const hello = await helloV2(raw);
+		expect(hello.result?.operationSet?.["pi.defaults.save"]).toBe(true);
+		expect(hello.result?.operationSet?.["pi.defaults.clear"]).toBe(true);
+
+		await raw.send({
+			id: 2,
+			method: "pi.defaults.save",
+			params: { providerId: "test", modelId: "m1", ignored: operatorUrl },
+		});
+		const saved = await waitForId(raw.socket, 2);
+		expect(saved.error).toBeUndefined();
+		expect(saved.result).toEqual({ providerId: "test", modelId: "m1" });
+		expectSecretFree(saved, logger, forbidden);
+
+		await raw.send({
+			id: 3,
+			method: "pi.defaults.save",
+			params: { providerId: "test", modelId: `${credential}\0${operatorPath}` },
+		});
+		const badModel = await waitForId(raw.socket, 3);
+		expect(badModel.error).toMatchObject({ code: -32000, reason: "internal" });
+		expect(badModel.error?.message).toContain("modelId");
+		expectSecretFree(badModel, logger, forbidden);
+
+		await raw.send({ id: 4, method: "pi.defaults.save", params: {} });
+		const missingProvider = await waitForId(raw.socket, 4);
+		expect(missingProvider.error?.message).toContain("providerId");
+		expectSecretFree(missingProvider, logger, forbidden);
+
+		await raw.send({
+			id: 5,
+			method: "pi.defaults.clear",
+			params: { cwd: `${operatorPath}\0` },
+		});
+		const badCwd = await waitForId(raw.socket, 5);
+		expect(badCwd.error).toMatchObject({ code: -32000, reason: "internal" });
+		expect(badCwd.error?.message).toContain("absolute");
+		expectSecretFree(badCwd, logger, forbidden);
+
+		await raw.send({ id: 6, method: "pi.defaults.clear", params: {} });
+		const cleared = await waitForId(raw.socket, 6);
+		expect(cleared.error).toBeUndefined();
+		expect(cleared.result).toEqual({ providerId: null, modelId: null });
+		expectSecretFree(cleared, logger, forbidden);
+	});
+
+	test("checks provider readiness and fails closed on a missing capability", async () => {
+		const logger = createHostLogger({ secrets: [credential] });
+		let ready = false;
+		const sdk = providerRuntimeSdk({ checkAuth: async () => ready });
+		const raw = rawHost(new FakeSession("readiness"), { sdk, logger, protocol: "auto" });
+		const forbidden = [credential, operatorPath, operatorUrl, raw.agentDir, secret];
+		const hello = await helloV2(raw);
+		expect(hello.result?.operationSet?.["pi.providers.readiness.check"]).toBe(true);
+
+		await raw.send({
+			id: 2,
+			method: "pi.providers.readiness.check",
+			params: { providerId: "test", ignored: credential },
+		});
+		const notReady = await waitForId(raw.socket, 2);
+		expect(notReady.result).toEqual({
+			providerId: "test",
+			ready: false,
+			error: null,
+			hasIssue: true,
+		});
+		expectSecretFree(notReady, logger, forbidden);
+
+		ready = true;
+		await raw.send({
+			id: 3,
+			method: "pi.providers.readiness.check",
+			params: { providerId: "test" },
+		});
+		const isReady = await waitForId(raw.socket, 3);
+		expect(isReady.result).toEqual({
+			providerId: "test",
+			ready: true,
+			error: null,
+			hasIssue: false,
+		});
+		expectSecretFree(isReady, logger, forbidden);
+
+		await raw.send({ id: 4, method: "pi.providers.readiness.check", params: {} });
+		const missing = await waitForId(raw.socket, 4);
+		expect(missing.error).toMatchObject({ code: -32000, reason: "internal" });
+		expect(missing.error?.message).toContain("providerId");
+		expectSecretFree(missing, logger, forbidden);
+
+		const noRuntime = rawHost(new FakeSession("readiness-no-runtime"), {
+			logger,
+			protocol: "auto",
+		});
+		await helloV2(noRuntime);
+		await noRuntime.send({
+			id: 2,
+			method: "pi.providers.readiness.check",
+			params: { providerId: credential },
+		});
+		const unavailable = await waitForId(noRuntime.socket, 2);
+		expect(unavailable.error).toMatchObject({
+			code: -32004,
+			reason: "capability_unavailable",
+		});
+		expectSecretFree(unavailable, logger, [
+			credential,
+			operatorPath,
+			operatorUrl,
+			noRuntime.agentDir,
+			secret,
+		]);
+	});
+
+	test("refreshes provider inventory with allowNetwork and a bounded response", async () => {
+		const logger = createHostLogger({ secrets: [credential] });
+		let refreshArgs: { allowNetwork?: unknown; signal?: unknown } | undefined;
+		const sdk = providerRuntimeSdk({
+			refresh: async (options: { allowNetwork?: unknown; signal?: unknown }) => {
+				refreshArgs = options;
+				return { errors: new Map() };
+			},
+		});
+		const raw = rawHost(new FakeSession("inventory"), { sdk, logger, protocol: "auto" });
+		const forbidden = [credential, operatorPath, operatorUrl, raw.agentDir, secret];
+		const hello = await helloV2(raw);
+		expect(hello.result?.operationSet?.["pi.providers.inventory.refresh"]).toBe(true);
+
+		await raw.send({
+			id: 2,
+			method: "pi.providers.inventory.refresh",
+			params: { providerId: credential, ignored: operatorUrl },
+		});
+		const refreshed = await waitForId(raw.socket, 2);
+		expect(refreshed.error).toBeUndefined();
+		expect(refreshed.result).toEqual({ started: [], skipped: [] });
+		expect(refreshArgs?.allowNetwork).toBe(true);
+		expect(refreshArgs?.signal).toBeInstanceOf(AbortSignal);
+		expectSecretFree(refreshed, logger, forbidden);
+
+		const noRuntime = rawHost(new FakeSession("inventory-no-runtime"), {
+			logger,
+			protocol: "auto",
+		});
+		await helloV2(noRuntime);
+		await noRuntime.send({ id: 2, method: "pi.providers.inventory.refresh", params: {} });
+		const unavailable = await waitForId(noRuntime.socket, 2);
+		expect(unavailable.error).toMatchObject({
+			code: -32004,
+			reason: "capability_unavailable",
+		});
+		expectSecretFree(unavailable, logger, [
+			credential,
+			operatorPath,
+			operatorUrl,
+			noRuntime.agentDir,
+			secret,
+		]);
+	});
+
+	test("cancels a pending provider login and aborts its signal", async () => {
+		const logger = createHostLogger({ secrets: [credential] });
+		let signal: AbortSignal | undefined;
+		const sdk = providerRuntimeSdk({
+			login: async (
+				_providerId: string,
+				_type: string,
+				interaction: { signal: AbortSignal; notify: (event: Record<string, unknown>) => void },
+			) => {
+				signal = interaction.signal;
+				interaction.notify({ type: "progress", message: "awaiting input" });
+				await new Promise(() => {});
+			},
+		});
+		const raw = rawHost(new FakeSession("login-cancel"), { sdk, logger, protocol: "auto" });
+		const forbidden = [credential, operatorPath, operatorUrl, raw.agentDir, secret];
+		const hello = await helloV2(raw);
+		expect(hello.result?.operationSet?.["provider.loginCancel"]).toBe(true);
+
+		await raw.send({
+			id: 2,
+			method: "provider.loginStart",
+			params: { providerId: "test", loginId: "login-cancel" },
+		});
+		expect((await waitForId(raw.socket, 2)).error).toBeUndefined();
+		await raw.send({ id: 3, method: "provider.loginBegin", params: { loginId: "login-cancel" } });
+		expect((await waitForId(raw.socket, 3)).result).toEqual({ ok: true });
+		for (let attempt = 0; !signal && attempt < 200; attempt += 1) await Bun.sleep(5);
+		expect(signal).toBeInstanceOf(AbortSignal);
+
+		await raw.send({ id: 4, method: "provider.loginCancel", params: { loginId: "login-cancel" } });
+		const cancelled = await waitForId(raw.socket, 4);
+		expect(cancelled).toEqual({ id: 4, result: { ok: true } });
+		expect(signal?.aborted).toBe(true);
+		expectSecretFree(cancelled, logger, forbidden);
+
+		await raw.send({ id: 5, method: "provider.loginCancel", params: { loginId: credential } });
+		const unknown = await waitForId(raw.socket, 5);
+		expect(unknown.error).toMatchObject({ code: -32000, reason: "internal" });
+		expect(unknown.error?.message).toContain("Unknown or expired login ID");
+		expectSecretFree(unknown, logger, forbidden);
+
+		await raw.send({ id: 6, method: "provider.loginCancel", params: {} });
+		const missingId = await waitForId(raw.socket, 6);
+		expect(missingId.error?.message).toContain("loginId");
+		expectSecretFree(missingId, logger, forbidden);
+	});
+
+	test("releases a resident session through runtime.release and rejects malformed identity", async () => {
+		const logger = createHostLogger({ secrets: [credential] });
+		const session = new FakeSession("release");
+		const raw = rawHost(session, { logger, protocol: "auto" });
+		const forbidden = [credential, operatorPath, operatorUrl, raw.agentDir, secret];
+		const hello = await helloV2(raw);
+		expect(hello.result?.operationSet?.["runtime.release"]).toBe(true);
+
+		await raw.send({ id: 2, method: "session.create", params: { cwd: process.cwd() } });
+		expect((await waitForId(raw.socket, 2)).error).toBeUndefined();
+
+		await raw.send({
+			id: 3,
+			method: "runtime.release",
+			params: { sessionId: "release", cwd: raw.agentDir },
+		});
+		const mismatch = await waitForId(raw.socket, 3);
+		expect(mismatch.error?.message).toContain("does not match");
+		expect(session.disposed).toBe(false);
+		expectSecretFree(mismatch, logger, forbidden);
+
+		await raw.send({ id: 4, method: "runtime.release", params: { sessionId: "release" } });
+		const missingCwd = await waitForId(raw.socket, 4);
+		expect(missingCwd.error).toMatchObject({ code: -32000, reason: "internal" });
+		expect(missingCwd.error?.message).toContain("cwd");
+		expectSecretFree(missingCwd, logger, forbidden);
+
+		await raw.send({ id: 5, method: "runtime.release", params: { cwd: process.cwd() } });
+		const missingId = await waitForId(raw.socket, 5);
+		expect(missingId.error?.message).toContain("sessionId");
+		expectSecretFree(missingId, logger, forbidden);
+
+		await raw.send({
+			id: 6,
+			method: "runtime.release",
+			params: { sessionId: credential, cwd: process.cwd() },
+		});
+		const unknown = await waitForId(raw.socket, 6);
+		expect(unknown.error?.message).toContain("not loaded");
+		expectSecretFree(unknown, logger, forbidden);
+
+		await raw.send({
+			id: 7,
+			method: "runtime.release",
+			params: { sessionId: "release", cwd: process.cwd() },
+		});
+		const released = await waitForId(raw.socket, 7);
+		expect(released).toEqual({ id: 7, result: { ok: true } });
+		expect(session.disposed).toBe(true);
+		expectSecretFree(released, logger, forbidden);
+
+		await raw.send({
+			id: 8,
+			method: "runtime.release",
+			params: { sessionId: "release", cwd: process.cwd() },
+		});
+		const gone = await waitForId(raw.socket, 8);
+		expect(gone.error?.message).toContain("not loaded");
+		expectSecretFree(gone, logger, forbidden);
+	});
+
+	test("cancels a pending extension dialog through session.uiCancel", async () => {
+		const logger = createHostLogger({ secrets: [credential] });
+		const session = new FakeSession("ui-cancel");
+		const raw = rawHost(session, { logger, protocol: "auto" });
+		const forbidden = [credential, operatorPath, operatorUrl, raw.agentDir, secret];
+		const hello = await helloV2(raw);
+		expect(hello.result?.operationSet?.["session.uiCancel"]).toBe(true);
+
+		await raw.send({ id: 2, method: "session.create", params: { cwd: process.cwd() } });
+		expect((await waitForId(raw.socket, 2)).error).toBeUndefined();
+		const ui = session.bound;
+		if (!ui) throw new Error("session extensions were not bound");
+		const pending = (ui.input as (title: string) => Promise<string | undefined>)("confirm cancel");
+		const request = await waitForFrame(raw.socket, (frame) => uiRequestId(frame) !== undefined);
+		const requestId = uiRequestId(request);
+		if (!requestId) throw new Error("dialog request id missing");
+
+		await raw.send({
+			id: 3,
+			method: "session.uiCancel",
+			params: { sessionId: "ui-cancel", requestId },
+		});
+		const cancelled = await waitForId(raw.socket, 3);
+		expect(cancelled).toEqual({ id: 3, result: {} });
+		expect(await pending).toBeUndefined();
+		expectSecretFree(cancelled, logger, forbidden);
+
+		await raw.send({
+			id: 4,
+			method: "session.uiCancel",
+			params: { sessionId: "ui-cancel", requestId: credential },
+		});
+		const unknownDialog = await waitForId(raw.socket, 4);
+		expect(unknownDialog.error).toMatchObject({ code: -32000, reason: "internal" });
+		expect(unknownDialog.error?.message).toContain("unknown extension dialog");
+		expectSecretFree(unknownDialog, logger, forbidden);
+
+		await raw.send({
+			id: 5,
+			method: "session.uiCancel",
+			params: { sessionId: credential, requestId },
+		});
+		const unknownSession = await waitForId(raw.socket, 5);
+		expect(unknownSession.error?.message).toContain("unknown extension dialog");
+		expectSecretFree(unknownSession, logger, forbidden);
+
+		await raw.send({ id: 6, method: "session.uiCancel", params: { requestId } });
+		const missingSession = await waitForId(raw.socket, 6);
+		expect(missingSession.error?.message).toContain("sessionId");
+		expectSecretFree(missingSession, logger, forbidden);
+	});
+});
