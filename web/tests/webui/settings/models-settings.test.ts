@@ -221,6 +221,26 @@ test("a partial refresh warning bounds the provider list", () => {
 	expect(warning).not.toContain("Provider D");
 });
 
+test("a partial refresh warning hides path- and URL-like unknown provider ids", () => {
+	const failed: RefreshFailure[] = [
+		{ providerId: "/home/user/.config/pi/credentials.json", reason: "refresh_failed" },
+		{ providerId: "https://api.example.com/v1", reason: "refresh_failed" },
+	];
+	const warning = refreshFailureWarning(failed, new Map());
+	expect(warning).not.toBeNull();
+	expect(warning).toContain("an unknown provider (refresh failed)");
+	for (const leak of ["/home/user", ".config", "credentials.json", "https://", "api.example.com"]) {
+		expect(warning ?? "").not.toContain(leak);
+	}
+});
+
+test("a partial refresh warning still names an unknown provider slug", () => {
+	const failed: RefreshFailure[] = [{ providerId: "provider-c", reason: "refresh_failed" }];
+	const warning = refreshFailureWarning(failed, new Map());
+	expect(warning).not.toBeNull();
+	expect(warning).toContain("provider-c (refresh failed)");
+});
+
 test("a revision blocked by a forced refresh remains unobserved and reloads afterward", async () => {
 	let observedRevision: string | null = "provider-1\u0002hidden-1";
 	const nextRevision = "provider-2\u0002hidden-2";

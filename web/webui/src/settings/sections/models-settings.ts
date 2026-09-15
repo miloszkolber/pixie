@@ -128,6 +128,22 @@ function refreshFailureReasonLabel(reason: string): string {
 	return REFRESH_FAILURE_REASON_LABELS[reason] ?? "refresh failed";
 }
 
+// A host-reported failure can name a provider the report does not know, so the
+// raw providerId would otherwise be rendered. Only surface values that look
+// like opaque provider slugs; a path- or URL-like providerId stays behind the
+// fixed generic label rather than reaching the UI.
+const PROVIDER_IDENTIFIER_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+const UNKNOWN_PROVIDER_LABEL = "an unknown provider";
+
+function refreshFailureProviderLabel(
+	providerId: string,
+	providers: ReadonlyMap<string, ProviderStatus>,
+): string {
+	const known = providers.get(providerId);
+	if (known) return known.name.trim() || UNKNOWN_PROVIDER_LABEL;
+	return PROVIDER_IDENTIFIER_PATTERN.test(providerId) ? providerId : UNKNOWN_PROVIDER_LABEL;
+}
+
 export function refreshFailureWarning(
 	failed: readonly RefreshFailure[],
 	providers: ReadonlyMap<string, ProviderStatus>,
@@ -135,7 +151,7 @@ export function refreshFailureWarning(
 	if (failed.length === 0) return null;
 	const entries: string[] = [];
 	for (const failure of failed) {
-		const name = providerName(failure.providerId, providers).trim() || "an unknown provider";
+		const name = refreshFailureProviderLabel(failure.providerId, providers);
 		const entry = `${name} (${refreshFailureReasonLabel(failure.reason)})`;
 		if (!entries.includes(entry)) entries.push(entry);
 	}
