@@ -106,7 +106,7 @@ export const HOST_OPERATION_STATUS: Record<HostOperation, HostOperationStatus> =
 	"session.release": "available",
 	"runtime.release": "available",
 	"runtime.releaseToTui": "unavailable",
-	"session.prompt.image": "available",
+	"session.prompt.image": "unavailable",
 	"session.prompt.resource": "unavailable",
 	"session.uiResponse": "available",
 	"session.uiCancel": "available",
@@ -185,7 +185,6 @@ export const HOST_AVAILABLE_OPERATIONS = [
 	"session.rename",
 	"session.release",
 	"runtime.release",
-	"session.prompt.image",
 	"session.uiResponse",
 	"session.uiCancel",
 	"runtime.restart",
@@ -243,6 +242,8 @@ export const HOST_OPERATION_REASONS: Partial<Record<HostOperation, string>> = {
 		"Pi 0.85.1 exposes no public run identifier to bind a steering request to the active run.",
 	"session.archive": "Archive is controller-owned state, not a Pi session operation.",
 	"runtime.releaseToTui": "There is no public TUI handoff from the in-process host.",
+	"session.prompt.image":
+		"Images are supported through session.prompt content blocks; there is no separate image route.",
 	"session.prompt.resource": "Pi 0.85.1 exposes no public text-resource attachment API.",
 	"pi.session.info":
 		"Pi 0.85.1 exposes no public nonresident session metadata beyond SessionManager.list.",

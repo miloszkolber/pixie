@@ -39,7 +39,6 @@ describe("Bun host operationSet truthfulness", () => {
 			"session.switch",
 			"session.getMessages",
 			"session.stats",
-			"session.prompt.image",
 			"pi.sources.list",
 			"pi.sources.create",
 			"pi.sources.update",
@@ -61,6 +60,7 @@ describe("Bun host operationSet truthfulness", () => {
 			"session.delete",
 			"session.archive",
 			"session.steer",
+			"session.prompt.image",
 			"session.prompt.resource",
 			"mcp.attach",
 			"pi.session.info",
@@ -133,20 +133,60 @@ describe("Bun host operationSet truthfulness", () => {
 });
 
 describe("Bun host dispatch coverage", () => {
-	// Available catalog operations intentionally exposed without a host dispatch
-	// test. Keep this empty unless a catalogued route is deliberately not served.
+	// Available catalog operations deliberately exercised only through another
+	// operation instead of a direct frame. Keep this empty unless a route is
+	// genuinely dispatched indirectly.
 	const dispatchCoverageAllowlist: readonly string[] = [];
 
-	test("references every available catalog operation from at least one sibling test", () => {
+	// A real dispatch is a frame a test actually sends. Matching the bare
+	// operation name is not enough: the truthfulness lists above name every
+	// operation without dispatching it. The detector therefore only counts a
+	// `method: "<operation>"` frame property or the method argument of the
+	// shared `request(...)` helpers; bare array elements in those lists never
+	// match, so the capabilities test's own static lists cannot satisfy it.
+	function invokedOperations(source: string): Set<string> {
+		const invoked = new Set<string>();
+		for (const match of source.matchAll(/method\s*:\s*"([^"]+)"/g)) invoked.add(match[1]);
+		for (const match of source.matchAll(/request\s*\([^;]*?"([^"]+)"/gs)) invoked.add(match[1]);
+		return invoked;
+	}
+
+	function uncoveredOperations(
+		operations: readonly string[],
+		sources: readonly string[],
+		allowlist: readonly string[],
+	): string[] {
+		const invoked = new Set<string>();
+		for (const source of sources) {
+			for (const operation of invokedOperations(source)) invoked.add(operation);
+		}
+		return operations.filter(
+			(operation) => !invoked.has(operation) && !allowlist.includes(operation),
+		);
+	}
+
+	test("references every available catalog operation from a real dispatch", () => {
 		const testDir = import.meta.dir;
-		const testSource = readdirSync(testDir)
+		const sources = readdirSync(testDir)
 			.filter((entry) => entry.endsWith(".test.ts"))
-			.map((entry) => readFileSync(join(testDir, entry), "utf8"))
-			.join("\n");
-		const uncovered = HOST_AVAILABLE_OPERATIONS.filter(
-			(operation) =>
-				!dispatchCoverageAllowlist.includes(operation) && !testSource.includes(operation),
+			.map((entry) => readFileSync(join(testDir, entry), "utf8"));
+		const uncovered = uncoveredOperations(
+			HOST_AVAILABLE_OPERATIONS,
+			sources,
+			dispatchCoverageAllowlist,
 		);
 		expect(uncovered).toEqual([]);
+	});
+
+	test("fails a synthetic available operation with no dispatch invocation", () => {
+		// Naming the operation in a static list is not a dispatch, so the guard
+		// still reports it. This is the false-negative the previous bare-text scan
+		// allowed.
+		const staticListOnly = 'for (const name of ["session.synthetic"]) {}';
+		expect(uncoveredOperations(["session.synthetic"], [staticListOnly], [])).toEqual([
+			"session.synthetic",
+		]);
+		const dispatched = 'await raw.send({ id: 1, method: "session.synthetic", params: {} });';
+		expect(uncoveredOperations(["session.synthetic"], [dispatched], [])).toEqual([]);
 	});
 });

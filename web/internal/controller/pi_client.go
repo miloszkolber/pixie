@@ -316,9 +316,13 @@ func buildAgentProfile(identity, version, bootID string, caps map[string]int, op
 	// clients. New callers use the negotiated operationSet so each optional route is
 	// visible independently.
 	p.Operations = AgentOperations{
-		DeleteSession:         operationValue(operationSet, "session.delete"),
-		ForkSession:           operationValue(operationSet, "session.fork"),
-		PromptImage:           operationValue(operationSet, "session.prompt.image"),
+		DeleteSession: operationValue(operationSet, "session.delete"),
+		ForkSession:   operationValue(operationSet, "session.fork"),
+		// Images are a capability: a current host advertises `images` and accepts
+		// image content blocks through session.prompt. A legacy host that only
+		// advertised the old `session.prompt.image` route still supports them, so
+		// accept either explicit host advertisement instead of inventing support.
+		PromptImage:           caps["images"] == 1 || operationValue(operationSet, "session.prompt.image"),
 		PromptEmbeddedContext: operationValue(operationSet, "session.prompt.resource"),
 		Steer:                 operationValue(operationSet, "session.steer"),
 		RenameSession:         operationValue(operationSet, "session.rename"),

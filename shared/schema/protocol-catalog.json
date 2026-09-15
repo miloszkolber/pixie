@@ -65,7 +65,8 @@
 			},
 			{
 				"name": "session.prompt.image",
-				"status": "available"
+				"status": "unavailable",
+				"reason": "Images are supported through session.prompt content blocks; there is no separate image route."
 			},
 			{
 				"name": "session.prompt.resource",

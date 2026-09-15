@@ -95,6 +95,31 @@ func TestPiClientFramesPiAndOrdersNotifications(t *testing.T) {
 	}
 }
 
+func TestPiClientDerivesImageCapabilityWithoutImageRoute(t *testing.T) {
+	// The Bun host contract negotiates images as a capability and no longer
+	// advertises the retired `session.prompt.image` route. The controller must
+	// still enable image prompts from the capability alone.
+	_, client, _, _ := newSessionManagerWithInitialize(t, nil, nil, bunHostInitializeResponse())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, profile, err := client.Profile(ctx)
+	if err != nil {
+		t.Fatalf("profile: %v", err)
+	}
+	if !profile.Compatible {
+		t.Fatalf("Bun host fixture should be compatible; missing: %#v", profile.MissingRequired)
+	}
+	if !profile.Operations.PromptImage {
+		t.Fatal("images capability did not enable PromptImage")
+	}
+	if profile.OperationSet["session.prompt.image"] {
+		t.Fatal("retired image route was advertised by the Bun host fixture")
+	}
+	if profile.Capabilities["images"] != 1 {
+		t.Fatalf("images capability was not projected: %#v", profile.Capabilities)
+	}
+}
+
 func TestInvalidProtocolModeFailsStartup(t *testing.T) {
 	_, err := controller.NewRuntime(controller.RuntimeConfig{
 		Getenv: func(key string) string {

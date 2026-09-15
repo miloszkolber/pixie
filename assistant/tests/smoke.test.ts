@@ -171,7 +171,7 @@ describe("real Pi Bun host smoke (no credentials, no network)", () => {
 				const hello = await request(1, "runtime.hello", { protocolVersion: 1 });
 				expect(hello.error).toBeUndefined();
 				expect(hello.result?.version).toBe("0.85.1");
-				expect(hello.result?.capabilities).toEqual({ sessions: 1, agents: 1 });
+				expect(hello.result?.capabilities).toEqual({ sessions: 1, agents: 1, images: 1 });
 				const runtimeId = hello.result?.runtimeId;
 				expect(typeof runtimeId).toBe("string");
 

@@ -329,9 +329,9 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 			result = map[string]any{"sessionId": sessionID, "title": "Fixture chat"}
 
 		case "runtime.capabilities":
-			result = map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}
+			result = map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1, "images": 1}
 		case "runtime.hello":
-			result = map[string]any{"protocolVersion": 1, "runtimeId": "ui-fixture", "bootId": "ui-fixture-boot", "version": "0.85.1", "capabilities": map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1}, "operationSet": fixtureOperationSet()}
+			result = map[string]any{"protocolVersion": 1, "runtimeId": "ui-fixture", "bootId": "ui-fixture-boot", "version": "0.85.1", "capabilities": map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1, "images": 1}, "operationSet": fixtureOperationSet()}
 		case "session.list":
 			result = map[string]any{"sessions": []any{map[string]any{
 				"sessionId": sessionID,
@@ -422,7 +422,7 @@ func fixtureOperationSet() map[string]bool {
 	operations := map[string]bool{}
 	for _, method := range []string{
 		"session.list", "session.create", "session.load", "session.prompt", "session.cancel",
-		"session.configure", "session.prompt.image", "runtime.capabilities",
+		"session.configure", "runtime.capabilities",
 		"pi.config.extensions.list", "pi.defaults.read", "pi.preferences.read",
 		"pi.providers.config.read", "pi.providers.inventory.refresh", "pi.providers.list",
 		"pi.session.extensions.list", "pi.session.info", "pi.sources.list",

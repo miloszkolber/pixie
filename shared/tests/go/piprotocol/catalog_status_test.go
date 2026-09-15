@@ -24,7 +24,7 @@ func TestCatalogOperationAvailability(t *testing.T) {
 	unavailable := []string{
 		"pi.session.info", "pi.session.steer", "pi.tools.list", "pi.tools.call",
 		"runtime.capabilities", "pi.subagent.execute", "pi.todo.plan",
-		"pi.llama", "pi.native-extensions",
+		"pi.llama", "pi.native-extensions", "session.prompt.image",
 	}
 	for _, name := range unavailable {
 		if piprotocol.CatalogHostOperationIsAvailable(name) {

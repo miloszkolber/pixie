@@ -103,7 +103,7 @@ describe("Bun host v1", () => {
 		const hello = await request(ws, 1, "runtime.hello", { protocolVersion: 1 });
 		expect(hello.result?.protocolVersion).toBe(1);
 		expect(hello.result?.version).toBe("0.85.1");
-		expect(hello.result?.capabilities).toEqual({ sessions: 1, agents: 1 });
+		expect(hello.result?.capabilities).toEqual({ sessions: 1, agents: 1, images: 1 });
 		for (const name of [
 			"session.list",
 			"session.create",

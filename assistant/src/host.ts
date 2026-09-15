@@ -266,9 +266,11 @@ function operationSet(allowRestart: boolean): Record<string, boolean> {
 
 // These are feature groups that the host can establish without inspecting
 // private Pi state. Optional operations remain in operationSet so callers can
-// distinguish a feature group from one concrete route.
+// distinguish a feature group from one concrete route. Image prompts are a
+// capability rather than a route: `session.prompt` accepts image content
+// blocks, and there is no separate `session.prompt.image` dispatch.
 function hostCapabilities(): Record<string, number> {
-	return { sessions: 1, agents: 1 };
+	return { sessions: 1, agents: 1, images: 1 };
 }
 
 function loopbackLiteral(host: string): boolean {
