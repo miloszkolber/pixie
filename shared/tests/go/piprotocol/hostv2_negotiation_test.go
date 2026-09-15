@@ -1,6 +1,7 @@
 package piprotocol_test
 
 import (
+	"errors"
 	"testing"
 
 	piwire "github.com/miloszkolber/pixie/shared/piprotocol"
@@ -76,5 +77,35 @@ func TestHostV2ValidateNegotiatedRejectsMixedPeers(t *testing.T) {
 	// A normal v2 host passes.
 	if err := piwire.HostV2ValidateNegotiated(offered, offered, 2); err != nil {
 		t.Fatalf("matching v2 host rejected: %v", err)
+	}
+}
+
+// TestHostV2ValidateNegotiatedRequiresV2Advertisement pins the AUX-33 rule: a
+// v2 selection without the supportedProtocolVersions advertisement is
+// malformed and must fail closed, while the empty advertisement stays valid
+// only for the explicit legacy v1 selection.
+func TestHostV2ValidateNegotiatedRequiresV2Advertisement(t *testing.T) {
+	offered := piwire.HostV2SupportedVersions()
+	for _, advertised := range [][]int{nil, {}} {
+		err := piwire.HostV2ValidateNegotiated(offered, advertised, piwire.HostV2ProtocolVersion)
+		if err == nil {
+			t.Fatalf("v2 selection with advertisement %#v was admitted", advertised)
+		}
+		var incompatible *piwire.HostV2IncompatibilityError
+		if !errors.As(err, &incompatible) {
+			t.Fatalf("v2 advertisement error was not typed: %v", err)
+		}
+	}
+	// The explicit legacy v1 selection keeps the empty-advertisement exception.
+	if err := piwire.HostV2ValidateNegotiated(offered, nil, 1); err != nil {
+		t.Fatalf("legacy v1 selection without advertisement was rejected: %v", err)
+	}
+	// A v2 host that does advertise its support is accepted.
+	if err := piwire.HostV2ValidateNegotiated(offered, offered, piwire.HostV2ProtocolVersion); err != nil {
+		t.Fatalf("advertised v2 selection was rejected: %v", err)
+	}
+	// An advertisement that omits the selected v2 is still rejected.
+	if err := piwire.HostV2ValidateNegotiated(offered, []int{1}, piwire.HostV2ProtocolVersion); err == nil {
+		t.Fatal("v2 selection absent from the advertisement was admitted")
 	}
 }

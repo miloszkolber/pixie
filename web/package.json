@@ -18,15 +18,21 @@
 		"build:web": "bun --filter @pixie/web build",
 		"mewa:check": "bun --filter @pixie/web mewa:check",
 		"typecheck": "bun --filter @pixie/shared typecheck && bun --filter @pixie/web typecheck && tsc --noEmit -p tests/tsconfig.json && bun --filter @pixie_ai/pixie-assistant typecheck",
-		"test": "bun test tests && go test ./...",
+		"test": "bun scripts/check-runtime.ts --exec -- bun run test:inner",
+		"test:inner": "bun test tests && go test ./...",
 		"check:filenames": "bun scripts/check-filenames.ts",
 		"check:coverage": "bun scripts/check-coverage.ts",
 		"check:performance": "bun scripts/check-performance.ts",
 		"check:docs": "bun scripts/check-docs.ts",
+		"check:conventions": "bun scripts/check-conventions.ts",
+		"check:runtime": "bun scripts/check-runtime.ts",
+		"runtime:exec": "bun scripts/check-runtime.ts --exec --",
 		"generate:contracts": "bun scripts/generate-contracts.ts",
 		"check:contracts": "bun scripts/check-contracts.ts",
-		"lint": "bun run check:filenames && biome check . ../assistant ../shared ../package.json ../biome.json",
+		"generate:config-schema": "bun scripts/generate-config-schema.ts",
+		"check:config-schema": "bun scripts/generate-config-schema.ts --check",
+		"lint": "bun run check:filenames && bun run check:conventions && bun run check:config-schema && biome check . ../assistant ../shared ../package.json ../biome.json",
 		"format": "biome check --write . ../assistant ../shared ../package.json ../biome.json",
-		"check:deps": "bun scripts/check-catalog.ts"
+		"check:deps": "bun scripts/check-catalog.ts && bun scripts/check-boundaries.ts"
 	}
 }

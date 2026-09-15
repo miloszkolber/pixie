@@ -1,696 +1,39 @@
 import { expect, test } from "bun:test";
+import { resolve } from "node:path";
+import {
+	loadProtocolCatalog,
+	type OwnershipDefinition,
+	ownershipProblems,
+	SCHEMA_RELATIVE_PATH,
+} from "../../../web/scripts/generate-contracts";
+import {
+	CONTROLLER_METHOD_FC,
+	CONTROLLER_METHOD_OWNERS,
+	CONTROLLER_METHOD_PROFILES,
+	CONTROLLER_METHOD_REASONS,
+	CONTROLLER_METHOD_ROUTES,
+	CONTROLLER_METHOD_STATUS,
+	CONTROLLER_METHODS,
+	HOST_OPERATION_STATUS,
+	NATIVE_CONTROLLER_ROUTES,
+	NATIVE_WORKSPACE_ROUTES,
+} from "../../src/generated/protocol-catalog";
 import type { WsMethod, WsMethodName } from "../../src/ws-protocol";
 import { WS_METHODS } from "../../src/ws-protocol";
 
 // API-01 exhaustive browser/controller catalog with FC mapping.
-// Every row scopes its native/bridge route to one exact RPC or controller
-// subsystem. No row uses a broad "Administration" or provider-wide gate (F20).
-// The 8 schedule.* methods plus model.thinkingLevels and mcpAdapter.status are
-// first-class rows here and in WS_METHODS (F41).
-const CATALOG = [
-	{
-		method: "project.open",
-		fc: "FC08",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:projects",
-	},
-	{
-		method: "project.update",
-		fc: "FC08",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:projects",
-	},
-	{
-		method: "project.list",
-		fc: "FC08",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:projects",
-	},
-	{
-		method: "project.close",
-		fc: "FC08",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:projects",
-	},
-	{
-		method: "project.watchReady",
-		fc: "FC08",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:project-watches",
-	},
-	{
-		method: "git.listRepositories",
-		fc: "FC30",
-		owner: "workspace",
-		profile: "controller-local",
-		nativeRoute: "workspace:git",
-	},
-	{
-		method: "fs.readDir",
-		fc: "FC30",
-		owner: "workspace",
-		profile: "controller-local",
-		nativeRoute: "workspace:files",
-	},
-	{
-		method: "fs.readFile",
-		fc: "FC30",
-		owner: "workspace",
-		profile: "controller-local",
-		nativeRoute: "workspace:files",
-	},
-	{
-		method: "git.status",
-		fc: "FC30",
-		owner: "workspace",
-		profile: "controller-local",
-		nativeRoute: "workspace:git",
-	},
-	{
-		method: "git.diffFile",
-		fc: "FC30",
-		owner: "workspace",
-		profile: "controller-local",
-		nativeRoute: "workspace:git",
-	},
-	{
-		method: "git.listBranches",
-		fc: "FC30",
-		owner: "workspace",
-		profile: "controller-local",
-		nativeRoute: "workspace:git",
-	},
-	{
-		method: "git.listCommits",
-		fc: "FC30",
-		owner: "workspace",
-		profile: "controller-local",
-		nativeRoute: "workspace:git",
-	},
-	{
-		method: "directory.list",
-		fc: "FC30",
-		owner: "workspace",
-		profile: "controller-local",
-		nativeRoute: "workspace:files",
-	},
-	{
-		method: "skill.list",
-		fc: "FC12",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.slash-commands.list",
-	},
-	{
-		method: "session.create",
-		fc: "FC02",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "piwire:NewSession",
-	},
-	{
-		method: "session.fork",
-		fc: "FC07",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "piwire:ForkSession",
-	},
-	{ method: "session.prompt", fc: "FC03", owner: "pi", profile: "V", nativeRoute: "piwire:Prompt" },
-	{
-		method: "session.steer",
-		fc: "FC05",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "pi.session.steer",
-	},
-	{
-		method: "session.queueAdd",
-		fc: "FC05",
-		owner: "controller",
-		profile: "V",
-		nativeRoute: "controller:queues",
-	},
-	{
-		method: "session.queueEdit",
-		fc: "FC05",
-		owner: "controller",
-		profile: "V",
-		nativeRoute: "controller:queues",
-	},
-	{
-		method: "session.queueRemove",
-		fc: "FC05",
-		owner: "controller",
-		profile: "V",
-		nativeRoute: "controller:queues",
-	},
-	{
-		method: "session.queueRetry",
-		fc: "FC05",
-		owner: "controller",
-		profile: "V",
-		nativeRoute: "controller:queues",
-	},
-	{ method: "session.abort", fc: "FC05", owner: "pi", profile: "V", nativeRoute: "piwire:Cancel" },
-	{
-		method: "session.delete",
-		fc: "FC09",
-		owner: "controller",
-		profile: "V",
-		nativeRoute: "controller:deletions",
-	},
-	{
-		method: "session.deletionRecovery",
-		fc: "FC09",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:deletions",
-	},
-	{
-		method: "session.confirmExternalDeletion",
-		fc: "FC09",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:deletions",
-	},
-	{
-		method: "session.retainExternalDeletion",
-		fc: "FC09",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:deletions",
-	},
-	{
-		method: "session.rename",
-		fc: "FC07",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "pi.session.rename",
-	},
-	{
-		method: "session.archive",
-		fc: "FC08",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "pi.session.archive",
-	},
-	{
-		method: "session.unarchive",
-		fc: "FC08",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "pi.session.unarchive",
-	},
-	{
-		method: "session.setModel",
-		fc: "FC10",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "piwire:SetSessionConfigOption",
-	},
-	{
-		method: "session.setThinkingLevel",
-		fc: "FC10",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "piwire:SetSessionConfigOption",
-	},
-	{
-		method: "session.setConfigOption",
-		fc: "FC10",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "piwire:SetSessionConfigOption",
-	},
-	{
-		method: "session.getStats",
-		fc: "FC11",
-		owner: "controller",
-		profile: "V",
-		nativeRoute: "controller:session-stats",
-	},
-	{
-		method: "session.getCommands",
-		fc: "FC12",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.slash-commands.list",
-	},
-	{
-		method: "session.getAgentMentions",
-		fc: "FC23",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.agent-mentions.list",
-	},
-	{
-		method: "session.goalGet",
-		fc: "FC25",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:objectives",
-	},
-	{
-		method: "session.goalSet",
-		fc: "FC25",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:objectives",
-	},
-	{
-		method: "session.goalClear",
-		fc: "FC25",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:objectives",
-	},
-	{
-		method: "session.uiReply",
-		fc: "FC13",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "session.uiResponse",
-	},
-	{
-		method: "session.uiCancel",
-		fc: "FC13",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "session.uiCancel",
-	},
-	{
-		method: "session.list",
-		fc: "FC08",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "piwire:ListSessions",
-	},
-	{
-		method: "session.getMessages",
-		fc: "FC06",
-		owner: "pi",
-		profile: "V",
-		nativeRoute: "session.history",
-	},
-	{
-		method: "session.release",
-		fc: "FC02",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:leases",
-	},
-	{
-		method: "session.setLeases",
-		fc: "FC02",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:leases",
-	},
-	{ method: "model.list", fc: "FC17", owner: "pi", profile: "A", nativeRoute: "pi.providers.list" },
-	{
-		method: "model.clampThinking",
-		fc: "FC10",
-		owner: "controller",
-		profile: "V",
-		nativeRoute: "controller:session-config",
-	},
-	{
-		method: "model.thinkingLevels",
-		fc: "FC10",
-		owner: "controller",
-		profile: "V",
-		nativeRoute: "controller:session-config",
-	},
-	{
-		method: "model.refresh",
-		fc: "FC17",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.providers.inventory.refresh",
-	},
-	{
-		method: "model.setVisibility",
-		fc: "FC17",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:settings",
-	},
-	{
-		method: "model.setAllVisibility",
-		fc: "FC17",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:settings",
-	},
-	{
-		method: "pi.preferencesRead",
-		fc: "FC19",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.preferences.read",
-	},
-	{
-		method: "pi.preferencesSave",
-		fc: "FC19",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.preferences.save",
-	},
-	{
-		method: "pi.preferencesReset",
-		fc: "FC19",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.preferences.reset",
-	},
-	{
-		method: "pi.defaultsRead",
-		fc: "FC19",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.defaults.read",
-	},
-	{
-		method: "pi.defaultsSave",
-		fc: "FC19",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.defaults.save",
-	},
-	{
-		method: "pi.defaultsClear",
-		fc: "FC19",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.defaults.clear",
-	},
-	{
-		method: "pi.capabilities",
-		fc: "FC01",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "runtime.capabilities",
-	},
-	{ method: "pi.agentList", fc: "FC23", owner: "pi", profile: "A", nativeRoute: "pi.sources.list" },
-	{
-		method: "pi.agentCreate",
-		fc: "FC23",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.sources.create",
-	},
-	{
-		method: "pi.agentUpdate",
-		fc: "FC23",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.sources.update",
-	},
-	{
-		method: "pi.agentDelete",
-		fc: "FC23",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.sources.delete",
-	},
-	{
-		method: "provider.status",
-		fc: "FC17",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.providers.list",
-	},
-	{
-		method: "provider.readiness",
-		fc: "FC17",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.providers.readiness.check",
-	},
-	{
-		method: "provider.loginStart",
-		fc: "FC18",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "provider.loginStart",
-	},
-	{
-		method: "provider.loginReply",
-		fc: "FC18",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "provider.loginReply",
-	},
-	{
-		method: "provider.loginCancel",
-		fc: "FC18",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "provider.loginCancel",
-	},
-	{
-		method: "provider.logout",
-		fc: "FC18",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.providers.config.delete",
-	},
-	{
-		method: "settings.update",
-		fc: "FC17",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:settings",
-	},
-	{
-		method: "history.search",
-		fc: "FC06",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:history-index",
-	},
-	{
-		method: "schedule.list",
-		fc: "FC29",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:scheduler",
-	},
-	{
-		method: "schedule.preview",
-		fc: "FC29",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:scheduler",
-	},
-	{
-		method: "schedule.health",
-		fc: "FC29",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:scheduler",
-	},
-	{
-		method: "schedule.create",
-		fc: "FC29",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:scheduler",
-	},
-	{
-		method: "schedule.update",
-		fc: "FC29",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:scheduler",
-	},
-	{
-		method: "schedule.delete",
-		fc: "FC29",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:scheduler",
-	},
-	{
-		method: "schedule.runNow",
-		fc: "FC29",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:scheduler",
-	},
-	{
-		method: "schedule.stop",
-		fc: "FC29",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:scheduler",
-	},
-	{
-		method: "pi.status",
-		fc: "FC01",
-		owner: "controller",
-		profile: "A",
-		nativeRoute: "controller:pi-status",
-	},
-	{
-		method: "runtime.status",
-		fc: "FC01",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:runtime-status",
-	},
-	{
-		method: "runtime.diagnostics",
-		fc: "FC01",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:runtime-diagnostics",
-	},
-	{
-		method: "runtime.supportSnapshot",
-		fc: "FC01",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:runtime-support-snapshot",
-	},
-	{
-		method: "mcpRegistry.catalog",
-		fc: "FC26",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:mcp-registry",
-	},
-	{
-		method: "mcpRegistry.moduleSetEnabled",
-		fc: "FC26",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:mcp-registry",
-	},
-	{
-		method: "mcpRegistry.moduleRestart",
-		fc: "FC26",
-		owner: "controller",
-		profile: "controller-local",
-		nativeRoute: "controller:mcp-registry",
-	},
-	{
-		method: "mcpAdapter.status",
-		fc: "FC26",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "adapter.status",
-	},
-	{
-		method: "browserMcp.status",
-		fc: "FC31",
-		owner: "controller",
-		profile: "A",
-		nativeRoute: "controller:browser-mcp",
-	},
-	{
-		method: "browserMcp.configure",
-		fc: "FC31",
-		owner: "controller",
-		profile: "A",
-		nativeRoute: "controller:browser-mcp",
-	},
-	{
-		method: "browserMcp.remove",
-		fc: "FC31",
-		owner: "controller",
-		profile: "A",
-		nativeRoute: "controller:browser-mcp",
-	},
-	{
-		method: "pi.extensionList",
-		fc: "FC20",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.config.extensions.list",
-	},
-	{
-		method: "pi.nativeExtensions",
-		fc: "FC20",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.extensions.list",
-	},
-	{
-		method: "pi.nativeExtensionConfigure",
-		fc: "FC21",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.extensions.configure",
-	},
-	{
-		method: "pi.nativeExtensionReload",
-		fc: "FC21",
-		owner: "controller",
-		profile: "A",
-		nativeRoute: "controller:deferred-reload",
-	},
-	{ method: "pi.reload", fc: "FC22", owner: "pi", profile: "A", nativeRoute: "runtime.restart" },
-	{
-		method: "pi.extensionAdd",
-		fc: "FC21",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.config.extensions.add",
-	},
-	{
-		method: "pi.extensionSetEnabled",
-		fc: "FC21",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.config.extensions.set-enabled",
-	},
-	{
-		method: "pi.extensionRemove",
-		fc: "FC21",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.config.extensions.remove",
-	},
-	{
-		method: "session.extensionList",
-		fc: "FC20",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.session.extensions.list",
-	},
-	{
-		method: "session.extensionAdd",
-		fc: "FC21",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.session.extensions.add",
-	},
-	{
-		method: "session.extensionRemove",
-		fc: "FC21",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.session.extensions.remove",
-	},
-	{
-		method: "session.toolList",
-		fc: "FC26",
-		owner: "pi",
-		profile: "A",
-		nativeRoute: "pi.tools.list",
-	},
-] as const;
+// The ownership/status parity matrix is derived from the shared schema; this
+// test never hand-maintains a second route table. Every row scopes its
+// native/bridge route to one exact RPC or controller subsystem, so no row can
+// use a broad "Administration" or provider-wide gate (F20). The 8 schedule.*
+// methods plus model.thinkingLevels and mcpAdapter.status are first-class rows
+// here and in WS_METHODS (F41).
 
-type CatalogMethod = (typeof CATALOG)[number]["method"];
+type CatalogMethod = (typeof CONTROLLER_METHODS)[number];
 
-// Compile-time proof that the catalog, WS_METHODS values, and WsMethodMap keys
-// describe the same browser surface. Any drift fails typecheck before tests run.
+// Compile-time proof that the generated catalog, WS_METHODS values, and
+// WsMethodMap keys describe the same browser surface. Any drift fails
+// typecheck before tests run.
 type CatalogCoversMap = Exclude<WsMethodName, CatalogMethod>;
 const assertCatalogCoversMap: CatalogCoversMap extends never ? true : never = true;
 type MapCoversCatalog = Exclude<CatalogMethod, WsMethodName>;
@@ -705,28 +48,13 @@ void assertMapCoversCatalog;
 void assertWsValuesCoverMap;
 void assertMapCoversWsValues;
 
-function extractHandlerMethods(source: string): string[] {
-	const methods: string[] = [];
-	const casePattern = /case\s+((?:"[^"]+"\s*,?\s*)+)/g;
-	let found: RegExpExecArray | null = casePattern.exec(source);
-	while (found !== null) {
-		const group = found[1] ?? "";
-		for (const quoted of group.matchAll(/"([^"]+)"/g)) {
-			const value = quoted[1] ?? "";
-			if (/^[A-Za-z]+\.[A-Za-z]+$/.test(value)) methods.push(value);
-		}
-		found = casePattern.exec(source);
-	}
-	return methods;
-}
-
 test("exhaustive catalog covers every WS_METHODS value", () => {
 	const values = Object.values(WS_METHODS);
-	const catalogMethods = CATALOG.map((row) => row.method);
+	const catalogMethods = [...CONTROLLER_METHODS];
 	expect(values.length).toBe(101);
-	expect(CATALOG.length).toBe(101);
+	expect(catalogMethods.length).toBe(101);
 	expect(new Set(values).size).toBe(values.length);
-	expect(new Set(catalogMethods).size).toBe(CATALOG.length);
+	expect(new Set(catalogMethods).size).toBe(catalogMethods.length);
 	expect(new Set(catalogMethods)).toEqual(new Set(values));
 	for (const required of [
 		"schedule.list",
@@ -745,28 +73,153 @@ test("exhaustive catalog covers every WS_METHODS value", () => {
 	}
 });
 
+// The generated route table is the only route vocabulary. A browser method may
+// name a catalogued host operation or a declared controller/workspace
+// subsystem; anything else is an unknown native route and must fail closed.
+function routeKnown(route: string): boolean {
+	if (HOST_OPERATION_STATUS[route as keyof typeof HOST_OPERATION_STATUS] !== undefined) return true;
+	const [namespace, id] = route.split(":", 2);
+	if (namespace === "controller")
+		return (NATIVE_CONTROLLER_ROUTES as readonly string[]).includes(id ?? "");
+	if (namespace === "workspace")
+		return (NATIVE_WORKSPACE_ROUTES as readonly string[]).includes(id ?? "");
+	return false;
+}
+
+function ownerForRoute(route: string): string {
+	if (route.startsWith("controller:")) return "controller";
+	if (route.startsWith("workspace:")) return "workspace";
+	return "pi";
+}
+
+test("every browser method names a known route with a consistent owner and status", () => {
+	for (const method of CONTROLLER_METHODS) {
+		const route = CONTROLLER_METHOD_ROUTES[method];
+		const owner = CONTROLLER_METHOD_OWNERS[method];
+		const status = CONTROLLER_METHOD_STATUS[method];
+		expect(routeKnown(route)).toBe(true);
+		expect(owner).toBe(ownerForRoute(route));
+		expect(["available", "unavailable", "absent"]).toContain(status);
+		const hostStatus = HOST_OPERATION_STATUS[route as keyof typeof HOST_OPERATION_STATUS];
+		if (hostStatus !== undefined) {
+			// A browser method cannot upgrade a host route the catalog does not
+			// implement, and it cannot declare a status the host does not have.
+			expect(status).toBe(hostStatus);
+			if (hostStatus !== "available") {
+				expect(typeof CONTROLLER_METHOD_REASONS[method]).toBe("string");
+				expect((CONTROLLER_METHOD_REASONS[method] ?? "").length).toBeGreaterThan(0);
+			} else {
+				expect(CONTROLLER_METHOD_REASONS[method]).toBeUndefined();
+			}
+		} else if (status === "available") {
+			expect(CONTROLLER_METHOD_REASONS[method]).toBeUndefined();
+		} else {
+			expect((CONTROLLER_METHOD_REASONS[method] ?? "").length).toBeGreaterThan(0);
+		}
+	}
+	// The specific legacy lies this matrix replaces: archive and adapter routes
+	// were advertised as Pi-owned even though the catalog marks them absent.
+	expect(CONTROLLER_METHOD_OWNERS["session.archive"]).toBe("controller");
+	expect(CONTROLLER_METHOD_OWNERS["session.unarchive"]).toBe("controller");
+	expect(CONTROLLER_METHOD_OWNERS["mcpAdapter.status"]).toBe("controller");
+	expect(CONTROLLER_METHOD_OWNERS["pi.capabilities"]).toBe("controller");
+	expect(CONTROLLER_METHOD_STATUS["session.steer"]).toBe("unavailable");
+	expect(CONTROLLER_METHOD_STATUS["session.toolList"]).toBe("unavailable");
+	expect(CONTROLLER_METHOD_STATUS["session.archive"]).toBe("unavailable");
+});
+
 test("catalog native routes are exact, not broad Administration assumptions", () => {
-	const owners = new Set(["controller", "workspace", "pi"]);
 	const profiles = new Set(["V", "A", "M", "W", "controller-local"]);
-	for (const row of CATALOG) {
-		expect(row.method.length).toBeGreaterThan(0);
-		expect(/^FC(0[1-9]|[12][0-9]|3[0-3])$/.test(row.fc)).toBe(true);
-		expect(owners.has(row.owner)).toBe(true);
-		expect(profiles.has(row.profile)).toBe(true);
-		expect(row.nativeRoute.length).toBeGreaterThan(0);
-		expect(row.nativeRoute).not.toContain("Administration");
-		expect(row.nativeRoute).not.toContain("administration");
-		expect(row.nativeRoute).not.toContain("PiAdmin");
-		expect(row.nativeRoute).not.toContain("*");
-		expect(row.nativeRoute).not.toContain("broad");
+	for (const method of CONTROLLER_METHODS) {
+		expect(method.length).toBeGreaterThan(0);
+		expect(/^FC(0[1-9]|[12][0-9]|3[0-3])$/.test(CONTROLLER_METHOD_FC[method])).toBe(true);
+		expect(profiles.has(CONTROLLER_METHOD_PROFILES[method])).toBe(true);
+		const route = CONTROLLER_METHOD_ROUTES[method];
+		expect(route.length).toBeGreaterThan(0);
+		expect(route).not.toContain("Administration");
+		expect(route).not.toContain("administration");
+		expect(route).not.toContain("PiAdmin");
+		expect(route).not.toContain("*");
+		expect(route).not.toContain("broad");
 		const exact =
-			row.nativeRoute.startsWith("controller:") ||
-			row.nativeRoute.startsWith("workspace:") ||
-			row.nativeRoute.startsWith("piwire:") ||
-			row.nativeRoute.includes(".");
+			route.startsWith("controller:") ||
+			route.startsWith("workspace:") ||
+			HOST_OPERATION_STATUS[route as keyof typeof HOST_OPERATION_STATUS] !== undefined;
 		expect(exact).toBe(true);
 	}
 });
+
+test("ownership validation fails on unknown routes and over-advertised statuses", () => {
+	const host = [
+		{ name: "session.list", status: "available" as const },
+		{
+			name: "session.delete",
+			status: "absent" as const,
+			reason: "Session deletion is controller-owned state.",
+		},
+	];
+	const nativeRoutes = { controller: ["archive"], workspace: ["git"] };
+	const row = (overrides: Partial<OwnershipDefinition>): OwnershipDefinition => ({
+		method: "session.list",
+		fc: "FC08",
+		owner: "pi",
+		profile: "V",
+		route: "session.list",
+		...overrides,
+	});
+
+	expect(ownershipProblems([row({})], host, nativeRoutes)).toEqual([]);
+	expect(ownershipProblems([row({ route: "session.archive" })], host, nativeRoutes)).toContain(
+		"session.list: unknown native route session.archive",
+	);
+	expect(ownershipProblems([row({ route: "controller:missing" })], host, nativeRoutes)).toContain(
+		"session.list: unknown controller route controller:missing",
+	);
+	expect(
+		ownershipProblems([row({ route: "controller:archive", owner: "pi" })], host, nativeRoutes),
+	).toContain("session.list: controller route controller:archive requires the controller owner");
+	expect(
+		ownershipProblems(
+			[row({ route: "session.delete", owner: "pi", status: "available" })],
+			host,
+			nativeRoutes,
+		),
+	).toContain("session.list: advertises session.delete as available but the host marks it absent");
+	expect(
+		ownershipProblems(
+			[
+				row({
+					method: "session.archive",
+					owner: "controller",
+					route: "controller:archive",
+					status: "unavailable",
+				}),
+			],
+			host,
+			nativeRoutes,
+		),
+	).toContain("session.archive: a non-available route requires a reason");
+	// The live schema must always be internally consistent.
+	const schema = loadProtocolCatalog(resolve(import.meta.dir, "..", "..", SCHEMA_RELATIVE_PATH));
+	expect(ownershipProblems(schema.ownership, schema.operations.host, schema.nativeRoutes)).toEqual(
+		[],
+	);
+});
+
+function extractHandlerMethods(source: string): string[] {
+	const methods: string[] = [];
+	const casePattern = /case\s+((?:"[^"]+"\s*,?\s*)+)/g;
+	let found: RegExpExecArray | null = casePattern.exec(source);
+	while (found !== null) {
+		const group = found[1] ?? "";
+		for (const quoted of group.matchAll(/"([^"]+)"/g)) {
+			const value = quoted[1] ?? "";
+			if (/^[A-Za-z]+\.[A-Za-z]+$/.test(value)) methods.push(value);
+		}
+		found = casePattern.exec(source);
+	}
+	return methods;
+}
 
 test("generated binding check matches Go handler cases both directions", async () => {
 	const base = import.meta.dir;
@@ -781,7 +234,7 @@ test("generated binding check matches Go handler cases both directions", async (
 		...extractHandlerMethods(extensionsSource),
 	]);
 	const wsValues = new Set<string>(Object.values(WS_METHODS));
-	const catalogMethods = new Set<string>(CATALOG.map((row) => row.method));
+	const catalogMethods = new Set<string>(CONTROLLER_METHODS);
 	expect(handlerMethods.size).toBe(101);
 	expect(handlerMethods).toEqual(wsValues);
 	expect(handlerMethods).toEqual(catalogMethods);

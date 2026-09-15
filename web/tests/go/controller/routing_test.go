@@ -433,10 +433,16 @@ func doDesignManagement(t *testing.T, handler http.Handler, method, target strin
 		reader = bytes.NewReader(body)
 	}
 	request := httptest.NewRequest(method, target, reader)
+	// A management request over the loopback authority is a local service
+	// request; the strict AUX-20 write check admits it only from a loopback peer.
+	request.RemoteAddr = "127.0.0.1:53000"
 	if cookie != nil {
 		request.AddCookie(cookie)
 	}
+	// AUX-20: authenticated write routes apply the strict Fetch Metadata policy,
+	// so a real same-origin browser fetch declares both site and mode.
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	request.Header.Set("Sec-Fetch-Mode", "cors")
 	if body != nil {
 		request.Header.Set("Content-Type", "application/octet-stream")
 	}

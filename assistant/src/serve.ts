@@ -69,10 +69,17 @@ export interface ResolvedConfig {
 	readonly allowSelfRestart: boolean;
 }
 
-function fail(message: string): never {
+/**
+ * The resolved bearer secret. It is recorded as soon as the secret is known so
+ * every later fatal path redacts it by default; before resolution the list is
+ * empty because no secret can appear yet.
+ */
+const activeSecrets: string[] = [];
+
+function fail(message: string, secrets: readonly string[] = activeSecrets): never {
 	// Host diagnostics are redacted so an error path can never export a bearer
 	// token, credential value, endpoint URL or absolute filesystem path.
-	console.error(`pixie_assistant: ${redactHostLogText(message)}`);
+	console.error(`pixie_assistant: ${redactHostLogText(message, secrets)}`);
 	process.exit(1);
 }
 
@@ -81,8 +88,11 @@ function errorMessage(error: unknown): string {
 }
 
 /** Redact a top-level serve failure before it can reach stderr. */
-export function fatalServeMessage(error: unknown): string {
-	return redactHostLogText(errorMessage(error));
+export function fatalServeMessage(
+	error: unknown,
+	secrets: readonly string[] = activeSecrets,
+): string {
+	return redactHostLogText(errorMessage(error), secrets);
 }
 
 function usage(): string {
@@ -235,7 +245,9 @@ async function readConfig(configPath: string): Promise<Record<string, unknown>> 
 	try {
 		raw = await Bun.file(configPath).text();
 	} catch {
-		fail(`read config: ${configPath}`);
+		// The configured path itself may contain spaces, so it is never
+		// interpolated into the fatal message.
+		fail("read config: the selected configuration file is unreadable");
 	}
 	let parsed: unknown;
 	try {
@@ -347,6 +359,8 @@ function resolveSecret(config: Record<string, unknown>): string {
 	if (value.length < MIN_SECRET_LENGTH) {
 		fail(`assistant secret must be at least ${MIN_SECRET_LENGTH} characters`);
 	}
+	activeSecrets.length = 0;
+	activeSecrets.push(value);
 	return value;
 }
 
@@ -714,12 +728,14 @@ async function runDoctor(
 	console.log(
 		redactHostLogText(
 			`pixie_assistant doctor: config=${configPath.trim() === "" ? "(none)" : configPath}`,
+			activeSecrets,
 		),
 	);
 	console.log(
 		redactHostLogText(
 			`host=${resolved.host} port=${resolved.port} agentDir=${resolved.agentDir} ` +
 				`piPackage=${resolved.piPackage} allowSelfRestart=${resolved.allowSelfRestart}`,
+			activeSecrets,
 		),
 	);
 	console.log(pairedAssistantPortNote(resolved.port));
@@ -775,7 +791,7 @@ async function runServe(resolved: ResolvedConfig): Promise<void> {
 				process.exit(0);
 			} catch (error) {
 				console.error(
-					`pixie_assistant: shutdown failed: ${redactHostLogText(errorMessage(error))}`,
+					`pixie_assistant: shutdown failed: ${redactHostLogText(errorMessage(error), activeSecrets)}`,
 				);
 				process.exit(1);
 			}
@@ -786,6 +802,13 @@ async function runServe(resolved: ResolvedConfig): Promise<void> {
 }
 
 async function main(): Promise<void> {
+	// An inherited secret is known before any argument or config is read, so it
+	// is redacted from every early fatal path, not only after resolution.
+	const inheritedSecret = (process.env.PIXIE_PI_SECRET_KEY ?? "").trim();
+	if (inheritedSecret !== "") {
+		activeSecrets.length = 0;
+		activeSecrets.push(inheritedSecret);
+	}
 	const parsed = parseArgs(process.argv.slice(2));
 	if (parsed.versionRequested) {
 		console.log(versionString());

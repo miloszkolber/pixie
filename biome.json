@@ -14,7 +14,8 @@
 			"!**/dist",
 			"!web/webui/.build",
 			"!web/webui/vendor",
-			"!web/webui/src/styles/generated"
+			"!web/webui/src/styles/generated",
+			"!web/scripts/conventions-boundaries.json"
 		]
 	},
 	"formatter": {

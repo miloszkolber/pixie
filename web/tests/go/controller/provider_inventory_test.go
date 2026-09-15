@@ -45,7 +45,7 @@ func inventoryFixture(t *testing.T) (*controller.PiAdmin, *atomic.Int32, *atomic
 			var result any = map[string]any{}
 			switch rpc.Method {
 			case "runtime.hello":
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			case "pi.providers.list":
 				lists.Add(1)
 				result = map[string]any{"entries": []any{map[string]any{"providerId": "local-cli", "configured": !removed.Load(), "available": true, "configKeys": []any{map[string]any{"name": "COMMAND", "required": true, "default": "cli"}}}}}
@@ -120,8 +120,49 @@ func TestProviderInventorySharesPresenceChecksAndIsolatesCallerCancellation(t *t
 	if _, err := admin.ProviderStatus(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// AUX-06: the completed projection is reused for a short TTL so a settings
+	// render does not issue a second inventory policy or a second round trip.
+	if lists.Load() != 1 || reads.Load() != 1 {
+		t.Fatalf("recent inventory result was not reused: lists=%d, presence=%d", lists.Load(), reads.Load())
+	}
+}
+
+func TestProviderInventoryReusesResolvedAuthUntilTTLExpiry(t *testing.T) {
+	previous := controller.ProviderInventoryTTL
+	controller.ProviderInventoryTTL = 50 * time.Millisecond
+	t.Cleanup(func() { controller.ProviderInventoryTTL = previous })
+
+	admin, lists, reads, _, release := inventoryFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	first := make(chan error, 1)
+	go func() { _, err := admin.ProviderStatus(ctx); first <- err }()
+	// Unblock the presence check so the first read resolves and is cached.
+	release()
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if lists.Load() != 1 || reads.Load() != 1 {
+		t.Fatalf("first read did not run once: lists=%d, presence=%d", lists.Load(), reads.Load())
+	}
+
+	// A second read inside the TTL reuses the resolved auth projection.
+	if _, err := admin.ProviderStatus(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if lists.Load() != 1 || reads.Load() != 1 {
+		t.Fatalf("in-TTL read re-ran the inventory: lists=%d, presence=%d", lists.Load(), reads.Load())
+	}
+
+	// Once the TTL expires the controller asks Pi again rather than serving a
+	// stale projection.
+	time.Sleep(2 * controller.ProviderInventoryTTL)
+	if _, err := admin.ProviderStatus(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if lists.Load() != 2 || reads.Load() != 2 {
-		t.Fatal("completed inventory was cached")
+		t.Fatalf("expired projection was not refreshed: lists=%d, presence=%d", lists.Load(), reads.Load())
 	}
 }
 

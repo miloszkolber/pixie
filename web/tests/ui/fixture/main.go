@@ -27,6 +27,7 @@ import (
 	controller "github.com/miloszkolber/pixie/internal/controller"
 	"github.com/miloszkolber/pixie/internal/persist"
 	"github.com/miloszkolber/pixie/internal/workspace"
+	piwire "github.com/miloszkolber/pixie/shared/piprotocol"
 )
 
 const (
@@ -325,20 +326,25 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 			result = map[string]any{"extensions": []any{}}
 		case "pi.sources.list":
 			result = map[string]any{"sources": []any{}}
-		case "pi.session.info":
-			result = map[string]any{"sessionId": sessionID, "title": "Fixture chat"}
-
-		case "runtime.capabilities":
-			result = map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1, "images": 1}
 		case "runtime.hello":
 			result = map[string]any{"protocolVersion": 1, "runtimeId": "ui-fixture", "bootId": "ui-fixture-boot", "version": "0.85.1", "capabilities": map[string]int{"sessions": 1, "providers": 1, "mcp": 1, "agents": 1, "plans": 1, "images": 1}, "operationSet": fixtureOperationSet()}
 		case "session.list":
-			result = map[string]any{"sessions": []any{map[string]any{
-				"sessionId": sessionID,
-				"cwd":       a.root,
-				"title":     "Fixture chat",
-				"updatedAt": "2026-01-02T00:00:00Z",
-			}}}
+			// Resident and cwd-scoped entries both carry the required identity
+			// and working-directory metadata.
+			result = map[string]any{"sessions": []any{
+				map[string]any{
+					"sessionId": sessionID,
+					"cwd":       a.root,
+					"title":     "Fixture chat",
+					"updatedAt": "2026-01-02T00:00:00Z",
+				},
+				map[string]any{
+					"sessionId": "fixture-scoped",
+					"cwd":       filepath.Join(a.root, "scoped"),
+					"title":     "Scoped chat",
+					"updatedAt": "2026-01-01T00:00:00Z",
+				},
+			}}
 		case "session.create":
 			result = map[string]any{"sessionId": "new-fixture", "configOptions": a.configOptions()}
 		case "session.load":
@@ -415,19 +421,30 @@ func (a *fixtureAgent) serveHTTP(response http.ResponseWriter, request *http.Req
 	}
 }
 
-// fixtureOperationSet advertises exactly the operations this fixture host can
-// serve so the controller's negotiated-capability gate stays fail-closed. The
-// five core session operations are required; the rest mirror the switch below.
+// fixtureServedOperations are the routes the switch in serveHTTP answers
+// successfully. It is intersected with the generated available set by
+// fixtureOperationSet, so the fixture can never advertise an absent or
+// unavailable host route and a served route that the catalog rejects panics
+// during startup instead of surfacing a fixture-only success.
+var fixtureServedOperations = []string{
+	"session.list", "session.create", "session.load", "session.prompt", "session.cancel",
+	"session.configure",
+	"pi.config.extensions.list", "pi.defaults.read", "pi.preferences.read",
+	"pi.providers.canonical-model-info", "pi.providers.config.read",
+	"pi.providers.inventory.refresh", "pi.providers.list",
+	"pi.session.extensions.list", "pi.sources.list",
+	"provider.loginBegin", "provider.loginCancel", "provider.loginReply", "provider.loginStart",
+}
+
+// fixtureOperationSet advertises exactly the generated available operations
+// this fixture host can serve so the controller's negotiated-capability gate
+// stays fail-closed against the real host vocabulary.
 func fixtureOperationSet() map[string]bool {
 	operations := map[string]bool{}
-	for _, method := range []string{
-		"session.list", "session.create", "session.load", "session.prompt", "session.cancel",
-		"session.configure", "runtime.capabilities",
-		"pi.config.extensions.list", "pi.defaults.read", "pi.preferences.read",
-		"pi.providers.config.read", "pi.providers.inventory.refresh", "pi.providers.list",
-		"pi.session.extensions.list", "pi.session.info", "pi.sources.list",
-		"provider.loginBegin", "provider.loginCancel", "provider.loginReply", "provider.loginStart",
-	} {
+	for _, method := range fixtureServedOperations {
+		if !piwire.CatalogHostOperationIsAvailable(method) {
+			panic("UI fixture serves an absent or unavailable operation: " + method)
+		}
 		operations[method] = true
 	}
 	return operations

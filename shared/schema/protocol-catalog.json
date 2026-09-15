@@ -1,6 +1,6 @@
 {
-	"$comment": "Single source of truth for the Pi/Pixie protocol operation names, thinking levels, prompt content block types and versioned admin error codes. TypeScript and Go artifacts are generated from this file by web/scripts/generate-contracts.ts; web/scripts/check-contracts.ts fails CI when a committed generated file drifts.",
-	"schemaVersion": 1,
+	"$comment": "Single source of truth for the Pi/Pixie protocol operation names, host implementation statuses, browser/controller ownership routes, thinking levels, prompt content block types and versioned admin error codes. TypeScript and Go artifacts are generated from this file by web/scripts/generate-contracts.ts; web/scripts/check-contracts.ts fails CI when a committed generated file drifts.",
+	"schemaVersion": 2,
 	"operations": {
 		"host": [
 			{
@@ -490,5 +490,2233 @@
 			"name": "method_not_found",
 			"reason": "method_not_found"
 		}
-	]
+	],
+	"nativeRoutes": {
+		"controller": [
+			"archive",
+			"browser-mcp",
+			"deferred-reload",
+			"deletions",
+			"history-index",
+			"leases",
+			"mcp-adapter",
+			"mcp-registry",
+			"objectives",
+			"pi-capabilities",
+			"pi-status",
+			"project-watches",
+			"projects",
+			"queues",
+			"runtime-diagnostics",
+			"runtime-status",
+			"runtime-support-snapshot",
+			"scheduler",
+			"session-config",
+			"session-stats",
+			"settings"
+		],
+		"workspace": ["files", "git"]
+	},
+	"ownership": [
+		{
+			"method": "project.open",
+			"fc": "FC08",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:projects"
+		},
+		{
+			"method": "project.update",
+			"fc": "FC08",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:projects"
+		},
+		{
+			"method": "project.list",
+			"fc": "FC08",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:projects"
+		},
+		{
+			"method": "project.close",
+			"fc": "FC08",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:projects"
+		},
+		{
+			"method": "project.watchReady",
+			"fc": "FC08",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:project-watches"
+		},
+		{
+			"method": "git.listRepositories",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:git"
+		},
+		{
+			"method": "fs.readDir",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:files"
+		},
+		{
+			"method": "fs.readFile",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:files"
+		},
+		{
+			"method": "git.status",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:git"
+		},
+		{
+			"method": "git.diffFile",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:git"
+		},
+		{
+			"method": "git.listBranches",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:git"
+		},
+		{
+			"method": "git.listCommits",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:git"
+		},
+		{
+			"method": "directory.list",
+			"fc": "FC30",
+			"owner": "workspace",
+			"profile": "controller-local",
+			"route": "workspace:files"
+		},
+		{
+			"method": "skill.list",
+			"fc": "FC12",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.slash-commands.list"
+		},
+		{
+			"method": "session.create",
+			"fc": "FC02",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.create"
+		},
+		{
+			"method": "session.fork",
+			"fc": "FC07",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.fork"
+		},
+		{
+			"method": "session.prompt",
+			"fc": "FC03",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.prompt"
+		},
+		{
+			"method": "session.steer",
+			"fc": "FC05",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.steer"
+		},
+		{
+			"method": "session.queueAdd",
+			"fc": "FC05",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:queues"
+		},
+		{
+			"method": "session.queueEdit",
+			"fc": "FC05",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:queues"
+		},
+		{
+			"method": "session.queueRemove",
+			"fc": "FC05",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:queues"
+		},
+		{
+			"method": "session.queueRetry",
+			"fc": "FC05",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:queues"
+		},
+		{
+			"method": "session.abort",
+			"fc": "FC05",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.cancel"
+		},
+		{
+			"method": "session.delete",
+			"fc": "FC09",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:deletions"
+		},
+		{
+			"method": "session.deletionRecovery",
+			"fc": "FC09",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:deletions"
+		},
+		{
+			"method": "session.confirmExternalDeletion",
+			"fc": "FC09",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:deletions"
+		},
+		{
+			"method": "session.retainExternalDeletion",
+			"fc": "FC09",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:deletions"
+		},
+		{
+			"method": "session.rename",
+			"fc": "FC07",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.rename"
+		},
+		{
+			"method": "session.archive",
+			"fc": "FC08",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:archive",
+			"status": "unavailable",
+			"reason": "Archive is controller-owned state; this controller fails closed until a durable archive marker exists."
+		},
+		{
+			"method": "session.unarchive",
+			"fc": "FC08",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:archive",
+			"status": "unavailable",
+			"reason": "Archive is controller-owned state; this controller fails closed until a durable archive marker exists."
+		},
+		{
+			"method": "session.setModel",
+			"fc": "FC10",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.configure"
+		},
+		{
+			"method": "session.setThinkingLevel",
+			"fc": "FC10",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.configure"
+		},
+		{
+			"method": "session.setConfigOption",
+			"fc": "FC10",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.configure"
+		},
+		{
+			"method": "session.getStats",
+			"fc": "FC11",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:session-stats"
+		},
+		{
+			"method": "session.getCommands",
+			"fc": "FC12",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.slash-commands.list"
+		},
+		{
+			"method": "session.getAgentMentions",
+			"fc": "FC23",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.agent-mentions.list"
+		},
+		{
+			"method": "session.goalGet",
+			"fc": "FC25",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:objectives"
+		},
+		{
+			"method": "session.goalSet",
+			"fc": "FC25",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:objectives"
+		},
+		{
+			"method": "session.goalClear",
+			"fc": "FC25",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:objectives"
+		},
+		{
+			"method": "session.uiReply",
+			"fc": "FC13",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.uiResponse"
+		},
+		{
+			"method": "session.uiCancel",
+			"fc": "FC13",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.uiCancel"
+		},
+		{
+			"method": "session.list",
+			"fc": "FC08",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.list"
+		},
+		{
+			"method": "session.getMessages",
+			"fc": "FC06",
+			"owner": "pi",
+			"profile": "V",
+			"route": "session.getMessages"
+		},
+		{
+			"method": "session.setLeases",
+			"fc": "FC02",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:leases"
+		},
+		{
+			"method": "session.release",
+			"fc": "FC02",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:leases"
+		},
+		{
+			"method": "model.list",
+			"fc": "FC17",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.providers.list"
+		},
+		{
+			"method": "model.refresh",
+			"fc": "FC17",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.providers.inventory.refresh"
+		},
+		{
+			"method": "model.clampThinking",
+			"fc": "FC10",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:session-config"
+		},
+		{
+			"method": "model.thinkingLevels",
+			"fc": "FC10",
+			"owner": "controller",
+			"profile": "V",
+			"route": "controller:session-config"
+		},
+		{
+			"method": "model.setVisibility",
+			"fc": "FC17",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:settings"
+		},
+		{
+			"method": "model.setAllVisibility",
+			"fc": "FC17",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:settings"
+		},
+		{
+			"method": "pi.preferencesRead",
+			"fc": "FC19",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.preferences.read"
+		},
+		{
+			"method": "pi.preferencesSave",
+			"fc": "FC19",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.preferences.save"
+		},
+		{
+			"method": "pi.preferencesReset",
+			"fc": "FC19",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.preferences.reset"
+		},
+		{
+			"method": "pi.defaultsRead",
+			"fc": "FC19",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.defaults.read"
+		},
+		{
+			"method": "pi.defaultsSave",
+			"fc": "FC19",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.defaults.save"
+		},
+		{
+			"method": "pi.defaultsClear",
+			"fc": "FC19",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.defaults.clear"
+		},
+		{
+			"method": "pi.capabilities",
+			"fc": "FC01",
+			"owner": "controller",
+			"profile": "A",
+			"route": "controller:pi-capabilities"
+		},
+		{
+			"method": "pi.agentList",
+			"fc": "FC23",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.sources.list"
+		},
+		{
+			"method": "pi.agentCreate",
+			"fc": "FC23",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.sources.create"
+		},
+		{
+			"method": "pi.agentUpdate",
+			"fc": "FC23",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.sources.update"
+		},
+		{
+			"method": "pi.agentDelete",
+			"fc": "FC23",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.sources.delete"
+		},
+		{
+			"method": "provider.status",
+			"fc": "FC17",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.providers.list"
+		},
+		{
+			"method": "provider.readiness",
+			"fc": "FC17",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.providers.readiness.check"
+		},
+		{
+			"method": "provider.loginStart",
+			"fc": "FC18",
+			"owner": "pi",
+			"profile": "A",
+			"route": "provider.loginStart"
+		},
+		{
+			"method": "provider.loginReply",
+			"fc": "FC18",
+			"owner": "pi",
+			"profile": "A",
+			"route": "provider.loginReply"
+		},
+		{
+			"method": "provider.loginCancel",
+			"fc": "FC18",
+			"owner": "pi",
+			"profile": "A",
+			"route": "provider.loginCancel"
+		},
+		{
+			"method": "provider.logout",
+			"fc": "FC18",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.providers.config.delete"
+		},
+		{
+			"method": "settings.update",
+			"fc": "FC17",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:settings"
+		},
+		{
+			"method": "history.search",
+			"fc": "FC06",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:history-index"
+		},
+		{
+			"method": "schedule.list",
+			"fc": "FC29",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:scheduler"
+		},
+		{
+			"method": "schedule.preview",
+			"fc": "FC29",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:scheduler"
+		},
+		{
+			"method": "schedule.health",
+			"fc": "FC29",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:scheduler"
+		},
+		{
+			"method": "schedule.create",
+			"fc": "FC29",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:scheduler"
+		},
+		{
+			"method": "schedule.update",
+			"fc": "FC29",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:scheduler"
+		},
+		{
+			"method": "schedule.delete",
+			"fc": "FC29",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:scheduler"
+		},
+		{
+			"method": "schedule.runNow",
+			"fc": "FC29",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:scheduler"
+		},
+		{
+			"method": "schedule.stop",
+			"fc": "FC29",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:scheduler"
+		},
+		{
+			"method": "pi.status",
+			"fc": "FC01",
+			"owner": "controller",
+			"profile": "A",
+			"route": "controller:pi-status"
+		},
+		{
+			"method": "runtime.status",
+			"fc": "FC01",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:runtime-status"
+		},
+		{
+			"method": "runtime.diagnostics",
+			"fc": "FC01",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:runtime-diagnostics"
+		},
+		{
+			"method": "runtime.supportSnapshot",
+			"fc": "FC01",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:runtime-support-snapshot"
+		},
+		{
+			"method": "mcpRegistry.catalog",
+			"fc": "FC26",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:mcp-registry"
+		},
+		{
+			"method": "mcpRegistry.moduleSetEnabled",
+			"fc": "FC26",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:mcp-registry"
+		},
+		{
+			"method": "mcpRegistry.moduleRestart",
+			"fc": "FC26",
+			"owner": "controller",
+			"profile": "controller-local",
+			"route": "controller:mcp-registry"
+		},
+		{
+			"method": "mcpAdapter.status",
+			"fc": "FC26",
+			"owner": "controller",
+			"profile": "A",
+			"route": "controller:mcp-adapter"
+		},
+		{
+			"method": "browserMcp.status",
+			"fc": "FC31",
+			"owner": "controller",
+			"profile": "A",
+			"route": "controller:browser-mcp"
+		},
+		{
+			"method": "browserMcp.configure",
+			"fc": "FC31",
+			"owner": "controller",
+			"profile": "A",
+			"route": "controller:browser-mcp"
+		},
+		{
+			"method": "browserMcp.remove",
+			"fc": "FC31",
+			"owner": "controller",
+			"profile": "A",
+			"route": "controller:browser-mcp"
+		},
+		{
+			"method": "pi.extensionList",
+			"fc": "FC20",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.config.extensions.list"
+		},
+		{
+			"method": "pi.nativeExtensions",
+			"fc": "FC20",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.extensions.list"
+		},
+		{
+			"method": "pi.nativeExtensionConfigure",
+			"fc": "FC21",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.extensions.configure"
+		},
+		{
+			"method": "pi.nativeExtensionReload",
+			"fc": "FC21",
+			"owner": "controller",
+			"profile": "A",
+			"route": "controller:deferred-reload"
+		},
+		{
+			"method": "pi.reload",
+			"fc": "FC22",
+			"owner": "pi",
+			"profile": "A",
+			"route": "runtime.restart"
+		},
+		{
+			"method": "pi.extensionAdd",
+			"fc": "FC21",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.config.extensions.add"
+		},
+		{
+			"method": "pi.extensionSetEnabled",
+			"fc": "FC21",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.config.extensions.set-enabled"
+		},
+		{
+			"method": "pi.extensionRemove",
+			"fc": "FC21",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.config.extensions.remove"
+		},
+		{
+			"method": "session.extensionList",
+			"fc": "FC20",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.session.extensions.list"
+		},
+		{
+			"method": "session.extensionAdd",
+			"fc": "FC21",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.session.extensions.add"
+		},
+		{
+			"method": "session.extensionRemove",
+			"fc": "FC21",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.session.extensions.remove"
+		},
+		{
+			"method": "session.toolList",
+			"fc": "FC26",
+			"owner": "pi",
+			"profile": "A",
+			"route": "pi.tools.list"
+		}
+	],
+	"methodSchemas": {
+		"host": [
+			{
+				"name": "session.list",
+				"params": [],
+				"result": [
+					{
+						"name": "sessions",
+						"type": "array"
+					}
+				]
+			},
+			{
+				"name": "session.create",
+				"params": [],
+				"result": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				]
+			},
+			{
+				"name": "session.load",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.prompt",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "content",
+						"type": "array",
+						"optional": true
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.cancel",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.configure",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "configId",
+						"type": "string"
+					},
+					{
+						"name": "value",
+						"type": "string"
+					}
+				],
+				"result": [
+					{
+						"name": "configOptions",
+						"type": "array"
+					}
+				]
+			},
+			{
+				"name": "session.fork",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				]
+			},
+			{
+				"name": "session.rename",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "title",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.release",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "cwd",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.uiResponse",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "requestId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.uiCancel",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "requestId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.getMessages",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.followUp",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.clearQueue",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.stats",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.switch",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.compact",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.commands",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.providers.list",
+				"params": [
+					{
+						"name": "providerIds",
+						"type": "array",
+						"optional": true
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.providers.canonical-model-info",
+				"params": [
+					{
+						"name": "provider",
+						"type": "string"
+					},
+					{
+						"name": "model",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.providers.inventory.refresh",
+				"params": [
+					{
+						"name": "providerIds",
+						"type": "array",
+						"optional": true
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.providers.readiness.check",
+				"params": [
+					{
+						"name": "providerId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.providers.config.read",
+				"params": [
+					{
+						"name": "providerId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.providers.config.delete",
+				"params": [
+					{
+						"name": "providerId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "provider.loginStart",
+				"params": [
+					{
+						"name": "providerId",
+						"type": "string"
+					},
+					{
+						"name": "type",
+						"type": "string"
+					},
+					{
+						"name": "loginId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "provider.loginBegin",
+				"params": [
+					{
+						"name": "loginId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "provider.loginReply",
+				"params": [
+					{
+						"name": "loginId",
+						"type": "string"
+					},
+					{
+						"name": "value",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "provider.loginCancel",
+				"params": [
+					{
+						"name": "loginId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.defaults.save",
+				"params": [
+					{
+						"name": "providerId",
+						"type": "string"
+					},
+					{
+						"name": "modelId",
+						"type": "string",
+						"optional": true
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.preferences.read",
+				"params": [
+					{
+						"name": "keys",
+						"type": "array"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.preferences.save",
+				"params": [
+					{
+						"name": "values",
+						"type": "array"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.preferences.reset",
+				"params": [
+					{
+						"name": "keys",
+						"type": "array"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.config.extensions.add",
+				"params": [
+					{
+						"name": "extension",
+						"type": "object"
+					},
+					{
+						"name": "enabled",
+						"type": "boolean"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.config.extensions.set-enabled",
+				"params": [
+					{
+						"name": "configKey",
+						"type": "string"
+					},
+					{
+						"name": "enabled",
+						"type": "boolean"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.config.extensions.remove",
+				"params": [
+					{
+						"name": "configKey",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.session.extensions.list",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.session.extensions.add",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "extension",
+						"type": "object"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.session.extensions.remove",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "extensionKey",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.sources.list",
+				"params": [
+					{
+						"name": "type",
+						"type": "string"
+					},
+					{
+						"name": "includeProjectSources",
+						"type": "boolean"
+					},
+					{
+						"name": "projectDir",
+						"type": "string",
+						"optional": true
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.sources.create",
+				"params": [
+					{
+						"name": "type",
+						"type": "string"
+					},
+					{
+						"name": "projectDir",
+						"type": "string"
+					},
+					{
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"name": "description",
+						"type": "string"
+					},
+					{
+						"name": "content",
+						"type": "string"
+					},
+					{
+						"name": "target",
+						"type": "object"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.sources.update",
+				"params": [
+					{
+						"name": "type",
+						"type": "string"
+					},
+					{
+						"name": "projectDir",
+						"type": "string"
+					},
+					{
+						"name": "path",
+						"type": "string"
+					},
+					{
+						"name": "expectedRevision",
+						"type": "string"
+					},
+					{
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"name": "description",
+						"type": "string"
+					},
+					{
+						"name": "content",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.sources.delete",
+				"params": [
+					{
+						"name": "type",
+						"type": "string"
+					},
+					{
+						"name": "projectDir",
+						"type": "string"
+					},
+					{
+						"name": "path",
+						"type": "string"
+					},
+					{
+						"name": "expectedRevision",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.agent-mentions.list",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "cwd",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.extensions.configure",
+				"params": [
+					{
+						"name": "scope",
+						"type": "string"
+					},
+					{
+						"name": "enabled",
+						"type": "boolean"
+					},
+					{
+						"name": "confirmed",
+						"type": "boolean"
+					},
+					{
+						"name": "resourceKey",
+						"type": "string"
+					},
+					{
+						"name": "expectedRevision",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.mcp.servers.read",
+				"params": [
+					{
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"name": "projectDir",
+						"type": "string",
+						"optional": true
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.mcp.servers.upsert",
+				"params": [
+					{
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"name": "expectedAgentOwnershipToken",
+						"type": "string"
+					},
+					{
+						"name": "requireNoOtherLayerCollisions",
+						"type": "boolean"
+					},
+					{
+						"name": "definition",
+						"type": "object"
+					},
+					{
+						"name": "projectDir",
+						"type": "string",
+						"optional": true
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.mcp.servers.remove",
+				"params": [
+					{
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"name": "expectedAgentOwnershipToken",
+						"type": "string"
+					},
+					{
+						"name": "requireNoOtherLayerCollisions",
+						"type": "boolean"
+					},
+					{
+						"name": "projectDir",
+						"type": "string",
+						"optional": true
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.mcp.servers.probe",
+				"params": [
+					{
+						"name": "definition",
+						"type": "object"
+					}
+				],
+				"result": []
+			}
+		],
+		"controller": [
+			{
+				"name": "project.open",
+				"params": [
+					{
+						"name": "path",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "project.update",
+				"params": [
+					{
+						"name": "id",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "project.close",
+				"params": [
+					{
+						"name": "id",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "directory.list",
+				"params": [],
+				"result": []
+			},
+			{
+				"name": "session.create",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.fork",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.prompt",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "text",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.steer",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "text",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.queueAdd",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "text",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.queueEdit",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "lane",
+						"type": "string"
+					},
+					{
+						"name": "index",
+						"type": "number"
+					},
+					{
+						"name": "text",
+						"type": "string"
+					},
+					{
+						"name": "revision",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.queueRemove",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "lane",
+						"type": "string"
+					},
+					{
+						"name": "index",
+						"type": "number"
+					},
+					{
+						"name": "revision",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.queueRetry",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "lane",
+						"type": "string"
+					},
+					{
+						"name": "index",
+						"type": "number"
+					},
+					{
+						"name": "revision",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.abort",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.delete",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.rename",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "title",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.archive",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.unarchive",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.setModel",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "model",
+						"type": "object"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.setThinkingLevel",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "level",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.setConfigOption",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "configId",
+						"type": "string"
+					},
+					{
+						"name": "value",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.getStats",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.getMessages",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "projectId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.release",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "projectId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.setLeases",
+				"params": [
+					{
+						"name": "revision",
+						"type": "number"
+					},
+					{
+						"name": "sessions",
+						"type": "array"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.uiReply",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "requestId",
+						"type": "string"
+					},
+					{
+						"name": "result",
+						"type": "object"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.uiCancel",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "requestId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.list",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.extensionList",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.extensionAdd",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "name",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.extensionRemove",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "extensionKey",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "session.toolList",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "model.clampThinking",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					},
+					{
+						"name": "level",
+						"type": "string"
+					}
+				],
+				"result": [
+					{
+						"name": "level",
+						"type": "string"
+					}
+				]
+			},
+			{
+				"name": "model.setVisibility",
+				"params": [
+					{
+						"name": "provider",
+						"type": "string"
+					},
+					{
+						"name": "id",
+						"type": "string"
+					},
+					{
+						"name": "hidden",
+						"type": "boolean"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "model.setAllVisibility",
+				"params": [
+					{
+						"name": "hidden",
+						"type": "boolean"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "settings.update",
+				"params": [
+					{
+						"name": "config",
+						"type": "object"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "model.thinkingLevels",
+				"params": [
+					{
+						"name": "sessionId",
+						"type": "string"
+					}
+				],
+				"result": [
+					{
+						"name": "levels",
+						"type": "array"
+					}
+				]
+			},
+			{
+				"name": "history.search",
+				"params": [
+					{
+						"name": "query",
+						"type": "string"
+					},
+					{
+						"name": "scope",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "schedule.list",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "schedule.preview",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "root",
+						"type": "string"
+					},
+					{
+						"name": "cron",
+						"type": "string"
+					}
+				],
+				"result": [
+					{
+						"name": "timezone",
+						"type": "string"
+					},
+					{
+						"name": "nextRun",
+						"type": "string"
+					}
+				]
+			},
+			{
+				"name": "schedule.health",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "schedule.create",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "root",
+						"type": "string"
+					},
+					{
+						"name": "prompt",
+						"type": "string"
+					},
+					{
+						"name": "cron",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "schedule.update",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "scheduleId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "schedule.delete",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "scheduleId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "schedule.runNow",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "scheduleId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "schedule.stop",
+				"params": [
+					{
+						"name": "projectId",
+						"type": "string"
+					},
+					{
+						"name": "scheduleId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "provider.loginStart",
+				"params": [
+					{
+						"name": "providerId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "provider.loginReply",
+				"params": [
+					{
+						"name": "loginId",
+						"type": "string"
+					},
+					{
+						"name": "value",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "provider.loginCancel",
+				"params": [
+					{
+						"name": "loginId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "provider.logout",
+				"params": [
+					{
+						"name": "providerId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "browserMcp.status",
+				"params": [],
+				"result": []
+			},
+			{
+				"name": "browserMcp.configure",
+				"params": [],
+				"result": []
+			},
+			{
+				"name": "browserMcp.remove",
+				"params": [],
+				"result": []
+			},
+			{
+				"name": "pi.agentCreate",
+				"params": [
+					{
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"name": "instructions",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.agentUpdate",
+				"params": [
+					{
+						"name": "id",
+						"type": "string"
+					},
+					{
+						"name": "revision",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.agentDelete",
+				"params": [
+					{
+						"name": "id",
+						"type": "string"
+					},
+					{
+						"name": "revision",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.defaultsSave",
+				"params": [
+					{
+						"name": "providerId",
+						"type": "string"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.extensionAdd",
+				"params": [
+					{
+						"name": "name",
+						"type": "string"
+					},
+					{
+						"name": "enabled",
+						"type": "boolean"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.extensionSetEnabled",
+				"params": [
+					{
+						"name": "configKey",
+						"type": "string"
+					},
+					{
+						"name": "enabled",
+						"type": "boolean"
+					}
+				],
+				"result": []
+			},
+			{
+				"name": "pi.extensionRemove",
+				"params": [
+					{
+						"name": "configKey",
+						"type": "string"
+					}
+				],
+				"result": []
+			}
+		]
+	}
 }

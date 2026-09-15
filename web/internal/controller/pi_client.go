@@ -898,16 +898,26 @@ func (r *piRPC) call(ctx context.Context, method string, params, out any) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	// Validate the method-level request schema at the controller/host boundary
+	// before writing, so a malformed payload can never reach a native side
+	// effect. Unknown fields stay additive-compatible.
+	if err := piwire.ValidateHostMethodParams(method, paramsJSON); err != nil {
+		return err
+	}
 	r.mu.Lock()
 	r.serial++
 	id := r.serial
 	ch := make(chan piReply, 1)
 	var sessionID string
-	if value, err := json.Marshal(params); err == nil {
+	if paramsJSON != nil {
 		var p struct {
 			SessionID string `json:"sessionId"`
 		}
-		_ = json.Unmarshal(value, &p)
+		_ = json.Unmarshal(paramsJSON, &p)
 		sessionID = p.SessionID
 	}
 	r.pending[id] = piPending{reply: ch, method: method, sessionID: sessionID}
@@ -932,6 +942,11 @@ func (r *piRPC) call(ctx context.Context, method string, params, out any) error 
 		if reply.Error != nil {
 			return reply.Error
 		}
+		// Validate the method-level result schema before it reaches the
+		// controller projection or the browser.
+		if err := piwire.ValidateHostMethodResult(method, reply.Result); err != nil {
+			return err
+		}
 		if out != nil {
 			return json.Unmarshal(reply.Result, out)
 		}
@@ -946,6 +961,13 @@ func (r *piRPC) call(ctx context.Context, method string, params, out any) error 
 // uncertain rather than being retried.
 func (r *piRPC) create(ctx context.Context, params, out any) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	if err := piwire.ValidateHostMethodParams("session.create", paramsJSON); err != nil {
 		return err
 	}
 	r.mu.Lock()
@@ -973,6 +995,11 @@ func (r *piRPC) create(ctx context.Context, params, out any) error {
 			// A protocol reply is proof that the host rejected this request; it
 			// is not an ambiguous transport outcome.
 			return reply.Error
+		}
+		if err := piwire.ValidateHostMethodResult("session.create", reply.Result); err != nil {
+			// A malformed success reply cannot prove the native session was not
+			// created, so keep the uncertain outcome instead of retrying.
+			return &sessionCreateUncertainError{cause: err}
 		}
 		if out != nil {
 			if err := json.Unmarshal(reply.Result, out); err != nil {

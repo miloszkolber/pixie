@@ -1,5 +1,6 @@
 <script lang="ts">
 import { tick } from "svelte";
+import { PrefixMarkdownCache } from "../runtime/markdown-cache";
 import { observeMarkdown } from "./markdown-visibility";
 
 type MarkdownDocumentModule = typeof import("@/lib/markdown");
@@ -19,6 +20,8 @@ let enhancementGeneration = 0;
 let nearViewport = $state(false);
 const highlightedBlocks = new Map<HTMLElement, HTMLElement>();
 let markdownDocumentPromise: Promise<MarkdownDocumentModule> | null = null;
+// AUX-17: freeze completed blocks so a streaming token only re-parses the tail.
+let markdownCache = new PrefixMarkdownCache();
 
 function loadMarkdownDocument(): Promise<MarkdownDocumentModule> {
 	markdownDocumentPromise ??= import("@/lib/markdown");
@@ -93,8 +96,8 @@ $effect(() => {
 	const source = text;
 	const current = ++parseGeneration;
 	void loadMarkdownDocument()
-		.then(({ renderMarkdown }) => {
-			const rendered = renderMarkdown(source);
+		.then(() => {
+			const rendered = markdownCache.render(source).html;
 			if (current === parseGeneration) parsed = { source, html: rendered };
 		})
 		.catch(() => {

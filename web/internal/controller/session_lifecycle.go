@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -16,6 +17,31 @@ import (
 )
 
 func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd string) (SessionSummary, error) {
+	return m.branchOrFork(ctx, projectID, sessionID, cwd, "")
+}
+
+// Branch implements "edit from here": an in-file sibling of entryID in the same
+// native session file. The host serves this as session.fork plus an optional
+// entryId (assistant/src/host.ts branchSession), so the request forwards the
+// entry and never falls back to a new-file fork. The native session header keeps
+// the true parent link; the controller deliberately adds no custom branch
+// schema and records no fabricated parent link, so forks and in-file branches
+// are roots in the controller's ancestry and only subagent sessions nest.
+func (m *SessionManager) Branch(ctx context.Context, projectID, sessionID, cwd, entryID string) (SessionSummary, error) {
+	entryID = strings.TrimSpace(entryID)
+	if entryID == "" || containsNUL(entryID) {
+		return SessionSummary{}, fmt.Errorf("session branch entry is invalid")
+	}
+	return m.branchOrFork(ctx, projectID, sessionID, cwd, entryID)
+}
+
+// branchOrFork performs the shared fork/branch lifecycle. An empty entryID is a
+// new independent fork; a non-empty entryID is an in-file sibling branch and is
+// dispatched with the entry in the host request. A host that does not implement
+// session.fork fails closed through the negotiated operation set, and a host
+// that ignores the entry cannot be silently mistaken for an edit because the
+// same operation is explicit in the request.
+func (m *SessionManager) branchOrFork(ctx context.Context, projectID, sessionID, cwd, entryID string) (SessionSummary, error) {
 	admitted, err := m.projects.AssertCWD(projectID, cwd)
 	if err != nil {
 		return SessionSummary{}, err
@@ -51,7 +77,20 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 		http := piwire.McpServerHttpInline(*server.Http)
 		servers = append(servers, piwire.McpServer{Http: &http})
 	}
-	response, err := m.client.ForkSession(ctx, piwire.LoadSessionRequest{SessionId: piwire.SessionId(sessionID), Cwd: admitted, McpServers: servers})
+	var response piwire.NewSessionResponse
+	if entryID == "" {
+		response, err = m.client.ForkSession(ctx, piwire.LoadSessionRequest{SessionId: piwire.SessionId(sessionID), Cwd: admitted, McpServers: servers})
+	} else {
+		params := map[string]any{"sessionId": sessionID, "cwd": admitted, "entryId": entryID}
+		if len(servers) > 0 {
+			params["mcpServers"] = servers
+		}
+		var raw json.RawMessage
+		raw, err = m.client.CallPi(ctx, "session.fork", params)
+		if err == nil {
+			err = json.Unmarshal(raw, &response)
+		}
+	}
 	if err != nil {
 		return SessionSummary{}, err
 	}
@@ -64,7 +103,7 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 	_, exists := m.sessions[childID]
 	m.mu.Unlock()
 	if exists {
-		return SessionSummary{}, fmt.Errorf("Pi agent returned an existing session identifier for a fork")
+		return SessionSummary{}, &sessionRegistrationError{sessionID: childID, detail: "Pi agent returned an existing session identifier"}
 	}
 	canvasAttached := false
 	childCommitted := false
@@ -80,14 +119,14 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 	}
 	for _, record := range records {
 		if record.SessionID == childID {
-			return SessionSummary{}, fmt.Errorf("Pi agent returned an existing session identifier for a fork")
+			return SessionSummary{}, &sessionRegistrationError{sessionID: childID, detail: "Pi agent returned an already recorded session identifier"}
 		}
 	}
 	_, err = m.client.Ready(ctx)
 	if err != nil {
 		return SessionSummary{}, err
 	}
-	child := newSessionEntry(childID, projectID, admitted, sessionID, token)
+	child := newSessionEntry(childID, projectID, admitted, "", token)
 	child.agentIdentity = agentProfileIdentity(profile, generation)
 	child.configOptions = arrayValue(value["configOptions"])
 	child.thinkingLevel = thinkingFromOptions(child.configOptions)
@@ -98,8 +137,10 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 		child.canvasAttached = generation
 	}
 	// The agent creates the child, but this controller has not replayed its
-	// inherited transcript yet. The first read or prompt must load it from the agent.
-	if err := m.records.Record(ProjectSessionRecord{ProjectID: projectID, SessionID: childID, CWD: admitted, ParentSessionID: sessionID}); err != nil {
+	// transcript yet. The first read or prompt must load it from the agent. No
+	// controller parent link is recorded: the native session header is the
+	// branch/fork parent, and only subagent sessions nest in Pixie.
+	if err := m.records.Record(ProjectSessionRecord{ProjectID: projectID, SessionID: childID, CWD: admitted}); err != nil {
 		return SessionSummary{}, err
 	}
 	m.mu.Lock()
@@ -111,7 +152,11 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 	m.mu.Unlock()
 	childCommitted = true
 	summary := m.summary(childID, child)
-	m.emit("session.lifecycleChanged", map[string]any{"projectId": projectID, "sessionId": childID, "operation": "forked"})
+	operation := "forked"
+	if entryID != "" {
+		operation = "branched"
+	}
+	m.emit("session.lifecycleChanged", map[string]any{"projectId": projectID, "sessionId": childID, "operation": operation})
 	return summary, nil
 }
 
@@ -244,9 +289,12 @@ func (m *SessionManager) Delete(ctx context.Context, projectID, sessionID, cwd s
 			finish()
 		}
 	}()
-	// Deletion is a lifecycle boundary even if the native delete later reports
-	// an uncertain outcome. Old credentials must not survive the request.
-	m.revokeNativeMCPSession(sessionID)
+	// AUX-27: admission precedes authority revocation. Validate the host
+	// profile and pin its generation, confirm the session can be attached, and
+	// persist the durable deletion intent before any native MCP authority is
+	// revoked. A profile, capability, attachment, binding or journal failure
+	// therefore leaves the session's existing native credentials intact, and
+	// only a recorded intent justifies revocation.
 	generation, profile, err := m.client.Profile(ctx)
 	if err != nil {
 		return err
@@ -273,6 +321,11 @@ func (m *SessionManager) Delete(ctx context.Context, projectID, sessionID, cwd s
 		finishLifecycle = false
 		return fmt.Errorf("session deletion could not be recorded; restart Pixie to reconcile it: %w", err)
 	}
+	// Durable admission is established: revoke native authority, then dispatch.
+	// The record (or a confirmed native delete) is the only justification for
+	// losing credentials, so a stale revocation cannot outlive a rejected
+	// request.
+	m.revokeNativeMCPSession(sessionID)
 	if err := m.client.DeleteSession(entry.context(ctx), sessionID); err != nil && !agentSessionMissing(err) {
 		// Once dispatched, no Pi error can prove the agent did not commit before
 		// replying. Keep the marker and reservation for restart reconciliation.
@@ -396,6 +449,10 @@ func (m *SessionManager) recoverDeletionRecord(ctx context.Context, record sessi
 			return reason
 		}
 		deleteContext := context.WithValue(ctx, connectionGenerationKey{}, generation)
+		// The requested record is already durably admitted, so revocation is
+		// justified before the replayed dispatch. An uncertain outcome keeps the
+		// tombstone and is retried on the next reconciliation.
+		m.revokeNativeMCPSession(record.SessionID)
 		if deleteErr := m.client.DeleteSession(deleteContext, record.SessionID); deleteErr != nil && !agentSessionMissing(deleteErr) {
 			return fmt.Sprintf("delete dispatch outcome is uncertain: %v", deleteErr)
 		}

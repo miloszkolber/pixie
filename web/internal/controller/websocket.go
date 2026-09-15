@@ -61,6 +61,11 @@ const (
 )
 
 const (
+	// drainAdmissionGrace admits work already on the wire when a drain begins.
+	// It is short: an update should not wait on late arrivals, and the gate
+	// still reports quiescing to the UI as soon as the drain is requested.
+	drainAdmissionGrace = 250 * time.Millisecond
+
 	maxWSRequestBytes       = BrowserFrameMaxBytes
 	maxConcurrentWSRequests = BrowserOrdinaryInflightPerEngine
 )
@@ -81,6 +86,18 @@ const (
 	reconnectBaseBackoff = time.Second
 	reconnectMaxBackoff  = 30 * time.Second
 )
+
+const (
+	// socketHeartbeatInterval pads idle connections so a dead intermediary is
+	// detected and the browser's resume path runs, and
+	// socketEventBackpressure caps the number of queued event frames per
+	// socket independently of the aggregate byte budget.
+	socketHeartbeatInterval = 25 * time.Second
+)
+
+// socketEventBackpressure is a variable so tests can exercise the cap without
+// generating hundreds of frames. Production always uses the constant.
+var socketEventBackpressure = 256
 
 var clientKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
@@ -133,6 +150,16 @@ func ValidateBrowserFrame(payload []byte) error {
 			if len(id) == 0 || len(id) > BrowserIDMaxBytes {
 				return fmt.Errorf("browser ack id out of bounds")
 			}
+		}
+		return nil
+	}
+	if rawResync, ok := envelope["resync"]; ok {
+		if len(envelope) != 1 {
+			return fmt.Errorf("browser resync must be a single-key envelope")
+		}
+		var requested bool
+		if err := json.Unmarshal(rawResync, &requested); err != nil || !requested {
+			return fmt.Errorf("browser resync is invalid")
 		}
 		return nil
 	}
@@ -346,9 +373,12 @@ type WebSocketServer struct {
 	Auth         AuthConfig
 	auth         *Auth
 	replay       *ReplayCache
-	ctx          context.Context
-	cancel       context.CancelFunc
-	mu           sync.Mutex
+	// gate is the AUX-19 drain admission gate. NewWebSocketServer installs one;
+	// a directly constructed server with a nil gate admits every method.
+	gate   *AdmissionGate
+	ctx    context.Context
+	cancel context.CancelFunc
+	mu     sync.Mutex
 	// Cleanup may take session locks. Keep it outside mu (session events publish
 	// through mu), while serializing retirement with replacement connections.
 	clientLifecycle sync.Mutex
@@ -359,21 +389,40 @@ type WebSocketServer struct {
 	admission       *BrowserAdmission
 	aggregate       *AggregateByteAdmission
 	handlers        sync.WaitGroup
+	// welcomeMu guards the cached login snapshot so a client resync can be
+	// served without rebuilding the whole welcome projection.
+	welcomeMu   sync.Mutex
+	welcomeData []byte
 }
 
 type browserSocket struct {
 	connection *websocket.Conn
 	expiresAt  time.Time
 	output     *socketOutput
+	// stream is this identity's framing chain. It survives reconnects so a
+	// replacement socket continues the same sequence instead of restarting it.
+	stream *streamTracker
 }
 
 func NewWebSocketServer(handler Handler, welcome Welcome, config AuthConfig) (*WebSocketServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	aggregate := NewAggregateByteAdmission(BrowserAggregateMaxBytes, BrowserControlReserveBytes)
-	server := &WebSocketServer{Handler: handler, Welcome: welcome, Auth: config, replay: NewReplayCacheWithAdmission(aggregate), ctx: ctx, cancel: cancel, sockets: make(map[string]browserSocket), reapTimers: make(map[string]*time.Timer), reconnects: make(map[string]reconnectState), inflight: make(chan struct{}, maxConcurrentWSRequests), aggregate: aggregate}
+	server := &WebSocketServer{
+		Handler: handler, Welcome: welcome, Auth: config,
+		replay: NewReplayCacheWithAdmission(aggregate), ctx: ctx, cancel: cancel,
+		gate:       NewAdmissionGate(drainAdmissionGrace),
+		sockets:    make(map[string]browserSocket),
+		reapTimers: make(map[string]*time.Timer),
+		reconnects: make(map[string]reconnectState),
+		inflight:   make(chan struct{}, maxConcurrentWSRequests),
+		aggregate:  aggregate,
+	}
 	server.admission = NewBrowserAdmissionWithAggregate(BrowserAdmissionLimits{}, aggregate)
 	if config.Enabled {
-		auth, err := NewAuth(config.ControllerToken)
+		// AUX-20 wiring: build the auth from the full hardening config and the
+		// data directory so the signing secret and stored scrypt credential are
+		// loaded (or generated) like an SSH host key.
+		auth, err := NewAuthFromConfig(config, config.DataDir)
 		if err != nil {
 			cancel()
 			return nil, err
@@ -381,6 +430,78 @@ func NewWebSocketServer(handler Handler, welcome Welcome, config AuthConfig) (*W
 		server.auth = auth
 	}
 	return server, nil
+}
+
+// BeginDrain requests the AUX-19 quiesce. New runnable work is refused after
+// the gate grace; already-admitted work keeps running.
+func (s *WebSocketServer) BeginDrain() {
+	if s != nil {
+		s.gate.BeginDrain()
+	}
+}
+
+// WaitForDrain blocks until admitted runnable work has settled or ctx ends.
+func (s *WebSocketServer) WaitForDrain(ctx context.Context) {
+	if s != nil {
+		s.gate.WaitForDrain(ctx)
+	}
+}
+
+// Quiescing reports whether the gate is refusing new runnable work.
+func (s *WebSocketServer) Quiescing() bool {
+	return s != nil && s.gate.Quiescing()
+}
+
+// previousStream returns the framing chain of an already-tracked identity so a
+// replacement socket continues its sequence instead of restarting it.
+func (s *WebSocketServer) previousStream(clientKey string) *streamTracker {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sockets[clientKey].stream
+}
+
+// welcomeFrame builds and caches the snapshot-first welcome payload. The
+// projection is identity-independent, so rebuilds are cheap and pinned once.
+func (s *WebSocketServer) welcomeFrame(ctx context.Context) ([]byte, error) {
+	s.welcomeMu.Lock()
+	cached := s.welcomeData
+	s.welcomeMu.Unlock()
+	if cached != nil {
+		return cached, nil
+	}
+	if s.Welcome == nil {
+		return nil, nil
+	}
+	welcome, err := s.Welcome(ctx)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(map[string]any{"channel": "server.welcome", "data": welcome})
+	if err != nil {
+		return nil, err
+	}
+	s.welcomeMu.Lock()
+	s.welcomeData = payload
+	s.welcomeMu.Unlock()
+	return payload, nil
+}
+
+// sendLoginSnapshot delivers the per-client provider login projection. When the
+// server has a cached welcome it is rebuilt on the next connect; this frame is
+// not part of the append chain.
+func (s *WebSocketServer) sendLoginSnapshot(ctx context.Context, output *socketOutput, clientKey string) error {
+	if s.LoginSnapshot == nil {
+		return nil
+	}
+	snapshot := s.LoginSnapshot(clientKey)
+	if snapshot == nil {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]any{"channel": "provider.login", "data": snapshot})
+	if err != nil {
+		return err
+	}
+	return output.enqueue(ctx, payload)
 }
 
 func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -433,7 +554,12 @@ func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.
 	defer connection.CloseNow()
 	output := newSocketOutput(connection, s.aggregate, clientKey)
 	defer output.stop()
-	if admitted, reason := s.replace(clientKey, browserSocket{connection: connection, expiresAt: expiresAt, output: output}); !admitted {
+	// Continue this identity's sequence/revision chain across a reconnect.
+	stream := s.previousStream(clientKey)
+	if stream == nil {
+		stream = newStreamTracker()
+	}
+	if admitted, reason := s.replace(clientKey, browserSocket{connection: connection, expiresAt: expiresAt, output: output, stream: stream}); !admitted {
 		if reason != "" {
 			_ = connection.Close(websocket.StatusTryAgainLater, reason)
 		}
@@ -448,32 +574,21 @@ func (s *WebSocketServer) ServeHTTP(response http.ResponseWriter, request *http.
 		defer cancel()
 	}
 	go output.run(connectionContext)
+	go output.runHeartbeat(connectionContext)
 
+	// Snapshot-first ordering: the welcome projection is the first frame on a
+	// fresh socket, before any sequenced channel event can arrive.
 	if s.Welcome != nil {
-		welcome, welcomeErr := s.Welcome(connectionContext)
-		if welcomeErr != nil {
+		payload, err := s.welcomeFrame(connectionContext)
+		if err != nil {
 			connection.Close(websocket.StatusInternalError, "welcome unavailable")
-			return
-		}
-		payload, marshalErr := json.Marshal(map[string]any{"channel": "server.welcome", "data": welcome})
-		if marshalErr != nil {
 			return
 		}
 		if err := output.enqueue(connectionContext, payload); err != nil {
 			return
 		}
 	}
-	if s.LoginSnapshot != nil {
-		if snapshot := s.LoginSnapshot(clientKey); snapshot != nil {
-			payload, marshalErr := json.Marshal(map[string]any{"channel": "provider.login", "data": snapshot})
-			if marshalErr != nil {
-				return
-			}
-			if err := output.enqueue(connectionContext, payload); err != nil {
-				return
-			}
-		}
-	}
+	s.sendLoginSnapshot(connectionContext, output, clientKey)
 	for {
 		messageType, payload, readErr := connection.Read(connectionContext)
 		if readErr != nil {
@@ -509,6 +624,24 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	if json.Unmarshal(payload, &envelope) != nil {
 		return
 	}
+	if rawResync, ok := envelope["resync"]; ok {
+		// AUX-16 client resync: a client that detected a sequence gap or a
+		// broken revision chain asks for a fresh snapshot instead of diverging.
+		var requested bool
+		if len(envelope) == 1 && json.Unmarshal(rawResync, &requested) == nil && requested {
+			// Restart this identity's chain so the next frames are full
+			// snapshots, then resend the snapshot-first projection.
+			if stream := s.previousStream(clientKey); stream != nil {
+				stream.reset()
+			}
+			payload, err := s.welcomeFrame(ctx)
+			if err == nil && payload != nil {
+				_ = output.enqueue(ctx, payload)
+			}
+			_ = s.sendLoginSnapshot(ctx, output, clientKey)
+		}
+		return
+	}
 	if rawAck, ok := envelope["ack"]; ok {
 		if len(envelope) != 1 {
 			return
@@ -538,6 +671,17 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	params := envelope["params"]
 	if len(params) == 0 {
 		params = json.RawMessage("null")
+	}
+	// AUX-19 drain admission: a run-creating method is refused up front while
+	// the controller is quiescing, before any replay retention or dispatch. It
+	// is a deliberate state, so the browser receives a typed quiescing error it
+	// can surface as status instead of a generic failure.
+	if !s.gate.TryAdmit(method) {
+		denied, _ := json.Marshal(map[string]any{
+			"id": id, "ok": false, "error": (ErrControllerQuiescing{}).Error(), "errorCode": (ErrControllerQuiescing{}).ErrorCode(),
+		})
+		_ = output.enqueue(ctx, denied)
+		return
 	}
 	fingerprint := requestFingerprint(method, params, envelope["sessionId"])
 	requestKey := sha256.Sum256([]byte(clientKey + "\x00" + id))
@@ -593,10 +737,12 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	// history/data work cannot consume Stop/UI-cancellation admission.
 	if IsBrowserControlMethod(method) {
 		if len(payload) > BrowserControlFrameMaxBytes {
+			s.gate.Release()
 			_ = output.connection.Close(websocket.StatusMessageTooBig, "control message too large")
 			return
 		}
 		if !s.admission.TryAcquireControl(len(payload)) {
+			s.gate.Release()
 			_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 			return
 		}
@@ -604,6 +750,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		if s.ctx.Err() != nil {
 			s.mu.Unlock()
 			s.admission.ReleaseControl(len(payload))
+			s.gate.Release()
 			return
 		}
 		s.handlers.Add(1)
@@ -611,11 +758,13 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		go func() {
 			defer s.admission.ReleaseControl(len(payload))
 			defer s.handlers.Done()
+			defer s.gate.Release()
 			serve()
 		}()
 		return
 	}
 	if !s.admission.TryAcquireOrdinary(clientKey, len(payload)) {
+		s.gate.Release()
 		_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 		return
 	}
@@ -623,9 +772,11 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	case s.inflight <- struct{}{}:
 	case <-ctx.Done():
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
+		s.gate.Release()
 		return
 	default:
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
+		s.gate.Release()
 		_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 		return
 	}
@@ -634,6 +785,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		s.mu.Unlock()
 		<-s.inflight
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
+		s.gate.Release()
 		return
 	}
 	s.handlers.Add(1)
@@ -643,6 +795,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 			<-s.inflight
 			s.admission.ReleaseOrdinary(clientKey, len(payload))
 			s.handlers.Done()
+			s.gate.Release()
 		}()
 		serve()
 	}()
@@ -813,7 +966,13 @@ func (s *WebSocketServer) reapClient(clientKey string, timer *time.Timer) {
 }
 
 func (s *WebSocketServer) Publish(ctx context.Context, channel string, data any) error {
-	payload, err := json.Marshal(map[string]any{"channel": channel, "data": data})
+	// AUX-16 event allowlist: only the fixed browser surface can be published.
+	// An unknown channel is dropped rather than becoming an accidental browser
+	// inject surface.
+	if !streamAllowedChannels[channel] {
+		return nil
+	}
+	payload, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
@@ -828,7 +987,18 @@ func (s *WebSocketServer) Publish(ctx context.Context, channel string, data any)
 		if !socket.expiresAt.IsZero() && !time.Now().Before(socket.expiresAt) {
 			continue
 		}
-		err := socket.output.enqueue(ctx, payload)
+		frame := payload
+		if socket.stream != nil {
+			frame = socket.stream.stamp(channel, payload)
+		}
+		if !socket.output.trackEvent() {
+			socket.output.failClosedSlow()
+			if firstErr == nil {
+				firstErr = fmt.Errorf("publish %s: browser event backpressure limit reached", channel)
+			}
+			continue
+		}
+		err := socket.output.enqueue(ctx, frame)
 		if err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("publish %s: %w", channel, err)
 		}

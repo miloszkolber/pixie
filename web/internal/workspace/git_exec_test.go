@@ -183,6 +183,53 @@ func TestRunGitRejectsPATHShadowUnlessExplicitlySelected(t *testing.T) {
 	}
 }
 
+func TestRunGitSerializesPerDirectoryWithSoftTimeout(t *testing.T) {
+	repository := t.TempDir()
+	slot, release := acquireGitDirectoryLock(repository)
+	defer release()
+	slot <- struct{}{}
+	defer func() { <-slot }()
+
+	previous := gitLockSoftTimeout
+	gitLockSoftTimeout = 50 * time.Millisecond
+	defer func() { gitLockSoftTimeout = previous }()
+
+	result := runGit(context.Background(), repository, []string{"status"}, gitOutputLimit)
+	if result.failure != "busy" {
+		t.Fatalf("contended Git result = %#v, want busy", result)
+	}
+}
+
+func TestGitDirectoryLockKeyCanonicalizesSymlinks(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if gitDirectoryLockKey(target) != gitDirectoryLockKey(link) {
+		t.Fatalf("lock keys differ: %q != %q", gitDirectoryLockKey(target), gitDirectoryLockKey(link))
+	}
+}
+
+func TestGitDirectoryLockIsReleasedAfterUse(t *testing.T) {
+	repository := t.TempDir()
+	gitForTest(t, repository, "init", "-b", "main")
+	result := runGit(context.Background(), repository, []string{"status"}, gitOutputLimit)
+	if !result.ok {
+		t.Fatalf("uncontended Git command failed: %#v", result)
+	}
+	gitDirectoryLocks.Lock()
+	entries := len(gitDirectoryLocks.entries)
+	gitDirectoryLocks.Unlock()
+	if entries != 0 {
+		t.Fatalf("directory lock map retained %d entries", entries)
+	}
+}
+
 func gitForTest(t *testing.T, repository string, arguments ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", repository}, arguments...)...)

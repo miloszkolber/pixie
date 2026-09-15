@@ -61,7 +61,10 @@ func NewHTTPHandler(webSocket *WebSocketServer, objective ObjectiveHandler, proj
 	result.ModuleScopes = mcpserver.NewScopeAuthority()
 	result.ModuleDescriptors = mcpserver.DefaultModuleDescriptors()
 	if authConfig.Enabled {
-		auth, err := NewAuth(authConfig.ControllerToken)
+		// AUX-20 wiring: build from the full hardening config and the data
+		// directory so the persisted signing secret and stored scrypt password
+		// hash are loaded (or generated) on first use.
+		auth, err := NewAuthFromConfig(authConfig, authConfig.DataDir)
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +96,7 @@ func (h *HTTPHandler) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		// Human management/artifact routes use the controller cookie/session
 		// authority, not the model-facing MCP bearer. The module service applies
 		// its own finer reader-versus-management policy after this boundary.
-		if !h.Auth.IsAuthorizedHTTPRequest(request, h.auth) {
+		if !h.Auth.IsAuthorizedRoute(request, h.auth) {
 			writeAuthJSON(response, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
@@ -517,7 +520,7 @@ func (h *HTTPHandler) serveAuth(response http.ResponseWriter, request *http.Requ
 			writeAuthJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 			return
 		}
-		session, ok := h.auth.Login(token)
+		session, ok := h.auth.LoginWithClient(loginClientKey(request), token)
 		if !ok {
 			writeAuthJSON(response, http.StatusUnauthorized, map[string]string{"error": "authentication failed"})
 			return
@@ -590,7 +593,7 @@ func methodNotAllowed(response http.ResponseWriter, method string) {
 }
 
 func (h *HTTPHandler) serveProjectImage(response http.ResponseWriter, request *http.Request) {
-	if !h.Auth.IsAuthorizedHTTPRequest(request, h.auth) {
+	if !h.Auth.IsAuthorizedRoute(request, h.auth) {
 		http.Error(response, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -775,7 +778,7 @@ func (h *HTTPHandler) setStaticSecurityHeaders(response http.ResponseWriter, req
 		"form-action 'self'",
 		"frame-ancestors 'none'",
 		"frame-src " + frameSources,
-		"img-src 'self' data:",
+		"img-src 'self' data: blob:",
 		"object-src 'none'",
 		"script-src " + scriptSources,
 		"style-src 'self' 'unsafe-inline'",

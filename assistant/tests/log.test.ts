@@ -2,13 +2,16 @@ import { describe, expect, test } from "bun:test";
 import {
 	BoundedStderrBuffer,
 	createHostLogger,
+	DEFAULT_HOST_LOG_CAPACITY,
 	describeHostLogError,
 	FIELD_BOUND_PLACEHOLDER,
 	MAX_COLLECTION_ENTRIES,
 	MAX_FIELD_DEPTH,
+	MAX_HOST_LOG_CAPACITY,
 	MAX_MATERIALIZED_BYTES,
 	MAX_REDACTED_TEXT_LENGTH,
 	MAX_STDERR_LINE_LENGTH,
+	normalizeHostLogCapacity,
 	redactHostLogField,
 	redactHostLogText,
 } from "../src/log.ts";
@@ -134,6 +137,87 @@ describe("secret-safe host logging", () => {
 		const secret = "s".repeat(48);
 		expect(redactHostLogText(`token=${secret}`, [secret])).not.toContain(secret);
 		expect(redactHostLogText(`token=${secret}`, [secret])).toContain("[redacted]");
+	});
+
+	test("redacts assignment-style credentials without a space after the separator", () => {
+		const values = [
+			"token=abcdefghijklmnop",
+			"api_key=abcdefghijklmnop",
+			"api-key:abcdefghijklmnop",
+			"password:abcdefghijklmnop",
+			'password="abcdefghijklmnop"',
+			"secret='abcdefghijklmnop'",
+		];
+		for (const text of values) {
+			const redacted = redactHostLogText(text);
+			expect({ text, redacted }).toEqual({ text, redacted: expect.stringContaining("[redacted]") });
+			expect(redacted).not.toContain("abcdefghijklmnop");
+		}
+	});
+
+	test("redacts AWS-style access key identifiers", () => {
+		for (const key of ["AKIAIOSFODNN7EXAMPLE", "ASIAIOSFODNN7EXAMPLE"]) {
+			const redacted = redactHostLogText(`attempt with ${key} failed`);
+			expect(redacted).not.toContain(key);
+			expect(redacted).toContain("[redacted]");
+		}
+	});
+
+	test("redacts quoted and spaced absolute paths without consuming ordinary prose", () => {
+		const quoted = 'cannot read "/home/operator/my agent/.pi/agent config.json"';
+		const spaced = "cannot read /home/operator/my agent/.pi/agent.json";
+		for (const text of [quoted, spaced]) {
+			const redacted = redactHostLogText(text);
+			expect(redacted).not.toContain("/home/operator");
+			expect(redacted).not.toContain("agent config.json");
+			expect(redacted).not.toContain("my agent");
+			expect(redacted).toContain("[path]");
+			expect(redacted).toContain("cannot read");
+		}
+
+		for (const prose of [
+			"the path / is not absolute",
+			"either /foo or /bar",
+			"and/or is a choice",
+			"a relative src/main.ts stays",
+		]) {
+			expect(redactHostLogText(prose)).toBe(prose);
+		}
+	});
+
+	test("keeps __proto__ as an own data property in a structured record", () => {
+		const value = redactHostLogField({
+			["__proto__"]: { polluted: true },
+			plain: "ok",
+		}) as Record<string, unknown>;
+		expect(Object.getPrototypeOf(value)).toBeNull();
+		expect(Object.hasOwn(value, "__proto__")).toBe(true);
+		expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+		expect(JSON.stringify(value)).toContain("__proto__");
+		expect(value.plain).toBe("ok");
+	});
+
+	test("normalizes logger capacity to a finite positive value", () => {
+		expect(normalizeHostLogCapacity(undefined)).toBe(DEFAULT_HOST_LOG_CAPACITY);
+		expect(normalizeHostLogCapacity(Number.NaN)).toBe(DEFAULT_HOST_LOG_CAPACITY);
+		expect(normalizeHostLogCapacity(Number.POSITIVE_INFINITY)).toBe(DEFAULT_HOST_LOG_CAPACITY);
+		expect(normalizeHostLogCapacity(Number.NEGATIVE_INFINITY)).toBe(DEFAULT_HOST_LOG_CAPACITY);
+		expect(normalizeHostLogCapacity(0)).toBe(1);
+		expect(normalizeHostLogCapacity(-5)).toBe(1);
+		expect(normalizeHostLogCapacity(3.9)).toBe(3);
+		expect(normalizeHostLogCapacity(MAX_HOST_LOG_CAPACITY * 10)).toBe(MAX_HOST_LOG_CAPACITY);
+
+		const logger = createHostLogger({ capacity: Number.NaN });
+		for (let index = 0; index < DEFAULT_HOST_LOG_CAPACITY + 50; index += 1) {
+			logger.info(`event-${index}`);
+		}
+		expect(logger.entries().length).toBe(DEFAULT_HOST_LOG_CAPACITY);
+
+		const buffer = new BoundedStderrBuffer(Number.POSITIVE_INFINITY);
+		for (let index = 0; index < DEFAULT_HOST_LOG_CAPACITY + 50; index += 1) {
+			buffer.append(`line-${index}\n`);
+		}
+		expect(buffer.lines().length).toBe(DEFAULT_HOST_LOG_CAPACITY);
 	});
 
 	test("redacts nested structured fields", () => {
@@ -307,30 +391,50 @@ describe("secret-safe host logging", () => {
 
 	test("bounds and redacts retained child stderr", () => {
 		const buffer = new BoundedStderrBuffer(2, ["s".repeat(32)]);
-		buffer.append("line-1 /home/operator/a\nline-2\nline-3");
+		buffer.append("line-1 /home/operator/a\nline-2\nline-3\n");
 		expect(buffer.lines()).toEqual(["line-2", "line-3"]);
-		buffer.append(`token=${"s".repeat(32)}`);
+		buffer.append(`token=${"s".repeat(32)}\n`);
 		expect(buffer.lines().at(-1)).toBe("token=[redacted]");
 		buffer.clear();
 		expect(buffer.lines()).toEqual([]);
 	});
 
-	test("bounds the length of one oversized stderr line", () => {
+	test("discards an oversized stderr line instead of retaining raw fragments", () => {
 		const buffer = new BoundedStderrBuffer(1);
 		buffer.append("warning ".repeat(MAX_STDERR_LINE_LENGTH * 4));
-		const [line] = buffer.lines();
-		expect(line.length).toBeLessThanOrEqual(MAX_STDERR_LINE_LENGTH);
-		expect(line.endsWith(FIELD_BOUND_PLACEHOLDER)).toBe(true);
+		expect(buffer.lines()).toEqual([]);
+		buffer.append("\n");
+		expect(buffer.lines()).toEqual([]);
 	});
 
-	test("redacts a secret inside an oversized stderr line before truncating", () => {
+	test("discards an oversized stderr line that contains a secret", () => {
 		const secret = "s".repeat(32);
 		const buffer = new BoundedStderrBuffer(1, [secret]);
 		buffer.append(`token=${secret} ${"warning ".repeat(MAX_STDERR_LINE_LENGTH * 4)}`);
+		buffer.append("\n");
+		expect(buffer.lines()).toEqual([]);
+	});
+
+	test("buffers a split secret across appends before redaction", () => {
+		const secret = "s".repeat(32);
+		const buffer = new BoundedStderrBuffer(2, [secret]);
+		buffer.append("child said token=");
+		buffer.append(secret);
+		buffer.append("\n");
 		const [line] = buffer.lines();
-		expect(line.length).toBeLessThanOrEqual(MAX_STDERR_LINE_LENGTH);
+		expect(line).toBe("child said token=[redacted]");
 		expect(line).not.toContain(secret);
-		expect(line).toContain("[redacted]");
+	});
+
+	test("buffers a split absolute path across appends before redaction", () => {
+		const buffer = new BoundedStderrBuffer(2);
+		buffer.append("cannot read /home/oper");
+		buffer.append("ator/secret.txt");
+		buffer.append("\n");
+		const [line] = buffer.lines();
+		expect(line).not.toContain("/home/operator");
+		expect(line).not.toContain("secret.txt");
+		expect(line).toContain("[path]");
 	});
 
 	test("redacts labelled credentials, bracketed paths and UNC shares", () => {

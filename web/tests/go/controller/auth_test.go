@@ -1,6 +1,7 @@
 package controller_test
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/miloszkolber/pixie/internal/controller"
+	"github.com/miloszkolber/pixie/internal/persist"
 )
 
 func TestAuthenticationBindsCookiesToTheConfiguredOrigin(t *testing.T) {
@@ -684,5 +686,72 @@ func TestRemoteConfigurationFailsClosed(t *testing.T) {
 				t.Fatalf("configuration %#v: %v", config, err)
 			}
 		})
+	}
+}
+
+// AUX-20 end-to-end wiring: the HTTP handler builds auth from the full config
+// and data directory, logs in a stored scrypt password through
+// LoginWithClient, and locks out repeat failures by peer address.
+func TestHTTPAuthLoginUsesStoredPasswordAndPerClientLockout(t *testing.T) {
+	const (
+		token    = "controller-token-0123456789abcdef0123456789"
+		public   = "https://pixie.example"
+		password = "stored-login-password"
+	)
+	encoded, err := controller.HashPassword(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataDir := t.TempDir()
+	if err := persist.WritePasswordHash(dataDir, encoded); err != nil {
+		t.Fatal(err)
+	}
+	config := controller.AuthConfig{
+		Enabled:         true,
+		ControllerToken: token,
+		ControllerPort:  7312,
+		PublicOrigin:    public,
+		DataDir:         dataDir,
+		Hardening:       controller.AuthHardening{LoginAttemptLimit: 2, LoginLockout: time.Hour},
+	}
+	handler, err := controller.NewHTTPHandler(nil, controller.ObjectiveHandler{}, nil, nil, config, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := func(candidate, remoteAddr string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"token": candidate})
+		request := httptest.NewRequest(http.MethodPost, public+"/auth/login", strings.NewReader(string(body)))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Origin", public)
+		request.Header.Set("Sec-Fetch-Site", "same-origin")
+		request.RemoteAddr = remoteAddr
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	const client = "198.51.100.7:41111"
+	if response := login(password, client); response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Set-Cookie"), controller.AuthCookieName) {
+		t.Fatalf("stored password login = %d %q", response.Code, response.Body.String())
+	}
+	// The raw controller token must not be a second login credential once a
+	// stored password hash is configured.
+	if response := login(token, client); response.Code != http.StatusUnauthorized {
+		t.Fatalf("raw token login with a stored password = %d", response.Code)
+	}
+	// A different peer is unaffected by the first peer's failures.
+	if response := login(password, "203.0.113.9:41111"); response.Code != http.StatusOK {
+		t.Fatalf("independent client login = %d", response.Code)
+	}
+	// Reach the attempt limit, then confirm the correct password is also
+	// refused while the lockout is active.
+	if response := login("wrong", client); response.Code != http.StatusUnauthorized {
+		t.Fatalf("first failed login = %d", response.Code)
+	}
+	if response := login("wrong", client); response.Code != http.StatusUnauthorized {
+		t.Fatalf("second failed login = %d", response.Code)
+	}
+	if response := login(password, client); response.Code != http.StatusUnauthorized {
+		t.Fatalf("locked-out client was admitted with the correct password: %d", response.Code)
 	}
 }

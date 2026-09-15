@@ -15,12 +15,20 @@ import {
 } from "../../../web/scripts/generate-contracts";
 import {
 	ADMIN_ERROR_CODES,
+	CONTROLLER_METHOD_FC,
+	CONTROLLER_METHOD_OWNERS,
+	CONTROLLER_METHOD_PROFILES,
+	CONTROLLER_METHOD_REASONS,
+	CONTROLLER_METHOD_ROUTES,
+	CONTROLLER_METHOD_STATUS,
 	CONTROLLER_METHODS,
 	HOST_AVAILABLE_OPERATIONS,
 	HOST_OPERATION_REASONS,
 	HOST_OPERATION_STATUS,
 	HOST_OPERATION_STATUSES,
 	HOST_OPERATIONS,
+	NATIVE_CONTROLLER_ROUTES,
+	NATIVE_WORKSPACE_ROUTES,
 	PROMPT_CONTENT_BLOCK_TYPES,
 	THINKING_LEVELS,
 } from "../../src/generated/protocol-catalog";
@@ -30,12 +38,39 @@ const packageDir = resolve(base, "..", "..");
 const schema = loadProtocolCatalog(join(packageDir, SCHEMA_RELATIVE_PATH));
 
 test("generated TypeScript catalog matches the schema", () => {
-	expect(schema.schemaVersion).toBe(1);
+	expect(schema.schemaVersion).toBe(2);
 	expect(schema.operations.host.map((entry) => entry.name)).toEqual([...HOST_OPERATIONS]);
 	expect(schema.operations.controller).toEqual([...CONTROLLER_METHODS]);
+	expect(schema.nativeRoutes.controller).toEqual([...NATIVE_CONTROLLER_ROUTES]);
+	expect(schema.nativeRoutes.workspace).toEqual([...NATIVE_WORKSPACE_ROUTES]);
 	expect(schema.thinkingLevels).toEqual([...THINKING_LEVELS]);
 	expect(schema.promptContentBlockTypes).toEqual([...PROMPT_CONTENT_BLOCK_TYPES]);
 	expect(schema.adminErrorCodes).toEqual(ADMIN_ERROR_CODES.map((entry) => ({ ...entry })));
+});
+
+test("generated ownership records match the schema ownership table", () => {
+	const byMethod = new Map(schema.ownership.map((entry) => [entry.method, entry]));
+	for (const method of CONTROLLER_METHODS) {
+		const entry = byMethod.get(method);
+		expect(entry).toBeDefined();
+		if (!entry) continue;
+		expect(CONTROLLER_METHOD_OWNERS[method]).toBe(entry.owner);
+		expect(CONTROLLER_METHOD_ROUTES[method]).toBe(entry.route);
+		expect(CONTROLLER_METHOD_FC[method]).toBe(entry.fc);
+		expect(CONTROLLER_METHOD_PROFILES[method]).toBe(entry.profile);
+		const hostStatus = HOST_OPERATION_STATUS[entry.route as keyof typeof HOST_OPERATION_STATUS];
+		const reason = CONTROLLER_METHOD_REASONS[method];
+		if (hostStatus !== undefined) {
+			expect(CONTROLLER_METHOD_STATUS[method]).toBe(hostStatus);
+			if (hostStatus === "available") expect(reason).toBeUndefined();
+			else expect(reason).toBe(HOST_OPERATION_REASONS[entry.route as never]);
+		} else {
+			expect(CONTROLLER_METHOD_STATUS[method]).toBe(entry.status ?? "available");
+			if (entry.status === "unavailable") expect(reason).toBe(entry.reason);
+		}
+	}
+	// The ownership table cannot drop or add a browser method.
+	expect(schema.ownership.map((entry) => entry.method)).toEqual([...CONTROLLER_METHODS]);
 });
 
 test("every host operation carries an explicit implementation status", () => {
@@ -82,9 +117,10 @@ test("Bun host operation set derives from the shared catalog", () => {
 	expect(source).toContain("HOST_AVAILABLE_OPERATIONS");
 	expect(source).toContain("HOST_OPERATIONS.map");
 	// The host must not reintroduce a hand-maintained implemented-operation
-	// allowlist that can drift from the catalog statuses.
+	// allowlist that can drift from the catalog statuses. Policy sets over method
+	// names (for example the AUX-13 lease's mutating-method set) are allowed.
 	expect(source).not.toContain("IMPLEMENTED_OPERATIONS");
-	expect(source).not.toMatch(/new Set\(\[\s*"session\./);
+	expect(source).toContain("new Set<string>(HOST_AVAILABLE_OPERATIONS)");
 	expect(HOST_AVAILABLE_OPERATIONS.length).toBeGreaterThan(0);
 	expect(HOST_AVAILABLE_OPERATIONS.length).toBeLessThan(HOST_OPERATIONS.length);
 	expect(new Set(HOST_AVAILABLE_OPERATIONS).size).toBe(HOST_AVAILABLE_OPERATIONS.length);

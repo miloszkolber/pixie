@@ -2,9 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+	CONTROLLER_METHOD_OWNERS,
+	CONTROLLER_METHOD_ROUTES,
+	CONTROLLER_METHOD_STATUS,
+	CONTROLLER_METHODS,
 	HOST_AVAILABLE_OPERATIONS,
 	HOST_OPERATION_STATUS,
 	HOST_OPERATIONS,
+	NATIVE_CONTROLLER_ROUTES,
+	NATIVE_WORKSPACE_ROUTES,
 } from "../../shared/src/generated/protocol-catalog.ts";
 import { FakeSession, rawFrames, rawHost, registerHostCleanup } from "./harness.ts";
 
@@ -129,6 +135,51 @@ describe("Bun host operationSet truthfulness", () => {
 			},
 		});
 		expect(rawFrames(raw.socket).at(-1)?.error?.message).toContain("resource");
+	});
+
+	test("session.list entries carry resident identity and cwd metadata", async () => {
+		const raw = rawHost(new FakeSession("metadata"));
+		await raw.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
+		await raw.send({ id: 2, method: "session.create", params: { cwd: process.cwd() } });
+		const created = rawFrames(raw.socket).at(-1)?.result?.sessionId;
+		expect(typeof created).toBe("string");
+		await raw.send({ id: 3, method: "session.list", params: {} });
+		const sessions = rawFrames(raw.socket).at(-1)?.result?.sessions as
+			| { sessionId?: unknown; cwd?: unknown }[]
+			| undefined;
+		expect(Array.isArray(sessions)).toBe(true);
+		const resident = sessions?.find((entry) => entry.sessionId === created);
+		expect(resident).toBeDefined();
+		// The contract requires an identity and a working directory for every
+		// resident and cwd-scoped entry.
+		expect(typeof resident?.sessionId).toBe("string");
+		expect(typeof resident?.cwd).toBe("string");
+		expect((resident?.cwd ?? "").length).toBeGreaterThan(0);
+	});
+});
+
+describe("generated ownership/status parity", () => {
+	test("every browser method maps to a known route with a matching owner", () => {
+		const controllerRoutes = new Set<string>(NATIVE_CONTROLLER_ROUTES);
+		const workspaceRoutes = new Set<string>(NATIVE_WORKSPACE_ROUTES);
+		for (const method of CONTROLLER_METHODS) {
+			const route = CONTROLLER_METHOD_ROUTES[method];
+			const owner = CONTROLLER_METHOD_OWNERS[method];
+			const hostStatus = HOST_OPERATION_STATUS[route as keyof typeof HOST_OPERATION_STATUS];
+			if (hostStatus === undefined) {
+				const [namespace, id] = route.split(":", 2);
+				const known =
+					(namespace === "controller" && controllerRoutes.has(id ?? "")) ||
+					(namespace === "workspace" && workspaceRoutes.has(id ?? ""));
+				expect(known).toBe(true);
+				expect(owner).toBe(namespace);
+				continue;
+			}
+			expect(owner).toBe("pi");
+			// A browser method may not upgrade a host route the catalog rejects.
+			if (hostStatus !== "available") expect(CONTROLLER_METHOD_STATUS[method]).toBe(hostStatus);
+			else expect(CONTROLLER_METHOD_STATUS[method]).toBe("available");
+		}
 	});
 });
 

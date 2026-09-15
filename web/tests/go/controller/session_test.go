@@ -130,6 +130,9 @@ func newSessionManagerWithFixtureBehavior(t *testing.T, loadUpdates []map[string
 						return
 					}
 				}
+			case "session.list":
+				cwd, _ := rpc.Params["cwd"].(string)
+				result = map[string]any{"sessions": []any{map[string]any{"sessionId": "chat", "cwd": cwd}}}
 			case "session.create":
 				result = projection("created-session")
 				result.(map[string]any)["capabilities"] = map[string]any{"sessions": 1, "mcp": 1}

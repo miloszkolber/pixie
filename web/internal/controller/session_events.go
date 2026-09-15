@@ -127,7 +127,17 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 			entry.state.Unlock()
 			return nil
 		}
-		wakeQueue := false
+		// AUX-04: compaction suspends delivery of the controller-owned follow-up
+		// queue. The queue is drained only when compaction ends, so a prompt
+		// submitted while Pi compacts is delivered afterwards instead of being
+		// dropped or raced against the compaction.
+		if kind == "compaction_start" {
+			target.compactionActive = true
+		}
+		if kind == "compaction_end" {
+			target.compactionActive = false
+		}
+		wakeQueue := kind == "compaction_end"
 		if kind == "agent_settled" && !target.promptActive && (target.streaming || target.runID != "") {
 			// A reload can reattach to a session whose native run was still
 			// active in the snapshot. The Go host reports settlement with
@@ -148,7 +158,7 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 		}
 		event["type"] = kind
 		m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": event})
-		if wakeQueue {
+		if kind == "agent_settled" && wakeQueue {
 			m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "complete", "status": "complete"}})
 		}
 		entry.state.Unlock()
@@ -176,7 +186,7 @@ func (m *SessionManager) applyUpdate(ctx context.Context, notification map[strin
 			if event["type"] == "message_start" {
 				event["message"] = cloneJSON(event["message"])
 			}
-			wakeQueue = wakeQueue || event["type"] == "complete" || event["type"] == "error"
+			wakeQueue = wakeQueue || event["type"] == "complete" || event["type"] == "error" || event["type"] == "compaction_end"
 		}
 		for _, event := range events {
 			m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": event})
@@ -421,7 +431,13 @@ func applyStandardUsageUpdate(entry *sessionEntry, update map[string]any) []map[
 	if !amountOK || math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 || !validCurrencyCode(currency) {
 		return events
 	}
-	entry.stats.Cost = amount
+	// AUX-15: cost is monotonic within one currency. A compaction can re-emit a
+	// smaller authoritative amount, but the displayed total must not regress.
+	if entry.stats.CostCurrency != "" && entry.stats.CostCurrency != currency {
+		entry.stats.Cost = amount
+	} else if amount > entry.stats.Cost {
+		entry.stats.Cost = amount
+	}
 	entry.stats.CostCurrency = currency
 	reported := maps.Clone(entry.stats.Reported)
 	if reported == nil {
@@ -447,6 +463,16 @@ func validCurrencyCode(value string) bool {
 		}
 	}
 	return true
+}
+
+// mergeMonotonic keeps a running total from regressing when a later
+// authoritative update reports a smaller accumulated value (for example after
+// compaction). A genuinely newer baseline still wins once it exceeds the total.
+func mergeMonotonic(current, next int64) int64 {
+	if next > current {
+		return next
+	}
+	return current
 }
 
 // Pi updates replace only the supplied fields. Keep unfinished output by call
@@ -666,7 +692,13 @@ func applyPiOnlyUpdate(entry *sessionEntry, kind string, update map[string]any) 
 	case "native_lifecycle":
 		event := mapValue(update["event"])
 		switch textValue(event["type"]) {
-		case "compaction_start", "compaction_end", "auto_retry_start", "auto_retry_end", "summarization_retry_scheduled", "summarization_retry_finished", "thinking_level_changed":
+		case "compaction_start":
+			entry.compactionActive = true
+			return []map[string]any{event}
+		case "compaction_end":
+			entry.compactionActive = false
+			return []map[string]any{event}
+		case "auto_retry_start", "auto_retry_end", "summarization_retry_scheduled", "summarization_retry_finished", "thinking_level_changed":
 			return []map[string]any{event}
 		}
 	case "native_summary":
@@ -736,15 +768,19 @@ func applyPiOnlyUpdate(entry *sessionEntry, kind string, update map[string]any) 
 	case "usage_update":
 		input := integerValue(update["accumulatedInputTokens"])
 		output := integerValue(update["accumulatedOutputTokens"])
-		entry.stats.Tokens.Input = input
-		entry.stats.Tokens.Output = output
-		entry.stats.Tokens.Total = input + output + entry.stats.Tokens.CacheRead + entry.stats.Tokens.CacheWrite
+		// AUX-15: every entry, including compaction and branch summaries, adds
+		// to the aggregate. The SDK's accumulated counters can reset at
+		// compaction, so merge monotonically instead of overwriting; live
+		// context usage below still comes straight from the SDK.
+		entry.stats.Tokens.Input = mergeMonotonic(entry.stats.Tokens.Input, input)
+		entry.stats.Tokens.Output = mergeMonotonic(entry.stats.Tokens.Output, output)
+		entry.stats.Tokens.Total = entry.stats.Tokens.Input + entry.stats.Tokens.Output + entry.stats.Tokens.CacheRead + entry.stats.Tokens.CacheWrite
 		reported := maps.Clone(entry.stats.Reported)
 		if reported == nil {
 			reported = make(map[string]bool)
 		}
 		reported["input"], reported["output"], reported["total"] = true, true, true
-		if cost, ok := update["accumulatedCost"].(float64); ok && !math.IsNaN(cost) && !math.IsInf(cost, 0) && cost >= 0 {
+		if cost, ok := update["accumulatedCost"].(float64); ok && !math.IsNaN(cost) && !math.IsInf(cost, 0) && cost >= 0 && cost > entry.stats.Cost {
 			entry.stats.Cost = cost
 			reported["cost"] = true
 		}

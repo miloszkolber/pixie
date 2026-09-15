@@ -42,13 +42,19 @@
 		"check:coverage": "bun run --cwd web check:coverage",
 		"check:filenames": "bun run --cwd web check:filenames",
 		"check:docs": "bun run --cwd web check:docs",
+		"check:conventions": "bun run --cwd web check:conventions",
+		"check:runtime": "bun run --cwd web check:runtime",
+		"runtime:exec": "bun run --cwd web runtime:exec",
+		"probe": "bun run --cwd web runtime:exec -- bun run --cwd ../assistant spike",
 		"generate:contracts": "bun run --cwd web generate:contracts",
 		"check:contracts": "bun run --cwd web check:contracts",
+		"generate:config-schema": "bun run --cwd web generate:config-schema",
+		"check:config-schema": "bun run --cwd web check:config-schema",
 		"dev:web": "bun run --cwd web dev:web",
 		"format": "bun run --cwd web format",
 		"lint": "bun run --cwd web lint",
 		"mewa:check": "bun run --cwd web mewa:check",
-		"test": "bun run --cwd web test && bun run --cwd assistant test",
+		"test": "bun run --cwd web test && bun run --cwd web runtime:exec -- bun run --cwd ../assistant test",
 		"typecheck": "bun run --cwd web typecheck"
 	}
 }

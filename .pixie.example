@@ -1,6 +1,13 @@
 # Pixie configuration source. Compose reads this file when present
 # (overlaying shell environment); explicit `environment:` entries in
 # docker-compose.yaml take precedence over values set here.
+#
+# This file configures the process environment. The separate JSON service
+# configuration files (controller `--config`, assistant `--config`) are
+# documented by the generated docs/config-schema.json; run
+# `bun run check:config-schema` to detect drift. Source verification requires
+# the Bun version pinned in package.json; `bun run check:runtime` reports an
+# unsupported runtime as environment-blocked rather than a pass.
 
 # Existing host directory holding Pixie application state, owned by UID/GID 1000.
 # The container mounts it at /var/lib/pixie/data.

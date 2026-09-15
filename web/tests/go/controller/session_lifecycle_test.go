@@ -3,11 +3,13 @@ package controller_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +18,239 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 	"github.com/miloszkolber/pixie/internal/workspace"
 )
+
+// AUX-26 decision: archive/unarchive stay explicitly unavailable. They write
+// no durable archive marker and no host dispatch, so the reconciled list must
+// keep the session present and unarchived across a restart.
+func TestArchiveUnavailableKeepsListReconciledWithoutMarker(t *testing.T) {
+	manager, _, project, store := newSessionManagerWithInitializeAndPublisher(t, nil, nil, bunHostInitializeResponse(), nil)
+	ctx := t.Context()
+	if err := manager.Archive(ctx, project.ID, "chat", project.Roots[0]); err == nil || !strings.Contains(err.Error(), "controller-owned") {
+		t.Fatalf("archive did not fail closed: %v", err)
+	}
+	if err := manager.Unarchive(ctx, project.ID, "chat"); err == nil || !strings.Contains(err.Error(), "controller-owned") {
+		t.Fatalf("unarchive did not fail closed: %v", err)
+	}
+	entries, err := os.ReadDir(store.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.Contains(strings.ToLower(entry.Name()), "archive") {
+			t.Fatalf("unavailable archive wrote a durable marker: %s", entry.Name())
+		}
+	}
+	summaries, err := manager.List(ctx, project.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, summary := range summaries {
+		if summary.SessionID != "chat" {
+			continue
+		}
+		found = true
+		if summary.Archived {
+			t.Fatal("list reported an archived session without a durable marker")
+		}
+	}
+	if !found {
+		t.Fatal("unavailable archive removed the session from the reconciled list")
+	}
+}
+
+// AUX-27 admission ordering: every rejection before durable admission must
+// leave the session's native MCP authority intact. A Canvas capability attached
+// for "chat" is the observable native authority; a pre-admission failure must
+// leave it revocable, while the legacy path revoked it up front.
+func TestDeleteUnsupportedCapabilityLeavesNativeAuthorityIntact(t *testing.T) {
+	registry := readyCanvasRegistry(t, true)
+	initialize := piInitializeResponse()
+	initialize["operationSet"].(map[string]bool)["session.delete"] = false
+	recorder := &deletionMethodRecorder{}
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, initialize, nil, recorder.observe)
+	manager.SetMCPRegistry(registry)
+	if _, err := registry.AttachCanvas("chat", 1); err != nil {
+		t.Fatal(err)
+	}
+	err := manager.Delete(t.Context(), project.ID, "chat", project.Roots[0])
+	if err == nil || !strings.Contains(err.Error(), "does not support session.delete") {
+		t.Fatalf("unsupported deletion = %v", err)
+	}
+	if recorder.saw("session.delete") {
+		t.Fatal("unsupported capability dispatched a native delete")
+	}
+	if revoked := registry.RevokeSession("chat"); revoked == 0 {
+		t.Fatal("unsupported capability revoked native MCP authority")
+	}
+}
+
+// A profile that never establishes the deletion capability is a pre-admission
+// failure too: the controller must not touch existing native authority.
+func TestDeleteProfileFailureLeavesNativeAuthorityIntact(t *testing.T) {
+	registry := readyCanvasRegistry(t, true)
+	// runtime.hello without a runtimeId is incompatible, so Profile fails
+	// before capability, binding or journal admission.
+	initialize := map[string]any{"protocolVersion": 1}
+	recorder := &deletionMethodRecorder{}
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, initialize, nil, recorder.observe)
+	manager.SetMCPRegistry(registry)
+	if _, err := registry.AttachCanvas("chat", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Delete(t.Context(), project.ID, "chat", project.Roots[0]); err == nil {
+		t.Fatal("deletion with an incompatible profile succeeded")
+	}
+	if recorder.saw("session.delete") {
+		t.Fatal("incompatible profile dispatched a native delete")
+	}
+	if revoked := registry.RevokeSession("chat"); revoked == 0 {
+		t.Fatal("incompatible profile revoked native MCP authority")
+	}
+}
+
+// A deletion-journal write failure is also pre-admission: the intent is not
+// durable, so native authority must survive and no delete may be dispatched.
+func TestDeleteJournalFailureLeavesNativeAuthorityIntact(t *testing.T) {
+	registry := readyCanvasRegistry(t, true)
+	recorder := &deletionMethodRecorder{}
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager.SetMCPRegistry(registry)
+	manager.SetDeletionPublishFaults(persist.PublishFaults{FailPrimary: errors.New("injected journal failure")})
+	if _, err := registry.AttachCanvas("chat", 1); err != nil {
+		t.Fatal(err)
+	}
+	err := manager.Delete(t.Context(), project.ID, "chat", project.Roots[0])
+	if err == nil || !strings.Contains(err.Error(), "restart Pixie to reconcile") {
+		t.Fatalf("journal failure = %v", err)
+	}
+	if recorder.saw("session.delete") {
+		t.Fatal("journal failure dispatched a native delete")
+	}
+	if revoked := registry.RevokeSession("chat"); revoked == 0 {
+		t.Fatal("journal failure revoked native MCP authority")
+	}
+}
+
+// Once the intent is durable, deletion still revokes native authority and
+// dispatches the host delete; the admitted record is the justification.
+func TestDeleteAfterDurableAdmissionRevokesAndDispatches(t *testing.T) {
+	registry := readyCanvasRegistry(t, true)
+	recorder := &deletionMethodRecorder{}
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, recorder.observe)
+	manager.SetMCPRegistry(registry)
+	if _, err := registry.AttachCanvas("chat", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Delete(t.Context(), project.ID, "chat", project.Roots[0]); err != nil {
+		t.Fatalf("admitted deletion failed: %v", err)
+	}
+	if !recorder.saw("session.delete") {
+		t.Fatal("admitted deletion did not dispatch a native delete")
+	}
+	if revoked := registry.RevokeSession("chat"); revoked != 0 {
+		t.Fatal("admitted deletion left native MCP authority live")
+	}
+}
+
+// AUX-05: a duplicate registration for one native session path is an invariant
+// conflict. The host fixture returns a fixed session ID, so a second create
+// must fail closed with the typed code instead of overwriting the resident.
+func TestCreateDuplicateRegistrationIsTypedConflict(t *testing.T) {
+	manager, _, project, _ := newSessionManager(t, nil, nil)
+	ctx := t.Context()
+	if _, err := manager.Create(ctx, project.ID, project.Roots[0], nil, "", "client-a"); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	_, err := manager.Create(ctx, project.ID, project.Roots[0], nil, "", "client-a")
+	if err == nil {
+		t.Fatal("duplicate create registration succeeded")
+	}
+	var coded interface{ ErrorCode() string }
+	if !errors.As(err, &coded) || coded.ErrorCode() != "SESSION_REGISTRATION_CONFLICT" {
+		t.Fatalf("duplicate create error = %v, want SESSION_REGISTRATION_CONFLICT", err)
+	}
+}
+
+// AUX-14: the browser session.fork request carries an entryId for "edit from
+// here". The handler must forward that intent to the host as an in-file branch
+// request instead of dropping it and creating a new-file fork.
+func TestSessionForkHandlerForwardsEntryIdToHost(t *testing.T) {
+	var mu sync.Mutex
+	var forkParams map[string]any
+	manager, _, project, _ := newSessionManagerWithInitializeAndPublisher(t, nil, nil, piInitializeResponse(), nil, func(method string, params map[string]any) {
+		if method != "session.fork" {
+			return
+		}
+		mu.Lock()
+		forkParams = params
+		mu.Unlock()
+	})
+	ctx := t.Context()
+	handler := controller.CoreHandler{Sessions: manager}
+	params, err := json.Marshal(map[string]string{"projectId": project.ID, "sessionId": "chat", "entryId": "entry-42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handler.Handle(ctx, "session.fork", params, "client-a"); err != nil {
+		t.Fatalf("branch request: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if forkParams == nil {
+		t.Fatal("branch request never reached the host session.fork route")
+	}
+	if got, _ := forkParams["entryId"].(string); got != "entry-42" {
+		t.Fatalf("host session.fork entryId = %q, want entry-42", got)
+	}
+}
+
+// AUX-14: a new-file fork is a root in the controller's ancestry. The native
+// session header owns the parent link, so the controller records no fabricated
+// parent relation and only subagent sessions nest.
+func TestForkRecordsARootWithoutControllerParentLink(t *testing.T) {
+	manager, _, project, store := newSessionManager(t, nil, nil)
+	ctx := t.Context()
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := manager.Fork(ctx, project.ID, "chat", project.Roots[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.ParentSessionID != "" {
+		t.Fatalf("fork recorded a controller parent link: %q", summary.ParentSessionID)
+	}
+	records, err := controller.NewSessionRecords(store).List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.SessionID == summary.SessionID && record.ParentSessionID != "" {
+			t.Fatalf("fork persisted a controller parent link: %#v", record)
+		}
+	}
+}
+
+// AUX-14: an edit request must fail closed when the host cannot serve a fork
+// route at all, rather than silently producing an independent session.
+func TestBranchFailsClosedWhenHostLacksForkRoute(t *testing.T) {
+	initialize := piInitializeResponse()
+	initialize["operationSet"].(map[string]bool)["session.fork"] = false
+	manager, _, project, _ := newSessionManagerWithInitialize(t, nil, nil, initialize)
+	ctx := t.Context()
+	if _, err := manager.Messages(ctx, "chat", project.ID, project.Roots[0], "client-a"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := manager.Branch(ctx, project.ID, "chat", project.Roots[0], "entry-1")
+	if err == nil {
+		t.Fatal("branch succeeded on a host without a fork route")
+	}
+	var coded interface{ ErrorCode() string }
+	if !errors.As(err, &coded) || coded.ErrorCode() != "UNSUPPORTED_AGENT_CAPABILITY" {
+		t.Fatalf("branch failure = %v, want a typed unsupported-capability error", err)
+	}
+}
 
 // The Bun host negotiates no archive route, so unarchive must fail closed
 // without dispatching a host method or emitting an unarchived event.

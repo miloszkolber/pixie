@@ -28,6 +28,59 @@ const (
 	gitExecutableEnv   = "PIXIE_GIT_EXECUTABLE"
 )
 
+// gitLockSoftTimeout bounds how long a Git command waits for another command in
+// the same working directory. It is soft: after the wait the caller receives a
+// bounded "busy" result instead of blocking behind an unrelated slow or hung
+// inspection. It is deliberately shorter than gitCommandTimeout so a queued
+// command gives up before a hung holder reaches its own hard limit. It is a
+// variable so tests can shorten the wait.
+var gitLockSoftTimeout = 5 * time.Second
+
+// gitDirectoryLocks maps a canonical working directory to the single writer
+// slot for Git commands run there. The reference count keeps the map from
+// growing without bound while still holding an entry for every waiter.
+var gitDirectoryLocks = struct {
+	sync.Mutex
+	entries map[string]*gitDirectoryLock
+}{entries: make(map[string]*gitDirectoryLock)}
+
+type gitDirectoryLock struct {
+	slot chan struct{}
+	refs int
+}
+
+// gitDirectoryLockKey canonicalizes the working directory so a symlinked path
+// and its target share one slot.
+func gitDirectoryLockKey(directory string) string {
+	if canonical, err := filepath.EvalSymlinks(directory); err == nil {
+		return canonical
+	}
+	return directory
+}
+
+// acquireGitDirectoryLock reserves the directory slot and returns the channel
+// to enter plus a release that drops the reservation. The release is safe to
+// call whether or not the slot was entered.
+func acquireGitDirectoryLock(directory string) (chan struct{}, func()) {
+	key := gitDirectoryLockKey(directory)
+	gitDirectoryLocks.Lock()
+	entry := gitDirectoryLocks.entries[key]
+	if entry == nil {
+		entry = &gitDirectoryLock{slot: make(chan struct{}, 1)}
+		gitDirectoryLocks.entries[key] = entry
+	}
+	entry.refs++
+	gitDirectoryLocks.Unlock()
+	return entry.slot, func() {
+		gitDirectoryLocks.Lock()
+		entry.refs--
+		if entry.refs <= 0 {
+			delete(gitDirectoryLocks.entries, key)
+		}
+		gitDirectoryLocks.Unlock()
+	}
+}
+
 // gitReadOnlyConfig is applied to every Git subprocess. Repository config is
 // still parsed by Git (there is no general local-config opt-out), so every
 // setting that can select a helper is overridden here. Worktree comparisons
@@ -59,6 +112,20 @@ func runGit(parent context.Context, directory string, args []string, limit int) 
 	absoluteDirectory, err := filepath.Abs(directory)
 	if err != nil {
 		return gitResult{err: "Could not resolve Git sandbox", failure: "environment"}
+	}
+	// One Git command per working directory. The wait is bounded so a slow or
+	// hung inspection cannot block an unrelated request behind it.
+	slot, releaseSlot := acquireGitDirectoryLock(absoluteDirectory)
+	defer releaseSlot()
+	wait := time.NewTimer(gitLockSoftTimeout)
+	defer wait.Stop()
+	select {
+	case slot <- struct{}{}:
+		defer func() { <-slot }()
+	case <-wait.C:
+		return gitResult{err: "Git is already running in this directory", failure: "busy"}
+	case <-ctx.Done():
+		return gitResult{err: "Git command timed out", failure: "timeout"}
 	}
 	executable, err := resolveGitExecutable()
 	if err != nil {

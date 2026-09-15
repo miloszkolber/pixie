@@ -235,6 +235,21 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	if config.DataDir == "" {
+		config.DataDir = defaultDataDir(config.Getenv)
+	}
+	// Carry the resolved state directory into the auth construction so the
+	// signing secret and stored password hash are loaded from the same place
+	// the rest of the controller state lives.
+	authConfig.DataDir = config.DataDir
+	// Record the configured credentials before any listener, store or client can
+	// log them. Every diagnostic sink (structured logs, child-stderr rings and
+	// support exports) shares this one process-wide redaction boundary.
+	diagnostics.ConfigureSanitizerSecrets(
+		config.Getenv("PIXIE_PI_SECRET_KEY"),
+		authConfig.ControllerToken,
+		authConfig.MCPToken,
+	)
 	if config.Host == "" {
 		config.Host = authConfig.ControllerHost
 	}
@@ -249,9 +264,6 @@ func NewRuntime(config RuntimeConfig) (*Runtime, error) {
 	// WebSocket handlers cannot drift to a request-derived authority.
 	authConfig.ControllerHost = config.Host
 	authConfig.ControllerPort = config.Port
-	if config.DataDir == "" {
-		config.DataDir = defaultDataDir(config.Getenv)
-	}
 	// An empty StaticDir is intentional: asset resolution prefers the
 	// embedded web bundle and falls back to DefaultStaticDir.
 	build := diagnostics.NormalizeBuild(config.AppVersion, config.AppRevision)
@@ -466,6 +478,27 @@ func (r *Runtime) Start() (string, error) {
 }
 
 func (r *Runtime) Errors() <-chan error { return r.errors }
+
+// BeginDrain starts the AUX-19 quiesce: new prompts, forks and resume-style
+// session creation are refused after a short grace while admitted work settles.
+// It is safe to call before or during Shutdown.
+func (r *Runtime) BeginDrain() {
+	if r != nil && r.socket != nil {
+		r.socket.BeginDrain()
+	}
+}
+
+// WaitForDrain blocks until admitted runnable work has settled or ctx ends.
+func (r *Runtime) WaitForDrain(ctx context.Context) {
+	if r != nil && r.socket != nil {
+		r.socket.WaitForDrain(ctx)
+	}
+}
+
+// Quiescing reports whether the controller is refusing new runnable work.
+func (r *Runtime) Quiescing() bool {
+	return r != nil && r.socket != nil && r.socket.Quiescing()
+}
 
 func (r *Runtime) Shutdown(ctx context.Context) error {
 	r.schedules.Close(ctx)

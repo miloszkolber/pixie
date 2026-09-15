@@ -9,6 +9,9 @@ import (
 // Pi's inventory predicate accepts default commands and optional local URLs.
 // Read only field-presence flags to distinguish explicit configuration; never
 // copy field values or probe a host command from the application container.
+// This resolution runs inside the cached provider projection, so a repeat
+// settings render reuses the auth Pi already resolved instead of issuing a
+// second per-provider policy.
 func (a *PiAdmin) resolveDefaultProviderConfiguration(ctx context.Context, providers []piProvider) {
 	jobs := make(chan int, len(providers))
 	for index := range providers {

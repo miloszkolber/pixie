@@ -44,7 +44,7 @@ func TestProviderStatusRedactsSecretsFromAuthFailureDetail(t *testing.T) {
 			}
 			var result any = map[string]any{}
 			if rpc.Method == "runtime.hello" {
-				result = piInitializeResponse()
+				result = bunHostInitializeResponse()
 			} else if rpc.Method == "pi.providers.list" {
 				result = map[string]any{"entries": providers}
 			}

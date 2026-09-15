@@ -13,6 +13,7 @@ import type {
 	WireModel,
 } from "@pixie/shared";
 import { matchesSkillInvocationCommand, parseSkillInvocation, randomId, userText } from "../../lib";
+import { mergeUsageStats } from "../session/session-stats";
 import { assistantFailureText, terminalOutcome } from "./assistant-failure";
 import { createFoldState, type FoldState } from "./fold-state";
 import type { ChatSubmission, ChatTurn, CompactionState, ToolResultState } from "./types";
@@ -356,30 +357,7 @@ export function reduceSessionEvent(rt: SessionRuntime, event: AgentEvent): Sessi
 			};
 		}
 		case "usage":
-			return event.usage
-				? {
-						...rt,
-						stats: {
-							sessionId: rt.stats?.sessionId ?? "",
-							totalMessages: rt.stats?.totalMessages ?? 0,
-							tokens: {
-								input: event.usage.input ?? 0,
-								output: event.usage.output ?? 0,
-								cacheRead: event.usage.cacheRead ?? 0,
-								cacheWrite: event.usage.cacheWrite ?? 0,
-								total: event.usage.total ?? 0,
-							},
-							cost: event.usage.cost ?? 0,
-							...(event.costCurrency
-								? { costCurrency: event.costCurrency }
-								: rt.stats?.costCurrency
-									? { costCurrency: rt.stats.costCurrency }
-									: {}),
-							...(event.reported ? { reported: event.reported } : {}),
-							...(rt.stats?.contextUsage ? { contextUsage: rt.stats.contextUsage } : {}),
-						},
-					}
-				: rt;
+			return event.usage ? { ...rt, stats: mergeUsageStats(rt.stats, event) } : rt;
 		case "context":
 			return event.contextUsage
 				? {

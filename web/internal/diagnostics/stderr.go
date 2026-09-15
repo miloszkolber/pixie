@@ -2,6 +2,7 @@ package diagnostics
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,9 @@ type StderrRing struct {
 	dropped    int
 	partial    []byte
 	discarding bool
+	// console, when set, receives each already-redacted line. It is the same
+	// boundary as the retained entries: raw child text never reaches either.
+	console io.Writer
 }
 
 // NewStderrRing returns a ring with the package defaults. A nil ring is a safe
@@ -58,6 +62,16 @@ func NewStderrRing() *StderrRing {
 		maxAge:   DefaultStderrMaxAge,
 		maxLines: DefaultStderrMaxLines,
 	}
+}
+
+// NewStderrRingWithConsole returns a ring that also mirrors each complete,
+// already-redacted line to console. A nil console keeps retention only. The
+// mirror is best-effort: a slow or failing console writer never blocks, drops
+// or unredacts the retained ring.
+func NewStderrRingWithConsole(console io.Writer) *StderrRing {
+	ring := NewStderrRing()
+	ring.console = console
+	return ring
 }
 
 // Write splits p into lines and retains each redacted line. It always reports
@@ -90,6 +104,21 @@ func (r *StderrRing) AppendLine(line string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.entryLocked(line)
+}
+
+// Flush emits any buffered partial line through the same redaction boundary.
+// A child that exits without a trailing newline still surfaces its last line
+// instead of leaving it unmirrored or raw.
+func (r *StderrRing) Flush() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.partial) == 0 && !r.discarding {
+		return
+	}
+	r.flushPartialLocked()
 }
 
 func (r *StderrRing) appendPartialLocked(chunk []byte) {
@@ -127,6 +156,11 @@ func (r *StderrRing) entryLocked(line string) {
 	text := SanitizeDiagnosticText(line, MaxStderrLineBytes)
 	if strings.TrimSpace(text) == "" {
 		return
+	}
+	if r.console != nil {
+		// The console sees exactly the retained, redacted text. A write error
+		// is intentionally ignored so a broken console cannot stall the child.
+		_, _ = io.WriteString(r.console, text+"\n")
 	}
 	r.entries = append(r.entries, StderrEntry{
 		At:   r.now().UTC().Format(time.RFC3339),

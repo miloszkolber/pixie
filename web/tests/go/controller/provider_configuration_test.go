@@ -38,7 +38,7 @@ func TestDefaultConnectionValuesDoNotConfigureProviders(t *testing.T) {
 						var result any = map[string]any{}
 						switch rpc.Method {
 						case "runtime.hello":
-							result = piInitializeResponse()
+							result = bunHostInitializeResponse()
 						case "pi.providers.list":
 							result = map[string]any{"entries": []any{map[string]any{"providerId": id, "name": id, "configured": true, "available": true, "visibleInSetup": true, "configKeys": []any{map[string]any{"name": "COMMAND", "required": true, "default": "cli"}}, "models": []any{map[string]any{"id": "model"}}}}}
 						case "pi.providers.config.read":

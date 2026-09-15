@@ -2,6 +2,45 @@ import type { ContextUsage, SessionStats } from "@pixie/shared";
 
 export type UsageField = "input" | "output" | "cacheRead" | "cacheWrite" | "total" | "cost";
 
+export interface UsageEvent {
+	usage?: Partial<SessionStats["tokens"]> & { cost?: number };
+	reported?: SessionStats["reported"];
+	costCurrency?: string;
+}
+
+// AUX-15: the server aggregates every transcript entry, including compaction
+// and branch summaries, then merges live message deltas. A compaction can still
+// re-emit a smaller accumulated snapshot, so this boundary merges the event
+// monotonically instead of replacing the totals. Context usage is intentionally
+// not touched here: it is the live SDK value and may legitimately shrink.
+export function mergeUsageStats(previous: SessionStats | null, event: UsageEvent): SessionStats {
+	const usage = event.usage ?? {};
+	const tokens = previous?.tokens;
+	const input = Math.max(tokens?.input ?? 0, usage.input ?? 0);
+	const output = Math.max(tokens?.output ?? 0, usage.output ?? 0);
+	const cacheRead = Math.max(tokens?.cacheRead ?? 0, usage.cacheRead ?? 0);
+	const cacheWrite = Math.max(tokens?.cacheWrite ?? 0, usage.cacheWrite ?? 0);
+	const total = Math.max(tokens?.total ?? 0, usage.total ?? 0);
+	const cost = Math.max(previous?.cost ?? 0, usage.cost ?? 0);
+	return {
+		sessionId: previous?.sessionId ?? "",
+		totalMessages: previous?.totalMessages ?? 0,
+		tokens: { input, output, cacheRead, cacheWrite, total },
+		cost,
+		...(event.costCurrency
+			? { costCurrency: event.costCurrency }
+			: previous?.costCurrency
+				? { costCurrency: previous.costCurrency }
+				: {}),
+		...(event.reported
+			? { reported: event.reported }
+			: previous?.reported
+				? { reported: previous.reported }
+				: {}),
+		...(previous?.contextUsage ? { contextUsage: previous.contextUsage } : {}),
+	};
+}
+
 export function isUsageReported(stats: SessionStats, field: UsageField, value: number): boolean {
 	return stats.reported ? stats.reported[field] === true : value !== 0;
 }

@@ -498,3 +498,101 @@ func TestWebSocketAuthorityIsCheckedBeforeOriginAndUpgrade(t *testing.T) {
 		})
 	}
 }
+
+// AUX-19: while draining, run-creating methods are refused with the typed
+// quiescing code while Stop and read-only inspection remain available.
+func TestWebSocketDrainRefusesNewRunnableWorkButKeepsControl(t *testing.T) {
+	handler := &countingHandler{}
+	server, err := controller.NewWebSocketServer(handler, nil, controller.AuthConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close(context.Background())
+	host := httptest.NewServer(server)
+	defer host.Close()
+	setWebSocketListenerPort(t, server, host)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	connection := dialBrowserSocket(t, ctx, host.URL, "drain")
+
+	server.BeginDrain()
+
+	send := func(frame string) map[string]any {
+		t.Helper()
+		if err := connection.Write(ctx, websocket.MessageText, []byte(frame)); err != nil {
+			t.Fatal(err)
+		}
+		_, raw, err := connection.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response map[string]any
+		if err := json.Unmarshal(raw, &response); err != nil {
+			t.Fatalf("response %s: %v", raw, err)
+		}
+		return response
+	}
+
+	// The typed quiescing refusal is delivered as a normal error envelope, so
+	// the browser can report status instead of a transport failure.
+	prompt := send(`{"id":"prompt","method":"session.prompt","params":{"sessionId":"s1","text":"hello"}}`)
+	if prompt["ok"] != false || prompt["errorCode"] != "controller_quiescing" {
+		t.Fatalf("draining prompt response = %#v", prompt)
+	}
+	if handler.calls.Load() != 0 {
+		t.Fatalf("draining prompt reached the handler: calls=%d", handler.calls.Load())
+	}
+
+	// Stop and read-only methods keep working during a drain.
+	if stop := send(`{"id":"stop","method":"session.abort","params":{"sessionId":"s1"}}`); stop["ok"] != true {
+		t.Fatalf("abort while draining = %#v", stop)
+	}
+	if read := send(`{"id":"read","method":"session.getMessages","params":{"sessionId":"s1"}}`); read["ok"] != true {
+		t.Fatalf("read while draining = %#v", read)
+	}
+	if !server.Quiescing() {
+		t.Fatal("server stopped reporting quiescing")
+	}
+}
+
+// AUX-19: work admitted before the drain is not revoked and must settle before
+// WaitForDrain reports completion.
+func TestWebSocketDrainWaitsForAdmittedWork(t *testing.T) {
+	handler := &inflightHandler{started: make(chan struct{}, 1), release: make(chan struct{})}
+	server, err := controller.NewWebSocketServer(handler, nil, controller.AuthConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close(context.Background())
+	host := httptest.NewServer(server)
+	defer host.Close()
+	setWebSocketListenerPort(t, server, host)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	connection := dialBrowserSocket(t, ctx, host.URL, "drain-work")
+	if err := connection.Write(ctx, websocket.MessageText, []byte(`{"id":"one","method":"session.prompt","params":{"sessionId":"s1","text":"go"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-handler.started:
+	case <-ctx.Done():
+		t.Fatal("admitted work did not start")
+	}
+	server.BeginDrain()
+	drained := make(chan struct{})
+	go func() {
+		server.WaitForDrain(context.Background())
+		close(drained)
+	}()
+	select {
+	case <-drained:
+		t.Fatal("drain settled before the admitted work released")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(handler.release)
+	select {
+	case <-drained:
+	case <-ctx.Done():
+		t.Fatal("drain did not settle after the admitted work released")
+	}
+}

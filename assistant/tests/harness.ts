@@ -205,6 +205,9 @@ export function hostWith(
 		readonly sdk?: Record<string, unknown>;
 		readonly protocol?: string;
 		readonly logger?: Parameters<typeof startBunHost>[0]["logger"];
+		readonly allowSelfRestart?: boolean;
+		readonly onRestart?: () => void;
+		readonly requestTimeoutMs?: number;
 	} = {},
 ) {
 	const agentDir = options.agentDir ?? tempAgentDir();
@@ -246,6 +249,9 @@ export function hostWith(
 			serverFactory: options.serverFactory,
 			sessionFactory: options.sessionFactory,
 			logger: options.logger,
+			allowSelfRestart: options.allowSelfRestart,
+			onRestart: options.onRestart,
+			requestTimeoutMs: options.requestTimeoutMs,
 		});
 	} finally {
 		if (previousProtocol === undefined) delete process.env.PIXIE_PI_PROTOCOL;

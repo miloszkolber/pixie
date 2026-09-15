@@ -47,6 +47,127 @@ The host is not a Pi extension. An extension lives only inside a Pi process and 
 
 Archive layout and release-runtime checks verify that the bundled TUI/CLI is present and Pi RPC is absent. Interactive TUI/PTY behavior and credentialed Pi remain unproven, as in the evidence limits at the top of this document.
 
+## Method coverage
+
+Every browser method has one generated owner, route and effective status; the table below enumerates all 101 methods from `shared/schema/protocol-catalog.json`. `available` means the declared owner implements the route; `unavailable` means it is catalogued but fails closed with the stated reason; `absent` means it is not a host route. New methods land with a row here and a catalog status.
+
+### available (97)
+
+| Method | Route | Owner |
+| --- | --- | --- |
+| `browserMcp.configure` | `controller:browser-mcp` | controller |
+| `browserMcp.remove` | `controller:browser-mcp` | controller |
+| `browserMcp.status` | `controller:browser-mcp` | controller |
+| `directory.list` | `workspace:files` | workspace |
+| `fs.readDir` | `workspace:files` | workspace |
+| `fs.readFile` | `workspace:files` | workspace |
+| `git.diffFile` | `workspace:git` | workspace |
+| `git.listBranches` | `workspace:git` | workspace |
+| `git.listCommits` | `workspace:git` | workspace |
+| `git.listRepositories` | `workspace:git` | workspace |
+| `git.status` | `workspace:git` | workspace |
+| `history.search` | `controller:history-index` | controller |
+| `mcpAdapter.status` | `controller:mcp-adapter` | controller |
+| `mcpRegistry.catalog` | `controller:mcp-registry` | controller |
+| `mcpRegistry.moduleRestart` | `controller:mcp-registry` | controller |
+| `mcpRegistry.moduleSetEnabled` | `controller:mcp-registry` | controller |
+| `model.clampThinking` | `controller:session-config` | controller |
+| `model.list` | `pi.providers.list` | pi |
+| `model.refresh` | `pi.providers.inventory.refresh` | pi |
+| `model.setAllVisibility` | `controller:settings` | controller |
+| `model.setVisibility` | `controller:settings` | controller |
+| `model.thinkingLevels` | `controller:session-config` | controller |
+| `pi.agentCreate` | `pi.sources.create` | pi |
+| `pi.agentDelete` | `pi.sources.delete` | pi |
+| `pi.agentList` | `pi.sources.list` | pi |
+| `pi.agentUpdate` | `pi.sources.update` | pi |
+| `pi.capabilities` | `controller:pi-capabilities` | controller |
+| `pi.defaultsClear` | `pi.defaults.clear` | pi |
+| `pi.defaultsRead` | `pi.defaults.read` | pi |
+| `pi.defaultsSave` | `pi.defaults.save` | pi |
+| `pi.extensionAdd` | `pi.config.extensions.add` | pi |
+| `pi.extensionList` | `pi.config.extensions.list` | pi |
+| `pi.extensionRemove` | `pi.config.extensions.remove` | pi |
+| `pi.extensionSetEnabled` | `pi.config.extensions.set-enabled` | pi |
+| `pi.nativeExtensionConfigure` | `pi.extensions.configure` | pi |
+| `pi.nativeExtensionReload` | `controller:deferred-reload` | controller |
+| `pi.nativeExtensions` | `pi.extensions.list` | pi |
+| `pi.preferencesRead` | `pi.preferences.read` | pi |
+| `pi.preferencesReset` | `pi.preferences.reset` | pi |
+| `pi.preferencesSave` | `pi.preferences.save` | pi |
+| `pi.reload` | `runtime.restart` | pi |
+| `pi.status` | `controller:pi-status` | controller |
+| `project.close` | `controller:projects` | controller |
+| `project.list` | `controller:projects` | controller |
+| `project.open` | `controller:projects` | controller |
+| `project.update` | `controller:projects` | controller |
+| `project.watchReady` | `controller:project-watches` | controller |
+| `provider.loginCancel` | `provider.loginCancel` | pi |
+| `provider.loginReply` | `provider.loginReply` | pi |
+| `provider.loginStart` | `provider.loginStart` | pi |
+| `provider.logout` | `pi.providers.config.delete` | pi |
+| `provider.readiness` | `pi.providers.readiness.check` | pi |
+| `provider.status` | `pi.providers.list` | pi |
+| `runtime.diagnostics` | `controller:runtime-diagnostics` | controller |
+| `runtime.status` | `controller:runtime-status` | controller |
+| `runtime.supportSnapshot` | `controller:runtime-support-snapshot` | controller |
+| `schedule.create` | `controller:scheduler` | controller |
+| `schedule.delete` | `controller:scheduler` | controller |
+| `schedule.health` | `controller:scheduler` | controller |
+| `schedule.list` | `controller:scheduler` | controller |
+| `schedule.preview` | `controller:scheduler` | controller |
+| `schedule.runNow` | `controller:scheduler` | controller |
+| `schedule.stop` | `controller:scheduler` | controller |
+| `schedule.update` | `controller:scheduler` | controller |
+| `session.abort` | `session.cancel` | pi |
+| `session.confirmExternalDeletion` | `controller:deletions` | controller |
+| `session.create` | `session.create` | pi |
+| `session.delete` | `controller:deletions` | controller |
+| `session.deletionRecovery` | `controller:deletions` | controller |
+| `session.extensionAdd` | `pi.session.extensions.add` | pi |
+| `session.extensionList` | `pi.session.extensions.list` | pi |
+| `session.extensionRemove` | `pi.session.extensions.remove` | pi |
+| `session.fork` | `session.fork` | pi |
+| `session.getAgentMentions` | `pi.agent-mentions.list` | pi |
+| `session.getCommands` | `pi.slash-commands.list` | pi |
+| `session.getMessages` | `session.getMessages` | pi |
+| `session.getStats` | `controller:session-stats` | controller |
+| `session.goalClear` | `controller:objectives` | controller |
+| `session.goalGet` | `controller:objectives` | controller |
+| `session.goalSet` | `controller:objectives` | controller |
+| `session.list` | `session.list` | pi |
+| `session.prompt` | `session.prompt` | pi |
+| `session.queueAdd` | `controller:queues` | controller |
+| `session.queueEdit` | `controller:queues` | controller |
+| `session.queueRemove` | `controller:queues` | controller |
+| `session.queueRetry` | `controller:queues` | controller |
+| `session.release` | `controller:leases` | controller |
+| `session.rename` | `session.rename` | pi |
+| `session.retainExternalDeletion` | `controller:deletions` | controller |
+| `session.setConfigOption` | `session.configure` | pi |
+| `session.setLeases` | `controller:leases` | controller |
+| `session.setModel` | `session.configure` | pi |
+| `session.setThinkingLevel` | `session.configure` | pi |
+| `session.uiCancel` | `session.uiCancel` | pi |
+| `session.uiReply` | `session.uiResponse` | pi |
+| `settings.update` | `controller:settings` | controller |
+| `skill.list` | `pi.slash-commands.list` | pi |
+
+### unavailable (4)
+
+| Method | Route | Owner | Reason |
+| --- | --- | --- | --- |
+| `session.archive` | `controller:archive` | controller | Archive is controller-owned state; this controller fails closed until a durable archive marker exists. |
+| `session.steer` | `session.steer` | pi | Pi 0.85.1 exposes no public run identifier to bind a steering request to the active run. |
+| `session.toolList` | `pi.tools.list` | pi | Pi 0.85.1 exposes no public bounded, secret-free tool inventory API. |
+| `session.unarchive` | `controller:archive` | controller | Archive is controller-owned state; this controller fails closed until a durable archive marker exists. |
+
+## Decisions
+
+- **AUX-03 steering.** Keep `session.steer` and `pi.session.steer` unavailable. Pi `0.85.1` exposes no public run identifier that binds a steering request to the active run, so the host dispatches no route and the controller fails closed with the catalog reason before any native side effect. Revisit only if Pi exposes a public run identity or preflight acceptance that makes binding provable.
+- **AUX-26 archive.** Keep `session.archive` and `session.unarchive` explicitly unavailable. No durable, restart-safe controller-owned archive marker exists, so the controller fails closed instead of dispatching an absent Pi route or reporting a fixture-only success. This is a recorded fail-closed placeholder, not a shipped archive feature; a future marker must survive restart, reconcile the active/archived list filter, preserve native identity and deletion authority, and emit lifecycle events only after publication.
+- **AUX-11 session index.** No second session index. The controller lists sessions through the host catalog; an append-only summary cache or index is added only if a benchmark under `web/tests/performance/` measures listing as a bottleneck. No such measurement exists, so the default is no index.
+
 ## Prioritized additions
 
 1. Keep steering unavailable until Pi exposes a public run identifier that safely binds a request to the active run.

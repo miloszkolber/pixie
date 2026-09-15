@@ -2,8 +2,14 @@
 
 package piprotocol
 
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
 // CatalogSchemaVersion is the protocol catalog schema revision.
-const CatalogSchemaVersion = 1
+const CatalogSchemaVersion = 2
 
 // Host operation implementation statuses. Only CatalogHostOperationAvailable
 // routes may be negotiated by a host; the other statuses stay catalogued so
@@ -522,6 +528,958 @@ var CatalogControllerMethods = []string{
 	"session.extensionAdd",
 	"session.extensionRemove",
 	"session.toolList",
+}
+
+// CatalogControllerMethodSet indexes CatalogControllerMethods for exact membership lookup.
+var CatalogControllerMethodSet = map[string]bool{
+	"project.open":                    true,
+	"project.update":                  true,
+	"project.list":                    true,
+	"project.close":                   true,
+	"project.watchReady":              true,
+	"git.listRepositories":            true,
+	"fs.readDir":                      true,
+	"fs.readFile":                     true,
+	"git.status":                      true,
+	"git.diffFile":                    true,
+	"git.listBranches":                true,
+	"git.listCommits":                 true,
+	"directory.list":                  true,
+	"skill.list":                      true,
+	"session.create":                  true,
+	"session.fork":                    true,
+	"session.prompt":                  true,
+	"session.steer":                   true,
+	"session.queueAdd":                true,
+	"session.queueEdit":               true,
+	"session.queueRemove":             true,
+	"session.queueRetry":              true,
+	"session.abort":                   true,
+	"session.delete":                  true,
+	"session.deletionRecovery":        true,
+	"session.confirmExternalDeletion": true,
+	"session.retainExternalDeletion":  true,
+	"session.rename":                  true,
+	"session.archive":                 true,
+	"session.unarchive":               true,
+	"session.setModel":                true,
+	"session.setThinkingLevel":        true,
+	"session.setConfigOption":         true,
+	"session.getStats":                true,
+	"session.getCommands":             true,
+	"session.getAgentMentions":        true,
+	"session.goalGet":                 true,
+	"session.goalSet":                 true,
+	"session.goalClear":               true,
+	"session.uiReply":                 true,
+	"session.uiCancel":                true,
+	"session.list":                    true,
+	"session.getMessages":             true,
+	"session.setLeases":               true,
+	"session.release":                 true,
+	"model.list":                      true,
+	"model.refresh":                   true,
+	"model.clampThinking":             true,
+	"model.thinkingLevels":            true,
+	"model.setVisibility":             true,
+	"model.setAllVisibility":          true,
+	"pi.preferencesRead":              true,
+	"pi.preferencesSave":              true,
+	"pi.preferencesReset":             true,
+	"pi.defaultsRead":                 true,
+	"pi.defaultsSave":                 true,
+	"pi.defaultsClear":                true,
+	"pi.capabilities":                 true,
+	"pi.agentList":                    true,
+	"pi.agentCreate":                  true,
+	"pi.agentUpdate":                  true,
+	"pi.agentDelete":                  true,
+	"provider.status":                 true,
+	"provider.readiness":              true,
+	"provider.loginStart":             true,
+	"provider.loginReply":             true,
+	"provider.loginCancel":            true,
+	"provider.logout":                 true,
+	"settings.update":                 true,
+	"history.search":                  true,
+	"schedule.list":                   true,
+	"schedule.preview":                true,
+	"schedule.health":                 true,
+	"schedule.create":                 true,
+	"schedule.update":                 true,
+	"schedule.delete":                 true,
+	"schedule.runNow":                 true,
+	"schedule.stop":                   true,
+	"pi.status":                       true,
+	"runtime.status":                  true,
+	"runtime.diagnostics":             true,
+	"runtime.supportSnapshot":         true,
+	"mcpRegistry.catalog":             true,
+	"mcpRegistry.moduleSetEnabled":    true,
+	"mcpRegistry.moduleRestart":       true,
+	"mcpAdapter.status":               true,
+	"browserMcp.status":               true,
+	"browserMcp.configure":            true,
+	"browserMcp.remove":               true,
+	"pi.extensionList":                true,
+	"pi.nativeExtensions":             true,
+	"pi.nativeExtensionConfigure":     true,
+	"pi.nativeExtensionReload":        true,
+	"pi.reload":                       true,
+	"pi.extensionAdd":                 true,
+	"pi.extensionSetEnabled":          true,
+	"pi.extensionRemove":              true,
+	"session.extensionList":           true,
+	"session.extensionAdd":            true,
+	"session.extensionRemove":         true,
+	"session.toolList":                true,
+}
+
+// CatalogNativeControllerRoutes lists the controller-owned native route namespaces.
+var CatalogNativeControllerRoutes = []string{
+	"archive",
+	"browser-mcp",
+	"deferred-reload",
+	"deletions",
+	"history-index",
+	"leases",
+	"mcp-adapter",
+	"mcp-registry",
+	"objectives",
+	"pi-capabilities",
+	"pi-status",
+	"project-watches",
+	"projects",
+	"queues",
+	"runtime-diagnostics",
+	"runtime-status",
+	"runtime-support-snapshot",
+	"scheduler",
+	"session-config",
+	"session-stats",
+	"settings",
+}
+
+// CatalogNativeWorkspaceRoutes lists the workspace-owned native route namespaces.
+var CatalogNativeWorkspaceRoutes = []string{
+	"files",
+	"git",
+}
+
+// CatalogNativeControllerRouteSet indexes CatalogNativeControllerRoutes.
+var CatalogNativeControllerRouteSet = map[string]bool{
+	"archive":                  true,
+	"browser-mcp":              true,
+	"deferred-reload":          true,
+	"deletions":                true,
+	"history-index":            true,
+	"leases":                   true,
+	"mcp-adapter":              true,
+	"mcp-registry":             true,
+	"objectives":               true,
+	"pi-capabilities":          true,
+	"pi-status":                true,
+	"project-watches":          true,
+	"projects":                 true,
+	"queues":                   true,
+	"runtime-diagnostics":      true,
+	"runtime-status":           true,
+	"runtime-support-snapshot": true,
+	"scheduler":                true,
+	"session-config":           true,
+	"session-stats":            true,
+	"settings":                 true,
+}
+
+// CatalogNativeWorkspaceRouteSet indexes CatalogNativeWorkspaceRoutes.
+var CatalogNativeWorkspaceRouteSet = map[string]bool{
+	"files": true,
+	"git":   true,
+}
+
+// CatalogNativeRouteKnown reports whether a browser method route is a host
+// operation or a declared controller/workspace route. An unknown route must
+// fail closed instead of being treated as locally owned.
+func CatalogNativeRouteKnown(route string) bool {
+	if CatalogHostOperationSet[route] {
+		return true
+	}
+	if namespace, id, found := strings.Cut(route, ":"); found {
+		switch namespace {
+		case "controller":
+			return CatalogNativeControllerRouteSet[id]
+		case "workspace":
+			return CatalogNativeWorkspaceRouteSet[id]
+		}
+	}
+	return false
+}
+
+// CatalogControllerMethodOwners records the declared owner per browser method.
+var CatalogControllerMethodOwners = map[string]string{
+	"project.open":                    "controller",
+	"project.update":                  "controller",
+	"project.list":                    "controller",
+	"project.close":                   "controller",
+	"project.watchReady":              "controller",
+	"git.listRepositories":            "workspace",
+	"fs.readDir":                      "workspace",
+	"fs.readFile":                     "workspace",
+	"git.status":                      "workspace",
+	"git.diffFile":                    "workspace",
+	"git.listBranches":                "workspace",
+	"git.listCommits":                 "workspace",
+	"directory.list":                  "workspace",
+	"skill.list":                      "pi",
+	"session.create":                  "pi",
+	"session.fork":                    "pi",
+	"session.prompt":                  "pi",
+	"session.steer":                   "pi",
+	"session.queueAdd":                "controller",
+	"session.queueEdit":               "controller",
+	"session.queueRemove":             "controller",
+	"session.queueRetry":              "controller",
+	"session.abort":                   "pi",
+	"session.delete":                  "controller",
+	"session.deletionRecovery":        "controller",
+	"session.confirmExternalDeletion": "controller",
+	"session.retainExternalDeletion":  "controller",
+	"session.rename":                  "pi",
+	"session.archive":                 "controller",
+	"session.unarchive":               "controller",
+	"session.setModel":                "pi",
+	"session.setThinkingLevel":        "pi",
+	"session.setConfigOption":         "pi",
+	"session.getStats":                "controller",
+	"session.getCommands":             "pi",
+	"session.getAgentMentions":        "pi",
+	"session.goalGet":                 "controller",
+	"session.goalSet":                 "controller",
+	"session.goalClear":               "controller",
+	"session.uiReply":                 "pi",
+	"session.uiCancel":                "pi",
+	"session.list":                    "pi",
+	"session.getMessages":             "pi",
+	"session.setLeases":               "controller",
+	"session.release":                 "controller",
+	"model.list":                      "pi",
+	"model.refresh":                   "pi",
+	"model.clampThinking":             "controller",
+	"model.thinkingLevels":            "controller",
+	"model.setVisibility":             "controller",
+	"model.setAllVisibility":          "controller",
+	"pi.preferencesRead":              "pi",
+	"pi.preferencesSave":              "pi",
+	"pi.preferencesReset":             "pi",
+	"pi.defaultsRead":                 "pi",
+	"pi.defaultsSave":                 "pi",
+	"pi.defaultsClear":                "pi",
+	"pi.capabilities":                 "controller",
+	"pi.agentList":                    "pi",
+	"pi.agentCreate":                  "pi",
+	"pi.agentUpdate":                  "pi",
+	"pi.agentDelete":                  "pi",
+	"provider.status":                 "pi",
+	"provider.readiness":              "pi",
+	"provider.loginStart":             "pi",
+	"provider.loginReply":             "pi",
+	"provider.loginCancel":            "pi",
+	"provider.logout":                 "pi",
+	"settings.update":                 "controller",
+	"history.search":                  "controller",
+	"schedule.list":                   "controller",
+	"schedule.preview":                "controller",
+	"schedule.health":                 "controller",
+	"schedule.create":                 "controller",
+	"schedule.update":                 "controller",
+	"schedule.delete":                 "controller",
+	"schedule.runNow":                 "controller",
+	"schedule.stop":                   "controller",
+	"pi.status":                       "controller",
+	"runtime.status":                  "controller",
+	"runtime.diagnostics":             "controller",
+	"runtime.supportSnapshot":         "controller",
+	"mcpRegistry.catalog":             "controller",
+	"mcpRegistry.moduleSetEnabled":    "controller",
+	"mcpRegistry.moduleRestart":       "controller",
+	"mcpAdapter.status":               "controller",
+	"browserMcp.status":               "controller",
+	"browserMcp.configure":            "controller",
+	"browserMcp.remove":               "controller",
+	"pi.extensionList":                "pi",
+	"pi.nativeExtensions":             "pi",
+	"pi.nativeExtensionConfigure":     "pi",
+	"pi.nativeExtensionReload":        "controller",
+	"pi.reload":                       "pi",
+	"pi.extensionAdd":                 "pi",
+	"pi.extensionSetEnabled":          "pi",
+	"pi.extensionRemove":              "pi",
+	"session.extensionList":           "pi",
+	"session.extensionAdd":            "pi",
+	"session.extensionRemove":         "pi",
+	"session.toolList":                "pi",
+}
+
+// CatalogControllerMethodRoutes records the native route per browser method.
+var CatalogControllerMethodRoutes = map[string]string{
+	"project.open":                    "controller:projects",
+	"project.update":                  "controller:projects",
+	"project.list":                    "controller:projects",
+	"project.close":                   "controller:projects",
+	"project.watchReady":              "controller:project-watches",
+	"git.listRepositories":            "workspace:git",
+	"fs.readDir":                      "workspace:files",
+	"fs.readFile":                     "workspace:files",
+	"git.status":                      "workspace:git",
+	"git.diffFile":                    "workspace:git",
+	"git.listBranches":                "workspace:git",
+	"git.listCommits":                 "workspace:git",
+	"directory.list":                  "workspace:files",
+	"skill.list":                      "pi.slash-commands.list",
+	"session.create":                  "session.create",
+	"session.fork":                    "session.fork",
+	"session.prompt":                  "session.prompt",
+	"session.steer":                   "session.steer",
+	"session.queueAdd":                "controller:queues",
+	"session.queueEdit":               "controller:queues",
+	"session.queueRemove":             "controller:queues",
+	"session.queueRetry":              "controller:queues",
+	"session.abort":                   "session.cancel",
+	"session.delete":                  "controller:deletions",
+	"session.deletionRecovery":        "controller:deletions",
+	"session.confirmExternalDeletion": "controller:deletions",
+	"session.retainExternalDeletion":  "controller:deletions",
+	"session.rename":                  "session.rename",
+	"session.archive":                 "controller:archive",
+	"session.unarchive":               "controller:archive",
+	"session.setModel":                "session.configure",
+	"session.setThinkingLevel":        "session.configure",
+	"session.setConfigOption":         "session.configure",
+	"session.getStats":                "controller:session-stats",
+	"session.getCommands":             "pi.slash-commands.list",
+	"session.getAgentMentions":        "pi.agent-mentions.list",
+	"session.goalGet":                 "controller:objectives",
+	"session.goalSet":                 "controller:objectives",
+	"session.goalClear":               "controller:objectives",
+	"session.uiReply":                 "session.uiResponse",
+	"session.uiCancel":                "session.uiCancel",
+	"session.list":                    "session.list",
+	"session.getMessages":             "session.getMessages",
+	"session.setLeases":               "controller:leases",
+	"session.release":                 "controller:leases",
+	"model.list":                      "pi.providers.list",
+	"model.refresh":                   "pi.providers.inventory.refresh",
+	"model.clampThinking":             "controller:session-config",
+	"model.thinkingLevels":            "controller:session-config",
+	"model.setVisibility":             "controller:settings",
+	"model.setAllVisibility":          "controller:settings",
+	"pi.preferencesRead":              "pi.preferences.read",
+	"pi.preferencesSave":              "pi.preferences.save",
+	"pi.preferencesReset":             "pi.preferences.reset",
+	"pi.defaultsRead":                 "pi.defaults.read",
+	"pi.defaultsSave":                 "pi.defaults.save",
+	"pi.defaultsClear":                "pi.defaults.clear",
+	"pi.capabilities":                 "controller:pi-capabilities",
+	"pi.agentList":                    "pi.sources.list",
+	"pi.agentCreate":                  "pi.sources.create",
+	"pi.agentUpdate":                  "pi.sources.update",
+	"pi.agentDelete":                  "pi.sources.delete",
+	"provider.status":                 "pi.providers.list",
+	"provider.readiness":              "pi.providers.readiness.check",
+	"provider.loginStart":             "provider.loginStart",
+	"provider.loginReply":             "provider.loginReply",
+	"provider.loginCancel":            "provider.loginCancel",
+	"provider.logout":                 "pi.providers.config.delete",
+	"settings.update":                 "controller:settings",
+	"history.search":                  "controller:history-index",
+	"schedule.list":                   "controller:scheduler",
+	"schedule.preview":                "controller:scheduler",
+	"schedule.health":                 "controller:scheduler",
+	"schedule.create":                 "controller:scheduler",
+	"schedule.update":                 "controller:scheduler",
+	"schedule.delete":                 "controller:scheduler",
+	"schedule.runNow":                 "controller:scheduler",
+	"schedule.stop":                   "controller:scheduler",
+	"pi.status":                       "controller:pi-status",
+	"runtime.status":                  "controller:runtime-status",
+	"runtime.diagnostics":             "controller:runtime-diagnostics",
+	"runtime.supportSnapshot":         "controller:runtime-support-snapshot",
+	"mcpRegistry.catalog":             "controller:mcp-registry",
+	"mcpRegistry.moduleSetEnabled":    "controller:mcp-registry",
+	"mcpRegistry.moduleRestart":       "controller:mcp-registry",
+	"mcpAdapter.status":               "controller:mcp-adapter",
+	"browserMcp.status":               "controller:browser-mcp",
+	"browserMcp.configure":            "controller:browser-mcp",
+	"browserMcp.remove":               "controller:browser-mcp",
+	"pi.extensionList":                "pi.config.extensions.list",
+	"pi.nativeExtensions":             "pi.extensions.list",
+	"pi.nativeExtensionConfigure":     "pi.extensions.configure",
+	"pi.nativeExtensionReload":        "controller:deferred-reload",
+	"pi.reload":                       "runtime.restart",
+	"pi.extensionAdd":                 "pi.config.extensions.add",
+	"pi.extensionSetEnabled":          "pi.config.extensions.set-enabled",
+	"pi.extensionRemove":              "pi.config.extensions.remove",
+	"session.extensionList":           "pi.session.extensions.list",
+	"session.extensionAdd":            "pi.session.extensions.add",
+	"session.extensionRemove":         "pi.session.extensions.remove",
+	"session.toolList":                "pi.tools.list",
+}
+
+// CatalogControllerMethodFC records the frozen FC feature-coverage label per browser method.
+var CatalogControllerMethodFC = map[string]string{
+	"project.open":                    "FC08",
+	"project.update":                  "FC08",
+	"project.list":                    "FC08",
+	"project.close":                   "FC08",
+	"project.watchReady":              "FC08",
+	"git.listRepositories":            "FC30",
+	"fs.readDir":                      "FC30",
+	"fs.readFile":                     "FC30",
+	"git.status":                      "FC30",
+	"git.diffFile":                    "FC30",
+	"git.listBranches":                "FC30",
+	"git.listCommits":                 "FC30",
+	"directory.list":                  "FC30",
+	"skill.list":                      "FC12",
+	"session.create":                  "FC02",
+	"session.fork":                    "FC07",
+	"session.prompt":                  "FC03",
+	"session.steer":                   "FC05",
+	"session.queueAdd":                "FC05",
+	"session.queueEdit":               "FC05",
+	"session.queueRemove":             "FC05",
+	"session.queueRetry":              "FC05",
+	"session.abort":                   "FC05",
+	"session.delete":                  "FC09",
+	"session.deletionRecovery":        "FC09",
+	"session.confirmExternalDeletion": "FC09",
+	"session.retainExternalDeletion":  "FC09",
+	"session.rename":                  "FC07",
+	"session.archive":                 "FC08",
+	"session.unarchive":               "FC08",
+	"session.setModel":                "FC10",
+	"session.setThinkingLevel":        "FC10",
+	"session.setConfigOption":         "FC10",
+	"session.getStats":                "FC11",
+	"session.getCommands":             "FC12",
+	"session.getAgentMentions":        "FC23",
+	"session.goalGet":                 "FC25",
+	"session.goalSet":                 "FC25",
+	"session.goalClear":               "FC25",
+	"session.uiReply":                 "FC13",
+	"session.uiCancel":                "FC13",
+	"session.list":                    "FC08",
+	"session.getMessages":             "FC06",
+	"session.setLeases":               "FC02",
+	"session.release":                 "FC02",
+	"model.list":                      "FC17",
+	"model.refresh":                   "FC17",
+	"model.clampThinking":             "FC10",
+	"model.thinkingLevels":            "FC10",
+	"model.setVisibility":             "FC17",
+	"model.setAllVisibility":          "FC17",
+	"pi.preferencesRead":              "FC19",
+	"pi.preferencesSave":              "FC19",
+	"pi.preferencesReset":             "FC19",
+	"pi.defaultsRead":                 "FC19",
+	"pi.defaultsSave":                 "FC19",
+	"pi.defaultsClear":                "FC19",
+	"pi.capabilities":                 "FC01",
+	"pi.agentList":                    "FC23",
+	"pi.agentCreate":                  "FC23",
+	"pi.agentUpdate":                  "FC23",
+	"pi.agentDelete":                  "FC23",
+	"provider.status":                 "FC17",
+	"provider.readiness":              "FC17",
+	"provider.loginStart":             "FC18",
+	"provider.loginReply":             "FC18",
+	"provider.loginCancel":            "FC18",
+	"provider.logout":                 "FC18",
+	"settings.update":                 "FC17",
+	"history.search":                  "FC06",
+	"schedule.list":                   "FC29",
+	"schedule.preview":                "FC29",
+	"schedule.health":                 "FC29",
+	"schedule.create":                 "FC29",
+	"schedule.update":                 "FC29",
+	"schedule.delete":                 "FC29",
+	"schedule.runNow":                 "FC29",
+	"schedule.stop":                   "FC29",
+	"pi.status":                       "FC01",
+	"runtime.status":                  "FC01",
+	"runtime.diagnostics":             "FC01",
+	"runtime.supportSnapshot":         "FC01",
+	"mcpRegistry.catalog":             "FC26",
+	"mcpRegistry.moduleSetEnabled":    "FC26",
+	"mcpRegistry.moduleRestart":       "FC26",
+	"mcpAdapter.status":               "FC26",
+	"browserMcp.status":               "FC31",
+	"browserMcp.configure":            "FC31",
+	"browserMcp.remove":               "FC31",
+	"pi.extensionList":                "FC20",
+	"pi.nativeExtensions":             "FC20",
+	"pi.nativeExtensionConfigure":     "FC21",
+	"pi.nativeExtensionReload":        "FC21",
+	"pi.reload":                       "FC22",
+	"pi.extensionAdd":                 "FC21",
+	"pi.extensionSetEnabled":          "FC21",
+	"pi.extensionRemove":              "FC21",
+	"session.extensionList":           "FC20",
+	"session.extensionAdd":            "FC21",
+	"session.extensionRemove":         "FC21",
+	"session.toolList":                "FC26",
+}
+
+// CatalogControllerMethodProfiles records the agent profile per browser method.
+var CatalogControllerMethodProfiles = map[string]string{
+	"project.open":                    "controller-local",
+	"project.update":                  "controller-local",
+	"project.list":                    "controller-local",
+	"project.close":                   "controller-local",
+	"project.watchReady":              "controller-local",
+	"git.listRepositories":            "controller-local",
+	"fs.readDir":                      "controller-local",
+	"fs.readFile":                     "controller-local",
+	"git.status":                      "controller-local",
+	"git.diffFile":                    "controller-local",
+	"git.listBranches":                "controller-local",
+	"git.listCommits":                 "controller-local",
+	"directory.list":                  "controller-local",
+	"skill.list":                      "A",
+	"session.create":                  "V",
+	"session.fork":                    "V",
+	"session.prompt":                  "V",
+	"session.steer":                   "V",
+	"session.queueAdd":                "V",
+	"session.queueEdit":               "V",
+	"session.queueRemove":             "V",
+	"session.queueRetry":              "V",
+	"session.abort":                   "V",
+	"session.delete":                  "V",
+	"session.deletionRecovery":        "controller-local",
+	"session.confirmExternalDeletion": "controller-local",
+	"session.retainExternalDeletion":  "controller-local",
+	"session.rename":                  "V",
+	"session.archive":                 "V",
+	"session.unarchive":               "V",
+	"session.setModel":                "V",
+	"session.setThinkingLevel":        "V",
+	"session.setConfigOption":         "V",
+	"session.getStats":                "V",
+	"session.getCommands":             "A",
+	"session.getAgentMentions":        "A",
+	"session.goalGet":                 "controller-local",
+	"session.goalSet":                 "controller-local",
+	"session.goalClear":               "controller-local",
+	"session.uiReply":                 "V",
+	"session.uiCancel":                "V",
+	"session.list":                    "V",
+	"session.getMessages":             "V",
+	"session.setLeases":               "controller-local",
+	"session.release":                 "controller-local",
+	"model.list":                      "A",
+	"model.refresh":                   "A",
+	"model.clampThinking":             "V",
+	"model.thinkingLevels":            "V",
+	"model.setVisibility":             "controller-local",
+	"model.setAllVisibility":          "controller-local",
+	"pi.preferencesRead":              "A",
+	"pi.preferencesSave":              "A",
+	"pi.preferencesReset":             "A",
+	"pi.defaultsRead":                 "A",
+	"pi.defaultsSave":                 "A",
+	"pi.defaultsClear":                "A",
+	"pi.capabilities":                 "A",
+	"pi.agentList":                    "A",
+	"pi.agentCreate":                  "A",
+	"pi.agentUpdate":                  "A",
+	"pi.agentDelete":                  "A",
+	"provider.status":                 "A",
+	"provider.readiness":              "A",
+	"provider.loginStart":             "A",
+	"provider.loginReply":             "A",
+	"provider.loginCancel":            "A",
+	"provider.logout":                 "A",
+	"settings.update":                 "controller-local",
+	"history.search":                  "controller-local",
+	"schedule.list":                   "controller-local",
+	"schedule.preview":                "controller-local",
+	"schedule.health":                 "controller-local",
+	"schedule.create":                 "controller-local",
+	"schedule.update":                 "controller-local",
+	"schedule.delete":                 "controller-local",
+	"schedule.runNow":                 "controller-local",
+	"schedule.stop":                   "controller-local",
+	"pi.status":                       "A",
+	"runtime.status":                  "controller-local",
+	"runtime.diagnostics":             "controller-local",
+	"runtime.supportSnapshot":         "controller-local",
+	"mcpRegistry.catalog":             "controller-local",
+	"mcpRegistry.moduleSetEnabled":    "controller-local",
+	"mcpRegistry.moduleRestart":       "controller-local",
+	"mcpAdapter.status":               "A",
+	"browserMcp.status":               "A",
+	"browserMcp.configure":            "A",
+	"browserMcp.remove":               "A",
+	"pi.extensionList":                "A",
+	"pi.nativeExtensions":             "A",
+	"pi.nativeExtensionConfigure":     "A",
+	"pi.nativeExtensionReload":        "A",
+	"pi.reload":                       "A",
+	"pi.extensionAdd":                 "A",
+	"pi.extensionSetEnabled":          "A",
+	"pi.extensionRemove":              "A",
+	"session.extensionList":           "A",
+	"session.extensionAdd":            "A",
+	"session.extensionRemove":         "A",
+	"session.toolList":                "A",
+}
+
+// CatalogControllerMethodStatus records the effective status per browser method. A
+// host route carries the generated host status; a controller/workspace route is
+// available unless it declares an explicit fail-closed status.
+var CatalogControllerMethodStatus = map[string]string{
+	"project.open":                    "available",
+	"project.update":                  "available",
+	"project.list":                    "available",
+	"project.close":                   "available",
+	"project.watchReady":              "available",
+	"git.listRepositories":            "available",
+	"fs.readDir":                      "available",
+	"fs.readFile":                     "available",
+	"git.status":                      "available",
+	"git.diffFile":                    "available",
+	"git.listBranches":                "available",
+	"git.listCommits":                 "available",
+	"directory.list":                  "available",
+	"skill.list":                      "available",
+	"session.create":                  "available",
+	"session.fork":                    "available",
+	"session.prompt":                  "available",
+	"session.steer":                   "unavailable",
+	"session.queueAdd":                "available",
+	"session.queueEdit":               "available",
+	"session.queueRemove":             "available",
+	"session.queueRetry":              "available",
+	"session.abort":                   "available",
+	"session.delete":                  "available",
+	"session.deletionRecovery":        "available",
+	"session.confirmExternalDeletion": "available",
+	"session.retainExternalDeletion":  "available",
+	"session.rename":                  "available",
+	"session.archive":                 "unavailable",
+	"session.unarchive":               "unavailable",
+	"session.setModel":                "available",
+	"session.setThinkingLevel":        "available",
+	"session.setConfigOption":         "available",
+	"session.getStats":                "available",
+	"session.getCommands":             "available",
+	"session.getAgentMentions":        "available",
+	"session.goalGet":                 "available",
+	"session.goalSet":                 "available",
+	"session.goalClear":               "available",
+	"session.uiReply":                 "available",
+	"session.uiCancel":                "available",
+	"session.list":                    "available",
+	"session.getMessages":             "available",
+	"session.setLeases":               "available",
+	"session.release":                 "available",
+	"model.list":                      "available",
+	"model.refresh":                   "available",
+	"model.clampThinking":             "available",
+	"model.thinkingLevels":            "available",
+	"model.setVisibility":             "available",
+	"model.setAllVisibility":          "available",
+	"pi.preferencesRead":              "available",
+	"pi.preferencesSave":              "available",
+	"pi.preferencesReset":             "available",
+	"pi.defaultsRead":                 "available",
+	"pi.defaultsSave":                 "available",
+	"pi.defaultsClear":                "available",
+	"pi.capabilities":                 "available",
+	"pi.agentList":                    "available",
+	"pi.agentCreate":                  "available",
+	"pi.agentUpdate":                  "available",
+	"pi.agentDelete":                  "available",
+	"provider.status":                 "available",
+	"provider.readiness":              "available",
+	"provider.loginStart":             "available",
+	"provider.loginReply":             "available",
+	"provider.loginCancel":            "available",
+	"provider.logout":                 "available",
+	"settings.update":                 "available",
+	"history.search":                  "available",
+	"schedule.list":                   "available",
+	"schedule.preview":                "available",
+	"schedule.health":                 "available",
+	"schedule.create":                 "available",
+	"schedule.update":                 "available",
+	"schedule.delete":                 "available",
+	"schedule.runNow":                 "available",
+	"schedule.stop":                   "available",
+	"pi.status":                       "available",
+	"runtime.status":                  "available",
+	"runtime.diagnostics":             "available",
+	"runtime.supportSnapshot":         "available",
+	"mcpRegistry.catalog":             "available",
+	"mcpRegistry.moduleSetEnabled":    "available",
+	"mcpRegistry.moduleRestart":       "available",
+	"mcpAdapter.status":               "available",
+	"browserMcp.status":               "available",
+	"browserMcp.configure":            "available",
+	"browserMcp.remove":               "available",
+	"pi.extensionList":                "available",
+	"pi.nativeExtensions":             "available",
+	"pi.nativeExtensionConfigure":     "available",
+	"pi.nativeExtensionReload":        "available",
+	"pi.reload":                       "available",
+	"pi.extensionAdd":                 "available",
+	"pi.extensionSetEnabled":          "available",
+	"pi.extensionRemove":              "available",
+	"session.extensionList":           "available",
+	"session.extensionAdd":            "available",
+	"session.extensionRemove":         "available",
+	"session.toolList":                "unavailable",
+}
+
+// CatalogControllerMethodReasons records why a non-available browser method fails closed.
+var CatalogControllerMethodReasons = map[string]string{
+	"session.steer":     "Pi 0.85.1 exposes no public run identifier to bind a steering request to the active run.",
+	"session.archive":   "Archive is controller-owned state; this controller fails closed until a durable archive marker exists.",
+	"session.unarchive": "Archive is controller-owned state; this controller fails closed until a durable archive marker exists.",
+	"session.toolList":  "Pi 0.85.1 exposes no public bounded, secret-free tool inventory API.",
+}
+
+// CatalogControllerMethodIsAvailable reports whether a browser method is dispatchable.
+func CatalogControllerMethodIsAvailable(method string) bool {
+	return CatalogControllerMethodStatus[method] == CatalogHostOperationAvailable
+}
+
+// CatalogMethodField is one required or optional field of a method schema.
+type CatalogMethodField struct {
+	Name     string
+	Type     string
+	Optional bool
+}
+
+// CatalogMethodSchema is the generated parameter/result schema for one method. A
+// method with no schema is envelope-validated only; unknown fields stay additive.
+type CatalogMethodSchema struct {
+	Name   string
+	Params []CatalogMethodField
+	Result []CatalogMethodField
+}
+
+var CatalogHostMethodSchemas = []CatalogMethodSchema{
+	{Name: "session.list", Params: []CatalogMethodField{}, Result: []CatalogMethodField{{Name: "sessions", Type: "array"}}},
+	{Name: "session.create", Params: []CatalogMethodField{}, Result: []CatalogMethodField{{Name: "sessionId", Type: "string"}}},
+	{Name: "session.load", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.prompt", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "content", Type: "array", Optional: true}}, Result: []CatalogMethodField{}},
+	{Name: "session.cancel", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.configure", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "configId", Type: "string"}, {Name: "value", Type: "string"}}, Result: []CatalogMethodField{{Name: "configOptions", Type: "array"}}},
+	{Name: "session.fork", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{{Name: "sessionId", Type: "string"}}},
+	{Name: "session.rename", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "title", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.release", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "cwd", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.uiResponse", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "requestId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.uiCancel", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "requestId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.getMessages", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.followUp", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.clearQueue", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.stats", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.switch", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.compact", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.commands", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.providers.list", Params: []CatalogMethodField{{Name: "providerIds", Type: "array", Optional: true}}, Result: []CatalogMethodField{}},
+	{Name: "pi.providers.canonical-model-info", Params: []CatalogMethodField{{Name: "provider", Type: "string"}, {Name: "model", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.providers.inventory.refresh", Params: []CatalogMethodField{{Name: "providerIds", Type: "array", Optional: true}}, Result: []CatalogMethodField{}},
+	{Name: "pi.providers.readiness.check", Params: []CatalogMethodField{{Name: "providerId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.providers.config.read", Params: []CatalogMethodField{{Name: "providerId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.providers.config.delete", Params: []CatalogMethodField{{Name: "providerId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "provider.loginStart", Params: []CatalogMethodField{{Name: "providerId", Type: "string"}, {Name: "type", Type: "string"}, {Name: "loginId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "provider.loginBegin", Params: []CatalogMethodField{{Name: "loginId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "provider.loginReply", Params: []CatalogMethodField{{Name: "loginId", Type: "string"}, {Name: "value", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "provider.loginCancel", Params: []CatalogMethodField{{Name: "loginId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.defaults.save", Params: []CatalogMethodField{{Name: "providerId", Type: "string"}, {Name: "modelId", Type: "string", Optional: true}}, Result: []CatalogMethodField{}},
+	{Name: "pi.preferences.read", Params: []CatalogMethodField{{Name: "keys", Type: "array"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.preferences.save", Params: []CatalogMethodField{{Name: "values", Type: "array"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.preferences.reset", Params: []CatalogMethodField{{Name: "keys", Type: "array"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.config.extensions.add", Params: []CatalogMethodField{{Name: "extension", Type: "object"}, {Name: "enabled", Type: "boolean"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.config.extensions.set-enabled", Params: []CatalogMethodField{{Name: "configKey", Type: "string"}, {Name: "enabled", Type: "boolean"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.config.extensions.remove", Params: []CatalogMethodField{{Name: "configKey", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.session.extensions.list", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.session.extensions.add", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "extension", Type: "object"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.session.extensions.remove", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "extensionKey", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.sources.list", Params: []CatalogMethodField{{Name: "type", Type: "string"}, {Name: "includeProjectSources", Type: "boolean"}, {Name: "projectDir", Type: "string", Optional: true}}, Result: []CatalogMethodField{}},
+	{Name: "pi.sources.create", Params: []CatalogMethodField{{Name: "type", Type: "string"}, {Name: "projectDir", Type: "string"}, {Name: "name", Type: "string"}, {Name: "description", Type: "string"}, {Name: "content", Type: "string"}, {Name: "target", Type: "object"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.sources.update", Params: []CatalogMethodField{{Name: "type", Type: "string"}, {Name: "projectDir", Type: "string"}, {Name: "path", Type: "string"}, {Name: "expectedRevision", Type: "string"}, {Name: "name", Type: "string"}, {Name: "description", Type: "string"}, {Name: "content", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.sources.delete", Params: []CatalogMethodField{{Name: "type", Type: "string"}, {Name: "projectDir", Type: "string"}, {Name: "path", Type: "string"}, {Name: "expectedRevision", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.agent-mentions.list", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "cwd", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.extensions.configure", Params: []CatalogMethodField{{Name: "scope", Type: "string"}, {Name: "enabled", Type: "boolean"}, {Name: "confirmed", Type: "boolean"}, {Name: "resourceKey", Type: "string"}, {Name: "expectedRevision", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.mcp.servers.read", Params: []CatalogMethodField{{Name: "name", Type: "string"}, {Name: "projectDir", Type: "string", Optional: true}}, Result: []CatalogMethodField{}},
+	{Name: "pi.mcp.servers.upsert", Params: []CatalogMethodField{{Name: "name", Type: "string"}, {Name: "expectedAgentOwnershipToken", Type: "string"}, {Name: "requireNoOtherLayerCollisions", Type: "boolean"}, {Name: "definition", Type: "object"}, {Name: "projectDir", Type: "string", Optional: true}}, Result: []CatalogMethodField{}},
+	{Name: "pi.mcp.servers.remove", Params: []CatalogMethodField{{Name: "name", Type: "string"}, {Name: "expectedAgentOwnershipToken", Type: "string"}, {Name: "requireNoOtherLayerCollisions", Type: "boolean"}, {Name: "projectDir", Type: "string", Optional: true}}, Result: []CatalogMethodField{}},
+	{Name: "pi.mcp.servers.probe", Params: []CatalogMethodField{{Name: "definition", Type: "object"}}, Result: []CatalogMethodField{}},
+}
+
+var CatalogControllerMethodSchemas = []CatalogMethodSchema{
+	{Name: "project.open", Params: []CatalogMethodField{{Name: "path", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "project.update", Params: []CatalogMethodField{{Name: "id", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "project.close", Params: []CatalogMethodField{{Name: "id", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "directory.list", Params: []CatalogMethodField{}, Result: []CatalogMethodField{}},
+	{Name: "session.create", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.fork", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.prompt", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "text", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.steer", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "text", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.queueAdd", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "text", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.queueEdit", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "lane", Type: "string"}, {Name: "index", Type: "number"}, {Name: "text", Type: "string"}, {Name: "revision", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.queueRemove", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "lane", Type: "string"}, {Name: "index", Type: "number"}, {Name: "revision", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.queueRetry", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "lane", Type: "string"}, {Name: "index", Type: "number"}, {Name: "revision", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.abort", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.delete", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.rename", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}, {Name: "title", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.archive", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.unarchive", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.setModel", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "model", Type: "object"}}, Result: []CatalogMethodField{}},
+	{Name: "session.setThinkingLevel", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "level", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.setConfigOption", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "configId", Type: "string"}, {Name: "value", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.getStats", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.getMessages", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "projectId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.release", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "projectId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.setLeases", Params: []CatalogMethodField{{Name: "revision", Type: "number"}, {Name: "sessions", Type: "array"}}, Result: []CatalogMethodField{}},
+	{Name: "session.uiReply", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "requestId", Type: "string"}, {Name: "result", Type: "object"}}, Result: []CatalogMethodField{}},
+	{Name: "session.uiCancel", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "requestId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.list", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.extensionList", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.extensionAdd", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}, {Name: "name", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.extensionRemove", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}, {Name: "extensionKey", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "session.toolList", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "model.clampThinking", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}, {Name: "level", Type: "string"}}, Result: []CatalogMethodField{{Name: "level", Type: "string"}}},
+	{Name: "model.setVisibility", Params: []CatalogMethodField{{Name: "provider", Type: "string"}, {Name: "id", Type: "string"}, {Name: "hidden", Type: "boolean"}}, Result: []CatalogMethodField{}},
+	{Name: "model.setAllVisibility", Params: []CatalogMethodField{{Name: "hidden", Type: "boolean"}}, Result: []CatalogMethodField{}},
+	{Name: "settings.update", Params: []CatalogMethodField{{Name: "config", Type: "object"}}, Result: []CatalogMethodField{}},
+	{Name: "model.thinkingLevels", Params: []CatalogMethodField{{Name: "sessionId", Type: "string"}}, Result: []CatalogMethodField{{Name: "levels", Type: "array"}}},
+	{Name: "history.search", Params: []CatalogMethodField{{Name: "query", Type: "string"}, {Name: "scope", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "schedule.list", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "schedule.preview", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "root", Type: "string"}, {Name: "cron", Type: "string"}}, Result: []CatalogMethodField{{Name: "timezone", Type: "string"}, {Name: "nextRun", Type: "string"}}},
+	{Name: "schedule.health", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "schedule.create", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "root", Type: "string"}, {Name: "prompt", Type: "string"}, {Name: "cron", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "schedule.update", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "scheduleId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "schedule.delete", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "scheduleId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "schedule.runNow", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "scheduleId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "schedule.stop", Params: []CatalogMethodField{{Name: "projectId", Type: "string"}, {Name: "scheduleId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "provider.loginStart", Params: []CatalogMethodField{{Name: "providerId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "provider.loginReply", Params: []CatalogMethodField{{Name: "loginId", Type: "string"}, {Name: "value", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "provider.loginCancel", Params: []CatalogMethodField{{Name: "loginId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "provider.logout", Params: []CatalogMethodField{{Name: "providerId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "browserMcp.status", Params: []CatalogMethodField{}, Result: []CatalogMethodField{}},
+	{Name: "browserMcp.configure", Params: []CatalogMethodField{}, Result: []CatalogMethodField{}},
+	{Name: "browserMcp.remove", Params: []CatalogMethodField{}, Result: []CatalogMethodField{}},
+	{Name: "pi.agentCreate", Params: []CatalogMethodField{{Name: "name", Type: "string"}, {Name: "instructions", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.agentUpdate", Params: []CatalogMethodField{{Name: "id", Type: "string"}, {Name: "revision", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.agentDelete", Params: []CatalogMethodField{{Name: "id", Type: "string"}, {Name: "revision", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.defaultsSave", Params: []CatalogMethodField{{Name: "providerId", Type: "string"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.extensionAdd", Params: []CatalogMethodField{{Name: "name", Type: "string"}, {Name: "enabled", Type: "boolean"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.extensionSetEnabled", Params: []CatalogMethodField{{Name: "configKey", Type: "string"}, {Name: "enabled", Type: "boolean"}}, Result: []CatalogMethodField{}},
+	{Name: "pi.extensionRemove", Params: []CatalogMethodField{{Name: "configKey", Type: "string"}}, Result: []CatalogMethodField{}},
+}
+
+func catalogFieldTypeMatches(typeName string, raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return false
+	}
+	switch typeName {
+	case "string":
+		return trimmed[0] == '"'
+	case "boolean":
+		return trimmed == "true" || trimmed == "false"
+	case "number":
+		var value float64
+		return json.Unmarshal(raw, &value) == nil
+	case "object":
+		var value map[string]json.RawMessage
+		return json.Unmarshal(raw, &value) == nil
+	case "array":
+		var value []json.RawMessage
+		return json.Unmarshal(raw, &value) == nil
+	default:
+		return false
+	}
+}
+
+func catalogValidateMethodFields(kind, method string, fields []CatalogMethodField, raw json.RawMessage) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return fmt.Errorf("%s %s payload is missing", kind, method)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return fmt.Errorf("%s %s payload must be an object", kind, method)
+	}
+	for _, field := range fields {
+		value, present := object[field.Name]
+		if !present || strings.TrimSpace(string(value)) == "null" {
+			if field.Optional {
+				continue
+			}
+			return fmt.Errorf("%s %s payload is missing %q", kind, method, field.Name)
+		}
+		if !catalogFieldTypeMatches(field.Type, value) {
+			return fmt.Errorf("%s %s payload field %q must be %s", kind, method, field.Name, field.Type)
+		}
+	}
+	return nil
+}
+
+func catalogValidateMethod(schemas []CatalogMethodSchema, kind, method string, raw json.RawMessage, result bool) error {
+	for _, schema := range schemas {
+		if schema.Name != method {
+			continue
+		}
+		if result {
+			return catalogValidateMethodFields(kind, method, schema.Result, raw)
+		}
+		return catalogValidateMethodFields(kind, method, schema.Params, raw)
+	}
+	return nil
+}
+
+// ValidateHostMethodParams rejects a malformed host request before dispatch.
+func ValidateHostMethodParams(method string, raw json.RawMessage) error {
+	return catalogValidateMethod(CatalogHostMethodSchemas, "host request", method, raw, false)
+}
+
+// ValidateHostMethodResult rejects an invalid host result before projection.
+func ValidateHostMethodResult(method string, raw json.RawMessage) error {
+	return catalogValidateMethod(CatalogHostMethodSchemas, "host result", method, raw, true)
+}
+
+// ValidateControllerMethodParams rejects a malformed browser request before dispatch.
+func ValidateControllerMethodParams(method string, raw json.RawMessage) error {
+	return catalogValidateMethod(CatalogControllerMethodSchemas, "controller request", method, raw, false)
+}
+
+// ValidateControllerMethodResult rejects an invalid browser result before projection.
+func ValidateControllerMethodResult(method string, raw json.RawMessage) error {
+	return catalogValidateMethod(CatalogControllerMethodSchemas, "controller result", method, raw, true)
+}
+
+// ValidateHostErrorEnvelope requires the versioned host error shape.
+func ValidateHostErrorEnvelope(raw json.RawMessage) error {
+	var envelope struct {
+		Code    *int    `json:"code"`
+		Message *string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return fmt.Errorf("host error envelope must be an object: %w", err)
+	}
+	if envelope.Code == nil || envelope.Message == nil {
+		return fmt.Errorf("host error envelope requires code and message")
+	}
+	return nil
 }
 
 // CatalogThinkingLevels lists the accepted thinking levels.

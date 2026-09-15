@@ -77,7 +77,7 @@ func TestPiClientFramesPiAndOrdersNotifications(t *testing.T) {
 	defer client.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	result, err := client.CallPi(ctx, "pi.providers.list", map[string]any{})
+	result, err := client.CallPi(ctx, "pi.providers.list", map[string]any{"providerIds": []string{}})
 	if err != nil || string(result) != `{"providers":[]}` {
 		t.Fatalf("provider response: %s, %v", result, err)
 	}
@@ -308,7 +308,7 @@ func TestPiClientV2AdapterRoundTripAndEvent(t *testing.T) {
 	if profile.Version != "0.85.1" || profile.BootID != "fixture-boot" || !profile.Pi || !profile.Compatible {
 		t.Fatalf("unexpected v2 profile: %#v", profile)
 	}
-	result, err := client.CallPi(ctx, "pi.providers.list", map[string]any{})
+	result, err := client.CallPi(ctx, "pi.providers.list", map[string]any{"providerIds": []string{}})
 	if err != nil || string(result) != `{"providers":[]}` {
 		t.Fatalf("v2 provider response: %s, %v", result, err)
 	}
@@ -399,6 +399,62 @@ func TestPiClientStrictV2RejectsV1Host(t *testing.T) {
 	defer cancel()
 	if _, err := client.Ready(ctx); err == nil || !strings.Contains(err.Error(), "incompatible Pi host service") {
 		t.Fatalf("strict v2 client admitted a v1 host: %v", err)
+	}
+}
+
+// TestPiClientV2RejectsSelectionWithoutAdvertisement binds AUX-33 at the
+// controller boundary: a peer that answers protocolVersion 2 without the
+// supportedProtocolVersions advertisement is malformed and must fail during
+// setup, before the controller sends any request to it.
+func TestPiClientV2RejectsSelectionWithoutAdvertisement(t *testing.T) {
+	requests := make(chan string, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		for {
+			_, payload, err := connection.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var rpc struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if json.Unmarshal(payload, &rpc) != nil {
+				return
+			}
+			requests <- rpc.Method
+			// Malformed v2 peer: claims v2 but omits the advertisement.
+			result := map[string]any{
+				"protocolVersion": 2,
+				"runtimeId":       "malformed-v2",
+				"bootId":          "malformed-boot",
+				"nativeVersion":   "0.85.1",
+				"capabilities":    map[string]any{"sessions": 1},
+				"operationSet":    map[string]bool{"session.list": true},
+			}
+			if err := writeRPC(connection, map[string]any{"jsonrpc": "2.0", "id": rpc.ID, "result": result}); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := controller.NewPiClientWithProtocol("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", nil, piwire.HostProtocolAuto)
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := client.Ready(ctx); err == nil || !strings.Contains(err.Error(), "incompatible Pi host service") {
+		t.Fatalf("malformed v2 peer was admitted: %v", err)
+	}
+	close(requests)
+	for method := range requests {
+		if method != "runtime.hello" {
+			t.Fatalf("controller sent %q before v2 negotiation completed", method)
+		}
 	}
 }
 

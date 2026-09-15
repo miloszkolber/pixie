@@ -243,7 +243,7 @@ func TestStaticApplicationResponsesSetARestrictiveContentPolicy(t *testing.T) {
 		"form-action 'self'",
 		"frame-ancestors 'none'",
 		"frame-src 'self'",
-		"img-src 'self' data:",
+		"img-src 'self' data: blob:",
 		"object-src 'none'",
 		"script-src 'self' " + expectedHash,
 		"style-src 'self' 'unsafe-inline'",

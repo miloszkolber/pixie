@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -418,6 +419,58 @@ func TestStartChildRetainsBoundedStderr(t *testing.T) {
 	summary := ring.Snapshot()
 	if summary.Retained != 1 || !strings.Contains(summary.Entries[0].Text, "child-boot-line") {
 		t.Fatalf("retained stderr = %#v", summary)
+	}
+}
+
+func TestStartChildConsoleMirrorRedactsHostileStderr(t *testing.T) {
+	secret := strings.Repeat("k", 20)
+	t.Cleanup(func() { diagnostics.ConfigureSanitizerSecrets() })
+	diagnostics.ConfigureSanitizerSecrets(secret)
+
+	var console bytes.Buffer
+	ring := diagnostics.NewStderrRingWithConsole(&console)
+	script := "printf '%s\\n' 'Authorization: Bearer hostile-bearer-value' >&2\n" +
+		"printf '%s\\n' 'token=opaque-credential-value' >&2\n" +
+		"printf '%s\\n' 'https://url-user:url-password@example.invalid/path' >&2\n" +
+		"printf '%s\\n' '/home/alice/.pi/agent/config.json' >&2\n" +
+		"printf 'secret=' >&2\n" +
+		"printf '%s' '" + secret + "' >&2\n" +
+		"printf '\\n' >&2\n" +
+		"printf '%s' 'child-status: ready' >&2\n"
+	child, err := startChild(childInvocation{
+		path: "/bin/sh",
+		args: []string{"-c", script},
+		env:  map[string]string{},
+	}, ring)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-child.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("managed child did not exit")
+	}
+	stderr := console.String()
+	for _, forbidden := range []string{
+		secret, "hostile-bearer-value", "opaque-credential-value",
+		"url-user", "url-password", "example.invalid", "alice",
+	} {
+		if strings.Contains(stderr, forbidden) {
+			t.Fatalf("supervisor console leaked %q: %s", forbidden, stderr)
+		}
+	}
+	if !strings.Contains(stderr, "child-status: ready") {
+		t.Fatalf("safe lifecycle line was not mirrored: %s", stderr)
+	}
+	summary := ring.Snapshot()
+	joined := ""
+	for _, entry := range summary.Entries {
+		joined += entry.Text + "\n"
+	}
+	for _, forbidden := range []string{secret, "hostile-bearer-value", "opaque-credential-value", "alice"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("retained ring leaked %q: %s", forbidden, joined)
+		}
 	}
 }
 

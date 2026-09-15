@@ -16,6 +16,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/canvas"
 	"github.com/miloszkolber/pixie/internal/identifier"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
+	"github.com/miloszkolber/pixie/internal/persist"
 	"github.com/miloszkolber/pixie/internal/workspace"
 	piwire "github.com/miloszkolber/pixie/shared/piprotocol"
 )
@@ -32,6 +33,21 @@ const (
 )
 
 var errAgentIdentityChanged = errors.New("connected Pi agent identity changed")
+
+// sessionRegistrationError is a typed session-registration invariant failure.
+// A duplicate registration for one native session path is a lifecycle conflict
+// rather than caller input, so it carries a stable code the websocket boundary
+// can surface.
+type sessionRegistrationError struct {
+	sessionID string
+	detail    string
+}
+
+func (e *sessionRegistrationError) Error() string {
+	return fmt.Sprintf("session %s registration conflict: %s", e.sessionID, e.detail)
+}
+
+func (e *sessionRegistrationError) ErrorCode() string { return "SESSION_REGISTRATION_CONFLICT" }
 
 type SessionPublisher func(channel string, data any)
 
@@ -65,29 +81,34 @@ type sessionEntry struct {
 	refs      int
 	ephemeral bool
 
-	projectID          string
-	cwd                string
-	parentSessionID    string
-	title              string
-	model              *WireModel
-	thinkingLevel      string
-	configOptions      []any
-	messages           []any
-	streaming          bool
-	promptActive       bool
-	promptDone         chan struct{}
-	toolChanged        chan struct{}
-	settlement         *SessionSettlement
-	stats              SessionStats
-	messageUsage       map[string]messageUsage
-	queue              sessionQueueState
-	runID              string
-	detachedWork       string
-	objectiveToken     string
-	attached           uint64
-	canvasAttached     uint64
-	replay             *sessionEntry
-	promptGeneration   uint64
+	projectID        string
+	cwd              string
+	parentSessionID  string
+	title            string
+	model            *WireModel
+	thinkingLevel    string
+	configOptions    []any
+	messages         []any
+	streaming        bool
+	promptActive     bool
+	promptDone       chan struct{}
+	toolChanged      chan struct{}
+	settlement       *SessionSettlement
+	stats            SessionStats
+	messageUsage     map[string]messageUsage
+	queue            sessionQueueState
+	runID            string
+	detachedWork     string
+	objectiveToken   string
+	attached         uint64
+	canvasAttached   uint64
+	replay           *sessionEntry
+	promptGeneration uint64
+	// registration is the allocation/replacement epoch for this projection. It
+	// advances whenever the entry is replaced in place (for example by a native
+	// replay), so a foreground callback that captured an earlier epoch is
+	// rejected instead of mutating the replacement.
+	registration       uint64
 	projectionID       string
 	inactiveAt         time.Time
 	inactiveBytes      int // Encoded size under state; zero means a mutation needs recounting.
@@ -97,10 +118,17 @@ type sessionEntry struct {
 	pendingToolOutputs map[string]toolOutput
 	commands           []map[string]any
 	planState          *SessionPlanState
-	agentIdentity      string
-	drainScheduled     bool
-	drainFailures      uint8
-	drainRetry         *time.Timer
+	// schema is the host's AUX-12 session-header/record degradation summary.
+	// It is projected read-only and never used to rewrite the native file.
+	schema        map[string]any
+	agentIdentity string
+	// compactionActive holds queued follow-ups while Pi compacts the context.
+	// The controller owns this queue; a compaction must never turn a queued or
+	// blocked prompt into silent loss.
+	compactionActive bool
+	drainScheduled   bool
+	drainFailures    uint8
+	drainRetry       *time.Timer
 }
 
 type userEcho struct {
@@ -192,6 +220,15 @@ func (m *SessionManager) SetSettings(settings *Settings) { m.settings = settings
 func (m *SessionManager) SetDeletionAuthority(mode DeletionAuthorityMode, storageKey string) {
 	m.deletionAuthority = mode
 	m.pairingStorageKey = storageKey
+}
+
+// SetDeletionPublishFaults injects deterministic deletion-journal publication
+// faults so AUX-27 admission ordering can be exercised without disk failures.
+// Production leaves it zero-valued; it mirrors the queue/schedule seams.
+func (m *SessionManager) SetDeletionPublishFaults(faults persist.PublishFaults) {
+	if m.deletions != nil {
+		m.deletions.SetPublishFaults(faults)
+	}
 }
 
 // SetMCPRegistry attaches the live publisher's instance-owned scope registry.
@@ -312,8 +349,13 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 	var entry *sessionEntry
 	creationCommitted := false
 	canvasAttached := false
+	duplicateRegistration := false
 	defer func() {
-		if creationCommitted {
+		if creationCommitted || duplicateRegistration {
+			// A duplicate native ID belongs to an already-registered session,
+			// so this response created nothing to unwind. Releasing it,
+			// revoking its credentials, dropping its lease or forgetting its
+			// record would corrupt the existing registration.
 			return
 		}
 		if canvasAttached {
@@ -348,6 +390,16 @@ func (m *SessionManager) create(ctx context.Context, projectID, cwd string, mode
 			_ = m.records.Forget(projectID, sessionID)
 		}
 	}()
+	// AUX-05: a second projection for one native session path is an invariant
+	// conflict. Detect it before any canvas attach or durable record so the
+	// deferred unwind is skipped and the existing registration is untouched.
+	m.mu.Lock()
+	if m.sessions[sessionID] != nil {
+		m.mu.Unlock()
+		duplicateRegistration = true
+		return nil, nil, &sessionRegistrationError{sessionID: sessionID, detail: "created session is already registered"}
+	}
+	m.mu.Unlock()
 	if onNativeSession != nil {
 		if err := onNativeSession(sessionID); err != nil {
 			return nil, nil, err
@@ -602,6 +654,9 @@ func (m *SessionManager) attachLockedWithCanvas(ctx context.Context, sessionID s
 	entry.state.Lock()
 	replay.capabilities = response.Capabilities
 	replay.configOptions = jsonValues(response.ConfigOptions)
+	if schema := mapValue(response.Meta["sessionSchema"]); len(schema) > 0 {
+		replay.schema = schema
+	}
 	replay.model = modelFromSetup(replay.configOptions, response.Meta)
 	replay.thinkingLevel = thinkingFromOptions(replay.configOptions)
 	// A native host may report an accepted run while replaying the transcript.
@@ -639,12 +694,20 @@ func (m *SessionManager) attachLockedWithCanvas(ctx context.Context, sessionID s
 	entry.commands = replay.commands
 	entry.capabilities = replay.capabilities
 	entry.planState = replay.planState
+	entry.schema = replay.schema
 	entry.agentIdentity = replay.agentIdentity
 	entry.detachedWork = detachedWorkNone
+	// A completed replay is authoritative: any compaction hold from the
+	// superseded projection must not stall the rebuilt queue indefinitely.
+	entry.compactionActive = false
 	entry.attached = replay.attached
 	entry.canvasAttached = replay.canvasAttached
 	entry.projectionID = replay.projectionID
 	entry.replay = nil
+	// AUX-05: the projection was replaced in place. Advance the registration
+	// epoch so a foreground callback from the superseded projection is fenced
+	// instead of mutating the replacement.
+	entry.registration++
 	if recoveredDispatch {
 		m.emitQueueProjection(sessionID, entry, !entry.promptActive)
 	}
@@ -1309,7 +1372,7 @@ func (m *SessionManager) evictLocked() {
 }
 
 func newSessionEntry(sessionID, projectID, cwd, parent, token string) *sessionEntry {
-	return &sessionEntry{projectID: projectID, cwd: cwd, parentSessionID: parent, title: "Chat", thinkingLevel: "off", messages: []any{}, commands: []map[string]any{}, stats: SessionStats{SessionID: sessionID, Reported: map[string]bool{}}, queue: newSessionQueueState(), detachedWork: detachedWorkNone, objectiveToken: token, projectionID: identifier.New()}
+	return &sessionEntry{projectID: projectID, cwd: cwd, parentSessionID: parent, title: "Chat", thinkingLevel: "off", messages: []any{}, commands: []map[string]any{}, stats: SessionStats{SessionID: sessionID, Reported: map[string]bool{}}, queue: newSessionQueueState(), detachedWork: detachedWorkNone, objectiveToken: token, projectionID: identifier.New(), registration: 1}
 }
 
 func agentProfileIdentity(profile AgentProfile, generation uint64) string {

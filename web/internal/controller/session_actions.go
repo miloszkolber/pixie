@@ -36,6 +36,14 @@ type TextResourceAttachment struct {
 	Text     string `json:"text"`
 }
 
+// callbackCurrent reports whether a foreground callback that captured the
+// prompt generation and registration epoch still owns the live projection. A
+// session replaced in place advances registration, so the stale callback is
+// discarded instead of mutating the replacement. Callers hold entry.state.
+func (entry *sessionEntry) callbackCurrent(generation, registration uint64) bool {
+	return entry.promptGeneration == generation && entry.registration == registration
+}
+
 func (m *SessionManager) Prompt(ctx context.Context, sessionID, text string, images []ImageContent, resources []TextResourceAttachment) error {
 	if _, err := promptBlocks(text, images, resources); err != nil {
 		return err
@@ -716,6 +724,7 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 	done := entry.promptDone
 	entry.promptGeneration++
 	generation := entry.promptGeneration
+	registration := entry.registration
 	if queueID != "" {
 		// A snapshot may have exposed the prepared dispatch immediately before
 		// this turn became active. Hide it authoritatively before run-start.
@@ -734,7 +743,7 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 		}
 		defer entry.op.Unlock()
 		entry.state.Lock()
-		if entry.promptGeneration != generation {
+		if !entry.callbackCurrent(generation, registration) {
 			entry.state.Unlock()
 			return
 		}
@@ -913,7 +922,7 @@ func (m *SessionManager) drainFollowUp(sessionID string, entry *sessionEntry) er
 		}
 		m.emitQueue(sessionID, entry)
 	}
-	ready := !entry.streaming && !entry.promptActive && entry.queue.Dispatch == nil && entry.queue.Blocked == nil && len(entry.queue.FollowUp) > 0
+	ready := !entry.streaming && !entry.promptActive && !entry.compactionActive && entry.queue.Dispatch == nil && entry.queue.Blocked == nil && len(entry.queue.FollowUp) > 0
 	entry.state.Unlock()
 	if !ready {
 		return nil
@@ -923,7 +932,7 @@ func (m *SessionManager) drainFollowUp(sessionID string, entry *sessionEntry) er
 		return err
 	}
 	entry.state.Lock()
-	if entry.streaming || entry.promptActive || entry.queue.Dispatch != nil || entry.queue.Blocked != nil || len(entry.queue.FollowUp) == 0 {
+	if entry.streaming || entry.promptActive || entry.compactionActive || entry.queue.Dispatch != nil || entry.queue.Blocked != nil || len(entry.queue.FollowUp) == 0 {
 		entry.state.Unlock()
 		return nil
 	}
@@ -950,7 +959,7 @@ func (m *SessionManager) drainFollowUp(sessionID string, entry *sessionEntry) er
 // Called with entry.state held. Prepared dispatches are safe to restore; an
 // attempted dispatch is only recoverable after replay on a new connection.
 func runnableFollowUpLocked(entry *sessionEntry) bool {
-	if entry.streaming || entry.promptActive || entry.queue.Blocked != nil {
+	if entry.streaming || entry.promptActive || entry.queue.Blocked != nil || entry.compactionActive {
 		return false
 	}
 	if entry.queue.Dispatch != nil {

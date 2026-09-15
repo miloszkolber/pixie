@@ -292,13 +292,23 @@ func (h CoreHandler) Handle(ctx context.Context, method string, raw json.RawMess
 		}
 		return h.Sessions.CreateDeferred(ctx, request.ProjectID, request.CWD, request.Model, request.ThinkingLevel, clientKey)
 	case "session.fork":
-		var request sessionOwnerRequest
+		var request struct {
+			ProjectID string `json:"projectId"`
+			SessionID string `json:"sessionId"`
+			EntryID   string `json:"entryId"`
+		}
 		if h.Sessions == nil || decodeParams(raw, &request) != nil {
 			return nil, fmt.Errorf("malformed session request")
 		}
 		cwd, err := h.Sessions.RecordedCWD(request.ProjectID, request.SessionID)
 		if err != nil {
 			return nil, err
+		}
+		if request.EntryID != "" {
+			// "Edit from here" carries the native entry to branch from. The
+			// intent must reach the host as an in-file sibling; it must never
+			// degrade into a new-file fork because the entry was dropped here.
+			return h.Sessions.Branch(ctx, request.ProjectID, request.SessionID, cwd, request.EntryID)
 		}
 		return h.Sessions.Fork(ctx, request.ProjectID, request.SessionID, cwd)
 	case "session.prompt", "session.steer", "session.queueAdd":

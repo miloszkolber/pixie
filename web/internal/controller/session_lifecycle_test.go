@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+// AUX-05: a foreground callback that captured the pre-replacement generation
+// and registration epoch must not mutate the projection that replaced it in
+// place. The registration epoch advances on a native replay.
+func TestReplacedProjectionFencesStaleForegroundCallback(t *testing.T) {
+	entry := &sessionEntry{promptGeneration: 3, registration: 1}
+	if !entry.callbackCurrent(3, 1) {
+		t.Fatal("live callback was rejected")
+	}
+	entry.registration++
+	if entry.callbackCurrent(3, 1) {
+		t.Fatal("stale callback survived an in-place replacement")
+	}
+	if !entry.callbackCurrent(3, 2) {
+		t.Fatal("replacement callback was rejected")
+	}
+	entry.promptGeneration++
+	if entry.callbackCurrent(3, 2) {
+		t.Fatal("stale callback survived a newer prompt generation")
+	}
+}
+
 func TestClampThinkingRecognizesNativeMaximumOrdering(t *testing.T) {
 	manager := &SessionManager{
 		now: time.Now,

@@ -256,7 +256,11 @@ describe("Bun host protocol and lifecycle boundaries", () => {
 		await strict.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 1 } });
 		expect(strict.socket.closes.at(-1)).toEqual(expect.objectContaining({ code: 1008 }));
 		const strictV2 = rawHost(new FakeSession("strict-v2"), { protocol: "v2" });
-		await strictV2.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 2 } });
+		await strictV2.send({
+			id: 1,
+			method: "runtime.hello",
+			params: { protocolVersion: 2, supportedProtocolVersions: [2, 1] },
+		});
 		expect(rawFrames(strictV2.socket).at(-1)?.result?.protocolVersion).toBe(2);
 		await strictV2.send({ id: 2, method: "session.list", params: null });
 		expect(strictV2.socket.closes.at(-1)).toEqual(expect.objectContaining({ code: 1008 }));
@@ -352,7 +356,17 @@ describe("Bun host protocol and lifecycle boundaries", () => {
 		resolveSession({ session: created });
 		await closing;
 		expect(created.disposed).toBe(true);
-		expect(raw.socket.sent).toEqual([]);
+		// AUX-18: the in-flight create is failed as delivery-uncertain instead
+		// of being dropped without a reply.
+		expect(rawFrames(raw.socket)).toContainEqual(
+			expect.objectContaining({
+				id: 2,
+				error: expect.objectContaining({
+					code: -32000,
+					message: expect.stringContaining("stopping"),
+				}),
+			}),
+		);
 		expect(raw.fetch()).toEqual(expect.objectContaining({ status: 503 }));
 	});
 });

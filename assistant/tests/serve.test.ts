@@ -122,6 +122,78 @@ describe("assistant serve port/host parity", () => {
 		expect(source).toContain("fatalServeMessage(error)");
 		expect(source).not.toMatch(/pixie_assistant: \$\{errorMessage\(error\)\}/);
 	});
+
+	test("redacts the resolved bearer secret from a fatal serve error", () => {
+		const secret = "s".repeat(32);
+		const error = new Error(
+			`assistant host failed to start: dial failed for secret=${secret} ` +
+				`with Bearer ${secret} at https://127.0.0.1:3284/pi?token=${secret}`,
+		);
+		const message = fatalServeMessage(error, [secret]);
+		expect(message).not.toContain(secret);
+		expect(message).toContain("[redacted]");
+		expect(message).toContain("assistant host failed to start");
+	});
+
+	test("redacts quoted and spaced absolute paths from a fatal serve error", () => {
+		const error = new Error(
+			'cannot read "/home/operator/my agent/.pi/agent config.json" ' +
+				"or /home/operator/my agent/.pi/agent.json",
+		);
+		const message = fatalServeMessage(error);
+		expect(message).not.toContain("/home/operator");
+		expect(message).not.toContain("agent config.json");
+		expect(message).not.toContain("my agent");
+		expect(message).toContain("[path]");
+		expect(message).toContain("cannot read");
+	});
+
+	test("redacts the inherited secret from an early argument failure", () => {
+		const source = join(import.meta.dir, "../src/serve.ts");
+		const secret = "s".repeat(32);
+		const result = Bun.spawnSync({
+			cmd: [process.execPath, source, `--${secret}`],
+			env: { ...process.env, PIXIE_PI_SECRET_KEY: secret },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const stderr = new TextDecoder().decode(result.stderr);
+		expect(result.exitCode).not.toBe(0);
+		expect(stderr).toContain("unknown argument");
+		expect(stderr).not.toContain(secret);
+	});
+
+	test("does not print a spaced config path or a secret embedded in it", () => {
+		const source = join(import.meta.dir, "../src/serve.ts");
+		const secret = "s".repeat(32);
+		const configPath = `/tmp/pixie config ${secret}/assistant.json`;
+		const result = Bun.spawnSync({
+			cmd: [process.execPath, source, "serve", "--config", configPath],
+			env: { ...process.env, PIXIE_PI_SECRET_KEY: secret },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const stderr = new TextDecoder().decode(result.stderr);
+		expect(result.exitCode).not.toBe(0);
+		expect(stderr).toContain("read config");
+		expect(stderr).not.toContain(secret);
+		expect(stderr).not.toContain("/tmp/pixie config");
+		expect(stderr).not.toContain("assistant.json");
+	});
+
+	test("threads the resolved secret through the serve failure paths", () => {
+		const source = readFileSync(join(import.meta.dir, "../src/serve.ts"), "utf8");
+		// The resolved secret is recorded once and used as the default for every
+		// later fatal path, so a startup or shutdown failure cannot print it.
+		expect(source).toContain("activeSecrets");
+		expect(source).toMatch(
+			/function fail\(message: string, secrets: readonly string\[\] = activeSecrets\)/,
+		);
+		expect(source).toMatch(/export function fatalServeMessage\(/);
+		expect(source).toMatch(/secrets: readonly string\[\] = activeSecrets/);
+		// The top-level uncaught path must not re-introduce an unredacted form.
+		expect(source).not.toMatch(/pixie_assistant: \$\{errorMessage\(error\)\}/);
+	});
 });
 
 describe("assistant doctor scenario configuration", () => {

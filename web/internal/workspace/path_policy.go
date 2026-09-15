@@ -150,13 +150,37 @@ func (p *PathPolicy) Directory(candidate, label string) (string, error) {
 	return p.Resolve(candidate, true, false, label)
 }
 
+// ResolveUnder resolves candidate strictly below an already-admitted root with
+// the realpath walk-up, so a symlink that leaves the project root is denied even
+// when its target happens to live under a different admitted mount. It is the
+// containment primitive for project-scoped file and Git reads.
+func (p *PathPolicy) ResolveUnder(root, candidate string, directory, allowMissingLeaf bool, label string) (string, error) {
+	if label == "" {
+		label = "Path"
+	}
+	if !filepath.IsAbs(candidate) {
+		return "", fmt.Errorf("%s must be an absolute path: %s", label, candidate)
+	}
+	resolved, err := ResolveRealPath(root, candidate, allowMissingLeaf)
+	if err != nil {
+		return "", err
+	}
+	if directory {
+		info, statErr := os.Stat(resolved)
+		if statErr != nil || !info.IsDir() {
+			return "", fmt.Errorf("%s is not a directory: %s", label, candidate)
+		}
+	}
+	return resolved, nil
+}
+
 func (p *PathPolicy) assertUnderMount(candidate, label string) error {
 	for _, root := range p.roots {
 		if Within(root, candidate) {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s is outside a discovered read-only project mount: %s", label, candidate)
+	return fmt.Errorf("%w: %s is outside a discovered read-only project mount: %s", ErrTraversal, label, candidate)
 }
 
 func Within(root, candidate string) bool {

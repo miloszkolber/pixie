@@ -262,6 +262,11 @@ func (h *HistoryIndex) index(ctx context.Context, record ProjectSessionRecord, s
 	m := h.manager
 	if previous.timestamp != source.updatedAt {
 		previous = historyEntry{}
+		// AUX-13: the native file advanced since the last index. A resident,
+		// non-streaming session is re-read from disk so the index does not
+		// serve a stale transcript. A non-resident or busy session falls
+		// through to the ordinary attach below.
+		_, _ = m.RefreshFromDisk(ctx, record.SessionID, record.ProjectID, record.CWD)
 	}
 	entry, err := m.EnsureAttached(ctx, record.SessionID, record.ProjectID, record.CWD)
 	if err != nil {

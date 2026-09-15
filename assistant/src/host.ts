@@ -25,6 +25,7 @@ import {
 } from "../../shared/src/generated/protocol-catalog.ts";
 import { createHostLogger, type HostLogger } from "./log.ts";
 import { loadVerifiedPiPublicApi, type VerifiedPiPackage } from "./probe.ts";
+import { type SteeringBinding, SteeringRegistry } from "./steering.ts";
 
 const MIN_SECRET_LENGTH = 32;
 const MAX_OUTBOUND_BYTES = 32 * 1024 * 1024;
@@ -34,6 +35,7 @@ const MAX_DIALOGS_PER_SESSION = 16;
 const MAX_SAFE_REQUEST_ID = 9_007_199_254_740_991;
 const DRAIN_TIMEOUT_MS = 25_000;
 const RESTART_DRAIN_MS = 250;
+const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const HOST_SUPPORTED_PROTOCOL_VERSIONS = [2, 1] as const;
 
 const AGENT_DOCUMENT_MAX_BYTES = 65536;
@@ -57,6 +59,15 @@ const PROVIDER_LIST_AVAILABLE_TIMEOUT_MS = 10_000;
 const PROVIDER_AUTH_TIMEOUT_MS = 5_000;
 const PROVIDER_REFRESH_TIMEOUT_MS = 25_000;
 const LOGIN_TIMEOUT_MS = 600_000;
+
+// AUX-13/AUX-12: native session-file coexistence. The lease is advisory: it is
+// only consulted by this host, so a native Pi process that never writes one is
+// still detectable through a live pid and a fresh lease mtime. SESSION_SCHEMA_VERSION
+// tracks the newest Pi session header this host understands; a newer header is
+// refused rather than mis-parsed.
+const SESSION_LEASE_SUFFIX = ".lease";
+const SESSION_LEASE_STALE_MS = 30_000;
+const SESSION_SCHEMA_VERSION = 3;
 
 // The host implementation status lives in the shared protocol catalog. Only
 // routes the catalog marks available may be advertised; every other catalogued
@@ -193,6 +204,13 @@ export interface BunHostOptions {
 	}) => Promise<{ session: PiSession }>;
 	readonly allowSelfRestart?: boolean;
 	readonly onRestart?: () => void;
+	/**
+	 * Bound on how long one control-plane host request (query, interrupt or
+	 * replacement) may stay in flight before the host answers it with a typed
+	 * timeout error. `0` disables the deadline. Prompt and other run-extending
+	 * work is bounded by Pi, not by this host, and is never deadline-failed.
+	 */
+	readonly requestTimeoutMs?: number;
 	/** Secret-safe lifecycle logger. Defaults to a bounded in-memory logger. */
 	readonly logger?: HostLogger;
 }
@@ -205,15 +223,44 @@ export interface BunHost {
 
 class HostError extends Error {}
 class CapabilityError extends HostError {}
+// A live foreign writer owns the session file. v2 maps this to the typed
+// resource_conflict code so a caller never retries it as fresh work.
+class SessionLeaseError extends HostError {}
+class SessionSchemaError extends CapabilityError {}
+// AUX-05: two registrations that would own one session identity/path. The
+// second fails closed instead of replacing or mutating the first.
+class SessionInvariantError extends HostError {}
+// AUX-05: a late async result whose resident was replaced while it was in
+// flight. The result belongs to a dead allocation and is discarded.
+class SessionStaleError extends HostError {}
+
+interface SessionFileSummary {
+	readonly version: number;
+	readonly writtenByNewerRuntime: boolean;
+	readonly unknownRecords: number;
+	readonly invalidRecords: number;
+}
 
 interface ResidentSession {
 	readonly id: string;
 	readonly cwd: string;
 	readonly session: PiSession;
-	readonly unsubscribe: () => void;
+	// AUX-05: a stable allocation generation. Foreground callbacks capture the
+	// resident (identity + generation) and are dropped after a replacement.
+	unsubscribe: () => void;
+	readonly generation: number;
 	readonly dialogs: Map<string, Dialog>;
 	path?: string;
 	stopReason?: string;
+	// AUX-13 lease bookkeeping. `leaseDepth` counts concurrent mutating
+	// operations so the first acquire publishes the file and the last release
+	// removes it; the host event loop makes the check-then-write atomic.
+	leaseDepth?: number;
+	leasePath?: string;
+	// AUX-13 mtime tail: the last observed session-file mtime.
+	fileMtime?: number;
+	// AUX-12 parsed header/record degradation, reported in the snapshot.
+	schema?: SessionFileSummary;
 }
 
 interface Dialog {
@@ -233,6 +280,8 @@ interface Connection {
 	readonly outbound: string[];
 	outboundBytes: number;
 	readonly active: Set<number>;
+	// AUX-18: per-request deadlines so a hung handler cannot hold an id forever.
+	readonly deadlines: Map<number, ReturnType<typeof setTimeout>>;
 }
 
 type ProtocolMode = "v1" | "auto" | "v2";
@@ -271,6 +320,31 @@ function operationSet(allowRestart: boolean): Record<string, boolean> {
 // blocks, and there is no separate `session.prompt.image` dispatch.
 function hostCapabilities(): Record<string, number> {
 	return { sessions: 1, agents: 1, images: 1 };
+}
+
+// AUX-18: every host command carries one supervision class. A replacement may
+// preempt an in-flight prompt; an in-flight prompt must never delay or block a
+// replacement. Interrupts cancel work; unblocks start or extend a run.
+type HostCommandClass = "replacement" | "interrupt" | "unblock" | "query";
+
+function hostCommandClass(method: string): HostCommandClass {
+	switch (method) {
+		case "runtime.restart":
+			return "replacement";
+		case "session.cancel":
+		case "session.clearQueue":
+		case "session.release":
+		case "runtime.release":
+			return "interrupt";
+		case "session.prompt":
+		case "session.followUp":
+		case "session.steer":
+		case "session.compact":
+		case "session.configure":
+			return "unblock";
+		default:
+			return "query";
+	}
 }
 
 function loopbackLiteral(host: string): boolean {
@@ -956,6 +1030,212 @@ function atomicCreateFile(path: string, data: string): void {
 	}
 }
 
+// --- Native session file coexistence (AUX-13 lease, AUX-12 schema) ---
+
+interface SessionLeaseRecord {
+	readonly pid: number;
+	readonly acquiredAt: number;
+	readonly runtimeId: string;
+}
+
+function sessionLeasePath(path: string): string {
+	return `${path}${SESSION_LEASE_SUFFIX}`;
+}
+
+function processAlive(pid: number): boolean {
+	if (!Number.isInteger(pid) || pid <= 0) return false;
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		// EPERM means the process exists but belongs to another user.
+		return (error as NodeJS.ErrnoException)?.code === "EPERM";
+	}
+}
+
+function readSessionLease(path: string): SessionLeaseRecord | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(path, "utf8");
+	} catch {
+		return undefined;
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return undefined;
+	}
+	if (!isRecord(parsed)) return undefined;
+	const pid = parsed.pid;
+	if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return undefined;
+	return {
+		pid,
+		acquiredAt: typeof parsed.acquiredAt === "number" ? parsed.acquiredAt : 0,
+		runtimeId: typeof parsed.runtimeId === "string" ? parsed.runtimeId : "",
+	};
+}
+
+// A lease blocks only a live foreign writer. A dead pid or a lease whose mtime
+// is older than the staleness window is reclaimed; this host's own lease never
+// conflicts with itself.
+function sessionLeaseIsLive(record: SessionLeaseRecord, path: string): boolean {
+	if (record.pid === process.pid) return false;
+	if (!processAlive(record.pid)) return false;
+	let mtime = 0;
+	try {
+		mtime = statSync(path).mtimeMs;
+	} catch {
+		return false;
+	}
+	return Date.now() - mtime < SESSION_LEASE_STALE_MS;
+}
+
+// "unavailable" means the session has no writable file location yet (for
+// example an SDK-only path whose directory does not exist). There is then no
+// possible foreign writer, so the mutation proceeds without a lease file.
+function claimSessionLease(
+	path: string,
+	record: SessionLeaseRecord,
+): "claimed" | "conflict" | "unavailable" {
+	try {
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+	} catch {
+		return "unavailable";
+	}
+	let descriptor: number | undefined;
+	try {
+		descriptor = openSync(path, "wx", 0o600);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") return "unavailable";
+		const existing = readSessionLease(path);
+		if (existing && sessionLeaseIsLive(existing, path)) return "conflict";
+		try {
+			unlinkSync(path);
+		} catch {
+			/* another owner reclaimed it first */
+		}
+		try {
+			descriptor = openSync(path, "wx", 0o600);
+		} catch {
+			return "conflict";
+		}
+	}
+	try {
+		writeSync(descriptor, JSON.stringify(record));
+		fsyncSync(descriptor);
+	} finally {
+		closeSync(descriptor);
+	}
+	return "claimed";
+}
+
+const SESSION_RECORD_TYPES = new Set([
+	"session",
+	"message",
+	"model_change",
+	"thinking_level_change",
+	"compaction",
+	"branch_summary",
+	"custom",
+	"custom_message",
+	"label",
+	"session_info",
+]);
+
+// Parse only the session header and record shapes needed for the version guard.
+// Unknown records and unparseable lines are counted, never rewritten or
+// rejected: a newer Pi release may add record types this host must ignore.
+function readSessionFileSummary(path: string): SessionFileSummary | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(path, "utf8");
+	} catch {
+		return undefined;
+	}
+	let version = 0;
+	let unknownRecords = 0;
+	let invalidRecords = 0;
+	let first = true;
+	for (const line of raw.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed === "") continue;
+		let record: unknown;
+		try {
+			record = JSON.parse(trimmed);
+		} catch {
+			invalidRecords++;
+			continue;
+		}
+		if (!isRecord(record)) {
+			invalidRecords++;
+			continue;
+		}
+		const type = typeof record.type === "string" ? record.type : "";
+		if (first) {
+			first = false;
+			if (type === "session") {
+				version =
+					typeof record.version === "number" && Number.isInteger(record.version)
+						? record.version
+						: 1;
+				continue;
+			}
+			// A file without a header is legacy v1; keep parsing this line.
+		}
+		if (!SESSION_RECORD_TYPES.has(type)) unknownRecords++;
+	}
+	return {
+		version,
+		writtenByNewerRuntime: version > SESSION_SCHEMA_VERSION,
+		unknownRecords,
+		invalidRecords,
+	};
+}
+
+// Repair a dangling tool call by appending one synthetic error result. The
+// native transcript is never rewritten; the repaired messages are projected.
+function repairDanglingToolCalls(messages: readonly unknown[]): {
+	messages: unknown[];
+	repaired: number;
+} {
+	const results = new Set<string>();
+	for (const value of messages) {
+		const message = isRecord(value) ? value : {};
+		if (message.role === "toolResult" && typeof message.toolCallId === "string")
+			results.add(message.toolCallId);
+	}
+	const repairedMessages: unknown[] = [];
+	let repaired = 0;
+	for (const value of messages) {
+		repairedMessages.push(value);
+		const message = isRecord(value) ? value : {};
+		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+		for (const block of message.content) {
+			if (!isRecord(block) || block.type !== "toolCall") continue;
+			const id = typeof block.id === "string" ? block.id : "";
+			if (id === "" || results.has(id)) continue;
+			results.add(id);
+			repaired++;
+			repairedMessages.push({
+				role: "toolResult",
+				toolCallId: id,
+				toolName: typeof block.name === "string" ? block.name : "tool",
+				content: [
+					{
+						type: "text",
+						text: "Tool result unavailable: the session was reopened before this tool call completed.",
+					},
+				],
+				details: { synthetic: true },
+				isError: true,
+				timestamp: Date.now(),
+			});
+		}
+	}
+	return { messages: repairedMessages, repaired };
+}
+
 // --- MCP servers (filesystem layers + bounded probe) ---
 
 // In-process mutex serializes file writers so concurrent read-modify-write
@@ -1571,6 +1851,11 @@ export function createBunHost(options: BunHostOptions): BunHost {
 	if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535)
 		throw new HostError("assistant port must be between 0 and 65535");
 	if (!options.agentDir) throw new HostError("agentDir is required");
+	if (
+		options.requestTimeoutMs !== undefined &&
+		(!Number.isFinite(options.requestTimeoutMs) || options.requestTimeoutMs < 0)
+	)
+		throw new HostError("requestTimeoutMs must be a finite non-negative number");
 	if (!options.verifiedPi?.packageVersion)
 		throw new HostError("verified Pi package version is required");
 	if (
@@ -1589,6 +1874,20 @@ export function createBunHost(options: BunHostOptions): BunHost {
 	const logger = options.logger ?? createHostLogger({ secrets: [secret] });
 	let closePromise: Promise<void> | undefined;
 	const residents = new Map<string, ResidentSession>();
+	// AUX-05: generation/epoch state. A resident gets one allocation generation;
+	// the replacement epoch advances whenever the current resident for an
+	// identity is retired, which fences every async result started before it.
+	let allocatedGeneration = 0;
+	let replacementEpoch = 0;
+	const residentPaths = new Map<string, ResidentSession>();
+	// AUX-18: set as soon as a replacement is acknowledged. New unblock work is
+	// refused while a replacement is pending, but the replacement itself is not
+	// blocked by in-flight prompts.
+	let replacementPending = false;
+	// AUX-03: prototype binding behind the negotiated operation set. The route
+	// stays unavailable while Pi exposes no public active-run identity.
+	const steering = new SteeringRegistry();
+	const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 	const connections = new Set<Connection>();
 	const inflightCalls = new Set<Promise<void>>();
 	const inflightInstalls = new Set<Promise<ResidentSession>>();
@@ -1601,14 +1900,121 @@ export function createBunHost(options: BunHostOptions): BunHost {
 
 	const currentOperationSet = (): Record<string, boolean> => operationSet(allowSelfRestart);
 
-	const publish = (sessionId: string, event: Record<string, unknown>): void => {
+	// AUX-05: one allocation generation per resident and one replacement epoch
+	// for the identity. Identity alone is enough to detect a swapped object, but
+	// the explicit generation comparison states the invariant the callbacks rely
+	// on and survives a future in-place reuse.
+	const nextGeneration = (): number => {
+		allocatedGeneration += 1;
+		return allocatedGeneration;
+	};
+
+	const isCurrentResident = (resident: ResidentSession): boolean => {
+		const current = residents.get(resident.id);
+		return current === resident && current.generation === resident.generation;
+	};
+
+	// AUX-05: a session file path has at most one resident owner. Registering
+	// the same path from a second allocation fails with a typed invariant error
+	// rather than silently replacing or shadowing the first owner.
+	const registerResidentPath = (resident: ResidentSession, path: string): void => {
+		const owner = residentPaths.get(path);
+		if (owner && owner !== resident)
+			throw new SessionInvariantError(
+				`session path ${JSON.stringify(path)} is already registered to another session`,
+			);
+		const previous = resident.path;
+		if (previous && previous !== path && residentPaths.get(previous) === resident)
+			residentPaths.delete(previous);
+		resident.path = path;
+		residentPaths.set(path, resident);
+	};
+
+	const releaseResidentPath = (resident: ResidentSession): void => {
+		if (resident.path && residentPaths.get(resident.path) === resident)
+			residentPaths.delete(resident.path);
+	};
+
+	// Retiring the current resident advances the replacement epoch and drops any
+	// steering binding, so late callbacks and late results are fenced.
+	const retireResident = (resident: ResidentSession): void => {
+		if (residents.get(resident.id) === resident) {
+			residents.delete(resident.id);
+			replacementEpoch += 1;
+			steering.retire(resident.id, resident.generation);
+		}
+		releaseResidentPath(resident);
+	};
+
+	// AUX-13: one advisory lease per native session file. It is taken only for
+	// mutating operations, blocks only a live foreign writer, and is released
+	// with the resident (release/reload/close). Two owners therefore fail closed
+	// instead of interleaving writes.
+	const acquireSessionLease = (resident: ResidentSession): void => {
+		const depth = resident.leaseDepth ?? 0;
+		if (depth > 0) {
+			resident.leaseDepth = depth + 1;
+			return;
+		}
+		const path = resident.path;
+		if (!path) return;
+		const leasePath = sessionLeasePath(path);
+		const claim = claimSessionLease(leasePath, {
+			pid: process.pid,
+			acquiredAt: Date.now(),
+			runtimeId,
+		});
+		if (claim === "conflict") {
+			throw new SessionLeaseError(
+				`session ${JSON.stringify(resident.id)} is owned by a live Pi writer; retry after it exits`,
+			);
+		}
+		if (claim === "unavailable") return;
+		resident.leaseDepth = 1;
+		resident.leasePath = leasePath;
+	};
+
+	const releaseSessionLease = (resident: ResidentSession): void => {
+		if (!resident.leaseDepth) return;
+		resident.leaseDepth--;
+		if (resident.leaseDepth > 0) return;
+		const leasePath = resident.leasePath;
+		resident.leasePath = undefined;
+		if (!leasePath) return;
+		try {
+			const current = readSessionLease(leasePath);
+			if (current && current.pid !== process.pid) return;
+			unlinkSync(leasePath);
+		} catch {
+			/* the lease was already reclaimed or removed */
+		}
+	};
+
+	const withSessionLease = async <T>(
+		resident: ResidentSession,
+		work: () => T | Promise<T>,
+	): Promise<T> => {
+		acquireSessionLease(resident);
+		try {
+			return await work();
+		} finally {
+			releaseSessionLease(resident);
+		}
+	};
+
+	const publish = (resident: ResidentSession, event: Record<string, unknown>): void => {
 		if (event.type === "queue_update") return; // Pixie's durable queue is authoritative.
-		const resident = residents.get(sessionId);
-		if (resident && event.type === "message_end" && isRecord(event.message)) {
+		// AUX-05: a subscribe callback captured before a replacement must not
+		// mutate or publish against the replacement resident.
+		if (!isCurrentResident(resident)) return;
+		if (event.type === "message_end" && isRecord(event.message)) {
 			const stopReason = event.message.stopReason;
 			if (typeof stopReason === "string") resident.stopReason = stopReason;
 		}
-		const frame = encode({ method: "session.event", params: { sessionId, event } });
+		const frame = encode({
+			method: "session.event",
+			params: { sessionId: resident.id, event },
+		});
 		for (const connection of connections) if (connection.handshaken) queue(connection, frame);
 	};
 
@@ -1663,6 +2069,8 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		connection.closed = true;
 		connection.outbound.length = 0;
 		connection.outboundBytes = 0;
+		for (const deadline of connection.deadlines.values()) clearTimeout(deadline);
+		connection.deadlines.clear();
 		connections.delete(connection);
 		try {
 			connection.socket?.close(code, reason);
@@ -1671,8 +2079,57 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		}
 	};
 
+	// AUX-18: a graceful stop fails every in-flight request with a typed,
+	// delivery-uncertain reply before the socket closes. A caller therefore
+	// never sees a prompt vanish without a response.
+	const failInFlight = (connection: Connection, message: string): void => {
+		if (!connection.closed && connection.socket) {
+			for (const id of [...connection.active]) {
+				const frame =
+					connection.protocolVersion === 2
+						? encode({ id, error: { code: -32005, reason: "delivery_uncertain", message } })
+						: encode({ id, error: { code: -32000, message } });
+				try {
+					connection.socket.send(frame);
+				} catch {
+					/* the id still clears; the socket is already unusable */
+				}
+			}
+		}
+		connection.active.clear();
+		for (const deadline of connection.deadlines.values()) clearTimeout(deadline);
+		connection.deadlines.clear();
+	};
+
 	const sessionDir = (cwd: string): string =>
 		options.sdk.getDefaultSessionDir(cwd, options.agentDir);
+
+	// AUX-12: inspect the native header before trusting the parsed session. A
+	// newer header is refused rather than guessed; unknown records and parse
+	// failures are recorded and ignored. The file is never rewritten here.
+	const applySessionFileGuard = (resident: ResidentSession): void => {
+		if (!resident.path) return;
+		const summary = readSessionFileSummary(resident.path);
+		if (!summary) return;
+		resident.schema = summary;
+		if (summary.writtenByNewerRuntime)
+			throw new SessionSchemaError(
+				`session ${JSON.stringify(resident.id)} was written by a newer Pi runtime (version ${summary.version})`,
+			);
+		try {
+			resident.fileMtime = statSync(resident.path).mtimeMs;
+		} catch {
+			/* tail remains disabled until the file is readable */
+		}
+		if (summary.unknownRecords > 0 || summary.invalidRecords > 0)
+			logger.info("session.schema.degraded", {
+				sessionId: resident.id,
+				version: summary.version,
+				unknownRecords: summary.unknownRecords,
+				invalidRecords: summary.invalidRecords,
+			});
+	};
+
 	const install = (cwd: string, sessionManager?: unknown): Promise<ResidentSession> => {
 		const installation = (async () => {
 			const manager = sessionManager ?? options.sdk.SessionManager.create(cwd, sessionDir(cwd));
@@ -1687,35 +2144,44 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				await session.dispose();
 				throw new HostError("assistant host is draining");
 			}
-			if (residents.has(session.sessionId)) {
-				await session.dispose();
-				throw new HostError("native session is already resident");
+			const owner = residents.get(session.sessionId);
+			if (owner) {
+				// A second registration for one identity must fail closed. Never
+				// dispose an object the live resident already owns.
+				if (owner.session !== session) await session.dispose();
+				throw new SessionInvariantError("native session is already resident");
 			}
+			const generation = nextGeneration();
 			const dialogs = new Map<string, Dialog>();
 			const resident: ResidentSession = {
 				id: session.sessionId,
 				cwd,
 				session,
+				generation,
 				dialogs,
-				unsubscribe: session.subscribe((event) => publish(session.sessionId, event)),
+				unsubscribe: () => {},
 			};
-			if (typeof session.sessionFile === "string" && session.sessionFile !== "")
-				resident.path = session.sessionFile;
-			if (lifecycle !== "running") {
-				resident.unsubscribe();
-				await session.dispose();
-				throw new HostError("assistant host is draining");
-			}
-			residents.set(resident.id, resident);
 			try {
+				if (typeof session.sessionFile === "string" && session.sessionFile !== "")
+					registerResidentPath(resident, session.sessionFile);
+				// The callback captures the allocation, so a late event from this
+				// session after a replacement is dropped by publish().
+				resident.unsubscribe = session.subscribe((event) => publish(resident, event));
+				if (lifecycle !== "running") throw new HostError("assistant host is draining");
+				residents.set(resident.id, resident);
 				await session.bindExtensions({ mode: "rpc", uiContext: extensionUi(resident) });
 				if (lifecycle !== "running") throw new HostError("assistant host is draining");
-				if (typeof session.sessionFile === "string" && session.sessionFile !== "")
-					resident.path = session.sessionFile;
+				if (
+					typeof session.sessionFile === "string" &&
+					session.sessionFile !== "" &&
+					session.sessionFile !== resident.path
+				)
+					registerResidentPath(resident, session.sessionFile);
+				applySessionFileGuard(resident);
 				logger.info("session.created", { sessionId: resident.id });
 				return resident;
 			} catch (error) {
-				residents.delete(resident.id);
+				retireResident(resident);
 				resident.unsubscribe();
 				await session.dispose();
 				throw error;
@@ -1751,7 +2217,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 					onAbort: abort,
 				});
 				opts?.signal?.addEventListener("abort", abort, { once: true });
-				publish(resident.id, {
+				publish(resident, {
 					type: "pixie:ui:request",
 					sessionId: resident.id,
 					requestId,
@@ -1779,21 +2245,21 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			) => dialog("input", title, { placeholder }, opts),
 			editor: (title: string, prefill?: string) => dialog("editor", title, { prefill }),
 			notify: (message: string, level?: string) =>
-				publish(resident.id, { type: "pixie:ui:notify", message, level }),
+				publish(resident, { type: "pixie:ui:notify", message, level }),
 			setStatus: (key: string, text?: string) =>
-				publish(resident.id, { type: "pixie:ui:status", key, text }),
+				publish(resident, { type: "pixie:ui:status", key, text }),
 			setWidget: (key: string, lines: unknown, widgetOptions?: { placement?: string }) => {
 				if (Array.isArray(lines) && lines.every((line) => typeof line === "string"))
-					publish(resident.id, {
+					publish(resident, {
 						type: "pixie:ui:widget",
 						key,
 						lines,
 						placement: widgetOptions?.placement,
 					});
 			},
-			setTitle: (title: string) => publish(resident.id, { type: "pixie:ui:title", title }),
+			setTitle: (title: string) => publish(resident, { type: "pixie:ui:title", title }),
 			setWorkingMessage: (message?: string) =>
-				publish(resident.id, { type: "pixie:ui:working", message }),
+				publish(resident, { type: "pixie:ui:working", message }),
 			onTerminalInput: () => () => {},
 			setWorkingVisible: () => {},
 			setWorkingIndicator: () => {},
@@ -1833,14 +2299,31 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		return true;
 	};
 
+	// AUX-12: an idle reopened session may hold a tool call whose result never
+	// landed. Project a synthetic result rather than a transcript that would
+	// fail to render; a streaming session keeps its real pending calls.
+	const projectMessages = (
+		resident: ResidentSession,
+	): { messages: unknown[]; repaired: number } => {
+		const messages = resident.session.messages ? [...resident.session.messages] : [];
+		if (resident.session.isStreaming !== false) return { messages, repaired: 0 };
+		return repairDanglingToolCalls(messages);
+	};
+
 	const snapshot = (resident: ResidentSession): Record<string, unknown> => {
 		const configuration = sessionConfiguration(resident.session);
+		const projected = projectMessages(resident);
 		return {
 			capabilities: hostCapabilities(),
 			sessionId: resident.id,
 			configOptions: configuration.configOptions,
-			metadata: configuration.metadata,
-			messages: resident.session.messages ? [...resident.session.messages] : [],
+			metadata: resident.schema
+				? {
+						...configuration.metadata,
+						sessionSchema: { ...resident.schema, repairedToolCalls: projected.repaired },
+					}
+				: configuration.metadata,
+			messages: projected.messages,
 			commands: [],
 			pendingDialogs: [],
 		};
@@ -1853,20 +2336,64 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		if (typeof resident.path === "string" && resident.path !== "") return resident.path;
 		const file = (resident.session as PiSession).sessionFile;
 		if (typeof file === "string" && file !== "") {
-			resident.path = file;
+			registerResidentPath(resident, file);
 			return file;
 		}
 		try {
 			const listed = await options.sdk.SessionManager.list(cwd, sessionDir(cwd));
 			const found = listed.find((info) => info.id === resident.id);
 			if (found) {
-				resident.path = found.path;
+				registerResidentPath(resident, found.path);
 				return found.path;
 			}
 		} catch {
 			/* listing is best-effort for path recovery */
 		}
 		return undefined;
+	};
+
+	// AUX-13 mtime tail: when a foreign writer advances the session file and the
+	// resident is not streaming, re-read it from disk so the projection is not a
+	// stale snapshot. A lease holder (our own mutation) is never tailed.
+	const tailResidentFromDisk = async (resident: ResidentSession): Promise<ResidentSession> => {
+		const path = resident.path;
+		if (!path || resident.leaseDepth) return resident;
+		let mtime: number;
+		try {
+			mtime = statSync(path).mtimeMs;
+		} catch {
+			return resident;
+		}
+		if (resident.fileMtime === undefined) {
+			resident.fileMtime = mtime;
+			return resident;
+		}
+		if (mtime <= resident.fileMtime || resident.session.isStreaming === true) return resident;
+		let manager: unknown;
+		try {
+			manager = options.sdk.SessionManager.open(path, sessionDir(resident.cwd), resident.cwd);
+		} catch {
+			resident.fileMtime = mtime;
+			return resident;
+		}
+		retireResident(resident);
+		resident.unsubscribe();
+		try {
+			await resident.session.dispose();
+		} catch {
+			/* replaced by the re-read below */
+		}
+		const fresh = await install(resident.cwd, manager);
+		if (fresh.id !== resident.id) {
+			retireResident(fresh);
+			fresh.unsubscribe();
+			await fresh.session.dispose();
+			throw new HostError("native session identity changed while re-reading the session file");
+		}
+		registerResidentPath(fresh, path);
+		fresh.fileMtime = mtime;
+		logger.info("session.reloaded", { sessionId: fresh.id });
+		return fresh;
 	};
 
 	const branchSession = async (
@@ -1933,9 +2460,9 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			manager = opened;
 		}
 		const branched = await install(cwd, manager);
-		if (branchedFile !== undefined) branched.path = branchedFile;
+		if (branchedFile !== undefined) registerResidentPath(branched, branchedFile);
 		if (branched.id === parentId) {
-			residents.delete(branched.id);
+			retireResident(branched);
 			branched.unsubscribe();
 			await branched.session.dispose();
 			throw new HostError("Pi returned the parent session for a branch");
@@ -1961,12 +2488,12 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				if (knownPath !== cleanRequested)
 					throw new HostError("session.switch path does not match the verified native registry");
 			}
-			return snapshot(existing);
+			return snapshot(await tailResidentFromDisk(existing));
 		}
 		if (cleanRequested !== undefined) {
 			for (const resident of residents.values()) {
 				const knownPath = await residentPath(resident, resident.cwd).catch(() => undefined);
-				if (knownPath === cleanRequested) return snapshot(resident);
+				if (knownPath === cleanRequested) return snapshot(await tailResidentFromDisk(resident));
 			}
 			throw new HostError("unknown native session");
 		}
@@ -2396,6 +2923,10 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			if (lifecycle === "closed") return;
 			lifecycle = "draining";
 			logger.info("host.draining");
+			// Fail every in-flight request before the sockets close so a stop or
+			// restart never drops a prompt without a typed reply.
+			for (const connection of connections)
+				failInFlight(connection, "assistant host is stopping; the request may not have completed");
 			server?.stop(true);
 			for (const connection of [...connections]) closeConnection(connection);
 			for (const login of [...logins.values()]) {
@@ -2412,7 +2943,8 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				]);
 			}
 			for (const resident of [...residents.values()]) {
-				residents.delete(resident.id);
+				releaseSessionLease(resident);
+				retireResident(resident);
 				resident.unsubscribe();
 				for (const requestId of resident.dialogs.keys())
 					settleDialog(resident, requestId, undefined);
@@ -2429,8 +2961,13 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		return closePromise;
 	};
 
-	const call = async (method: string, params: Record<string, unknown>): Promise<unknown> => {
+	const dispatch = async (method: string, params: Record<string, unknown>): Promise<unknown> => {
 		if (lifecycle !== "running") throw new HostError("assistant host is draining");
+		// AUX-18: once a replacement has been acknowledged, new run-extending
+		// work is refused. The replacement and its interrupt/query siblings are
+		// not blocked by anything already in flight.
+		if (replacementPending && hostCommandClass(method) === "unblock")
+			throw new CapabilityError("assistant host is restarting; the operation was not started");
 		switch (method) {
 			case "session.list": {
 				const cwd = typeof params.cwd === "string" ? params.cwd : undefined;
@@ -2471,7 +3008,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				if (existing) {
 					if (existing.cwd !== cwd)
 						throw new HostError("session cwd does not match the resident session");
-					return snapshot(existing);
+					return snapshot(await tailResidentFromDisk(existing));
 				}
 				const listed = await options.sdk.SessionManager.list(cwd, sessionDir(cwd));
 				const found = listed.find((session) => session.id === id);
@@ -2483,31 +3020,52 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			case "session.prompt": {
 				const resident = residents.get(asString(params, "sessionId"));
 				if (!resident) throw new HostError("session is not loaded");
+				const generation = resident.generation;
+				const epoch = replacementEpoch;
+				let steeringBinding: SteeringBinding | undefined;
 				// Reset so a prompt without a fresh message_end cannot report the
 				// previous prompt's stale stopReason.
 				resident.stopReason = undefined;
-				const { text, images } = promptContent(params.content);
-				let preflight: boolean | undefined;
 				try {
-					await resident.session.prompt(text, {
-						images,
-						source: "rpc",
-						preflightResult: (accepted) => {
-							preflight = accepted;
-						},
-					});
-				} catch (error) {
-					throw new HostError(
-						preflight === false
-							? "prompt rejected"
-							: error instanceof Error
-								? error.message
-								: "prompt failed",
-					);
+					const { text, images } = promptContent(params.content);
+					let preflight: boolean | undefined;
+					try {
+						await resident.session.prompt(text, {
+							images,
+							source: "rpc",
+							preflightResult: (accepted) => {
+								preflight = accepted;
+								// AUX-03: a preflight-accepted prompt is the run binding
+								// the steering spike evaluates. It is only valid while
+								// this exact allocation is still current.
+								if (
+									accepted &&
+									residents.get(resident.id) === resident &&
+									replacementEpoch === epoch
+								)
+									steeringBinding = steering.begin(resident.id, generation);
+							},
+						});
+					} catch (error) {
+						throw new HostError(
+							preflight === false
+								? "prompt rejected"
+								: error instanceof Error
+									? error.message
+									: "prompt failed",
+						);
+					}
+					if (preflight === false) throw new HostError("prompt rejected");
+					// AUX-05: a replacement epoch change fences the late result.
+					if (!isCurrentResident(resident) || replacementEpoch !== epoch)
+						throw new SessionStaleError("session was replaced while the prompt was in flight");
+					await resident.session.waitForIdle();
+					if (!isCurrentResident(resident) || replacementEpoch !== epoch)
+						throw new SessionStaleError("session was replaced while the prompt was in flight");
+					return { stopReason: resident.stopReason || "stop" };
+				} finally {
+					if (steeringBinding) steering.end(steeringBinding);
 				}
-				if (preflight === false) throw new HostError("prompt rejected");
-				await resident.session.waitForIdle();
-				return { stopReason: resident.stopReason || "stop" };
 			}
 			case "session.cancel": {
 				const resident = residents.get(asString(params, "sessionId"));
@@ -2634,7 +3192,8 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			case "session.getMessages": {
 				const resident = residents.get(asString(params, "sessionId"));
 				if (!resident) throw new HostError("session is not loaded");
-				return { messages: resident.session.messages ? [...resident.session.messages] : [] };
+				const tailed = await tailResidentFromDisk(resident);
+				return { messages: projectMessages(tailed).messages };
 			}
 			case "session.stats": {
 				const resident = residents.get(asString(params, "sessionId"));
@@ -2652,7 +3211,15 @@ export function createBunHost(options: BunHostOptions): BunHost {
 					typeof params.customInstructions === "string" && params.customInstructions !== ""
 						? params.customInstructions
 						: undefined;
-				const result = await resident.session.compact(instructions);
+				// AUX-03: a compaction rewrites the run queue, so a steering
+				// request must not bind to a run that is being compacted away.
+				steering.noteCompaction(resident.id, true);
+				let result: unknown;
+				try {
+					result = await resident.session.compact(instructions);
+				} finally {
+					steering.noteCompaction(resident.id, false);
+				}
 				return isRecord(result) ? result : { ok: true };
 			}
 			case "session.rename": {
@@ -2722,12 +3289,27 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				);
 				return {};
 			}
-			case "session.steer":
-				// AgentSession.steer is public, but Pi 0.85.1 does not expose a
-				// matching public run identifier. The controller requires that
-				// identifier to bind a steering request to the active run, so do not
-				// accept a request or invent a run ID.
+			case "session.steer": {
+				// AUX-03 spike: the generation guard plus the prompt preflight
+				// acceptance can reject a steering request, but Pi 0.85.1 exposes
+				// no public active-run identity and no steering receipt, so the
+				// request cannot be proven to target the run the client observed.
+				// Record the evaluated reason and keep the negotiated route
+				// unavailable; do not accept a request or invent a run ID.
+				const resident = residents.get(asString(params, "sessionId"));
+				if (resident) {
+					const evaluation = steering.evaluate(
+						resident.id,
+						resident.generation,
+						resident.session.isStreaming === true,
+					);
+					logger.info("session.steer.unavailable", {
+						sessionId: resident.id,
+						reason: evaluation.ok ? "active-run-binding-unproven" : evaluation.reason,
+					});
+				}
 				throw new CapabilityError("session steering requires a public Pi run identifier");
+			}
 			case "session.clearQueue": {
 				const resident = residents.get(asString(params, "sessionId"));
 				if (!resident) throw new HostError("session is not loaded");
@@ -2744,7 +3326,8 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				if (!resident) throw new HostError("session is not loaded");
 				if (resident.cwd !== cwd)
 					throw new HostError("session release identity does not match the resident session");
-				residents.delete(id);
+				releaseSessionLease(resident);
+				retireResident(resident);
 				resident.unsubscribe();
 				for (const requestId of resident.dialogs.keys())
 					settleDialog(resident, requestId, undefined);
@@ -3444,6 +4027,9 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				if (!allowSelfRestart)
 					throw new CapabilityError("runtime.restart is disabled by configuration");
 				logger.info("host.restart");
+				// The reload preempts new run work immediately. In-flight prompts
+				// are failed as delivery-uncertain when closeHost drains.
+				replacementPending = true;
 				setTimeout(() => {
 					void closeHost().finally(() => {
 						try {
@@ -3465,6 +4051,29 @@ export function createBunHost(options: BunHostOptions): BunHost {
 				);
 			}
 		}
+	};
+
+	// AUX-13: a mutating native session operation holds the advisory lease for
+	// its whole duration. The wrapper is intentionally the only place that takes
+	// the lease, so no read path can accidentally claim ownership.
+	const MUTATING_SESSION_METHODS = new Set([
+		"session.prompt",
+		"session.cancel",
+		"session.compact",
+		"session.rename",
+		"session.configure",
+		"session.followUp",
+		"session.clearQueue",
+		"session.fork",
+		"session.clone",
+	]);
+
+	const call = async (method: string, params: Record<string, unknown>): Promise<unknown> => {
+		if (!MUTATING_SESSION_METHODS.has(method)) return dispatch(method, params);
+		const id = typeof params.sessionId === "string" ? params.sessionId : "";
+		const resident = id === "" ? undefined : residents.get(id);
+		if (!resident) return dispatch(method, params);
+		return withSessionLease(resident, () => dispatch(method, params));
 	};
 
 	const uiResponse = (
@@ -3504,20 +4113,28 @@ export function createBunHost(options: BunHostOptions): BunHost {
 		}
 		const version = request.params.protocolVersion;
 		const offered = request.params.supportedProtocolVersions;
-		if (
-			!Number.isInteger(version) ||
-			(offered !== undefined && !Array.isArray(offered)) ||
-			(Array.isArray(offered) && !offered.every(Number.isInteger))
-		) {
+		const offeredValid =
+			offered === undefined ||
+			(Array.isArray(offered) &&
+				offered.every((candidate) => Number.isInteger(candidate) && (candidate as number) > 0));
+		if (!Number.isInteger(version) || (version as number) < 1 || !offeredValid) {
 			closeConnection(connection, 1008, "invalid hello params");
 			return;
 		}
-		const peerVersions = Array.isArray(offered) && offered.length ? offered : [version];
+		// AUX-33: the advertisement is the evidence for a negotiated selection.
+		// A peer may omit it only when the selection resolves to the explicit
+		// legacy v1 path; a v2 selection without an advertisement is refused.
+		const advertised = Array.isArray(offered) ? (offered as number[]) : [];
+		const peerVersions = advertised.length ? advertised : [version as number];
 		const selected = HOST_SUPPORTED_PROTOCOL_VERSIONS.find((candidate) =>
 			peerVersions.includes(candidate),
 		);
 		if (!selected) {
 			closeConnection(connection, 1008, "host protocol versions are incompatible");
+			return;
+		}
+		if (selected === 2 && advertised.length === 0) {
+			closeConnection(connection, 1008, "protocol version 2 requires supportedProtocolVersions");
 			return;
 		}
 		if (protocolMode === "v2" && selected !== 2) {
@@ -3537,6 +4154,8 @@ export function createBunHost(options: BunHostOptions): BunHost {
 						hostIdentity: runtimeId,
 						bootId,
 						nativeVersion: options.verifiedPi.packageVersion,
+						version: options.verifiedPi.packageVersion,
+						ready: true,
 						capabilities: hostCapabilities(),
 						operationSet: currentOperationSet(),
 					},
@@ -3553,6 +4172,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 					runtimeId,
 					bootId,
 					version: options.verifiedPi.packageVersion,
+					ready: true,
 					supportedProtocolVersions: HOST_SUPPORTED_PROTOCOL_VERSIONS,
 					capabilities: hostCapabilities(),
 					operationSet: currentOperationSet(),
@@ -3605,6 +4225,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 							runtimeId,
 							bootId,
 							version: options.verifiedPi.packageVersion,
+							ready: true,
 							capabilities: hostCapabilities(),
 							operationSet: currentOperationSet(),
 						},
@@ -3671,20 +4292,93 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			return;
 		}
 		connection.active.add(request.id);
+		const finish = (): void => {
+			connection.active.delete(request.id);
+			const deadline = connection.deadlines.get(request.id);
+			if (deadline) {
+				clearTimeout(deadline);
+				connection.deadlines.delete(request.id);
+			}
+		};
+		// AUX-18: a hung control-plane handler must not hold its id forever. The
+		// deadline answers the correlation with a typed timeout and releases the
+		// id. Run-extending work (prompt, follow-up, steer, compaction) is
+		// bounded by Pi, not by a fixed host deadline.
+		const deadlineApplies = requestTimeoutMs > 0 && hostCommandClass(request.method) !== "unblock";
+		if (deadlineApplies) {
+			const deadline = setTimeout(() => {
+				if (!connection.active.has(request.id)) return;
+				finish();
+				if (connection.protocolVersion === 2)
+					v2Error(connection, request.id, -32000, "internal", "host request timed out");
+				else
+					queue(
+						connection,
+						encode({
+							id: request.id,
+							error: { code: -32000, message: "host request timed out" },
+						}),
+					);
+			}, requestTimeoutMs);
+			(deadline as { unref?: () => void }).unref?.();
+			connection.deadlines.set(request.id, deadline);
+		}
 		const work = call(request.method, request.params)
 			.then(
-				(result) => queue(connection, encode({ id: request.id, result })),
+				(result) => {
+					// A timeout or graceful stop already answered this id.
+					if (!connection.active.has(request.id)) return;
+					let frame: string;
+					try {
+						frame = encode({ id: request.id, result });
+					} catch {
+						finish();
+						logger.error("host.request.result.invalid", "host response could not be serialized", {
+							method: request.method,
+						});
+						if (connection.protocolVersion === 2)
+							v2Error(
+								connection,
+								request.id,
+								-32000,
+								"internal",
+								"host response could not be serialized",
+							);
+						else
+							queue(
+								connection,
+								encode({
+									id: request.id,
+									error: {
+										code: -32000,
+										message: "host response could not be serialized",
+									},
+								}),
+							);
+						return;
+					}
+					finish();
+					queue(connection, frame);
+				},
 				(error: unknown) => {
+					if (!connection.active.has(request.id)) return;
 					logger.error("host.request.failed", error, { method: request.method });
+					finish();
 					const message = error instanceof Error ? error.message : "operation failed";
 					if (connection.protocolVersion === 2) {
 						if (error instanceof CapabilityError)
 							v2Error(connection, request.id, -32004, "capability_unavailable", message);
+						else if (
+							error instanceof SessionLeaseError ||
+							error instanceof SessionInvariantError ||
+							error instanceof SessionStaleError
+						)
+							v2Error(connection, request.id, -32003, "resource_conflict", message);
 						else v2Error(connection, request.id, -32000, "internal", message);
 					} else queue(connection, encode({ id: request.id, error: { code: -32000, message } }));
 				},
 			)
-			.finally(() => connection.active.delete(request.id));
+			.finally(finish);
 		inflightCalls.add(work);
 		void work.then(
 			() => inflightCalls.delete(work),
@@ -3744,6 +4438,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 							outbound: [],
 							outboundBytes: 0,
 							active: new Set(),
+							deadlines: new Map(),
 						};
 						return activeServer.upgrade(request, { data: { connection } })
 							? undefined

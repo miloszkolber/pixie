@@ -1,7 +1,59 @@
 import type { WsMethodName, WsParams, WsResult, WsServerMessage } from "@pixie/shared";
-import { isWsServerMessage } from "@pixie/shared";
+import { isWsServerMessage, WS_CHANNELS } from "@pixie/shared";
 import { randomId } from "../lib";
 import { RequestError } from "./request-error";
+import { StreamGuard } from "./stream-guard";
+
+const knownChannels = new Set<string>(Object.values(WS_CHANNELS));
+
+/** A server frame with the AUX-16 framing metadata attached. */
+interface RawStreamFrame {
+	channel: string;
+	data?: unknown;
+	appended?: unknown;
+	seq?: number;
+	rev?: number;
+	baseRev?: number;
+}
+
+/**
+ * AUX-16 delta frames carry `appended` instead of `data`, and the shared
+ * envelope validator requires `data` on every channel frame. `cause` is the
+ * already-parsed JSON value; this narrows it without loosening the shared
+ * contract.
+ */
+function isStreamFrame(cause: unknown): cause is RawStreamFrame {
+	if (typeof cause !== "object" || cause === null) return false;
+	// SAFETY: isStreamFrame is the narrowing boundary for untrusted JSON; the
+	// object is only read through validated field checks below.
+	const frame = cause as Record<string, unknown>;
+	return (
+		typeof frame.channel === "string" &&
+		knownChannels.has(frame.channel) &&
+		typeof frame.seq === "number" &&
+		typeof frame.rev === "number" &&
+		typeof frame.baseRev === "number" &&
+		("data" in frame || "appended" in frame)
+	);
+}
+
+/** A decoded method response envelope. */
+interface ResponseEnvelope {
+	id: string;
+	ok: boolean;
+	result?: unknown;
+	error?: string;
+	errorCode?: string;
+}
+
+/** Recognizes a method response envelope after the shared validator passes. */
+function isResponseEnvelope(cause: unknown): cause is ResponseEnvelope {
+	if (typeof cause !== "object" || cause === null) return false;
+	const envelope = cause as Record<string, unknown>;
+	if (typeof envelope.id !== "string" || typeof envelope.ok !== "boolean") return false;
+	if (envelope.ok) return "result" in envelope && !("error" in envelope);
+	return typeof envelope.error === "string" && !("result" in envelope);
+}
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 type PushHandler = (data: unknown) => void;
@@ -70,6 +122,25 @@ export class WsTransport {
 	private ackQueue: string[] = [];
 	private ackScheduled = false;
 	private backoff = 500;
+	private readonly guard = new StreamGuard();
+	// Last delivered array payload per channel, used to reassemble a delta.
+	private readonly delivered = new Map<string, unknown[]>();
+
+	/**
+	 * Reassembles a channel payload. A full snapshot replaces the channel's
+	 * accumulated value; a delta extends it. A delta without a matching
+	 * snapshot is dropped (the guard already requested a resync).
+	 */
+	private mergeChannelData(channel: string, frame: RawStreamFrame) {
+		if (Array.isArray(frame.appended)) {
+			const merged = [...(this.delivered.get(channel) ?? []), ...frame.appended];
+			this.delivered.set(channel, merged);
+			return merged;
+		}
+		if (Array.isArray(frame.data)) this.delivered.set(channel, frame.data);
+		else if (frame.baseRev === 0) this.delivered.delete(channel);
+		return frame.data;
+	}
 
 	constructor(opts: TransportOptions = {}) {
 		this.url = opts.url ?? inferUrl();
@@ -99,6 +170,8 @@ export class WsTransport {
 			this.backoff = 500;
 			this.hasOpened = true;
 			this.onStatus?.("connected");
+			// A new socket restarts the server's per-identity sequence chain.
+			this.guard.acceptWelcome();
 			this.ackQueue = [];
 			this.sendFrame(JSON.stringify({ resume: [...this.pending.keys()] }));
 			for (const entry of this.pending.values()) this.sendFrame(entry.frame);
@@ -154,6 +227,9 @@ export class WsTransport {
 			}, timeoutMs);
 			const entry: PendingRequest = {
 				frame,
+				// SAFETY: the shared WsResult<M> is assignable to a handler that
+				// receives the decoded response envelope and the pending-error
+				// type is identical, so the widening is unreachable in practice.
 				resolve: resolve as (v: unknown) => void,
 				reject,
 				timer,
@@ -228,22 +304,49 @@ export class WsTransport {
 		} catch {
 			return;
 		}
-		if (!isWsServerMessage(parsed)) return;
-		const msg: WsServerMessage = parsed;
-		if ("channel" in msg) {
-			const set = this.subscribers.get(msg.channel);
-			if (set) for (const handler of set) handler(msg.data);
+		if (!isWsServerMessage(parsed) && !isStreamFrame(parsed)) return;
+		if (isStreamFrame(parsed)) {
+			const frame = parsed;
+			if (frame.channel === "server.welcome") this.guard.acceptWelcome();
+			const decision = this.guard.accept({
+				channel: frame.channel,
+				seq: frame.seq,
+				rev: frame.rev,
+				baseRev: frame.baseRev,
+				appended: frame.appended,
+				data: frame.data,
+			});
+			if (decision.resync) {
+				// A missed frame or broken chain resyncs to a fresh snapshot
+				// instead of applying partial state.
+				this.sendFrame(JSON.stringify({ resync: true }));
+				return;
+			}
+			const set = this.subscribers.get(frame.channel);
+			if (set) {
+				const data = this.mergeChannelData(frame.channel, frame);
+				for (const handler of set) handler(data);
+			}
 			return;
 		}
-		this.queueAck(msg.id);
-		const entry = this.takePending(msg.id);
+		if ("channel" in parsed && typeof parsed.channel === "string") {
+			if (parsed.channel === "server.welcome") this.guard.acceptWelcome();
+			const set = this.subscribers.get(parsed.channel);
+			if (set) for (const handler of set) handler(parsed.data);
+			return;
+		}
+		if (!isResponseEnvelope(parsed)) return;
+		this.queueAck(parsed.id);
+		const entry = this.takePending(parsed.id);
 		if (!entry) return;
-		if (msg.ok) {
-			entry.resolve(msg.result);
+		if (parsed.ok) {
+			entry.resolve(parsed.result);
 			return;
 		}
-		const message = msg.error ?? "request failed";
-		entry.reject(msg.errorCode ? new RequestError(msg.errorCode, message) : new Error(message));
+		const message = parsed.error ?? "request failed";
+		entry.reject(
+			parsed.errorCode ? new RequestError(parsed.errorCode, message) : new Error(message),
+		);
 	}
 }
 

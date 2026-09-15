@@ -18,7 +18,9 @@ type socketOutput struct {
 	replay     *ReplayCache
 	aggregate  *AggregateByteAdmission
 	mu         sync.Mutex
+	writeMu    sync.Mutex
 	bytes      int
+	events     int
 	large      bool
 	closed     bool
 }
@@ -32,7 +34,12 @@ type socketOutputItem struct {
 const (
 	socketOutputBudget   = 32 * 1024 * 1024
 	socketOutputMaxItems = 256
+	socketHeartbeatFrame = `{"channel":"server.heartbeat","data":{"padded":"................................................................"}}`
 )
+
+// socketHeartbeatPayload is a fixed, secret-free keepalive frame. It is padded
+// so a proxy treats it as a normal data frame rather than coalescing it away.
+var socketHeartbeatPayload = []byte(socketHeartbeatFrame)
 
 func newSocketOutput(connection *websocket.Conn, aggregate *AggregateByteAdmission, clientKey string) *socketOutput {
 	return &socketOutput{connection: connection, clientKey: clientKey, queue: make(chan socketOutputItem, socketOutputMaxItems), replay: NewReplayCacheWithAdmission(aggregate), aggregate: aggregate}
@@ -91,6 +98,7 @@ func (o *socketOutput) enqueueWithLane(ctx context.Context, payload []byte, cont
 			} else {
 				o.bytes += len(payload)
 			}
+			o.events++
 			return nil
 		default:
 		}
@@ -101,6 +109,50 @@ func (o *socketOutput) enqueueWithLane(ctx context.Context, payload []byte, cont
 	return fmt.Errorf("browser output limit exceeded")
 }
 
+// trackEvent applies the explicit AUX-16 backpressure cap on top of the byte
+// budget. A browser that falls this many channel frames behind has missed the
+// revision chain, so the socket is closed and the client resyncs rather than
+// silently diverging.
+func (o *socketOutput) trackEvent() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return false
+	}
+	return o.events < socketEventBackpressure
+}
+
+// runHeartbeat writes a fixed padded control frame on an idle socket so a dead
+// intermediary is noticed and the browser's resume path runs. Writes are
+// serialized with the main writer through writeMu.
+func (o *socketOutput) runHeartbeat(ctx context.Context) {
+	ticker := time.NewTicker(socketHeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := o.writeControl(ctx, socketHeartbeatPayload); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// writeControl serializes one control frame with the ordinary writer. It does
+// not consume the event queue or its backpressure budget.
+func (o *socketOutput) writeControl(ctx context.Context, payload []byte) error {
+	if o.connection == nil {
+		return nil
+	}
+	o.writeMu.Lock()
+	defer o.writeMu.Unlock()
+	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return o.connection.Write(bounded, websocket.MessageText, payload)
+}
+
 // failClosed stops accepting output for this socket and asks the peer to
 // reconnect. Marking the socket closed before the asynchronous close keeps
 // later publishes from queueing or spawning additional close attempts.
@@ -108,6 +160,17 @@ func (o *socketOutput) enqueueWithLane(ctx context.Context, payload []byte, cont
 func (o *socketOutput) failClosed(code websocket.StatusCode, reason string) {
 	o.closed = true
 	o.closeWithStatus(code, reason)
+}
+
+// failClosedSlow sheds a socket that exceeded the explicit event backpressure
+// cap. The peer reconnects and resyncs rather than receiving a partial chain.
+func (o *socketOutput) failClosedSlow() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return
+	}
+	o.failClosed(websocket.StatusTryAgainLater, "browser event backpressure limit reached; reconnect to resync")
 }
 
 func (o *socketOutput) closeWithStatus(code websocket.StatusCode, reason string) {
@@ -163,6 +226,9 @@ func (o *socketOutput) release(item socketOutputItem) {
 		o.large = false
 	} else {
 		o.bytes -= len(item.payload)
+	}
+	if o.events > 0 {
+		o.events--
 	}
 	if o.aggregate != nil && item.reserved > 0 {
 		if item.control {

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { StreamGuard } from "@/connection/stream-guard";
 import { WsTransport } from "@/connection/transport";
 
 class TestWebSocket {
@@ -421,5 +422,81 @@ describe("WsTransport response receipts", () => {
 		await tick(0);
 
 		expect(acksIn(socket?.sent ?? [])).toEqual([id ?? "", id ?? ""]);
+	});
+});
+
+describe("AUX-16 channel framing", () => {
+	test("a sequence gap asks the server to resync instead of diverging", () => {
+		const guard = new StreamGuard();
+		guard.acceptWelcome();
+		expect(
+			guard.accept({ channel: "agent.event", seq: 1, rev: 1, baseRev: 0, data: [] }).resync,
+		).toBe(false);
+		expect(
+			guard.accept({ channel: "agent.event", seq: 2, rev: 2, baseRev: 1, appended: [] }).resync,
+		).toBe(false);
+		// Seq 3 was lost; the frame after the gap must force a resync.
+		expect(
+			guard.accept({ channel: "agent.event", seq: 4, rev: 3, baseRev: 2, appended: [] }).resync,
+		).toBe(true);
+	});
+
+	test("a broken revision chain asks the server to resync", () => {
+		const guard = new StreamGuard();
+		guard.acceptWelcome();
+		guard.accept({ channel: "agent.event", seq: 1, rev: 5, baseRev: 0, data: [] });
+		expect(
+			guard.accept({ channel: "agent.event", seq: 2, rev: 6, baseRev: 4, appended: [] }).resync,
+		).toBe(true);
+	});
+
+	test("the transport requests a fresh snapshot when a frame is missing", () => {
+		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
+		transport.connect();
+		const socket = TestWebSocket.instances[0];
+		if (!socket) throw new Error("socket was not created");
+		socket.open();
+		socket.message(JSON.stringify({ channel: "server.welcome", data: { protocolVersion: 88 } }));
+		socket.message(
+			JSON.stringify({ channel: "agent.event", seq: 1, rev: 1, baseRev: 0, data: [] }),
+		);
+		socket.message(
+			JSON.stringify({ channel: "agent.event", seq: 3, rev: 2, baseRev: 1, appended: [] }),
+		);
+		expect(socket.sent).toContain(JSON.stringify({ resync: true }));
+		transport.stop();
+	});
+});
+
+describe("AUX-16 delta reassembly", () => {
+	test("a delta frame extends the last delivered array snapshot", () => {
+		const transport = new WsTransport({ url: "ws://localhost:7312/ws" });
+		const received: unknown[] = [];
+		transport.subscribe("project.updated", (data) => received.push(data));
+		transport.connect();
+		const socket = TestWebSocket.instances[0];
+		if (!socket) throw new Error("socket was not created");
+		socket.open();
+		socket.message(JSON.stringify({ channel: "server.welcome", data: { protocolVersion: 88 } }));
+		socket.message(
+			JSON.stringify({
+				channel: "project.updated",
+				seq: 1,
+				rev: 1,
+				baseRev: 0,
+				data: [{ id: "a" }],
+			}),
+		);
+		socket.message(
+			JSON.stringify({
+				channel: "project.updated",
+				seq: 2,
+				rev: 2,
+				baseRev: 1,
+				appended: [{ id: "b" }],
+			}),
+		);
+		expect(received).toEqual([[{ id: "a" }], [{ id: "a" }, { id: "b" }]]);
+		transport.stop();
 	});
 });

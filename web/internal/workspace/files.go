@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	errPathEscapesProjectRoot = errors.New("path escapes the project root")
+	errPathEscapesProjectRoot = ErrTraversal
 	errProjectFileTooLarge    = errors.New("project file exceeds size limit")
 )
 
@@ -471,23 +471,23 @@ func readLinkAt(directoryFD int, name string) (string, error) {
 	return string(buffer[:count]), nil
 }
 
-// root must come from a freshly authorized project snapshot.
+// root must come from a freshly authorized project snapshot. The candidate is
+// resolved with the realpath walk-up, so a symlink that leaves root is denied
+// even when its target is another admitted mount.
 func (f *Files) ResolveInRoot(root, path string) (string, string, error) {
-	candidate := filepath.Clean(path)
-	if !filepath.IsAbs(candidate) {
-		candidate = filepath.Join(root, candidate)
-	}
-	if !Within(root, candidate) {
-		return "", "", fmt.Errorf("path escapes the project root")
-	}
-	absolute, err := f.policy.Resolve(candidate, false, false, "Project file")
+	admittedRoot, err := f.policy.Directory(root, "Project root")
 	if err != nil {
 		return "", "", err
 	}
-	if !Within(root, absolute) {
-		return "", "", fmt.Errorf("path escapes the project root")
+	candidate := filepath.Clean(path)
+	if !filepath.IsAbs(candidate) {
+		candidate = filepath.Join(admittedRoot, candidate)
 	}
-	return root, absolute, nil
+	absolute, err := f.policy.ResolveUnder(admittedRoot, candidate, false, false, "Project file")
+	if err != nil {
+		return "", "", err
+	}
+	return admittedRoot, absolute, nil
 }
 
 type DirectoryRequest struct {

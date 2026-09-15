@@ -601,6 +601,10 @@ func supervise(parsed arguments, inherited []string, signals <-chan os.Signal) (
 	if err != nil {
 		return false, err
 	}
+	// The supervisor owns the child-stderr rings, so it must share the same
+	// configured-secret redaction boundary as the controller before the first
+	// child can write.
+	diagnostics.ConfigureSanitizerSecrets(secret, parent["PIXIE_TOKEN"], parent["PIXIE_MCP_TOKEN"])
 	endpoint, err := readAssistantEndpoint(parsed.assistantConfig, lookup)
 	if err != nil {
 		return false, err
@@ -638,8 +642,8 @@ func supervise(parsed arguments, inherited []string, signals <-chan os.Signal) (
 	default:
 	}
 
-	assistantStderr := diagnostics.NewStderrRing()
-	controllerStderr := diagnostics.NewStderrRing()
+	assistantStderr := diagnostics.NewStderrRingWithConsole(os.Stderr)
+	controllerStderr := diagnostics.NewStderrRingWithConsole(os.Stderr)
 	assistant, err := startChild(assistantInvocation, assistantStderr)
 	if err != nil {
 		return false, errors.New("could not start bundled assistant")
@@ -737,9 +741,10 @@ func startChild(invocation childInvocation, stderr *diagnostics.StderrRing) (*ch
 	command.Env = environmentSlice(invocation.env)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
-	// Retain first, then mirror to the live console: a console write failure
-	// must not lose the redacted retention the operator may need after a crash.
-	command.Stderr = io.MultiWriter(stderr, os.Stderr)
+	// Child stderr goes through the single redaction boundary: the ring retains
+	// a bounded, aged tail and mirrors the same sanitized lines to the console.
+	// The raw child stream is never written to os.Stderr directly.
+	command.Stderr = stderr
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		return nil, err
@@ -747,6 +752,9 @@ func startChild(invocation childInvocation, stderr *diagnostics.StderrRing) (*ch
 	child := &childProcess{cmd: command, done: make(chan struct{})}
 	go func() {
 		_ = command.Wait()
+		// Surface a final line that did not end in a newline before the
+		// operator-visible exit summary is logged.
+		stderr.Flush()
 		close(child.done)
 	}()
 	return child, nil

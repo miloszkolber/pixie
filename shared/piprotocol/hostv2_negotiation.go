@@ -133,17 +133,23 @@ func HostV2SelectVersion(peerSupported, hostSupported []int) (int, error) {
 }
 
 // HostV2ValidateNegotiated checks a peer's hello response against the offer
-// and the peer's own advertisement. advertised may be empty for a legacy v1
-// host; then only the offered intersection and the selected version are
-// checked. A non-empty advertised set must contain the selection and must
-// resolve to that selection as the highest mutual version, which rejects a
-// host that claims v2 support while silently answering v1.
+// and the peer's own advertisement. An empty advertisement is valid only for an
+// explicit legacy v1 selection; a v2 selection requires a non-empty
+// supportedProtocolVersions list so a peer cannot claim v2 without the
+// advertisement needed to validate the choice. A non-empty advertised set must
+// contain the selection and must resolve to that selection as the highest
+// mutual version, which rejects a host that claims v2 support while silently
+// answering v1.
 func HostV2ValidateNegotiated(offered, advertised []int, selected int) error {
 	if !HostV2VersionPresent(offered, selected) {
 		return &HostV2IncompatibilityError{Reason: fmt.Sprintf("peer selected unsupported version %d", selected)}
 	}
 	if len(advertised) == 0 {
-		return nil
+		if selected == 1 {
+			return nil
+		}
+		return &HostV2IncompatibilityError{Reason: fmt.Sprintf(
+			"peer selected protocol version %d without advertising supportedProtocolVersions", selected)}
 	}
 	if !HostV2VersionPresent(advertised, selected) {
 		return &HostV2IncompatibilityError{Reason: fmt.Sprintf("peer advertised %v but selected %d", advertised, selected)}

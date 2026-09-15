@@ -330,7 +330,11 @@ describe("Bun host admin parity", () => {
 
 	test("keeps version gating exact and restart opt-in", async () => {
 		const strict = rawHost(new FakeSession("restart-off"), { protocol: "v2" });
-		await strict.send({ id: 1, method: "runtime.hello", params: { protocolVersion: 2 } });
+		await strict.send({
+			id: 1,
+			method: "runtime.hello",
+			params: { protocolVersion: 2, supportedProtocolVersions: [2, 1] },
+		});
 		await strict.send({ id: 2, method: "runtime.restart", params: {} });
 		expect(rawFrames(strict.socket).at(-1)).toEqual(
 			expect.objectContaining({

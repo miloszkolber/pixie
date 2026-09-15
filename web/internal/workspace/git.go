@@ -369,7 +369,18 @@ func (g *Git) repositoryFor(ctx context.Context, projectID, requested string) (P
 	if err != nil {
 		return Project{}, "", err
 	}
-	wanted, err := g.policy.Directory(requested, "Git repository")
+	projectRoot, err := project.Root()
+	if err != nil {
+		return Project{}, "", err
+	}
+	admittedRoot, err := g.policy.Directory(projectRoot, "Project root")
+	if err != nil {
+		return Project{}, "", err
+	}
+	// Project-scoped containment: a requested repository that is a symlink out
+	// of the project root is denied even when the target is another admitted
+	// mount. Discovery already returns canonical in-project paths.
+	wanted, err := g.policy.ResolveUnder(admittedRoot, requested, true, false, "Git repository")
 	if err != nil {
 		return Project{}, "", err
 	}
