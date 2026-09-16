@@ -65,6 +65,8 @@ afterEach(() => {
 });
 
 describe("AUX-16 server-to-client stream round trip", () => {
+	// The fixture spawns `go test` to produce real server frames; a cold Go build
+	// cache can exceed the default test timeout.
 	test("real server frames are accepted, merged and gap-resynced", () => {
 		const [snapshot, delta, later] = serverFrames();
 
@@ -107,5 +109,5 @@ describe("AUX-16 server-to-client stream round trip", () => {
 		lossySocket.message(later);
 		expect(lossySocket.sent).toContain(JSON.stringify({ resync: true }));
 		lossy.stop();
-	});
+	}, 60_000);
 });
