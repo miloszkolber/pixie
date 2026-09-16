@@ -60,5 +60,7 @@ export interface ChatSubmission {
 	behavior: "send" | "steer" | "queue" | "interrupt";
 	busy: boolean;
 	error?: string;
+	/** The request was paused by the AUX-19 drain gate; retrying can succeed later. */
+	quiescing?: boolean;
 	optimisticTurnId?: string;
 }

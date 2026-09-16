@@ -881,7 +881,9 @@ func (m *SessionManager) runFollowUp(sessionID string, entry *sessionEntry) {
 
 func (m *SessionManager) releaseFollowUpRun() {
 	if m.gate != nil {
-		m.gate.Release()
+		// Release with the same gated admission class used to admit the run so a
+		// read-only path can never settle this dispatch.
+		m.gate.Release(followUpAdmissionMethod)
 	}
 }
 

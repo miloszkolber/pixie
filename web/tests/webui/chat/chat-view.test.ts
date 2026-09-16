@@ -105,6 +105,8 @@ test("chat view is React-free Svelte and retains the complete interaction contra
 		"session.queueRemove",
 		"session.queueRetry",
 		"session.delete",
+		"retainedSubmission",
+		"<SubmissionStatus",
 		"loadTranscriptUntil",
 		"<UiDialogModal",
 		"setChatActionsContext",

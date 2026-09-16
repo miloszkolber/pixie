@@ -63,7 +63,7 @@ func TestAdmissionGateRefusesNewWorkWhileDraining(t *testing.T) {
 			t.Fatalf("%s was refused while draining", method)
 		}
 	}
-	if !gate.Release() {
+	if !gate.Release("session.prompt") {
 		t.Fatal("releasing the pre-drain prompt did not settle the gate")
 	}
 	waited := make(chan struct{})
@@ -102,7 +102,7 @@ func TestAdmissionGateWaitsForAdmittedWork(t *testing.T) {
 		t.Fatal("WaitForDrain settled before the admitted prompt released")
 	case <-time.After(20 * time.Millisecond):
 	}
-	if !gate.Release() {
+	if !gate.Release("session.prompt") {
 		t.Fatal("release did not report the in-flight set empty")
 	}
 	select {
@@ -137,7 +137,7 @@ func TestAdmissionGateAccountsForQueuedFollowUpAdmission(t *testing.T) {
 		t.Fatal("WaitForDrain settled before the admitted queued follow-up released")
 	case <-time.After(20 * time.Millisecond):
 	}
-	if !gate.Release() {
+	if !gate.Release("session.queueAdd") {
 		t.Fatal("release did not report the in-flight set empty")
 	}
 	select {
@@ -162,6 +162,42 @@ func TestAdmissionGateWaitForDrainHonorsCancellation(t *testing.T) {
 	if time.Since(started) > time.Second {
 		t.Fatal("cancelled drain wait blocked")
 	}
-	gate.Release()
+	gate.Release("session.prompt")
 	gate.WaitForDrain(context.Background())
+}
+
+// AUX-19 admission accounting: only a gated method that was admitted can
+// settle a slot. A non-gated request completing during a drain must leave the
+// admitted prompt's accounting intact so WaitForDrain keeps blocking.
+func TestAdmissionGateNonGatedReleaseDoesNotSettleAdmittedWork(t *testing.T) {
+	gate := NewAdmissionGate(0)
+	if !gate.TryAdmit("session.prompt") {
+		t.Fatal("prompt refused before drain")
+	}
+	gate.BeginDrain()
+	// A read-only request admitted during the drain is counted zero times.
+	if !gate.TryAdmit("session.getMessages") {
+		t.Fatal("read-only method was refused while draining")
+	}
+	if gate.Release("session.getMessages") {
+		t.Fatal("a non-gated release reported the gated in-flight set empty")
+	}
+	drained := make(chan struct{})
+	go func() {
+		gate.WaitForDrain(context.Background())
+		close(drained)
+	}()
+	select {
+	case <-drained:
+		t.Fatal("a non-gated request settled WaitForDrain while a prompt was admitted")
+	case <-time.After(20 * time.Millisecond):
+	}
+	if !gate.Release("session.prompt") {
+		t.Fatal("releasing the admitted prompt did not report the set empty")
+	}
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitForDrain did not settle after the admitted prompt released")
+	}
 }

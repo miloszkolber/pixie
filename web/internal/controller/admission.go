@@ -49,9 +49,9 @@ type AdmissionGate struct {
 	active   int
 }
 
-// NewAdmissionGate builds an open gate. The grace argument is retained for
-// callers that want a settle window before they invoke WaitForDrain; it no
-// longer delays the refusal, which is immediate.
+// NewAdmissionGate builds an open gate. BeginDrain refuses new runnable work
+// immediately: the grace argument is accepted for call-site compatibility but
+// does not delay the refusal or wait for work already on the wire.
 func NewAdmissionGate(grace time.Duration) *AdmissionGate {
 	_ = grace
 	gate := &AdmissionGate{inactive: make(chan struct{})}
@@ -76,7 +76,8 @@ func (g *AdmissionGate) BeginDrain() {
 
 // TryAdmit reports whether a method may start now. Run-creating methods are
 // counted as in-flight so a drain waits for them; every admitted gated method
-// must call Release exactly once.
+// must call Release exactly once with the same method. Non-gated methods are
+// never counted.
 func (g *AdmissionGate) TryAdmit(method string) bool {
 	if !IsDrainGatedMethod(method) {
 		return true
@@ -98,11 +99,17 @@ func (g *AdmissionGate) TryAdmit(method string) bool {
 	return true
 }
 
-// Release settles one previously admitted gated method. It reports whether the
+// Release settles one admission for method. It is method-scoped: a non-gated
+// method never decrements the in-flight count, so a read-only request
+// completing can never settle an admitted runnable slot. Call it exactly once
+// for each gated method that TryAdmit admitted. It reports whether the gated
 // in-flight set is now empty.
-func (g *AdmissionGate) Release() bool {
+func (g *AdmissionGate) Release(method string) bool {
 	if g == nil {
 		return true
+	}
+	if !IsDrainGatedMethod(method) {
+		return false
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()

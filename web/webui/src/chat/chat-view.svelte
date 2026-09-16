@@ -22,6 +22,8 @@ import {
 } from "./composer/agent-mention-state";
 import Composer from "./composer/composer.svelte";
 import type { ComposerHandle, MentionCandidate, SubmitBehavior } from "./composer/composer-state";
+import SubmissionStatus from "./composer/submission-status.svelte";
+import { retainedSubmission } from "./composer/submission-status";
 import { uiDialogForSession } from "./dialogs/ui-dialog-state";
 import UiDialogModal from "./dialogs/ui-dialog-modal.svelte";
 import ExtensionWidgets from "./dialogs/extension-widgets.svelte";
@@ -491,9 +493,7 @@ function submit(text: string, attachments: ChatAttachment[], behavior: SubmitBeh
 			appStoreApi.getState().setSubmission(targetSession, null);
 		} catch (cause) {
 			const current = appStoreApi.getState().sessions[targetSession]?.submission ?? submission;
-			appStoreApi
-				.getState()
-				.setSubmission(targetSession, { ...current, busy: false, error: errorText(cause) });
+			appStoreApi.getState().setSubmission(targetSession, retainedSubmission(current, cause));
 		}
 	})();
 	return true;
@@ -810,19 +810,13 @@ function openChanges(path: string): void {
 		{/if}
    {#if stopError}<p role="alert" class="u-px-md u-py-xs u-text-feedback-error tr-text-ui">Couldn't stop the response: {stopError}</p>{/if}
   {#if runtime.submission}
-   {@const pending = runtime.submission}
-    <div class="chat-submission-status u-overflow-y-auto u-rounded u-border u-border-border-default chat-submission-padding tr-text-ui" role="status">
-    {#if pending.busy}<p>Sending message…</p>{:else}
-      <p class="u-text-feedback-error">{pending.error}</p>
-      <p class="u-text-text-muted">Check the transcript before retrying: a lost connection can leave delivery uncertain.</p>
-      <textarea aria-label="Retained message" class="input chat-submission-textarea u-w-full" value={pending.text} oninput={(event) => appStoreApi.getState().setSubmission(sessionId, { ...pending, text: event.currentTarget.value })}></textarea>
-      {#if pending.attachments.length}<p class="u-break-words">Attachments: {pending.attachments.map((attachment) => attachment.name).join(", ")}</p>{/if}
-      <div class="u-flex u-flex-wrap u-gap-xs chat-submission-actions">
-      <Button onclick={retrySubmission}>Retry message</Button>
-      <Button variant="ghost" onclick={() => appStoreApi.getState().setSubmission(sessionId, null)}>Discard retained message</Button>
-     </div>
-    {/if}
-   </div>
+    {@const pending = runtime.submission}
+    <SubmissionStatus
+      {pending}
+      onText={(value) => appStoreApi.getState().setSubmission(sessionId, { ...pending, text: value })}
+      onRetry={retrySubmission}
+      onDiscard={() => appStoreApi.getState().setSubmission(sessionId, null)}
+    />
   {/if}
 		<ExtensionWidgets widgets={runtime.extensionWidgets} placement="aboveEditor" />
 		<Composer
@@ -856,7 +850,4 @@ function openChanges(path: string): void {
 	.chat-view-editor-region { position: relative; }
 	.chat-view-extension-status { max-height: 15dvh; }
 	.chat-queue-textarea { min-height: 7rem; resize: vertical; }
-	.chat-submission-status { max-height: min(40dvh, 20rem); margin: var(--space-xs) var(--space-sm); }
-	.chat-submission-padding { padding: var(--space-sm); }
-	.chat-submission-textarea, .chat-submission-actions { margin-block-start: var(--space-xs); }
 </style>

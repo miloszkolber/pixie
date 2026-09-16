@@ -676,6 +676,9 @@ export type WsErrorCode =
 	| "UNSUPPORTED_AGENT_CAPABILITY"
 	| "STALE_TRANSCRIPT_PROJECTION"
 	| "SUPPORT_SNAPSHOT_AUTH_REQUIRED"
+	// Emitted by the AUX-19 drain gate. Lower-case to match the controller wire
+	// value; the Web UI surfaces it as a quiescing status rather than a failure.
+	| "controller_quiescing"
 	| "PATH_ESCAPES_PROJECT_ROOT";
 
 export interface WsResponse {

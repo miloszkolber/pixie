@@ -64,9 +64,9 @@ const (
 )
 
 const (
-	// drainAdmissionGrace admits work already on the wire when a drain begins.
-	// It is short: an update should not wait on late arrivals, and the gate
-	// still reports quiescing to the UI as soon as the drain is requested.
+	// drainAdmissionGrace is reserved for a future settle window before a drain
+	// refuses new work. NewAdmissionGate currently ignores it: BeginDrain
+	// refuses immediately and only already-admitted work is retained.
 	drainAdmissionGrace = 250 * time.Millisecond
 
 	maxWSRequestBytes       = BrowserFrameMaxBytes
@@ -466,8 +466,8 @@ func NewWebSocketServer(handler Handler, welcome Welcome, config AuthConfig) (*W
 	return server, nil
 }
 
-// BeginDrain requests the AUX-19 quiesce. New runnable work is refused after
-// the gate grace; already-admitted work keeps running.
+// BeginDrain requests the AUX-19 quiesce. New runnable work is refused
+// immediately; already-admitted work keeps running.
 func (s *WebSocketServer) BeginDrain() {
 	if s != nil {
 		s.gate.BeginDrain()
@@ -779,12 +779,12 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	// history/data work cannot consume Stop/UI-cancellation admission.
 	if IsBrowserControlMethod(method) {
 		if len(payload) > BrowserControlFrameMaxBytes {
-			s.gate.Release()
+			s.gate.Release(method)
 			_ = output.connection.Close(websocket.StatusMessageTooBig, "control message too large")
 			return
 		}
 		if !s.admission.TryAcquireControl(len(payload)) {
-			s.gate.Release()
+			s.gate.Release(method)
 			_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 			return
 		}
@@ -792,7 +792,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		if s.ctx.Err() != nil {
 			s.mu.Unlock()
 			s.admission.ReleaseControl(len(payload))
-			s.gate.Release()
+			s.gate.Release(method)
 			return
 		}
 		s.handlers.Add(1)
@@ -800,13 +800,13 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		go func() {
 			defer s.admission.ReleaseControl(len(payload))
 			defer s.handlers.Done()
-			defer s.gate.Release()
+			defer s.gate.Release(method)
 			serve()
 		}()
 		return
 	}
 	if !s.admission.TryAcquireOrdinary(clientKey, len(payload)) {
-		s.gate.Release()
+		s.gate.Release(method)
 		_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 		return
 	}
@@ -814,11 +814,11 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	case s.inflight <- struct{}{}:
 	case <-ctx.Done():
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
-		s.gate.Release()
+		s.gate.Release(method)
 		return
 	default:
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
-		s.gate.Release()
+		s.gate.Release(method)
 		_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 		return
 	}
@@ -827,7 +827,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		s.mu.Unlock()
 		<-s.inflight
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
-		s.gate.Release()
+		s.gate.Release(method)
 		return
 	}
 	s.handlers.Add(1)
@@ -837,7 +837,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 			<-s.inflight
 			s.admission.ReleaseOrdinary(clientKey, len(payload))
 			s.handlers.Done()
-			s.gate.Release()
+			s.gate.Release(method)
 		}()
 		serve()
 	}()
