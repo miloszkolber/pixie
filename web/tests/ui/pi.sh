@@ -5,11 +5,17 @@ fixture_pid=
 browser() { agent-browser --session "$session" "$@"; }
 assert_eval() { browser eval "(() => { if (!($1)) throw new Error('Pi UI acceptance assertion failed: ' + JSON.stringify('$2')); return true; })()" >/dev/null; }
 settings_tab() {
-	# Select by row label, then wait for the row's panel to be visible. The row
-	# text can be mid-re-render during a viewport change, so a label equality
-	# wait races the DOM; the panel visibility is the stable contract.
-	browser eval "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); if (!(row instanceof HTMLElement)) throw new Error('Settings section is unavailable: $1'); row.click(); return true; })()" >/dev/null
-	browser wait --timeout 15000 --fn "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); const id = row?.getAttribute('aria-controls'); const panel = id ? document.getElementById(id) : null; return !!panel && panel.hidden === false; })()" >/dev/null
+	# A viewport change or a panel load can drop a single click, so click until the
+	# row's panel is actually visible.
+	attempt=0
+	while [ "$attempt" -lt 5 ]; do
+		browser eval "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); if (!(row instanceof HTMLElement)) throw new Error('Settings section is unavailable: $1'); row.click(); return true; })()" >/dev/null
+		if browser wait --timeout 3000 --fn "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); const id = row?.getAttribute('aria-controls'); const panel = id ? document.getElementById(id) : null; return !!panel && panel.hidden === false; })()" >/dev/null 2>&1; then
+			return 0
+		fi
+		attempt=$((attempt + 1))
+	done
+	browser wait --timeout 10000 --fn "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); const id = row?.getAttribute('aria-controls'); const panel = id ? document.getElementById(id) : null; return !!panel && panel.hidden === false; })()" >/dev/null
 }
 open_settings() {
  browser eval "(() => { const button = Array.from(document.querySelectorAll('[data-testid=open-settings]')).find(candidate => candidate instanceof HTMLElement && candidate.getClientRects().length > 0); if (!(button instanceof HTMLElement)) throw new Error('Settings control is unavailable'); button.click(); return true; })()" >/dev/null
