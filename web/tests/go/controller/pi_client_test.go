@@ -205,7 +205,10 @@ func TestPiClientDrainsCreateReplyAfterRequestCancellation(t *testing.T) {
 				createReceived <- struct{}{}
 				<-releaseCreate
 				_ = writeRPC(connection, map[string]any{"id": rpc.ID, "result": map[string]any{"sessionId": "late-session"}})
-				return
+				// Keep the socket open after replying: returning here closed the
+				// connection and could race the reply, turning a reconcilable late
+				// reply into an uncertain connection-closed outcome.
+				continue
 			}
 		}
 	}))
