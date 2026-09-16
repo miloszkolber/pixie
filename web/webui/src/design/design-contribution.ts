@@ -11,6 +11,3 @@ export const DESIGN_CONTRIBUTION = {
 	privateFocusChangesSharedFocus: false,
 	agentReadsAreReadOnly: true,
 } as const;
-
-export type DesignContribution = typeof DESIGN_CONTRIBUTION;
-export const designContribution = DESIGN_CONTRIBUTION;

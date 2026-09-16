@@ -191,9 +191,6 @@ func New(config Config) (*Service, error) {
 	return s, nil
 }
 
-// NewService is an explicit constructor alias for controller integrations.
-func NewService(config Config) (*Service, error) { return New(config) }
-
 // DefaultConfig opts into the module while keeping New's zero-value disabled.
 func DefaultConfig(dataDir string) Config { return Config{DataDir: dataDir, Enabled: true} }
 

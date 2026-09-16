@@ -132,6 +132,3 @@ export function recoverCanvasVersion(state: CanvasState, value: unknown): Canvas
 	}
 	return { ...state, error: { code: recovery.code ?? "internal", message: recovery.message } };
 }
-
-export const recoverCanvasStaleVersion = recoverCanvasVersion;
-export const canvasStaleVersionRecovery = canvasVersionRecovery;

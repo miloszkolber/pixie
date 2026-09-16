@@ -1,14 +1,11 @@
 import { getTransport } from "../connection";
 import { STORAGE_PREFIX } from "../constants/branding";
 import { appStoreApi } from "../store";
-import { SPLIT_DEFAULT } from "./split-range";
 import {
 	normalizeWorkspaceLayout,
 	setLayout as setWorkspaceLayout,
 	type WorkspaceLayout,
 } from "./store/selection-state";
-import type { ShellLayoutSnapshot } from "./store/shell-layout-state";
-import { SHELL_LAYOUT_DEFAULTS } from "./store/shell-layout-state";
 
 const WORKSPACE_LAYOUT_VERSION = 1;
 
@@ -66,17 +63,6 @@ function persistWorkspaceLayout(snapshot: WorkspaceLayout): void {
 			JSON.stringify({ version: WORKSPACE_LAYOUT_VERSION, layout: snapshot }),
 		);
 	} catch {}
-}
-
-/** Compatibility projection for callers that still understand the old shell fields. */
-export function selectShellLayoutSnapshot(state: ShellLayoutSnapshot): ShellLayoutSnapshot {
-	return {
-		shellLeftOpen: state.shellLeftOpen ?? SHELL_LAYOUT_DEFAULTS.shellLeftOpen,
-		shellRightOpen: state.shellRightOpen ?? SHELL_LAYOUT_DEFAULTS.shellRightOpen,
-		shellRightView: state.shellRightView ?? SHELL_LAYOUT_DEFAULTS.shellRightView,
-		shellSplit: state.shellSplit ?? SHELL_LAYOUT_DEFAULTS.shellSplit,
-		shellSplitPercent: state.shellSplitPercent ?? SPLIT_DEFAULT,
-	};
 }
 
 export function selectWorkspaceLayoutSnapshot(state: {

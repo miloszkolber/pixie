@@ -198,10 +198,3 @@ export function designSharedFocusPublish(
 		optimisticRevision: optimistic.state.selectionRevision,
 	};
 }
-
-export function designInspectorEmptyLabel(model: DesignInspectorModel): string {
-	if (!model.availability.available) return model.availability.reason ?? "Unavailable.";
-	if (model.pages.length === 0) return "No pages in this Design document.";
-	if (model.layers.length === 0) return "No layers on the selected page.";
-	return `${model.layers.length} layers`;
-}

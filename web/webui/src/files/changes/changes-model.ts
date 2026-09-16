@@ -76,12 +76,6 @@ export function scopeLabel(scope: GitDiffScope, commits: readonly GitCommit[] = 
 	return `Commit ${known?.shortSha ?? scope.sha.slice(0, 7)}`;
 }
 
-export function scopeTitle(scope: GitDiffScope, commits: readonly GitCommit[] = []): string {
-	if (scope.kind !== "commit") return `Diff scope: ${scopeLabel(scope)}`;
-	const known = commits.find((c) => c.sha === scope.sha);
-	return known?.subject ? `${known.shortSha} · ${known.subject}` : scopeLabel(scope, commits);
-}
-
 export function repositoryDisplayName(
 	repository: Pick<GitRepository, "relativePath" | "name" | "root">,
 ): string {

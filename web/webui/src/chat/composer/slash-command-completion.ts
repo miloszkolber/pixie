@@ -3,16 +3,6 @@ import { completionNavigationIndex } from "./composer-state";
 
 const MAX_MATCHES = 8;
 
-export async function slashCommandCatalogOrEmpty(
-	load: () => Promise<SlashCommandInfo[]>,
-): Promise<SlashCommandInfo[]> {
-	try {
-		return await load();
-	} catch {
-		return [];
-	}
-}
-
 export function slashCommandQuery(value: string): string | null {
 	return value.startsWith("/") && !/\s/.test(value) ? value.slice(1) : null;
 }

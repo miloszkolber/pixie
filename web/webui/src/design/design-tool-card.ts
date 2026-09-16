@@ -172,6 +172,3 @@ export function designToolCardViewModel(input: DesignToolCardInput): DesignToolC
 		instanceWide: true,
 	};
 }
-
-export const designCardViewModel = designToolCardViewModel;
-export const compactDesignToolCard = designToolCardViewModel;

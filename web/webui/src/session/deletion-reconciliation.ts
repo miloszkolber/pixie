@@ -51,35 +51,3 @@ export function normalizeDeletionReconciliation(value: unknown): DeletionRecover
 	}
 	return records;
 }
-
-/** True when the native outcome is unknown and needs restart reconciliation. */
-export function isUncertainDeletion(record: Pick<DeletionRecovery, "phase" | "reason">): boolean {
-	if (record.phase === "requested") return true;
-	return /uncertain|reconcile/i.test(record.reason);
-}
-
-/**
- * Actionable confirm/retain guidance for one tombstone. Confirm asserts the
- * native session is already gone; retain is an explicit no-op that leaves the
- * tombstone in place. Nothing here clears records automatically.
- */
-export function remediationForDeletion(record: Pick<DeletionRecovery, "phase" | "reason">): string {
-	const reason = record.reason.toLowerCase();
-	if (
-		reason.includes("binding changed") ||
-		reason.includes("recovery-blocked") ||
-		reason.includes("host identity mismatch")
-	) {
-		return "Native identity changed: confirm only after verifying the native session is gone outside Pixie, or retain to keep the tombstone for a later host.";
-	}
-	if (reason.includes("uncertain") || reason.includes("reconcile")) {
-		return "Outcome is uncertain: confirm only after verifying the native session is gone, or retain to keep the tombstone and retry after restart.";
-	}
-	if (reason.includes("cleanup") || reason.includes("finish deletion")) {
-		return "Native deletion is done but local cleanup is pending: confirm again to retry cleanup, or retain to keep the tombstone.";
-	}
-	if (reason.includes("capability") || reason.includes("unsupported")) {
-		return "Connected agent cannot delete: retain the record and retry after restoring a host with session.delete support; confirm only if the native session is already gone.";
-	}
-	return "Confirm only after verifying the native session is gone, or retain to keep the tombstone in place.";
-}

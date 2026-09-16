@@ -330,33 +330,6 @@ test("shell grid reserves six stable tracks and releases the secondary view unti
 	expect(shell).not.toContain("pixie-header-cell");
 });
 
-test("the split handle is keyboard-operable with correct separator semantics", async () => {
-	const split = await source("workspace/split-view.svelte");
-	expect(
-		compile(split, {
-			filename: "split-view.svelte",
-			generate: false,
-		}).warnings,
-	).toEqual([]);
-	for (const contract of [
-		'role="separator"',
-		'tabindex="0"',
-		"aria-valuemin",
-		"aria-valuemax",
-		"aria-valuenow",
-		"aria-valuetext",
-		"ArrowLeft",
-		"ArrowRight",
-		'"Home"',
-		'"End"',
-		"onpointerdown",
-		"onpointerup",
-		'role="region"',
-	]) {
-		expect(split).toContain(contract);
-	}
-});
-
 test("shell resizers expose bounded pointer and keyboard controls for every desktop track", async () => {
 	const resizer = await source("workspace/shell-resizer.svelte");
 	expect(
@@ -511,10 +484,6 @@ test("selected sessions and files keep scoped highlight hooks with guide borders
 	expect(treeRow).toMatch(
 		/\.file-tree-row--active\s*{[^}]*background-color:\s*var\(--control-bg-selected\);/s,
 	);
-	const split = await source("workspace/split-view.svelte");
-	expect(split).toContain("resizable-group");
-	expect(split).toContain("resizable-panel");
-	expect(split).toContain('role="separator"');
 });
 
 function navBlock(source: string, testId: string): string {

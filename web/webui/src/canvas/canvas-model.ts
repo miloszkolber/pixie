@@ -105,16 +105,6 @@ export interface CanvasStatusResponse {
 	warnings?: Array<string | CanvasWarning>;
 }
 
-export interface CanvasWriteResult {
-	outcome?: string;
-	canvasId: string;
-	generation: number;
-	version: number;
-	updatedAt?: string;
-	mutationId?: string;
-	idempotent?: boolean;
-}
-
 export interface CanvasScreenshotResult {
 	outcome?: string;
 	canvasId: string;
@@ -162,23 +152,6 @@ export function emptyCanvasState(sessionId: string | null = null, projectId?: st
 		preview: { ...EMPTY_CANVAS_PREVIEW },
 		warnings: [],
 		error: null,
-	};
-}
-
-export function createCanvasState(sessionId: string | null = null): CanvasState {
-	return emptyCanvasState(sessionId);
-}
-
-export function canvasStatusFromState(state: CanvasState): CanvasStatus {
-	return {
-		scope: state.scope,
-		availability: state.status,
-		canvasId: state.document?.id ?? null,
-		generation: state.document?.generation ?? null,
-		currentVersion: state.currentVersion,
-		viewedVersion: state.viewedVersion,
-		preview: state.preview,
-		warnings: state.warnings,
 	};
 }
 
@@ -392,21 +365,5 @@ export function applyCanvasScreenshot(
 		preview: current
 			? preview
 			: { ...preview, status: "stale", reason: "This preview is from an older Canvas version." },
-	};
-}
-
-export function setCanvasPreviewPending(state: CanvasState, version: number): CanvasState {
-	return {
-		...state,
-		preview: {
-			...state.preview,
-			status: "pending",
-			canvasId: state.document?.id ?? null,
-			generation: state.document?.generation ?? null,
-			version,
-			url: state.preview.url,
-			artifactUrl: state.preview.url,
-			reason: null,
-		},
 	};
 }

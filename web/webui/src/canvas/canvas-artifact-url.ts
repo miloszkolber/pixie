@@ -171,23 +171,6 @@ export function canvasArtifactUrl(
 	return joinArtifactPath(path, baseUrl);
 }
 
-export function buildCanvasArtifactUrl(
-	canvasId: string,
-	renderKey: string,
-	baseUrl?: string | URL,
-): string | null {
-	return canvasArtifactUrl(`pixie://canvas/artifact/${canvasId}/${renderKey}.png`, baseUrl);
-}
-
-export function buildCanvasArtifactUrlForSession(
-	canvasId: string,
-	renderKey: string,
-	scope: CanvasArtifactScope,
-	baseUrl?: string | URL,
-): string | null {
-	return canvasArtifactUrl(`pixie://canvas/artifact/${canvasId}/${renderKey}.png`, scope, baseUrl);
-}
-
 /** Build the session-scoped management status route without adding credentials. */
 export function canvasManagementStatusUrl(scope: CanvasArtifactScope): string | null;
 export function canvasManagementStatusUrl(projectId: string, sessionId: string): string | null;
@@ -211,5 +194,3 @@ export function canvasManagementRemoveUrl(
 	const scopedPath = safeScope(scope);
 	return scopedPath === null ? null : `/api/canvas/remove/${scopedPath}`;
 }
-
-export const authenticatedCanvasArtifactUrl = canvasArtifactUrl;

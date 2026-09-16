@@ -587,7 +587,7 @@ func TestGitRawFileCountsCannotDiscoverRepositoryFromTempDirectory(t *testing.T)
 		t.Fatal(err)
 	}
 	if len(contents) != 0 {
-		t.Fatalf("repository filter helper executed from rawFileCounts: %q", contents)
+		t.Fatalf("repository filter helper executed from rawFileCountsWithBudget: %q", contents)
 	}
 }
 

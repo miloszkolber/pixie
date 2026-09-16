@@ -334,13 +334,6 @@ func syncDirectory(path string) error {
 	return closeErr
 }
 
-// saveMeta writes a complete metadata candidate and publishes it last. The
-// returned bool reports whether the metadata rename happened; a later fsync
-// failure is therefore persistence-uncertain rather than known-uncommitted.
-func saveMeta(meta diskMeta, dir string) (published bool, err error) {
-	return saveMetaFree(meta, dir, int64(maxMetaBytes))
-}
-
 func saveMetaFree(meta diskMeta, dir string, limit int64) (published bool, err error) {
 	content, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {

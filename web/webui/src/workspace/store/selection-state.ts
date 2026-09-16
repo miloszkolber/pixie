@@ -174,8 +174,6 @@ export function normalizeWorkspaceLayout(
 	};
 }
 
-export const clampWorkspaceLayout = normalizeWorkspaceLayout;
-
 export function createInitialWorkspaceState(): WorkspaceSelectionSnapshot {
 	return {
 		primaryArea: "chats",
@@ -188,7 +186,6 @@ export function createInitialWorkspaceState(): WorkspaceSelectionSnapshot {
 }
 
 export const initialWorkspaceState = createInitialWorkspaceState();
-export const INITIAL_WORKSPACE_STATE = initialWorkspaceState;
 
 export type WorkspaceAction =
 	| { type: "select-primary-area"; area: PrimaryArea }
@@ -365,8 +362,6 @@ export function workspaceReducer(
 			return state;
 	}
 }
-
-export const selectionReducer = workspaceReducer;
 
 export function sanitizePrimarySelection(value: unknown): PrimarySelection {
 	if (!value || typeof value !== "object") return null;

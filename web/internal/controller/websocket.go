@@ -893,16 +893,6 @@ func requestFingerprint(method string, params, sessionID json.RawMessage) string
 	return hex.EncodeToString(digest[:])
 }
 
-func writeJSON(ctx context.Context, connection *websocket.Conn, value any) error {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	return connection.Write(bounded, websocket.MessageText, payload)
-}
-
 func (s *WebSocketServer) hasConnectionCapacity(clientKey string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

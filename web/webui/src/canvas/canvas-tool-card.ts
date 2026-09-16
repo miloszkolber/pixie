@@ -171,6 +171,3 @@ export function canvasToolCardViewModel(input: CanvasToolCardInput): CanvasToolC
 		preview,
 	};
 }
-
-export const canvasCardViewModel = canvasToolCardViewModel;
-export const compactCanvasToolCard = canvasToolCardViewModel;

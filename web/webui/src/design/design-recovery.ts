@@ -151,6 +151,3 @@ export function recoverDesignRevision(state: DesignState, value: unknown): Desig
 	}
 	return { ...state, error: { code: recovery.code ?? "internal", message: recovery.message } };
 }
-
-export const recoverDesignStaleRevision = recoverDesignRevision;
-export const designStaleRevisionRecovery = designRevisionRecovery;

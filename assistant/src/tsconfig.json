@@ -12,5 +12,5 @@
 		"types": ["bun"],
 		"lib": ["ESNext"]
 	},
-	"include": ["serve.ts", "host.ts", "probe.ts", "cli.ts"]
+	"include": ["serve.ts", "host.ts", "probe.ts"]
 }

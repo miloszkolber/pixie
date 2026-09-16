@@ -65,13 +65,3 @@ export function designArtifactUrl(
 	if (!new RegExp(`^${ARTIFACT_ID}$`).test(artifact) || artifact.includes("?")) return null;
 	return joinArtifactPath(`/api/design/artifacts/${documentId}/${artifact}.png`, baseUrl);
 }
-
-export function buildDesignArtifactUrl(
-	documentId: string,
-	artifact = "cover",
-	baseUrl?: string | URL,
-): string | null {
-	return designArtifactUrl(documentId, artifact, baseUrl);
-}
-
-export const authenticatedDesignArtifactUrl = designArtifactUrl;

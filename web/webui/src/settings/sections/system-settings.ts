@@ -6,12 +6,6 @@ export const STATE_LABEL: Record<RuntimeAvailability, string> = {
 	unavailable: "Unavailable",
 };
 
-export const STATE_CLASS: Record<RuntimeAvailability, string> = {
-	ready: "text-feedback-success",
-	degraded: "text-feedback-warning",
-	unavailable: "text-feedback-error",
-};
-
 function finiteNonnegative(value: number): number | null {
 	return Number.isFinite(value) && value >= 0 ? value : null;
 }

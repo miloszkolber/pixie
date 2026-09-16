@@ -272,16 +272,6 @@ type canvasManagementTarget struct {
 
 // parseScopedManagementRoute accepts the operation-first public form and the
 // equivalent target-first form used by older UI adapters for any
-// session-scoped management prefix. Neither form is authority:
-// verifiedCanvasManagementScope still checks both IDs against the
-// controller's durable project/session association. Prefix-driven, never a
-// Canvas-name branch.
-func parseCanvasManagementRoute(route string, requests ...*http.Request) (canvasManagementTarget, bool) {
-	return parseScopedManagementRoute(mcpserver.CanvasAPIPrefix, route, requests...)
-}
-
-// parseScopedManagementRoute accepts the operation-first public form and the
-// equivalent target-first form used by older UI adapters for any
 // session-scoped management prefix.
 func parseScopedManagementRoute(prefix, route string, requests ...*http.Request) (canvasManagementTarget, bool) {
 	if prefix == "" || route == "" || (route != prefix && !strings.HasPrefix(route, prefix+"/")) {

@@ -275,13 +275,6 @@ func controllerPort() int {
 	return port
 }
 
-// runController starts the controller-only entrypoint. The controller dials
-// the separately managed assistant over loopback via PIXIE_PI_PORT/PIXIE_PI_URL;
-// it never starts a local Pi.
-func runController(ctx context.Context, build diagnostics.BuildInfo) error {
-	return runControllerWithConfig(ctx, build, "")
-}
-
 func runControllerWithConfig(ctx context.Context, build diagnostics.BuildInfo, configPath string) error {
 	if err := rejectControllerAssistantSettings(os.LookupEnv); err != nil {
 		return err

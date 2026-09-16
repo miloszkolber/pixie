@@ -1054,15 +1054,6 @@ func addUntrackedCounts(repository, name string, change *GitFileChange, budget *
 	return false
 }
 
-// rawFileCounts asks a Git process running outside the repository to compare
-// already-read raw bytes. Running --no-index from a scratch directory keeps
-// repository attributes, local includes and info/attributes out of the
-// command's lookup path while retaining Git's normal numstat accounting.
-func rawFileCounts(ctx context.Context, repository, baseRef, originalName, modifiedName string) (*int, *int) {
-	added, removed, _ := rawFileCountsWithBudget(ctx, repository, baseRef, originalName, modifiedName, nil)
-	return added, removed
-}
-
 func rawFileCountsWithBudget(ctx context.Context, repository, baseRef, originalName, modifiedName string, budget *rawHashBudget) (*int, *int, bool) {
 	original := filePreview{issue: "missing"}
 	if originalName != "" && baseRef != "" {
@@ -1089,11 +1080,6 @@ func rawFileCountsWithBudget(ctx context.Context, repository, baseRef, originalN
 	}
 	added, removed := rawPreviewCounts(ctx, original, modified)
 	return added, removed, false
-}
-
-func rawIndexFileCounts(ctx context.Context, repository, baseRef, name string, index gitIndexEntry) (*int, *int) {
-	added, removed, _ := rawIndexFileCountsWithBudget(ctx, repository, baseRef, name, index, nil)
-	return added, removed
 }
 
 func rawIndexFileCountsWithBudget(ctx context.Context, repository, baseRef, name string, index gitIndexEntry, budget *rawHashBudget) (*int, *int, bool) {

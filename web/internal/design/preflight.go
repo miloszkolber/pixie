@@ -31,10 +31,6 @@ func Preflight(source []byte) (PreflightReport, error) {
 	return preflightWithLimitsContext(context.Background(), source, MaxUploadBytes, MaxArchiveExpansionBytes, MaxArchiveEntries)
 }
 
-func preflightWithLimits(source []byte, maxBytes, maxExpansion int64, maxEntries int) (PreflightReport, error) {
-	return preflightWithLimitsContext(context.Background(), source, maxBytes, maxExpansion, maxEntries)
-}
-
 func preflightWithLimitsContext(ctx context.Context, source []byte, maxBytes, maxExpansion int64, maxEntries int) (PreflightReport, error) {
 	if ctx == nil {
 		ctx = context.Background()

@@ -90,7 +90,7 @@ test("mewa-03 probes collapse narrow viewports and 200 percent zoom to one surfa
 
 test("mewa-03 probes keep keyboard, focus, and overflow contracts", async () => {
 	const layouts = await source("foundation/layouts.css");
-	// Visible focus only; behavior lives in shell-resizer and split-view.
+	// Visible focus only; behavior lives in shell-resizer.
 	expect(layouts).toContain(":focus-visible");
 	expect(layouts).toContain("var(--border-focus)");
 	expect(layouts).toContain("var(--focus-ring-width");

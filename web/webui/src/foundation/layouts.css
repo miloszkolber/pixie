@@ -28,9 +28,9 @@
  * truncate with ellipsis inside their own scroll region.
  *
  * Keyboard contract: resizer and split handles stay keyboard-operable
- * (ArrowLeft/ArrowRight/Home/End in shell-resizer.svelte and
- * split-view.svelte). This file only guarantees a visible focus indicator
- * and that collapsed tracks never trap focus.
+ * (ArrowLeft/ArrowRight/Home/End in shell-resizer.svelte). This file only
+ * guarantees a visible focus indicator and that collapsed tracks never trap
+ * focus.
  */
 
 /* Base probe canvas: six stable slots, viewport-bounded, no page scroll. */

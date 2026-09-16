@@ -140,7 +140,6 @@
 			"web/webui/src/workspace/shell-layout.ts": 1,
 			"web/webui/src/workspace/shell-rail.svelte": 1,
 			"web/webui/src/workspace/shell-resizer.svelte": 2,
-			"web/webui/src/workspace/split-view.svelte": 1,
 			"web/webui/src/workspace/store/content-state.ts": 4,
 			"web/webui/src/workspace/store/project-state.ts": 3,
 			"web/webui/src/workspace/store/selection-state.ts": 21,

@@ -72,31 +72,6 @@ export function selectHistoryTarget(state: {
 	return chat ? { projectAreaId, tabId: chat.id, sessionId: chat.sessionId } : null;
 }
 
-export interface KnownChatLocation {
-	projectAreaId: string;
-	title: string;
-}
-
-export function selectKnownChatLocation(
-	state: {
-		tabsByProjectArea: Record<string, ContentTab[]>;
-		closedChatsByProjectArea: Record<string, ClosedChat[]>;
-	},
-	sessionId: string,
-): KnownChatLocation | null {
-	for (const [projectAreaId, tabs] of Object.entries(state.tabsByProjectArea)) {
-		const tab = tabs.find(
-			(candidate) => candidate.kind === "chat" && candidate.sessionId === sessionId,
-		);
-		if (tab?.kind === "chat") return { projectAreaId, title: tab.name };
-	}
-	for (const [projectAreaId, chats] of Object.entries(state.closedChatsByProjectArea)) {
-		const chat = chats.find((candidate) => candidate.sessionId === sessionId);
-		if (chat) return { projectAreaId, title: chat.title };
-	}
-	return null;
-}
-
 export function selectProjectAreaSessionIds(
 	state: {
 		tabsByProjectArea: Record<string, ContentTab[]>;
@@ -140,16 +115,6 @@ export function matchesChangePath(reported: string, rel: string): boolean {
 	return isAbsolutePath(path) && path.endsWith(`/${rel}`);
 }
 
-export function selectChatTitle(
-	state: { tabsByProjectArea: Record<string, ContentTab[]> },
-	projectAreaId: string,
-	sessionId: string,
-): string {
-	const tabs = state.tabsByProjectArea[projectAreaId] ?? [];
-	const chatTab = tabs.find((t) => t.kind === "chat" && t.sessionId === sessionId);
-	return (chatTab?.name ?? "Chat").trim() || "Chat";
-}
-
 export function selectProjectAreaTick(
 	state: { fsChangesByProjectArea: Record<string, { tick: number }> },
 	projectAreaId: string,
@@ -188,22 +153,4 @@ export function selectSkillsStale(
 		(state.skillChangeTickByProjectArea[projectAreaId] ?? 0) >
 		(state.skillsSyncedTickBySession[sessionId] ?? 0)
 	);
-}
-
-export function selectLastOpenChatSession(
-	state: {
-		tabsByProjectArea: Record<string, { kind: string; id: string; sessionId?: string }[]>;
-		activeTabByProjectArea: Record<string, string | null>;
-	},
-	projectAreaId: string,
-): string | null {
-	const tabs = state.tabsByProjectArea[projectAreaId] ?? [];
-	const activeId = state.activeTabByProjectArea[projectAreaId];
-	const active = tabs.find((t) => t.id === activeId);
-	if (active?.kind === "chat" && active.sessionId) return active.sessionId;
-	for (let i = tabs.length - 1; i >= 0; i--) {
-		const tab = tabs[i];
-		if (tab?.kind === "chat" && tab.sessionId) return tab.sessionId;
-	}
-	return null;
 }

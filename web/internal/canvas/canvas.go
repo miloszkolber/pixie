@@ -774,10 +774,6 @@ func New(config Config) (*Service, error) {
 	return s, nil
 }
 
-// NewService is an explicit alias for integration code that uses Service
-// constructors alongside the other Pixie modules.
-func NewService(config Config) (*Service, error) { return New(config) }
-
 // DefaultConfig returns an enabled storage configuration for a caller that
 // deliberately opts into Canvas. New itself preserves the default-disabled
 // module posture when Config.Enabled is false.

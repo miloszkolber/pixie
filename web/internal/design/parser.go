@@ -11,13 +11,6 @@ type DeterministicParser struct{}
 // NewDeterministicParser returns the explicit fixture parser adapter.
 func NewDeterministicParser() Parser { return DeterministicParser{} }
 
-// NewFixtureParser is a discoverable alias for test/integration callers.
-func NewFixtureParser() Parser { return DeterministicParser{} }
-
-// DeterministicFixtureParser is a function-style alias for callers that name
-// the adapter by its fixture role.
-func DeterministicFixtureParser() Parser { return DeterministicParser{} }
-
 func (DeterministicParser) Parse(ctx context.Context, source []byte) (NormalizedDocument, error) {
 	return parseFixtureJSON(ctx, source)
 }

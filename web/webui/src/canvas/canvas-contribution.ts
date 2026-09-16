@@ -9,6 +9,3 @@ export const CANVAS_CONTRIBUTION = {
 	preview: "raster",
 	executableHtml: false,
 } as const;
-
-export type CanvasContribution = typeof CANVAS_CONTRIBUTION;
-export const canvasContribution = CANVAS_CONTRIBUTION;

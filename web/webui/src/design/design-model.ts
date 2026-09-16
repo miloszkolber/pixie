@@ -208,10 +208,6 @@ export function emptyDesignState(): DesignState {
 	};
 }
 
-export function createDesignState(): DesignState {
-	return emptyDesignState();
-}
-
 export function designStatusFromState(state: DesignState): DesignStatus {
 	return {
 		scope: "instance",
@@ -226,8 +222,6 @@ export function designStatusFromState(state: DesignState): DesignStatus {
 		warnings: state.warnings,
 	};
 }
-
-export const designStatus = designStatusFromState;
 
 function designAvailability(value: unknown, enabled: boolean | undefined): DesignAvailability {
 	if (
@@ -390,10 +384,6 @@ export function framePreviewUnavailable(
 		label: "Frame preview unavailable",
 		reason: "Frame preview unavailable until a supported renderer is available.",
 	};
-}
-
-export function isFramePreviewUnavailable(preview: DesignPreviewMetadata): boolean {
-	return preview.kind === "frame" && preview.status === "unavailable";
 }
 
 export function designPreviewFromResult(

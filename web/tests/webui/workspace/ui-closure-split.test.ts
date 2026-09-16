@@ -191,24 +191,3 @@ test("clearing a project area keeps drafted runtimes but drops idle ones", () =>
 	expect(next.sessions.idle).toBeUndefined();
 	expect(next.tabsByProjectArea["area-1"]).toBeUndefined();
 });
-
-test("split handle keeps separator semantics and never resets while dragging", async () => {
-	const source = await Bun.file(
-		new URL("../../../webui/src/workspace/split-view.svelte", import.meta.url),
-	).text();
-	for (const contract of [
-		'role="separator"',
-		"aria-valuemin",
-		"aria-valuemax",
-		"aria-valuenow",
-		"onpointerdown",
-		"onpointermove",
-		"onpointerup",
-		"onlostpointercapture",
-		"resizable-group",
-		"resizable-panel",
-	]) {
-		expect(source).toContain(contract);
-	}
-	expect(source).toContain("if (!dragging) current = splitPercent");
-});

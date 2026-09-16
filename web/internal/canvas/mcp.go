@@ -11,15 +11,8 @@ import (
 
 const canvasGuideURI = "pixie://canvas/guide"
 
-// GuideURI is the stable resource URI used by Canvas MCP clients.
-const GuideURI = canvasGuideURI
-
 //go:embed guide.md
 var canvasGuide string
-
-// Guide returns the offline call-order and limit guidance without exposing
-// service credentials or mutable document state.
-func Guide() string { return canvasGuide }
 
 type canvasHTTPContextKey struct{}
 type canvasManagementHTTPContextKey struct{}
@@ -34,11 +27,6 @@ func ContextWithAuthority(ctx context.Context, authority Authority) context.Cont
 	return context.WithValue(ctx, canvasHTTPContextKey{}, authority)
 }
 
-// WithAuthority is a short alias for ContextWithAuthority.
-func WithAuthority(ctx context.Context, authority Authority) context.Context {
-	return ContextWithAuthority(ctx, authority)
-}
-
 // ContextWithManagementAuthority binds a controller-issued, management-only
 // capability to an internal HTTP delegation. The context is never serialized
 // or exposed to model-facing MCP requests; the owning registry revokes the
@@ -48,11 +36,6 @@ func ContextWithManagementAuthority(ctx context.Context, authority Authority) co
 		ctx = context.Background()
 	}
 	return context.WithValue(ctx, canvasManagementHTTPContextKey{}, authority)
-}
-
-// WithManagementAuthority is the concise alias used by controller adapters.
-func WithManagementAuthority(ctx context.Context, authority Authority) context.Context {
-	return ContextWithManagementAuthority(ctx, authority)
 }
 
 func (s *Service) managementAuthorityFromContext(ctx context.Context) (Authority, error) {

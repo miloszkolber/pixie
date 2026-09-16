@@ -11,14 +11,8 @@ import (
 
 const designGuideURI = "pixie://design/guide"
 
-// GuideURI is the stable Design guidance resource URI.
-const GuideURI = designGuideURI
-
 //go:embed guide.md
 var designGuide string
-
-// Guide returns static offline call-order and limit guidance.
-func Guide() string { return designGuide }
 
 type designStatusArgs struct {
 	DocumentID         string `json:"documentId,omitempty"`

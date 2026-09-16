@@ -1,4 +1,4 @@
-import type { DesignDocument, DesignNode, DesignPage, DesignState } from "./design-model";
+import type { DesignNode, DesignPage, DesignState } from "./design-model";
 
 /**
  * Explicit Design chat draft-reference action (FIG-04).
@@ -145,9 +145,4 @@ export function designDraftReferenceAction(
 		reference,
 		autoSubmit: false,
 	};
-}
-
-/** Convenience for document-level references without page/node scope. */
-export function designDocumentDraftTarget(document: DesignDocument): DesignDraftTarget {
-	return { documentId: document.id, documentName: document.name };
 }

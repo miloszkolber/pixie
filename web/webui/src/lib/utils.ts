@@ -6,27 +6,6 @@ export function tupleKey(namespace: string, ...parts: string[]): string {
 	return `${namespace}:${parts.map((part) => `${part.length}:${part}`).join("")}`;
 }
 
-export function parseTupleKey(key: string, namespace: string): string[] | null {
-	const prefix = `${namespace}:`;
-	if (!key.startsWith(prefix)) return null;
-	const parts: string[] = [];
-	let offset = prefix.length;
-	while (offset < key.length) {
-		const separator = key.indexOf(":", offset);
-		if (separator < 0) return null;
-		const lengthText = key.slice(offset, separator);
-		if (!/^(0|[1-9]\d*)$/.test(lengthText)) return null;
-		const length = Number(lengthText);
-		if (!Number.isSafeInteger(length)) return null;
-		const start = separator + 1;
-		const end = start + length;
-		if (end > key.length) return null;
-		parts.push(key.slice(start, end));
-		offset = end;
-	}
-	return parts;
-}
-
 export function randomId(prefix = "id"): string {
 	const bytes = crypto.getRandomValues(new Uint8Array(16));
 	const value = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -96,33 +75,6 @@ export function projectRelativePath(path: string, projectAreaRoot?: string | und
 	return canonical;
 }
 
-let colorCanvas: CanvasRenderingContext2D | null | undefined;
-
-function canvasNormalize(color: string): string {
-	if (typeof document === "undefined") return "";
-	colorCanvas ??= document.createElement("canvas").getContext("2d");
-	if (!colorCanvas) return "";
-	colorCanvas.fillStyle = "#000000";
-	colorCanvas.fillStyle = color;
-	const first = colorCanvas.fillStyle;
-	colorCanvas.fillStyle = "#ffffff";
-	colorCanvas.fillStyle = color;
-	return first === colorCanvas.fillStyle ? first : "";
-}
-
-export function cssColorToHex(color: string): string {
-	const value = color.trim();
-	const short = /^#([0-9a-f]{3,4})$/i.exec(value)?.[1];
-	if (short) return `#${[...short].map((c) => c + c).join("")}`;
-	if (/^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(value)) return value;
-	const parsed = canvasNormalize(value);
-	if (parsed.startsWith("#")) return parsed;
-	const [, r, g, b, a] = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(parsed) ?? [];
-	const channels = [Number(r), Number(g), Number(b), Math.round(Number(a) * 255)];
-	if (channels.some((c) => !Number.isFinite(c))) return "";
-	return `#${channels.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-}
-
 export function stripFrontmatter(text: string): string {
 	const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(text);
 	return match ? text.slice(match[0].length) : text;
@@ -145,10 +97,6 @@ export function hasPlatformModifier(
 	return isApplePlatform(platform)
 		? event.metaKey && !event.ctrlKey
 		: event.ctrlKey && !event.metaKey;
-}
-
-export function platformShortcutLabel(key: string, platform = browserPlatform()): string {
-	return isApplePlatform(platform) ? `⌘${key}` : `Ctrl+${key}`;
 }
 
 export function relativeTime(ms: number): string {
