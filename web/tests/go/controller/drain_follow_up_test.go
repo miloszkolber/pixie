@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/miloszkolber/pixie/internal/controller"
 )
 
@@ -49,7 +50,9 @@ func TestQueuedFollowUpDoesNotDispatchAfterBeginDrain(t *testing.T) {
 
 // AUX-19 internal drain: accepting a follow-up dispatch before BeginDrain must
 // keep WaitForDrain blocked until the admitted run settles, not just until the
-// browser handler returns.
+// browser handler returns. The admission is handed to the asynchronous native
+// prompt, so the drain stays blocked while that prompt is still in flight and
+// settles only after the run ends.
 func TestWaitForDrainWaitsForAdmittedFollowUpRun(t *testing.T) {
 	prompts := make(chan map[string]any, 4)
 	loadEntered := make(chan struct{})
@@ -88,18 +91,29 @@ func TestWaitForDrainWaitsForAdmittedFollowUpRun(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	releaseLoad()
+	// The run has started but its native prompt is still in flight. The
+	// handoff must keep the admission until that prompt settles.
+	var request map[string]any
+	select {
+	case request = <-prompts:
+	case <-time.After(2 * time.Second):
+		t.Fatal("admitted follow-up did not dispatch its prompt")
+	}
+	select {
+	case <-drained:
+		t.Fatal("WaitForDrain settled while the asynchronous follow-up prompt was still in flight")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := writeRPC(request["connection"].(*websocket.Conn), map[string]any{"jsonrpc": "2.0", "id": request["id"], "result": map[string]any{"stopReason": "end_turn"}}); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-drained:
 	case <-time.After(2 * time.Second):
 		t.Fatal("WaitForDrain did not settle after the admitted follow-up run finished")
 	}
-	select {
-	case got := <-prompts:
-		params, _ := got["params"].(map[string]any)
-		if text := promptText(params); text != "admitted follow-up" {
-			t.Fatalf("dispatched prompt text = %q, want the admitted follow-up", text)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("admitted follow-up was not dispatched")
+	params, _ := request["params"].(map[string]any)
+	if text := promptText(params); text != "admitted follow-up" {
+		t.Fatalf("dispatched prompt text = %q, want the admitted follow-up", text)
 	}
 }

@@ -31,6 +31,7 @@
  * `.build`, and exits non-zero when any violation is reported.
  */
 
+import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 
@@ -92,8 +93,13 @@ interface Violation {
 	readonly message: string;
 }
 
-function displayPath(path: string): string {
-	return relative(repositoryRoot, path).split(sep).join("/");
+/** Optional root override used by the seeded-violation regression test. */
+export interface BoundaryCheckOptions {
+	readonly root?: string;
+}
+
+function displayPath(root: string, path: string): string {
+	return relative(root, path).split(sep).join("/");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -105,10 +111,10 @@ function isErrnoLike(value: unknown): value is { readonly code?: unknown } {
 }
 
 /** Returns the source root that owns an absolute path, if any. */
-function rootOf(path: string): SourceRoot | null {
-	const rel = relative(repositoryRoot, path).split(sep).join("/");
-	for (const root of sourceRootNames) {
-		if (rel === root || rel.startsWith(`${root}/`)) return root;
+function rootOf(root: string, path: string): SourceRoot | null {
+	const rel = relative(root, path).split(sep).join("/");
+	for (const sourceRoot of sourceRootNames) {
+		if (rel === sourceRoot || rel.startsWith(`${sourceRoot}/`)) return sourceRoot;
 	}
 	return null;
 }
@@ -122,8 +128,8 @@ function isRelative(specifier: string): boolean {
  * generator or fixture they verify across roots, so edges are not enforced
  * there; the banned-dependency checks still are.
  */
-function isTestPath(file: string): boolean {
-	const rel = relative(repositoryRoot, file).split(sep).join("/");
+function isTestPath(root: string, file: string): boolean {
+	const rel = relative(root, file).split(sep).join("/");
 	return rel.startsWith("tests/") || rel.includes("/tests/");
 }
 
@@ -132,9 +138,9 @@ function matchesBase(specifier: string, base: string): boolean {
 }
 
 /** Classifies a non-Go import specifier into a source root, or null. */
-function classify(file: string, specifier: string): SourceRoot | null {
+function classify(root: string, file: string, specifier: string): SourceRoot | null {
 	if (isRelative(specifier)) {
-		return rootOf(resolve(dirname(file), specifier));
+		return rootOf(root, resolve(dirname(file), specifier));
 	}
 	for (const entry of workspacePackages) {
 		if (matchesBase(specifier, entry.base)) return entry.root;
@@ -211,7 +217,7 @@ function collectGoImports(text: string): ImportReference[] {
 }
 
 async function walk(directory: string, files: string[]): Promise<void> {
-	let entries: Awaited<ReturnType<typeof readdir>>;
+	let entries: Dirent[];
 	try {
 		entries = await readdir(directory, { withFileTypes: true });
 	} catch (error) {
@@ -242,32 +248,39 @@ function isBannedDependency(name: string): boolean {
 	return false;
 }
 
-function checkImports(file: string, text: string, violations: Violation[]): void {
-	const root = rootOf(file);
-	if (root === null) return;
+function checkImports(root: string, file: string, text: string, violations: Violation[]): void {
+	const sourceRoot = rootOf(root, file);
+	if (sourceRoot === null) return;
 	const isGo = file.endsWith(".go");
 	const references = isGo ? collectGoImports(text) : collectTypeScriptImports(text);
 	for (const reference of references) {
 		if (isBannedDependency(reference.specifier)) {
 			violations.push({
-				file: displayPath(file),
+				file: displayPath(root, file),
 				line: reference.line,
 				message: `banned dependency ${JSON.stringify(reference.specifier)} (Tailwind is forbidden)`,
 			});
 		}
-		const target = isGo ? classifyGo(reference.specifier) : classify(file, reference.specifier);
-		if (target === null || target === root) continue;
-		if (allowedEdges[root].includes(target)) continue;
-		if (isTestPath(file)) continue;
+		const target = isGo
+			? classifyGo(reference.specifier)
+			: classify(root, file, reference.specifier);
+		if (target === null || target === sourceRoot) continue;
+		if (allowedEdges[sourceRoot].includes(target)) continue;
+		if (isTestPath(root, file)) continue;
 		violations.push({
-			file: displayPath(file),
+			file: displayPath(root, file),
 			line: reference.line,
-			message: `forbidden ${root} -> ${target} import ${JSON.stringify(reference.specifier)} (allowed: ${allowedEdges[root].join(", ")})`,
+			message: `forbidden ${sourceRoot} -> ${target} import ${JSON.stringify(reference.specifier)} (allowed: ${allowedEdges[sourceRoot].join(", ")})`,
 		});
 	}
 }
 
-function checkBannedDirectives(file: string, text: string, violations: Violation[]): void {
+function checkBannedDirectives(
+	root: string,
+	file: string,
+	text: string,
+	violations: Violation[],
+): void {
 	if (!/\.(?:css|pcss|svelte)$/.test(file)) return;
 	const lines = text.split("\n");
 	for (let index = 0; index < lines.length; index += 1) {
@@ -275,7 +288,7 @@ function checkBannedDirectives(file: string, text: string, violations: Violation
 		for (const pattern of bannedDirectives) {
 			if (pattern.test(line)) {
 				violations.push({
-					file: displayPath(file),
+					file: displayPath(root, file),
 					line: index + 1,
 					message: "banned Tailwind directive; the project must not reintroduce Tailwind",
 				});
@@ -284,15 +297,15 @@ function checkBannedDirectives(file: string, text: string, violations: Violation
 	}
 }
 
-async function checkManifests(violations: Violation[]): Promise<number> {
+async function checkManifests(root: string, violations: Violation[]): Promise<number> {
 	let checked = 0;
-	const manifests = [resolve(repositoryRoot, "package.json")];
-	for (const root of sourceRootNames) {
+	const manifests = [resolve(root, "package.json")];
+	for (const sourceRoot of sourceRootNames) {
 		try {
-			const entries = await readdir(resolve(repositoryRoot, root), { withFileTypes: true });
+			const entries = await readdir(resolve(root, sourceRoot), { withFileTypes: true });
 			for (const entry of entries) {
 				if (entry.isFile() && entry.name === "package.json") {
-					manifests.push(resolve(repositoryRoot, root, entry.name));
+					manifests.push(resolve(root, sourceRoot, entry.name));
 				}
 			}
 		} catch {
@@ -307,7 +320,7 @@ async function checkManifests(violations: Violation[]): Promise<number> {
 			parsed = JSON.parse(text);
 		} catch {
 			violations.push({
-				file: displayPath(manifestPath),
+				file: displayPath(root, manifestPath),
 				line: 1,
 				message: "package manifest is not valid JSON",
 			});
@@ -315,7 +328,7 @@ async function checkManifests(violations: Violation[]): Promise<number> {
 		}
 		if (!isRecord(parsed)) {
 			violations.push({
-				file: displayPath(manifestPath),
+				file: displayPath(root, manifestPath),
 				line: 1,
 				message: "package manifest must be a JSON object",
 			});
@@ -328,7 +341,7 @@ async function checkManifests(violations: Violation[]): Promise<number> {
 				if (!isBannedDependency(name)) continue;
 				const line = text.split("\n").findIndex((entry) => entry.includes(`"${name}"`)) + 1;
 				violations.push({
-					file: displayPath(manifestPath),
+					file: displayPath(root, manifestPath),
 					line: line > 0 ? line : 1,
 					message: `${section}.${name} is a banned dependency (Tailwind is forbidden)`,
 				});
@@ -338,17 +351,18 @@ async function checkManifests(violations: Violation[]): Promise<number> {
 	return checked;
 }
 
-export async function runBoundaryCheck(): Promise<number> {
+export async function runBoundaryCheck(options: BoundaryCheckOptions = {}): Promise<number> {
+	const root = options.root ?? repositoryRoot;
 	const files: string[] = [];
-	for (const root of sourceRootNames) await walk(resolve(repositoryRoot, root), files);
+	for (const sourceRoot of sourceRootNames) await walk(resolve(root, sourceRoot), files);
 	files.sort();
 	const violations: Violation[] = [];
 	for (const file of files) {
 		const text = await readFile(file, "utf8");
-		checkImports(file, text, violations);
-		checkBannedDirectives(file, text, violations);
+		checkImports(root, file, text, violations);
+		checkBannedDirectives(root, file, text, violations);
 	}
-	const manifestCount = await checkManifests(violations);
+	const manifestCount = await checkManifests(root, violations);
 
 	if (violations.length > 0) {
 		console.error(`check-boundaries: FAILED (${violations.length} violation(s))`);

@@ -39,12 +39,20 @@
  * `assistant/src`, `shared/src`, `web/webui/src` and `web/scripts`.
  */
 
+import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import ts from "typescript";
 
 const repositoryRoot = resolve(import.meta.dir, "../..");
 const boundariesPath = resolve(import.meta.dir, "conventions-boundaries.json");
+
+/** Options for the gate. The root override is used by the seeded-violation test. */
+export interface ConventionsCheckOptions {
+	readonly printBaseline?: boolean;
+	readonly root?: string;
+	readonly boundariesPath?: string;
+}
 
 const scanRoots = ["assistant/src", "shared/src", "web/webui/src", "web/scripts"] as const;
 
@@ -88,8 +96,8 @@ interface Violation {
 	readonly detail: string;
 }
 
-function displayPath(path: string): string {
-	return relative(repositoryRoot, path).split(sep).join("/");
+function displayPath(root: string, path: string): string {
+	return relative(root, path).split(sep).join("/");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -302,8 +310,13 @@ function isReduceCallback(fn: ts.Node): boolean {
 	);
 }
 
-function checkSource(absolutePath: string, text: string, violations: Violation[]): void {
-	const file = displayPath(absolutePath);
+function checkSource(
+	root: string,
+	absolutePath: string,
+	text: string,
+	violations: Violation[],
+): void {
+	const file = displayPath(root, absolutePath);
 	const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 	const aliases = new Map<string, ts.TypeNode>();
 	for (const statement of source.statements) {
@@ -411,7 +424,7 @@ function checkSource(absolutePath: string, text: string, violations: Violation[]
 }
 
 async function walk(directory: string, files: string[]): Promise<void> {
-	let entries: Awaited<ReturnType<typeof readdir>>;
+	let entries: Dirent[];
 	try {
 		entries = await readdir(directory, { withFileTypes: true });
 	} catch (error) {
@@ -430,15 +443,15 @@ async function walk(directory: string, files: string[]): Promise<void> {
 	}
 }
 
-async function collectViolations(): Promise<Violation[]> {
+async function collectViolations(root: string): Promise<Violation[]> {
 	const files: string[] = [];
-	for (const root of scanRoots) await walk(resolve(repositoryRoot, root), files);
+	for (const scanRoot of scanRoots) await walk(resolve(root, scanRoot), files);
 	files.sort();
 	const violations: Violation[] = [];
 	for (const file of files) {
 		const raw = await readFile(file, "utf8");
 		const text = file.endsWith(".svelte") ? maskSvelte(raw) : raw;
-		checkSource(file, text, violations);
+		checkSource(root, file, text, violations);
 	}
 	return violations;
 }
@@ -479,10 +492,10 @@ function loadBoundaries(raw: string): BoundariesFile {
 	};
 }
 
-export async function runConventionsCheck(
-	options: { printBaseline?: boolean } = {},
-): Promise<number> {
-	const violations = await collectViolations();
+export async function runConventionsCheck(options: ConventionsCheckOptions = {}): Promise<number> {
+	const root = options.root ?? repositoryRoot;
+	const activeBoundariesPath = options.boundariesPath ?? boundariesPath;
+	const violations = await collectViolations(root);
 
 	if (options.printBaseline === true) {
 		const baseline: Record<string, Record<string, number>> = {};
@@ -522,10 +535,10 @@ export async function runConventionsCheck(
 
 	let boundaries: BoundariesFile;
 	try {
-		boundaries = loadBoundaries(await readFile(boundariesPath, "utf8"));
+		boundaries = loadBoundaries(await readFile(activeBoundariesPath, "utf8"));
 	} catch (error) {
 		console.error(
-			`check-conventions: cannot read ${displayPath(boundariesPath)}: ${errorMessage(error)}`,
+			`check-conventions: cannot read ${displayPath(root, activeBoundariesPath)}: ${errorMessage(error)}`,
 		);
 		console.error("Run `bun scripts/check-conventions.ts --print-baseline` and commit the result.");
 		return 1;

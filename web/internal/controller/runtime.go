@@ -485,7 +485,10 @@ func (r *Runtime) Start() (string, error) {
 func (r *Runtime) Errors() <-chan error { return r.errors }
 
 // BeginDrain starts the AUX-19 quiesce: new prompts, forks and resume-style
-// session creation are refused after a short grace while admitted work settles.
+// session creation are refused immediately while already-admitted work,
+// including asynchronous prompt runs, keeps the admission it was granted.
+// WaitForDrain is bounded by the caller's context (controllerQuiesceTimeout in
+// production); once that expires, Shutdown cancels any still-active runs.
 // It is safe to call before or during Shutdown.
 func (r *Runtime) BeginDrain() {
 	if r != nil && r.socket != nil {

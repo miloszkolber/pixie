@@ -36,7 +36,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statfsSync, writeFileSync 
 import { delimiter, resolve } from "node:path";
 
 const repositoryRoot = resolve(import.meta.dir, "../..");
-const workspaceRoot = resolve(
+const defaultWorkspaceRoot = resolve(
 	process.env.PIXIE_RUNTIME_TMPDIR?.trim() || resolve(repositoryRoot, ".tmp-work/runtime"),
 );
 const minimumFreeBytes = 256 * 1024 * 1024;
@@ -59,6 +59,20 @@ interface EnvironmentClassification {
 	readonly expectedBun: string;
 	readonly actualBun: string;
 	readonly checks: readonly EnvironmentCheck[];
+}
+
+/**
+ * Overrides for the classification. Production callers pass nothing and get
+ * the live process, manifest and filesystem. The seeded-violation regression
+ * test injects an unsupported runtime version and a blocked temporary
+ * workspace without changing the host.
+ */
+export interface RuntimeClassificationOptions {
+	readonly actualBun?: string;
+	readonly expectedBun?: string;
+	readonly workspaceRoot?: string;
+	readonly path?: string;
+	readonly cgoEnabled?: string;
 }
 
 function fail(message: string): never {
@@ -85,8 +99,8 @@ function expectedBunVersion(): string {
 	return match[1];
 }
 
-function findExecutable(name: string): string | null {
-	for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+function findExecutable(name: string, path: string): string | null {
+	for (const directory of path.split(delimiter)) {
 		if (directory.trim() === "") continue;
 		const candidate = resolve(directory, name);
 		if (existsSync(candidate)) return candidate;
@@ -94,8 +108,12 @@ function findExecutable(name: string): string | null {
 	return null;
 }
 
-function probeTool(command: string, args: readonly string[]): { ok: boolean; detail: string } {
-	const executable = findExecutable(command);
+function probeTool(
+	command: string,
+	args: readonly string[],
+	path: string,
+): { ok: boolean; detail: string } {
+	const executable = findExecutable(command, path);
 	if (executable === null) return { ok: false, detail: `${command} not found on PATH` };
 	const result = Bun.spawnSync([executable, ...args], { stdout: "pipe", stderr: "pipe" });
 	if (result.exitCode !== 0) {
@@ -105,9 +123,7 @@ function probeTool(command: string, args: readonly string[]): { ok: boolean; det
 	return { ok: true, detail: firstLine };
 }
 
-function checkBunRuntime(): EnvironmentCheck {
-	const expected = expectedBunVersion();
-	const actual = Bun.version;
+function checkBunRuntime(expected: string, actual: string): EnvironmentCheck {
 	if (actual === expected) {
 		return { check: "bun-runtime", status: "ok", detail: `Bun ${actual} matches the pin` };
 	}
@@ -119,7 +135,7 @@ function checkBunRuntime(): EnvironmentCheck {
 	};
 }
 
-function checkTempWorkspace(): EnvironmentCheck {
+function checkTempWorkspace(workspaceRoot: string): EnvironmentCheck {
 	try {
 		mkdirSync(workspaceRoot, { recursive: true });
 	} catch (error) {
@@ -168,8 +184,8 @@ function checkTempWorkspace(): EnvironmentCheck {
 	};
 }
 
-function checkGoToolchain(): EnvironmentCheck {
-	const result = probeTool("go", ["version"]);
+function checkGoToolchain(path: string): EnvironmentCheck {
+	const result = probeTool("go", ["version"], path);
 	if (!result.ok) {
 		return {
 			check: "go-toolchain",
@@ -181,18 +197,22 @@ function checkGoToolchain(): EnvironmentCheck {
 	return { check: "go-toolchain", status: "ok", detail: result.detail };
 }
 
-function needsCgo(args: readonly string[]): boolean {
+function needsCgo(args: readonly string[], cgoEnabled: string): boolean {
 	if (args.includes("-race")) return true;
-	const cgo = (process.env.CGO_ENABLED ?? "").toLowerCase();
+	const cgo = cgoEnabled.toLowerCase();
 	return cgo === "1" || cgo === "true";
 }
 
-function checkCgoToolchain(args: readonly string[]): EnvironmentCheck {
-	if (!needsCgo(args)) {
+function checkCgoToolchain(
+	args: readonly string[],
+	path: string,
+	cgoEnabled: string,
+): EnvironmentCheck {
+	if (!needsCgo(args, cgoEnabled)) {
 		return { check: "cgo-toolchain", status: "ok", detail: "CGO not required for this invocation" };
 	}
 	for (const compiler of ["cc", "gcc", "clang"]) {
-		const result = probeTool(compiler, ["--version"]);
+		const result = probeTool(compiler, ["--version"], path);
 		if (result.ok) return { check: "cgo-toolchain", status: "ok", detail: result.detail };
 	}
 	return {
@@ -203,19 +223,26 @@ function checkCgoToolchain(args: readonly string[]): EnvironmentCheck {
 	};
 }
 
-function classify(args: readonly string[]): EnvironmentClassification {
-	const expectedBun = expectedBunVersion();
+export function classify(
+	args: readonly string[] = [],
+	options: RuntimeClassificationOptions = {},
+): EnvironmentClassification {
+	const expectedBun = options.expectedBun ?? expectedBunVersion();
+	const actualBun = options.actualBun ?? Bun.version;
+	const workspaceRoot = options.workspaceRoot ?? defaultWorkspaceRoot;
+	const path = options.path ?? process.env.PATH ?? "";
+	const cgoEnabled = options.cgoEnabled ?? process.env.CGO_ENABLED ?? "";
 	const checks = [
-		checkBunRuntime(),
-		checkTempWorkspace(),
-		checkGoToolchain(),
-		checkCgoToolchain(args),
+		checkBunRuntime(expectedBun, actualBun),
+		checkTempWorkspace(workspaceRoot),
+		checkGoToolchain(path),
+		checkCgoToolchain(args, path, cgoEnabled),
 	];
 	const blocked = checks.some((check) => check.status === "blocked");
 	return {
 		status: blocked ? "environment-blocked" : "supported",
 		expectedBun,
-		actualBun: Bun.version,
+		actualBun,
 		checks,
 	};
 }
@@ -229,7 +256,7 @@ function formatClassification(classification: EnvironmentClassification): string
 	return lines.join("\n");
 }
 
-function classifyExitCode(classification: EnvironmentClassification): number {
+export function classifyExitCode(classification: EnvironmentClassification): number {
 	return classification.status === "supported" ? EXIT_SUPPORTED : EXIT_ENVIRONMENT_BLOCKED;
 }
 
@@ -248,10 +275,10 @@ async function execWrapper(command: readonly string[]): Promise<number> {
 	}
 	const environment = {
 		...process.env,
-		TMPDIR: workspaceRoot,
-		TMP: workspaceRoot,
-		TEMP: workspaceRoot,
-		GOTMPDIR: workspaceRoot,
+		TMPDIR: defaultWorkspaceRoot,
+		TMP: defaultWorkspaceRoot,
+		TEMP: defaultWorkspaceRoot,
+		GOTMPDIR: defaultWorkspaceRoot,
 	};
 	const processHandle = Bun.spawn([...command], {
 		cwd: process.cwd(),

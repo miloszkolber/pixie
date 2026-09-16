@@ -38,6 +38,68 @@ func (ErrControllerQuiescing) ErrorCode() string { return "controller_quiescing"
 // runnable work and therefore participates in the admission gate.
 func IsDrainGatedMethod(method string) bool { return drainGatedMethods[method] }
 
+// runAdmission is a one-shot handoff of one gate admission from synchronous
+// dispatch to the asynchronous agent run it starts. The transport (or the
+// controller-owned follow-up dispatcher) creates it and keeps ownership until
+// dispatch returns; a run that starts adopts it and settles it when the native
+// prompt returns. If no run starts, the dispatcher settles it so the gate never
+// leaks. Because the admission outlives the dispatch, WaitForDrain waits for
+// the run itself, bounded by the caller's context, not merely for the handler
+// to return.
+type runAdmission struct {
+	release func()
+	once    sync.Once
+	adopted atomic.Bool
+}
+
+func newRunAdmission(release func()) *runAdmission {
+	return &runAdmission{release: release}
+}
+
+// Adopt transfers settlement ownership to the asynchronous run. It reports
+// false when a run already adopted the admission.
+func (a *runAdmission) Adopt() bool {
+	return a != nil && a.adopted.CompareAndSwap(false, true)
+}
+
+// Adopted reports whether a run took ownership of the admission. A nil
+// admission counts as adopted, so an absent handoff never settles anything.
+func (a *runAdmission) Adopted() bool {
+	return a == nil || a.adopted.Load()
+}
+
+// Settle releases the admission exactly once, from whichever path owns it.
+func (a *runAdmission) Settle() {
+	if a == nil {
+		return
+	}
+	a.once.Do(func() {
+		if a.release != nil {
+			a.release()
+		}
+	})
+}
+
+// runAdmissionContextKey carries a run admission from the transport into the
+// handler and the asynchronous work it starts. It is structural: the value is
+// never serialized or exposed to the browser.
+type runAdmissionContextKey struct{}
+
+func withRunAdmission(ctx context.Context, admission *runAdmission) context.Context {
+	if admission == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, runAdmissionContextKey{}, admission)
+}
+
+func runAdmissionFromContext(ctx context.Context) *runAdmission {
+	if ctx == nil {
+		return nil
+	}
+	admission, _ := ctx.Value(runAdmissionContextKey{}).(*runAdmission)
+	return admission
+}
+
 // AdmissionGate is the process-local drain gate. BeginDrain flips it to
 // refusing new gated work; WaitForDrain then blocks until the already-admitted
 // set empties (or the context ends). The zero value is not usable; use
@@ -75,9 +137,11 @@ func (g *AdmissionGate) BeginDrain() {
 }
 
 // TryAdmit reports whether a method may start now. Run-creating methods are
-// counted as in-flight so a drain waits for them; every admitted gated method
-// must call Release exactly once with the same method. Non-gated methods are
-// never counted.
+// counted as in-flight so a drain waits for them. An admission that starts an
+// asynchronous run is handed to that run through runAdmission, which holds the
+// count past dispatch and releases it when the run settles; every admission
+// must be released exactly once with the same method (see Release). Non-gated
+// methods are never counted.
 func (g *AdmissionGate) TryAdmit(method string) bool {
 	if !IsDrainGatedMethod(method) {
 		return true

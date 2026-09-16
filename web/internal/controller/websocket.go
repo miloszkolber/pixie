@@ -467,7 +467,9 @@ func NewWebSocketServer(handler Handler, welcome Welcome, config AuthConfig) (*W
 }
 
 // BeginDrain requests the AUX-19 quiesce. New runnable work is refused
-// immediately; already-admitted work keeps running.
+// immediately; already-admitted work keeps running, and a browser prompt holds
+// its admission until its asynchronous run settles (or the caller's bounded
+// WaitForDrain context expires).
 func (s *WebSocketServer) BeginDrain() {
 	if s != nil {
 		s.gate.BeginDrain()
@@ -717,9 +719,29 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		_ = output.enqueue(ctx, denied)
 		return
 	}
+	// AUX-19 run handoff: session.prompt starts an asynchronous agent run.
+	// Carry a run admission through the request so the run adopts the drain
+	// admission this dispatch already holds and settles it when the native
+	// prompt ends. If no run starts, the transport settles it once dispatch
+	// returns. Other run-creating methods are settled by the follow-up
+	// dispatcher or start no run at all.
+	var promptAdmission *runAdmission
+	if method == "session.prompt" {
+		promptAdmission = newRunAdmission(func() { s.gate.Release(method) })
+	}
 	fingerprint := requestFingerprint(method, params, envelope["sessionId"])
 	requestKey := sha256.Sum256([]byte(clientKey + "\x00" + id))
 	requestContext := context.WithValue(ctx, queueRequestIdentityContextKey{}, queueRequestIdentity{Key: hex.EncodeToString(requestKey[:]), Fingerprint: fingerprint})
+	requestContext = withRunAdmission(requestContext, promptAdmission)
+	settleAdmission := func() {
+		if promptAdmission == nil {
+			s.gate.Release(method)
+			return
+		}
+		if !promptAdmission.Adopted() {
+			promptAdmission.Settle()
+		}
+	}
 	serve := func() {
 		var after func()
 		execute := func() ([]byte, error) {
@@ -779,12 +801,12 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	// history/data work cannot consume Stop/UI-cancellation admission.
 	if IsBrowserControlMethod(method) {
 		if len(payload) > BrowserControlFrameMaxBytes {
-			s.gate.Release(method)
+			settleAdmission()
 			_ = output.connection.Close(websocket.StatusMessageTooBig, "control message too large")
 			return
 		}
 		if !s.admission.TryAcquireControl(len(payload)) {
-			s.gate.Release(method)
+			settleAdmission()
 			_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 			return
 		}
@@ -792,7 +814,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		if s.ctx.Err() != nil {
 			s.mu.Unlock()
 			s.admission.ReleaseControl(len(payload))
-			s.gate.Release(method)
+			settleAdmission()
 			return
 		}
 		s.handlers.Add(1)
@@ -800,13 +822,13 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		go func() {
 			defer s.admission.ReleaseControl(len(payload))
 			defer s.handlers.Done()
-			defer s.gate.Release(method)
+			defer settleAdmission()
 			serve()
 		}()
 		return
 	}
 	if !s.admission.TryAcquireOrdinary(clientKey, len(payload)) {
-		s.gate.Release(method)
+		settleAdmission()
 		_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 		return
 	}
@@ -814,11 +836,11 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 	case s.inflight <- struct{}{}:
 	case <-ctx.Done():
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
-		s.gate.Release(method)
+		settleAdmission()
 		return
 	default:
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
-		s.gate.Release(method)
+		settleAdmission()
 		_ = output.connection.Close(websocket.StatusTryAgainLater, "too many pending requests; reconnect to resume")
 		return
 	}
@@ -827,7 +849,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 		s.mu.Unlock()
 		<-s.inflight
 		s.admission.ReleaseOrdinary(clientKey, len(payload))
-		s.gate.Release(method)
+		settleAdmission()
 		return
 	}
 	s.handlers.Add(1)
@@ -837,7 +859,7 @@ func (s *WebSocketServer) handle(ctx context.Context, output *socketOutput, clie
 			<-s.inflight
 			s.admission.ReleaseOrdinary(clientKey, len(payload))
 			s.handlers.Done()
-			s.gate.Release(method)
+			settleAdmission()
 		}()
 		serve()
 	}()

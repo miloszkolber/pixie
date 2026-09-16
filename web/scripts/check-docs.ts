@@ -21,6 +21,7 @@ export interface DocumentationFacts {
 	pathReferences: number;
 	environmentVariables: number;
 	checkedCommands: readonly string[];
+	documentedMethods: number;
 }
 
 export interface DocumentationReport {
@@ -69,6 +70,15 @@ const NON_OPERATOR_ENVIRONMENT = new Set([
 	"PIXIE_PI_SDK_PROBE_WORKER_SUCCESS_MARKER",
 	"PIXIE_PI_SDK_PROBE_WORKER_SUCCESS_TOKEN",
 ]);
+
+// The SDK coverage table is hand-maintained, so it drifts from the generated
+// controller-method status map. The guard below reads both the generated
+// TypeScript module and the Markdown table as text, which keeps the check pure
+// over the collected repository snapshot and testable with small fixtures.
+const SDK_COVERAGE_DOCUMENT = "docs/sdk-coverage.md";
+const GENERATED_PROTOCOL_CATALOG = "shared/src/generated/protocol-catalog.ts";
+const HOST_OPERATION_STATUSES = ["available", "unavailable", "absent"] as const;
+type HostOperationStatus = (typeof HOST_OPERATION_STATUSES)[number];
 
 function normalizePath(path: string): string {
 	return path.replaceAll("\\", "/").replace(/^\.\//, "");
@@ -239,6 +249,166 @@ function checkEnvironmentDocumentation(
 	return referenced.size;
 }
 
+interface GeneratedControllerMethods {
+	order: readonly string[];
+	status: ReadonlyMap<string, HostOperationStatus>;
+}
+
+interface DocumentedMethodSection {
+	status: HostOperationStatus;
+	headingCount: number | null;
+	methods: readonly string[];
+}
+
+interface DocumentedMethodCoverage {
+	declaredTotal: number | null;
+	sections: readonly DocumentedMethodSection[];
+}
+
+function isHostOperationStatus(value: string): value is HostOperationStatus {
+	return HOST_OPERATION_STATUSES.some((status) => status === value);
+}
+
+// Reads CONTROLLER_METHODS and CONTROLLER_METHOD_STATUS from the generated
+// TypeScript module. The generated file is the single source of truth for the
+// controller method set, and the doc table must not invent or omit methods.
+function parseGeneratedControllerMethods(catalog: string): GeneratedControllerMethods | null {
+	const methodsAnchor = catalog.indexOf("export const CONTROLLER_METHODS");
+	const statusAnchor = catalog.indexOf("export const CONTROLLER_METHOD_STATUS");
+	if (methodsAnchor < 0 || statusAnchor < 0) return null;
+	const methodsBlock = /\[([\s\S]*?)\]\s*as const/.exec(catalog.slice(methodsAnchor));
+	if (methodsBlock === null) return null;
+	const order = [...(methodsBlock[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? "");
+	const statusBlock = /=\s*\{([\s\S]*?)\n\};/.exec(catalog.slice(statusAnchor));
+	if (statusBlock === null) return null;
+	const status = new Map<string, HostOperationStatus>();
+	for (const match of (statusBlock[1] ?? "").matchAll(
+		/"([^"]+)"\s*:\s*"(available|unavailable|absent)"/g,
+	)) {
+		const name = match[1] ?? "";
+		const value = match[2] ?? "";
+		if (isHostOperationStatus(value)) status.set(name, value);
+	}
+	return { order, status };
+}
+
+// Restricts parsing to the "Method coverage" section so later prose cannot add
+// or remove rows, and stops at the next level-two heading.
+function methodCoverageSection(markdown: string): string | null {
+	const heading = "## Method coverage";
+	const start = markdown.indexOf(heading);
+	if (start < 0) return null;
+	const remainder = markdown.slice(start + heading.length);
+	const nextHeading = remainder.search(/\n##\s/);
+	return nextHeading < 0 ? remainder : remainder.slice(0, nextHeading);
+}
+
+function parseDocumentedMethodCoverage(section: string): DocumentedMethodCoverage {
+	const totalMatch = /enumerates all\s+(\d+)\s+methods/i.exec(section);
+	const declaredTotal = totalMatch === null ? null : Number.parseInt(totalMatch[1] ?? "", 10);
+	const headings = [...section.matchAll(/^###\s+([A-Za-z-]+)\s*(?:\((\d+)\))?\s*$/gm)];
+	const sections: DocumentedMethodSection[] = [];
+	for (let index = 0; index < headings.length; index += 1) {
+		const heading = headings[index];
+		const status = (heading?.[1] ?? "").toLowerCase();
+		if (!isHostOperationStatus(status)) continue;
+		const bodyStart = (heading?.index ?? 0) + (heading?.[0]?.length ?? 0);
+		const bodyEnd = headings[index + 1]?.index ?? section.length;
+		const body = section.slice(bodyStart, bodyEnd);
+		const methods = [...body.matchAll(/^\|\s*`([^`]+)`\s*\|/gm)].map((match) => match[1] ?? "");
+		const headingValue = heading?.[2];
+		sections.push({
+			status,
+			headingCount: headingValue === undefined ? null : Number.parseInt(headingValue, 10),
+			methods,
+		});
+	}
+	return { declaredTotal, sections };
+}
+
+// Ties docs/sdk-coverage.md to shared/src/generated/protocol-catalog.ts. A
+// method table that was corrected by hand and never re-read from the generated
+// status map fails here with the exact count, split, name or status mismatch.
+function checkSdkCoverage(files: Readonly<Record<string, string>>, violations: string[]): number {
+	const coverage = files[SDK_COVERAGE_DOCUMENT];
+	if (coverage === undefined) return 0;
+	const catalogText = files[GENERATED_PROTOCOL_CATALOG];
+	const catalog = catalogText === undefined ? null : parseGeneratedControllerMethods(catalogText);
+	if (catalog === null) {
+		violations.push(
+			`${SDK_COVERAGE_DOCUMENT}: cannot read the generated controller-method status map from ${GENERATED_PROTOCOL_CATALOG}`,
+		);
+		return 0;
+	}
+	const section = methodCoverageSection(coverage);
+	if (section === null) {
+		violations.push(`${SDK_COVERAGE_DOCUMENT}: missing the Method coverage section`);
+		return 0;
+	}
+	const documented = parseDocumentedMethodCoverage(section);
+	const catalogCount = catalog.order.length;
+	const expectedByStatus = new Map<HostOperationStatus, number>(
+		HOST_OPERATION_STATUSES.map((status) => [status, 0]),
+	);
+	for (const method of catalog.order) {
+		const status = catalog.status.get(method);
+		if (status === undefined) continue;
+		expectedByStatus.set(status, (expectedByStatus.get(status) ?? 0) + 1);
+	}
+	if (documented.declaredTotal !== null && documented.declaredTotal !== catalogCount) {
+		violations.push(
+			`${SDK_COVERAGE_DOCUMENT}: declared method count ${documented.declaredTotal} does not match the generated catalog count ${catalogCount}`,
+		);
+	}
+	for (const status of HOST_OPERATION_STATUSES) {
+		const expected = expectedByStatus.get(status) ?? 0;
+		const entry = documented.sections.find((candidate) => candidate.status === status);
+		const listed = entry?.methods.length ?? 0;
+		if (entry?.headingCount != null && entry.headingCount !== expected) {
+			violations.push(
+				`${SDK_COVERAGE_DOCUMENT}: ${status} heading reports ${entry.headingCount} but the generated catalog has ${expected}`,
+			);
+		}
+		if (listed !== expected) {
+			violations.push(
+				`${SDK_COVERAGE_DOCUMENT}: ${status} table lists ${listed} methods but the generated catalog has ${expected}`,
+			);
+		}
+	}
+	const seen = new Set<string>();
+	for (const entry of documented.sections) {
+		for (const method of entry.methods) {
+			const catalogStatus = catalog.status.get(method);
+			if (catalogStatus === undefined) {
+				violations.push(
+					`${SDK_COVERAGE_DOCUMENT}: documented method ${method} is not a generated controller method`,
+				);
+				continue;
+			}
+			if (seen.has(method)) {
+				violations.push(
+					`${SDK_COVERAGE_DOCUMENT}: documented method ${method} is listed more than once`,
+				);
+				continue;
+			}
+			seen.add(method);
+			if (catalogStatus !== entry.status) {
+				violations.push(
+					`${SDK_COVERAGE_DOCUMENT}: documented method ${method} is listed under ${entry.status} but the generated catalog marks it ${catalogStatus}`,
+				);
+			}
+		}
+	}
+	for (const method of catalog.order) {
+		if (!seen.has(method)) {
+			violations.push(
+				`${SDK_COVERAGE_DOCUMENT}: generated controller method ${method} is not documented`,
+			);
+		}
+	}
+	return documented.sections.reduce((total, entry) => total + entry.methods.length, 0);
+}
+
 export function inspectDocumentation(input: DocumentationInput): DocumentationReport {
 	const violations: string[] = [];
 	const files = Object.fromEntries(
@@ -250,6 +420,7 @@ export function inspectDocumentation(input: DocumentationInput): DocumentationRe
 	const localLinks = checkLinks(files, violations);
 	const pathReferences = checkPathReferences(files, violations);
 	const environmentVariables = checkEnvironmentDocumentation(files, violations);
+	const documentedMethods = checkSdkCoverage(files, violations);
 	const checkedCommands: string[] = [];
 	const development = files["docs/development.md"] ?? "";
 	for (const command of REQUIRED_COMMANDS) {
@@ -288,6 +459,7 @@ export function inspectDocumentation(input: DocumentationInput): DocumentationRe
 			pathReferences,
 			environmentVariables,
 			checkedCommands,
+			documentedMethods,
 		},
 	};
 }
@@ -340,7 +512,7 @@ export async function collectDocumentationInput(
 
 export function formatDocumentationReport(report: DocumentationReport): string {
 	if (report.ok) {
-		return `check-docs: OK (${report.facts.documentCount} Markdown documents, ${report.facts.localLinks} local links, ${report.facts.environmentVariables} environment variables, ${report.facts.checkedCommands.length} commands)`;
+		return `check-docs: OK (${report.facts.documentCount} Markdown documents, ${report.facts.localLinks} local links, ${report.facts.environmentVariables} environment variables, ${report.facts.checkedCommands.length} commands, ${report.facts.documentedMethods} documented SDK methods)`;
 	}
 	return ["check-docs: FAILED", ...report.violations.map((violation) => `  - ${violation}`)].join(
 		"\n",

@@ -187,8 +187,9 @@ type SessionManager struct {
 	nativeMCP             nativeMCPRevoker
 	// gate is the AUX-19 drain admission gate owned by the WebSocket server.
 	// When set, a controller-owned follow-up dispatch is refused while the
-	// controller is quiescing and each admitted follow-up run is counted until
-	// runFollowUp settles, so WaitForDrain waits for internal work too.
+	// controller is quiescing and each admitted follow-up run keeps its
+	// admission until the asynchronous prompt settles, so WaitForDrain waits
+	// for internal runs too.
 	gate *AdmissionGate
 
 	// deletionQuarantine retains requested records that could not be safely

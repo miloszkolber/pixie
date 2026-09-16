@@ -243,18 +243,19 @@ function diff(expected: string, actual: string, limit = 20): string {
 	return lines.join("\n");
 }
 
-export function runConfigSchemaCheck(): number {
+export function runConfigSchemaCheck(artifact = artifactPath): number {
 	const rendered = renderConfigSchema(buildConfigSchema(loadSources()));
 	let committed: string;
 	try {
-		committed = readFileSync(artifactPath, "utf8");
+		committed = readFileSync(artifact, "utf8");
 	} catch {
-		console.error(`check:config-schema: FAILED — ${artifactPath} is missing`);
+		console.error(`check:config-schema: FAILED — ${artifact} is missing`);
 		console.error("Run `bun run generate:config-schema`.");
 		return 1;
 	}
 	if (committed !== rendered) {
-		console.error("check:config-schema: FAILED — docs/config-schema.json is stale");
+		const label = artifact === artifactPath ? "docs/config-schema.json" : artifact;
+		console.error(`check:config-schema: FAILED — ${label} is stale`);
 		console.error(diff(rendered, committed));
 		console.error("Run `bun run generate:config-schema` and commit the result.");
 		return 1;
@@ -263,14 +264,26 @@ export function runConfigSchemaCheck(): number {
 	return 0;
 }
 
+/** Reads an explicit `--artifact <path>` override, if present. */
+function artifactOverride(args: readonly string[]): string | undefined {
+	const index = args.indexOf("--artifact");
+	if (index < 0) return undefined;
+	const value = args[index + 1];
+	if (value === undefined || value.startsWith("--")) {
+		fail("--artifact requires a path");
+	}
+	return resolve(value);
+}
+
 function main(): number {
-	const mode = process.argv[2];
+	const args = process.argv.slice(2);
+	const mode = args[0];
 	const rendered = renderConfigSchema(buildConfigSchema(loadSources()));
 	if (mode === "--print") {
 		process.stdout.write(rendered);
 		return 0;
 	}
-	if (mode === "--check") return runConfigSchemaCheck();
+	if (mode === "--check") return runConfigSchemaCheck(artifactOverride(args) ?? artifactPath);
 	writeFileSync(artifactPath, rendered);
 	console.log(`generate:config-schema: wrote ${artifactPath}`);
 	return 0;

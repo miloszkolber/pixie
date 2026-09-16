@@ -78,7 +78,7 @@ func (m *SessionManager) Prompt(ctx context.Context, sessionID, text string, ima
 	if busy {
 		return fmt.Errorf("wait for the running chat or resolve its queued follow-ups")
 	}
-	return m.startPromptLocked(sessionID, entry, text, images, resources, "")
+	return m.startPromptLocked(sessionID, entry, text, images, resources, "", runAdmissionFromContext(ctx))
 }
 
 func (m *SessionManager) Queue(ctx context.Context, sessionID, text string) error {
@@ -648,7 +648,7 @@ func (m *SessionManager) Stop(ctx context.Context, sessionID string) (StopOutcom
 	return outcome, nil
 }
 
-func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry, text string, images []ImageContent, resources []TextResourceAttachment, queueID string) error {
+func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry, text string, images []ImageContent, resources []TextResourceAttachment, queueID string, admission *runAdmission) error {
 	prompt, err := promptBlocks(text, images, resources)
 	if err != nil {
 		return err
@@ -734,7 +734,15 @@ func (m *SessionManager) startPromptLocked(sessionID string, entry *sessionEntry
 	m.emit("agent.event", map[string]any{"sessionId": sessionID, "event": map[string]any{"type": "run-start"}})
 	entry.state.Unlock()
 	promptContext := entry.context(context.Background())
+	// The run takes ownership of the dispatch admission here, before dispatch
+	// returns, and settles it when the native prompt ends. The transport (or the
+	// follow-up dispatcher) settles an unadopted admission instead, so the gate
+	// is never leaked and WaitForDrain accounts for the run itself.
+	runAdopted := admission != nil && admission.Adopt()
 	go func() {
+		if runAdopted {
+			defer admission.Settle()
+		}
 		defer close(done)
 		defer m.releaseWork(entry)
 		response, promptErr := m.client.Prompt(promptContext, piwire.PromptRequest{SessionId: piwire.SessionId(sessionID), Prompt: prompt})
@@ -817,7 +825,8 @@ func (m *SessionManager) scheduleFollowUp(sessionID string, entry *sessionEntry)
 // followUpAdmissionMethod is the gated admission class a controller-owned
 // follow-up dispatch occupies. Dispatching a follow-up starts a prompt run, so
 // it shares the session.prompt class: WaitForDrain and Quiescing then account
-// for internal settlement paths that never crossed the browser boundary.
+// for internal runs that never crossed the browser boundary, from admission
+// through the asynchronous prompt's settlement.
 const followUpAdmissionMethod = "session.prompt"
 
 func (m *SessionManager) admitFollowUp(sessionID string, entry *sessionEntry) bool {
@@ -830,9 +839,10 @@ func (m *SessionManager) admitFollowUp(sessionID string, entry *sessionEntry) bo
 	}
 	// Register with the drain gate before committing to the run. TryAdmit is
 	// also the quiesce check: after BeginDrain it returns false and the durable
-	// queue is left untouched for recovery. The gate is held until runFollowUp
-	// settles, so WaitForDrain never reports an empty set while this dispatch
-	// is still in flight.
+	// queue is left untouched for recovery. The dispatcher hands the admission
+	// to the run it starts, so the gate is held until the asynchronous prompt
+	// settles and WaitForDrain never reports an empty set while that run is
+	// still in flight.
 	if m.gate != nil && !m.gate.TryAdmit(followUpAdmissionMethod) {
 		entry.state.Unlock()
 		m.mu.Unlock()
@@ -852,13 +862,20 @@ func (m *SessionManager) admitFollowUp(sessionID string, entry *sessionEntry) bo
 }
 
 func (m *SessionManager) runFollowUp(sessionID string, entry *sessionEntry) {
-	// Hold the drain admission for the whole dispatch; a drain must wait until
-	// this admitted follow-up run has settled.
-	defer m.releaseFollowUpRun()
+	// The admitted follow-up dispatch hands its drain admission to the run it
+	// starts. If no run starts (lock, attach or dispatch failure), this
+	// dispatcher settles the admission so the gate is never leaked; once the run
+	// adopts it, WaitForDrain waits for the asynchronous prompt to settle.
+	admission := newRunAdmission(m.releaseFollowUpRun)
+	defer func() {
+		if !admission.Adopted() {
+			admission.Settle()
+		}
+	}()
 	defer m.releaseWork(entry)
 	retry := false
 	if err := m.lockEntry(sessionID, entry); err == nil {
-		drainErr := m.drainFollowUp(sessionID, entry)
+		drainErr := m.drainFollowUp(sessionID, entry, admission)
 		retry = drainErr != nil && !errors.Is(drainErr, errAgentIdentityChanged)
 		// Clear the admission flag while still owning op. A queue mutation
 		// cannot observe the old flag and lose its wakeup in this interval.
@@ -882,7 +899,8 @@ func (m *SessionManager) runFollowUp(sessionID string, entry *sessionEntry) {
 func (m *SessionManager) releaseFollowUpRun() {
 	if m.gate != nil {
 		// Release with the same gated admission class used to admit the run so a
-		// read-only path can never settle this dispatch.
+		// read-only path can never settle this dispatch. It is called once, by
+		// whichever of the run or the dispatcher owns settlement.
 		m.gate.Release(followUpAdmissionMethod)
 	}
 }
@@ -923,7 +941,7 @@ func followUpRetryJitter(sessionID string) time.Duration {
 	return time.Duration(value) * time.Millisecond
 }
 
-func (m *SessionManager) drainFollowUp(sessionID string, entry *sessionEntry) error {
+func (m *SessionManager) drainFollowUp(sessionID string, entry *sessionEntry, admission *runAdmission) error {
 	entry.state.Lock()
 	if !runnableFollowUpLocked(entry) {
 		entry.state.Unlock()
@@ -974,7 +992,7 @@ func (m *SessionManager) drainFollowUp(sessionID string, entry *sessionEntry) er
 	}
 	m.emitQueue(sessionID, entry)
 	entry.state.Unlock()
-	if err := m.startPromptLocked(sessionID, entry, item.Text, nil, nil, item.ID); err != nil {
+	if err := m.startPromptLocked(sessionID, entry, item.Text, nil, nil, item.ID, admission); err != nil {
 		if restoreErr := m.restoreQueuedDispatch(sessionID, entry, item.ID); restoreErr != nil {
 			return fmt.Errorf("prepare queued follow-up: %v; restore queue: %w", err, restoreErr)
 		}

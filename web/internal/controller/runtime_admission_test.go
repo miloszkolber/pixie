@@ -201,3 +201,58 @@ func TestAdmissionGateNonGatedReleaseDoesNotSettleAdmittedWork(t *testing.T) {
 		t.Fatal("WaitForDrain did not settle after the admitted prompt released")
 	}
 }
+
+// AUX-19 run handoff: an admission adopted by the asynchronous run is settled
+// exactly once when that run ends, and the transport's post-dispatch settle is
+// a no-op. An unadopted admission is settled by whoever still owns it.
+func TestRunAdmissionHandoffSettlesExactlyOnce(t *testing.T) {
+	settles := 0
+	release := func() { settles++ }
+
+	adopted := newRunAdmission(release)
+	if !adopted.Adopt() {
+		t.Fatal("Adopt refused a fresh admission")
+	}
+	if !adopted.Adopted() {
+		t.Fatal("adopted admission did not report adoption")
+	}
+	// The transport settles after dispatch only when no run adopted the
+	// admission; this path must not release an adopted run.
+	if !adopted.Adopted() {
+		adopted.Settle()
+	}
+	if settles != 0 {
+		t.Fatalf("transport settled an adopted run: settles=%d", settles)
+	}
+	adopted.Settle()
+	adopted.Settle()
+	if settles != 1 {
+		t.Fatalf("adopted run settled %d times, want 1", settles)
+	}
+
+	dispatchOwned := newRunAdmission(release)
+	if dispatchOwned.Adopted() {
+		t.Fatal("an unadopted admission reported adoption")
+	}
+	dispatchOwned.Settle()
+	dispatchOwned.Settle()
+	if settles != 2 {
+		t.Fatalf("dispatch-owned admission settled %d times total, want 2", settles)
+	}
+}
+
+// The run admission must survive the handler boundary through the request
+// context and be absent from a context that never carried one.
+func TestRunAdmissionContextRoundTrip(t *testing.T) {
+	admission := newRunAdmission(func() {})
+	carried := withRunAdmission(context.Background(), admission)
+	if runAdmissionFromContext(carried) != admission {
+		t.Fatal("run admission did not survive the request context")
+	}
+	if runAdmissionFromContext(context.Background()) != nil {
+		t.Fatal("a context without a run admission reported one")
+	}
+	if withRunAdmission(context.Background(), nil) == nil {
+		t.Fatal("withRunAdmission dropped the base context")
+	}
+}
