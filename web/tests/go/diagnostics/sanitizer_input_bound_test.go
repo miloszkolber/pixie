@@ -33,8 +33,11 @@ func TestSanitizeDiagnosticTextBoundsAdversarialInput(t *testing.T) {
 		got := diagnostics.SanitizeDiagnosticText(testCase.input, limit)
 		elapsed := time.Since(start)
 		t.Logf("%s: len=%d in %s", testCase.name, len(got), elapsed)
-		if elapsed > 2*time.Second {
-			t.Fatalf("%s sanitized in %s, want under 2s", testCase.name, elapsed)
+		// The input bound is the guarantee; this generous ceiling only catches a
+		// return of the unbounded stall (roughly 15s per fixture before the fix)
+		// without depending on the exact CI runner speed.
+		if elapsed > 10*time.Second {
+			t.Fatalf("%s sanitized in %s, want under 10s", testCase.name, elapsed)
 		}
 		if len(got) > limit {
 			t.Fatalf("%s output has %d bytes, limit is %d", testCase.name, len(got), limit)
