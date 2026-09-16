@@ -519,14 +519,14 @@ func childInvocations(paths archivePaths, parsed arguments, endpoint assistantEn
 	controllerEnvironment["PIXIE_PI_PORT"] = fmt.Sprint(endpoint.port)
 
 	return childInvocation{
-			path: paths.bun,
-			args: []string{paths.assistant, "serve", "--config", parsed.assistantConfig},
-			env:  assistantEnvironment,
-		}, childInvocation{
-			path: paths.controller,
-			args: []string{"serve", "--config", parsed.webConfig},
-			env:  controllerEnvironment,
-		}
+		path: paths.bun,
+		args: []string{paths.assistant, "serve", "--config", parsed.assistantConfig},
+		env:  assistantEnvironment,
+	}, childInvocation{
+		path: paths.controller,
+		args: []string{"serve", "--config", parsed.webConfig},
+		env:  controllerEnvironment,
+	}
 }
 
 func cloneEnvironment(parent map[string]string) map[string]string {
