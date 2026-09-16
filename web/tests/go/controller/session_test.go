@@ -178,7 +178,42 @@ func newSessionManagerWithFixtureBehavior(t *testing.T, loadUpdates []map[string
 	client := controller.NewPiClient("ws"+strings.TrimPrefix(server.URL, "http"), "", "test", manager)
 	manager.SetClient(client)
 	t.Cleanup(client.Close)
+	// A queue drain can persist after the last assertion; let the store settle
+	// before t.TempDir removes the directory, otherwise RemoveAll races the
+	// final write and reports "directory not empty".
+	t.Cleanup(func() { waitForDirectoryQuiet(t, []string{store.Dir, root}, 150*time.Millisecond, 3*time.Second) })
 	return manager, client, project, store
+}
+
+// waitForDirectoryQuiet blocks until no file under the directories has changed
+// for the quiet window, or the timeout elapses. A controller store can persist
+// a final queue state just after the last assertion, and t.TempDir removal would
+// otherwise race that write.
+func waitForDirectoryQuiet(t *testing.T, dirs []string, quiet, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	last := time.Now()
+	for {
+		newest := time.Time{}
+		for _, dir := range dirs {
+			_ = filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
+				if err != nil || info == nil {
+					return nil
+				}
+				if info.ModTime().After(newest) {
+					newest = info.ModTime()
+				}
+				return nil
+			})
+		}
+		if newest.After(last) {
+			last = newest
+		}
+		if time.Since(last) >= quiet || time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 type publishedEvent struct {
