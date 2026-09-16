@@ -4,7 +4,7 @@ Pixie is a lightweight web workspace for the user's installed Pi.
 
 ## Read first
 
-Read README.md and the current behavior in docs/architecture.md, docs/pi.md, docs/security.md, docs/deployment.md and docs/development.md relevant to the task. Use [roadmap/roadmap.md](roadmap/roadmap.md) as the central implementation plan, and [roadmap/roadmap-canvas.md](roadmap/roadmap-canvas.md) and [roadmap/roadmap-openfig.md](roadmap/roadmap-openfig.md) for those feature streams.
+Read README.md and the current behavior in docs/architecture.md, docs/pi.md, docs/security.md, docs/deployment.md and docs/development.md relevant to the task. Use [roadmap/roadmap.md](roadmap/roadmap.md) as the central implementation plan, and [roadmap/roadmap-canvas.md](roadmap/roadmap-canvas.md) and [roadmap/roadmap-openfig.md](roadmap/roadmap-openfig.md) for those feature streams. [roadmap/roadmap-aux.md](roadmap/roadmap-aux.md) holds the implementable plan and gap analysis for additive, optional work taken from neighbouring open-source Pi interfaces; it never changes the target or trust model.
 
 The canonical implementation plan lives under roadmap/. Current operating documentation remains under docs/. Do not recreate removed planning or draft files or copy future behavior into current docs before it ships. Keep human prose brief, factual and present-tense; one fact has one owner.
 
