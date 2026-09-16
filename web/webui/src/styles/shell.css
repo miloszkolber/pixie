@@ -152,7 +152,12 @@
 	flex-direction: column;
 }
 
-@media (width < 64rem) {
+/* The narrow shell is the exact logical complement of the desktop `lg`
+   breakpoint. A lowered `width < 64rem` range query can still match at exactly
+   64rem under sub-pixel viewport rounding, which collapsed the grid to one
+   column while the `min-width: 64rem` pane utilities showed every desktop
+   pane. The negated form keeps the grid and the pane display on one authority. */
+@media not (min-width: 64rem) {
 	.pixie-shell-grid {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: minmax(0, 1fr);
@@ -340,7 +345,7 @@
 }
 
 /* On narrow viewports the split stacks vertically so both panes stay usable. */
-@media (width < 64rem) {
+@media not (min-width: 64rem) {
 	.pixie-split-group {
 		flex-direction: column;
 	}

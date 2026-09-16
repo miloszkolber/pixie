@@ -60,7 +60,10 @@ test("MEWA-03 keeps collapsed fixture tracks inert and scrollable", async () => 
 	expect(layouts).toContain("overflow: auto;");
 	expect(layouts).toContain("min-width: 0;");
 	expect(layouts).toContain("min-height: 0;");
-	expect(layouts).toContain("@media (width < 64rem)");
+	// The narrow collapse negates the desktop breakpoint so both cannot match
+	// at exactly 64rem under sub-pixel viewport rounding.
+	expect(layouts).toContain("@media not (min-width: 64rem)");
+	expect(layouts).not.toContain("@media (width < 64rem)");
 	expect(layouts).toContain('grid-template-areas: "mobile"');
 	expect(layouts).toContain("@media (64rem <= width < 80rem)");
 });

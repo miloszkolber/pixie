@@ -24,8 +24,9 @@
  *
  * Zoom contract: 200% zoom halves the effective CSS viewport, so probes
  * follow the same single-column collapse as narrow viewports
- * (@media width < 64rem). Text never forces page scroll; long names
- * truncate with ellipsis inside their own scroll region.
+ * (@media not (min-width: 64rem), the exact complement of the desktop
+ * breakpoint). Text never forces page scroll; long names truncate with
+ * ellipsis inside their own scroll region.
  *
  * Keyboard contract: resizer and split handles stay keyboard-operable
  * (ArrowLeft/ArrowRight/Home/End in shell-resizer.svelte). This file only
@@ -318,7 +319,7 @@
 
 /* Narrow viewports and 200% zoom: one content surface, same selection model.
    Drawers preserve selection; hidden regions are inert and restore focus. */
-@media (width < 64rem) {
+@media not (min-width: 64rem) {
 	.mewa-layout-probe,
 	.mewa-layout-probe[data-layout="split"],
 	.mewa-layout-probe[data-layout="secondary-focus"],

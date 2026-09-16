@@ -72,7 +72,10 @@ test("mewa-03 probes share geometry in light and dark without a second visual sy
 
 test("mewa-03 probes collapse narrow viewports and 200 percent zoom to one surface", async () => {
 	const layouts = await source("foundation/layouts.css");
-	expect(layouts).toContain("@media (width < 64rem)");
+	// The narrow collapse negates the desktop `min-width: 64rem` breakpoint so
+	// the two conditions stay exact complements at the boundary.
+	expect(layouts).toContain("@media not (min-width: 64rem)");
+	expect(layouts).not.toContain("@media (width < 64rem)");
 	expect(layouts).toContain('grid-template-areas: "mobile"');
 	expect(layouts).toContain("grid-template-columns: minmax(0, 1fr)");
 	// Every level keeps min bounds so content never forces page scroll.

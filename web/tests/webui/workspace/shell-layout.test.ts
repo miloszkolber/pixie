@@ -322,12 +322,36 @@ test("shell grid reserves six stable tracks and releases the secondary view unti
 		"minmax(var(--pixie-secondary-content-min, 0px), var(--pixie-secondary-view-track, 0px))",
 	);
 	expect(shell).not.toContain("max-width: 64rem");
-	expect(shell).toContain("@media (width < 64rem)");
+	// The narrow collapse must be the exact complement of the desktop
+	// `min-width: 64rem` pane utilities. A lowered `width < 64rem` range query
+	// can match at exactly 64rem under sub-pixel viewport rounding, which
+	// stacked every desktop pane into one grid column.
+	expect(shell).toContain("@media not (min-width: 64rem)");
+	expect(shell).not.toContain("@media (width < 64rem)");
+	expect(shell).not.toMatch(/@media \(max-width: 64rem\)/);
 	expect(shell).toContain("overflow: hidden;");
 	expect(shell).toContain(".pixie-resizer-left");
 	expect(shell).toContain(".pixie-resizer-primary");
 	expect(shell).toContain(".pixie-resizer-right");
 	expect(shell).not.toContain("pixie-header-cell");
+});
+
+test("narrow shell collapse is the exact complement of the desktop pane breakpoint", async () => {
+	const [shell, mewa, layouts, utilities] = await Promise.all([
+		source("styles/shell.css"),
+		source("mewa.css"),
+		source("foundation/layouts.css"),
+		source("styles/utilities.css"),
+	]);
+	// The `u-lg-*` pane display utilities own the desktop threshold.
+	expect(utilities).toContain("@media (min-width: 64rem)");
+	// Every narrow grid/probe collapse must negate that same threshold so a
+	// viewport exactly at the boundary cannot satisfy both conditions, which
+	// stacked every desktop pane into one grid column and hid the composer.
+	for (const stylesheet of [mewa, layouts, shell]) {
+		expect(stylesheet).toContain("@media not (min-width: 64rem)");
+		expect(stylesheet).not.toContain("@media (width < 64rem)");
+	}
 });
 
 test("shell resizers expose bounded pointer and keyboard controls for every desktop track", async () => {

@@ -79,7 +79,11 @@
 	grid-template-areas: "primary-rail primary-sidebar primary-view secondary-view secondary-sidebar secondary-rail";
 }
 
-@media (width < 64rem) {
+/* Keep the narrow collapse the exact complement of the desktop pane
+ * utilities (`min-width: 64rem`). Sub-pixel viewport rounding can match a
+ * lowered range query at exactly 64rem, which would otherwise collapse this
+ * grid to one column while the utilities show every desktop pane. */
+@media not (min-width: 64rem) {
 	.pixie-shell-grid.mewa-layout-probe {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: minmax(0, 1fr);
