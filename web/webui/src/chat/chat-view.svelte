@@ -836,7 +836,9 @@ function openChanges(path: string): void {
 			supportsSteer={canSteer}
 		/>
 		<ExtensionWidgets widgets={runtime.extensionWidgets} placement="belowEditor" />
-		<ChatHeader stats={runtime.stats} left={HeaderLeft} />
+		<div class="chat-view-session-toolbar">
+			<ChatHeader stats={runtime.stats} left={HeaderLeft} />
+		</div>
 	</div>
 	{#if uiDialog}
 		{#key `${uiDialog.sessionId}:${uiDialog.requestId}`}
@@ -847,7 +849,21 @@ function openChanges(path: string): void {
 
 <style>
 	.chat-view-root { background: var(--container-project-bg); }
-	.chat-view-editor-region { position: relative; }
+	.chat-view-editor-region { position: relative; min-height: 0; }
+	.chat-view-session-toolbar { min-width: 0; }
 	.chat-view-extension-status { max-height: 15dvh; }
 	.chat-queue-textarea { min-height: 7rem; resize: vertical; }
+
+	@media (max-height: 600px) {
+		/* The session toolbar holds the provider/model/thinking selectors, the
+		   goal control and the stats. At narrow widths it wraps into several
+		   rows; on a short viewport those rows must not push the composer below
+		   the fold. Bound the toolbar and let it scroll so every control stays
+		   reachable while the composer stays pinned. */
+		.chat-view-session-toolbar {
+			max-height: 4.5rem;
+			overflow-y: auto;
+			overscroll-behavior: contain;
+		}
+	}
 </style>

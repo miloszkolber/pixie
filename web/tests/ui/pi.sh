@@ -5,7 +5,11 @@ fixture_pid=
 browser() { agent-browser --session "$session" "$@"; }
 assert_eval() { browser eval "(() => { if (!($1)) throw new Error('Pi UI acceptance assertion failed: ' + JSON.stringify('$2')); return true; })()" >/dev/null; }
 settings_tab() {
- browser eval "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); if (!(row instanceof HTMLElement)) throw new Error('Settings section is unavailable: $1'); row.click(); return true; })()" >/dev/null
+	# Select by row label, then wait for the row's panel to be visible. The row
+	# text can be mid-re-render during a viewport change, so a label equality
+	# wait races the DOM; the panel visibility is the stable contract.
+	browser eval "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); if (!(row instanceof HTMLElement)) throw new Error('Settings section is unavailable: $1'); row.click(); return true; })()" >/dev/null
+	browser wait --timeout 15000 --fn "(() => { const row = Array.from(document.querySelectorAll('[data-testid=settings-section-row]')).find(candidate => candidate.textContent?.trim() === '$1'); const id = row?.getAttribute('aria-controls'); const panel = id ? document.getElementById(id) : null; return !!panel && panel.hidden === false; })()" >/dev/null
 }
 open_settings() {
  browser eval "(() => { const button = Array.from(document.querySelectorAll('[data-testid=open-settings]')).find(candidate => candidate instanceof HTMLElement && candidate.getClientRects().length > 0); if (!(button instanceof HTMLElement)) throw new Error('Settings control is unavailable'); button.click(); return true; })()" >/dev/null
@@ -67,13 +71,14 @@ for theme in light dark; do
  done
 done
 browser set viewport 1024 900 >/dev/null
+browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
 settings_tab Models
-browser wait --timeout 60000 --fn 'document.querySelector("[data-testid=settings-section-row][aria-selected=true]")?.textContent?.trim() === "Models"' >/dev/null
+browser wait --timeout 60000 --fn 'document.getElementById("settings-panel-models")?.hidden === false' >/dev/null
 browser focus '[data-testid=settings-section-row][aria-controls=settings-panel-pi]' >/dev/null
 browser press ArrowRight >/dev/null
 assert_eval "document.activeElement?.getAttribute('aria-controls') === 'settings-panel-providers'" 'Settings section arrow navigation'
 browser press Enter >/dev/null
-browser wait --timeout 60000 --fn 'document.querySelector("[data-testid=settings-section-row][aria-controls=settings-panel-providers]")?.getAttribute("aria-selected") === "true"' >/dev/null
+browser wait --timeout 60000 --fn 'document.getElementById("settings-panel-providers")?.hidden === false' >/dev/null
 browser set viewport 320 520 >/dev/null
 browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
 assert_eval "document.querySelector('[data-testid=settings-detail]')?.getBoundingClientRect().bottom <= innerHeight + 1" 'short settings view remains reachable'

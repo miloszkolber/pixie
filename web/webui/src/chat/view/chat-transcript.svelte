@@ -271,13 +271,16 @@ export interface ChatTranscriptHandle {
 
 <style>
 	.chat-scroller {
-		min-height: 0;
+		/* The transcript keeps a usable floor when the composer and its
+		   auxiliary controls grow on a short viewport; the composer must not
+		   squeeze the conversation out of the column. */
+		min-height: 4rem;
 		flex: 1;
 		border: 0;
 	}
 
 	.chat-viewport {
-		min-height: 0;
+		min-height: 4rem;
 		max-height: none;
 		flex: 1;
 		overflow-x: hidden;
