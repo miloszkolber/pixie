@@ -289,7 +289,7 @@ function setRegistryEnabled(module: McpRegistryModule, enabled: boolean): void {
 						type: "mcp",
 					})}
 					<div class="u-flex u-min-w-0 u-flex-wrap u-items-center u-gap-xs">
-						<div class="u-min-w-0 tr-text-metadata u-text-text-muted">
+						<div class="u-min-w-0 u-break-words tr-text-metadata u-text-text-muted">
 							<span>{registryModuleStatusLabel(module)}</span>
 							<p>{module.detail ?? `Publisher module: ${module.state}`}</p>
 							<p>{module.endpoint ?? module.path}</p>

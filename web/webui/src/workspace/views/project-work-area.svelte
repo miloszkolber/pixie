@@ -79,6 +79,7 @@ import ShellRail from "../shell-rail.svelte";
 import {
 	canvasModuleAvailable,
 	designModuleAvailable,
+	resolveWorkspaceViewTracks,
 	selectPrimaryContentTab,
 	selectSecondaryContentTab,
 	selectTabSessionStreaming,
@@ -363,14 +364,17 @@ let contentMinimum = $derived(
 		? "min(22.5rem, max(0px, calc((100% - 6rem - var(--pixie-primary-sidebar-track, 16rem) - var(--pixie-secondary-sidebar-track, 16rem)) / 2)))"
 		: "0px",
 );
+let viewTracks = $derived(
+	resolveWorkspaceViewTracks(primaryViewVisible, secondaryViewVisible, layout.primaryFraction),
+);
 let gridStyle = $derived(
 	[
 		`--pixie-primary-sidebar-track:${primarySidebarVisible ? `${layout.leftWidth}px` : "0px"}`,
 		`--pixie-secondary-sidebar-track:${secondarySidebarVisible ? `${layout.rightWidth}px` : "0px"}`,
 		`--pixie-primary-content-min:${primaryViewVisible ? contentMinimum : "0px"}`,
 		`--pixie-secondary-content-min:${secondaryViewVisible ? contentMinimum : "0px"}`,
-		`--pixie-primary-view-track:${primaryViewVisible ? `${layout.primaryFraction}fr` : "0fr"}`,
-		`--pixie-secondary-view-track:${secondaryViewVisible ? `${1 - layout.primaryFraction}fr` : "0px"}`,
+		`--pixie-primary-view-track:${viewTracks.primary}`,
+		`--pixie-secondary-view-track:${viewTracks.secondary}`,
 	].join(";"),
 );
 let primaryTitle = $derived(

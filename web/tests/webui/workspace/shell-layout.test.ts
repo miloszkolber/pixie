@@ -11,6 +11,7 @@ import {
 	stepSplitPercent,
 } from "@/workspace/split-range";
 import {
+	resolveWorkspaceViewTracks,
 	selectSplitChatTab,
 	selectSplitPreviewTab,
 } from "@/workspace/views/project-work-area-state";
@@ -182,6 +183,57 @@ test("split keyboard steps stay inside the range", () => {
 	expect(stepSplitPercent(50, -1, true)).toBe(50 - SPLIT_LARGE_STEP);
 	expect(stepSplitPercent(22, -1)).toBe(SPLIT_MIN);
 	expect(stepSplitPercent(78, 1)).toBe(SPLIT_MAX);
+});
+
+test("a lone visible content view takes the whole free track instead of a partial fraction", () => {
+	// Regression: with both sidebars open the settings detail lived in a 0.5fr
+	// primary track while the hidden secondary track reserved no space. A
+	// fractional flex factor below 1 leaves the unused free space unallocated,
+	// so at 1024px the primary view was 208px wide and settings panels scrolled
+	// horizontally. A lone view must take 1fr.
+	expect(resolveWorkspaceViewTracks(true, false, 0.5)).toEqual({
+		primary: "1fr",
+		secondary: "0px",
+	});
+	expect(resolveWorkspaceViewTracks(false, true, 0.5)).toEqual({
+		primary: "0fr",
+		secondary: "1fr",
+	});
+	expect(resolveWorkspaceViewTracks(true, false, 0.2)).toEqual({
+		primary: "1fr",
+		secondary: "0px",
+	});
+	expect(resolveWorkspaceViewTracks(false, true, 0.8)).toEqual({
+		primary: "0fr",
+		secondary: "1fr",
+	});
+	// Both visible: the fractions still sum to one.
+	expect(resolveWorkspaceViewTracks(true, true, 0.65)).toEqual({
+		primary: "0.65fr",
+		secondary: "0.35fr",
+	});
+	// No visible view releases both content columns.
+	expect(resolveWorkspaceViewTracks(false, false, 0.5)).toEqual({
+		primary: "0fr",
+		secondary: "0px",
+	});
+});
+
+test("the workspace grid derives both view tracks from the lone-view resolver", async () => {
+	const workArea = await source("workspace/views/project-work-area.svelte");
+	expect(workArea).toContain(
+		"resolveWorkspaceViewTracks(primaryViewVisible, secondaryViewVisible, layout.primaryFraction)",
+	);
+	expect(workArea).toContain("--pixie-primary-view-track:${viewTracks.primary}");
+	expect(workArea).toContain("--pixie-secondary-view-track:${viewTracks.secondary}");
+	// The old inline fraction starved the only visible view whenever the
+	// secondary view was hidden.
+	expect(workArea).not.toContain(
+		"--pixie-primary-view-track:${primaryViewVisible ? `${layout.primaryFraction}fr`",
+	);
+	expect(workArea).not.toContain(
+		"--pixie-secondary-view-track:${secondaryViewVisible ? `${1 - layout.primaryFraction}fr`",
+	);
 });
 
 test("activity switches keep the global right view in sync", () => {
@@ -463,8 +515,17 @@ test("shell chrome stays scoped to six slots and stacks split panes narrow", asy
 test("the shell fills the viewport with flex, never percentage heights", async () => {
 	const shell = await source("styles/shell.css");
 	expect(shell).toContain("min-height: 100dvh;");
-	// Percentage heights collapse when the app-shell only guarantees a minimum
-	// height; every level below it must grow with flex instead.
+	// The shell must be *definitely* viewport-sized, not merely a minimum. With
+	// only `min-height` the shell stays content-sized, so the shared
+	// `minmax(0, 1fr)` grid row resolves to the tallest pane's content. At
+	// 1024x500 a tall Details sidebar inflated that row, the chat column grew
+	// past the fold and `chat-send` was pushed below `innerHeight`. A definite
+	// viewport height lets the flexible row resolve to the available space and
+	// each pane scroll internally.
+	expect(shell).toMatch(/\.pixie-shell\s*{[^}]*height:\s*100dvh/s);
+	// Percentage heights stay banned: the shell's definite size comes from the
+	// viewport unit, and every level below it grows with flex instead of
+	// resolving `height: 100%` against an ancestor's auto height.
 	expect(shell).not.toMatch(/height:\s*100%/);
 	// Grid slots stretch and their inner boxes fill, without breaking the mobile
 	// single-pane switcher.

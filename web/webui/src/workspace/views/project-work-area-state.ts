@@ -11,6 +11,33 @@ const EMPTY_TABS: ContentTab[] = [];
 
 export type SplitPreviewTab = Extract<ContentTab, { kind: "file" | "diff" | "canvas" | "design" }>;
 
+export interface WorkspaceViewTracks {
+	primary: string;
+	secondary: string;
+}
+
+/**
+ * Resolve the two content-view grid tracks for the six-slot shell.
+ *
+ * A `<flex>` factor below `1` only consumes its fraction of the free space and
+ * leaves the rest unallocated. When only one view is visible it must therefore
+ * take `1fr`; using `primaryFraction`/`1 - primaryFraction` starved the lone
+ * pane (for example the settings detail) into a narrow track with unused space
+ * beside it. When both views are visible the two fractions still sum to one.
+ * Hidden views keep a zero track so their grid column releases the space.
+ */
+export function resolveWorkspaceViewTracks(
+	primaryViewVisible: boolean,
+	secondaryViewVisible: boolean,
+	primaryFraction: number,
+): WorkspaceViewTracks {
+	if (primaryViewVisible && secondaryViewVisible)
+		return { primary: `${primaryFraction}fr`, secondary: `${1 - primaryFraction}fr` };
+	if (primaryViewVisible) return { primary: "1fr", secondary: "0px" };
+	if (secondaryViewVisible) return { primary: "0fr", secondary: "1fr" };
+	return { primary: "0fr", secondary: "0px" };
+}
+
 export type SelectionContentStatus = "none" | "available" | "missing" | "invalid";
 /** Resolve the canonical primary selection through the legacy tab cache. */
 export function selectPrimaryContentTab(

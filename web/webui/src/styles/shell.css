@@ -2,10 +2,16 @@
    Appearance comes from Mewa component classes. Borders use Mewa roles;
    no color literals live here. */
 
-/* The shell owns viewport fill. Percentage heights are banned below: the app-shell
-   only guarantees a *minimum* height, so every level grows with flex instead. */
+/* The shell owns viewport fill with a definite height. A bare `min-height`
+   leaves it content-sized, so the shared `minmax(0, 1fr)` grid row resolves to
+   the tallest pane's content; a tall Details sidebar then inflates the row and
+   pushes the chat composer below the fold at 1024x500. With a definite height
+   the flexible row resolves to the available space and each pane scrolls
+   internally. Percentage heights stay banned; the viewport unit keeps the flex
+   chain below in charge of the geometry. */
 .pixie-shell {
 	display: flex;
+	height: 100dvh;
 	min-height: 100dvh;
 	flex-direction: column;
 }
