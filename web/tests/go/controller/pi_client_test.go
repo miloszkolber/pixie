@@ -232,6 +232,10 @@ func TestPiClientDrainsCreateReplyAfterRequestCancellation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("host did not receive session.create")
 	}
+	// Let the request write fully complete before cancelling: a cancellation that
+	// interrupts the write is legitimately uncertain, while a cancellation after
+	// the write must still reconcile the late reply.
+	time.Sleep(100 * time.Millisecond)
 	cancel()
 	close(releaseCreate)
 	select {
