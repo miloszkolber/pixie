@@ -252,7 +252,10 @@ func TestWebSocketPublishAllowlistDropsUnknownChannel(t *testing.T) {
 // reconnects and resyncs instead of receiving a partial chain.
 func TestWebSocketEventBackpressureCapsQueuedFrames(t *testing.T) {
 	original := socketEventBackpressure
-	socketEventBackpressure = 2
+	// A zero cap sheds the first published event deterministically; a small
+	// non-zero cap can be drained by the writer goroutine before five publishes,
+	// which made this test depend on runner timing.
+	socketEventBackpressure = 0
 	defer func() { socketEventBackpressure = original }()
 
 	handler := blockHandler{started: make(chan struct{}, 1), release: make(chan struct{})}
