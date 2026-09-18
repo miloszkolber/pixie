@@ -612,9 +612,7 @@ $effect(() => {
 	if (canvasReadinessOwner === owner) return;
 	canvasReadinessOwner = owner;
 	canvasState =
-		readiness === "ready"
-			? emptyCanvasState(sessionId)
-			: unavailableCanvasState(sessionId);
+		readiness === "ready" ? emptyCanvasState(sessionId) : unavailableCanvasState(sessionId);
 });
 
 $effect(() => {
@@ -648,9 +646,7 @@ async function refreshCanvasModule(
 		const response = await requestModuleJson<CanvasStatusResponse>(statusUrl);
 		if (generation !== canvasRequestGeneration || activeCanvasTab?.sessionId !== sessionId) return;
 		const current =
-			canvasState.scope?.sessionId === sessionId
-				? canvasState
-				: emptyCanvasState(sessionId);
+			canvasState.scope?.sessionId === sessionId ? canvasState : emptyCanvasState(sessionId);
 		canvasState = canvasStateFromStatus(current, response);
 	} catch (cause) {
 		if (generation === canvasRequestGeneration) canvasRefreshError = errorText(cause);
