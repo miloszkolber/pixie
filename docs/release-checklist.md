@@ -1,6 +1,6 @@
 # Release checklist
 
-This is a validate-only checklist. It describes evidence required before a separately authorized release; it does not publish a release, an image, a tag, or enable a workflow.
+This is a validate-only checklist. It describes the evidence required for a release; it does not itself publish a release, an image, a tag, or enable a workflow.
 
 ## Source identity
 
@@ -42,4 +42,4 @@ Required unproven evidence includes live amd64 and arm64 archive behavior, full 
 
 ## Publication boundary
 
-This repository has no published release or approved published Docker image. A placeholder image reference or a Compose image field is not publication evidence. Remote publication, tags, releases, images, and deployment require separate authorization.
+The verified release workflow publishes GitHub releases and controller images under the enabled publication policy. A placeholder image reference or a Compose image field is not publication evidence, and publication does not approve deployment.

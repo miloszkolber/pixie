@@ -22,9 +22,9 @@ The interface provides persistent chats, streaming, image attachments, native mo
 
 ## Docker
 
-The source Compose file defines a full `pixie` image on Debian trixie-slim (glibc) with a dedicated Pi-state volume and a controller-only `pixie_web` image that connects to a separately installed `pixie_cli` host. The full image runs the bundled Bun runtime with the host and controller under `tini`; the controller-only image contains no Bun, Node or Pi. The Compose file declares no fixed container names. Run the native TUI in the full image from an interactive terminal with `docker compose --profile full run --rm --entrypoint /bin/sh pixie -c 'exec /app/pixie'`. Docker was not exercised for this documentation update; these images are not a sandbox, a published image, or a release.
+The source Compose file defines a full `pixie` image on Debian trixie-slim (glibc) with a dedicated Pi-state volume and a controller-only `pixie_web` image that connects to a separately installed `pixie_cli` host. The full image runs the bundled Bun runtime with the host and controller under `tini`; the controller-only image contains no Bun, Node or Pi. The Compose file declares no fixed container names. Run the native TUI in the full image from an interactive terminal with `docker compose --profile full run --rm --entrypoint /bin/sh pixie -c 'exec /app/pixie'`. The Compose definition is neither a sandbox nor deployment evidence.
 
-There is no published release or approved deployment. Remote publication requires separate authorization.
+The verified release workflow publishes GitHub releases and controller images. Publication does not approve a deployment.
 
 [Architecture](docs/architecture.md) · [Pi integration](docs/pi.md) · [SDK coverage](docs/sdk-coverage.md) · [Security](docs/security.md) · [Deployment](docs/deployment.md) · [Development](docs/development.md) · [Release checklist](docs/release-checklist.md)
 

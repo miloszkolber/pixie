@@ -104,10 +104,6 @@ func (s *Service) MCPHandler() http.Handler {
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: MaxHTMLBytes + 64*1024, PropagateRequestCancellation: true, DisableLocalhostProtection: true})
 }
 
-// ToolServer is a compatibility alias for integrations that call MCP servers
-// rather than handlers.
-func (s *Service) ToolServer() http.Handler { return s.MCPHandler() }
-
 func objectSchema(properties map[string]any) map[string]any {
 	if properties == nil {
 		properties = map[string]any{}

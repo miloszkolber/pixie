@@ -125,6 +125,3 @@ func toolFailure(err error) (*mcp.CallToolResult, any, error) {
 	}
 	return &mcp.CallToolResult{StructuredContent: json.RawMessage(encoded), Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}, IsError: true}, value, nil
 }
-
-// ToolServer is a compatibility alias for integrations that expect a handler.
-func (s *Service) ToolServer() http.Handler { return s.MCPHandler() }

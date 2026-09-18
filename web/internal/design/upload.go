@@ -587,12 +587,6 @@ func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResu
 	return result, nil
 }
 
-// UploadBytes is a convenience wrapper for callers with an already bounded
-// source. The same limits and transaction semantics apply.
-func (s *Service) UploadBytes(ctx context.Context, name string, source []byte) (UploadResult, error) {
-	return s.Upload(ctx, UploadRequest{Name: name, Bytes: source})
-}
-
 // Remove durably publishes a tombstone before deleting source/index payloads.
 // It remains available while disabled or when the parser worker is absent.
 func (s *Service) Remove(ctx context.Context, request RemoveRequest) (RemoveResult, error) {
@@ -793,9 +787,4 @@ func (s *Service) SetSelection(ctx context.Context, request SetSelectionRequest)
 	s.slot = next
 	s.mu.Unlock()
 	return SelectionResult{Outcome: "selected", Selection: next.Selection}, nil
-}
-
-// Select is a concise alias for SetSelection used by UI integrations.
-func (s *Service) Select(ctx context.Context, request SetSelectionRequest) (SelectionResult, error) {
-	return s.SetSelection(ctx, request)
 }

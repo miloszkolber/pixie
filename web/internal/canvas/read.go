@@ -204,16 +204,3 @@ func (s *Service) ManagementStatus(ctx context.Context, authority Authority) (Li
 	}
 	return ListResult{Outcome: "status", Items: []CanvasSummary{s.availability(live)}}, nil
 }
-
-// Status is the concise compatibility name used by controller integrations.
-// It is intentionally management-scoped; model-facing callers must continue
-// to use List through the Canvas MCP capability.
-func (s *Service) Status(ctx context.Context, authority Authority) (ListResult, error) {
-	return s.ManagementStatus(ctx, authority)
-}
-
-// ReadText is a small integration convenience for controller call sites that
-// only need visible text and do not want to construct a ReadRequest.
-func (s *Service) ReadText(ctx context.Context, authority Authority, canvasID string, version uint64, selector string) (ReadResult, error) {
-	return s.Read(ctx, authority, ReadRequest{CanvasID: canvasID, Version: version, Selector: selector})
-}

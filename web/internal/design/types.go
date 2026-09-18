@@ -33,16 +33,7 @@ const (
 	// MaxWorkerDiagnostics bounds parser/worker error detail retained by the service.
 	MaxWorkerDiagnostics = 64 * 1024
 	// MaxCursorBytes keeps cursors bounded even when copied between clients.
-	MaxCursorBytes = 512
-	// Compatibility aliases use the roadmap terminology used by integrations.
-	MaxSourceBytes            = MaxUploadBytes
-	MaxDeclaredExpansionBytes = MaxArchiveExpansionBytes
-	MaxNormalizedNodes        = MaxNodes
-	MaxNormalizedGraphDepth   = MaxGraphDepth
-	MaxQueryResultNodes       = MaxQueryNodes
-	MaxQueryResultBytes       = MaxQueryBytes
-	MaxImageBytes             = MaxPreviewBytes
-
+	MaxCursorBytes      = 512
 	defaultParseTimeout = 30 * time.Second
 	defaultIndexVersion = "design-index-v1"
 )

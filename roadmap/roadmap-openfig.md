@@ -16,7 +16,7 @@ Implemented at source level:
 - A normalized index stored through a dedicated bounded artifact path (64 MiB), not generic persisted JSON or a host/browser frame, with bounded cursors that bind document, generation, kind, page, parent, root and depth.
 - Read-only tools `design_status`, `design_structure`, `design_node`, `design_text` and `design_preview`, plus `pixie://design/guide` / `design_guidance`.
 - Bounds: 50 MiB source upload, 256 MiB declared expansion with an independent observed bound, 4,096 archive entries, 100,000 normalized nodes, graph depth 128, 100 nodes and 256 KiB per query, 2 MiB encoded PNG, 2048 preview dimension, 4,194,304 decoded pixels, 64 KiB worker diagnostics and 512-byte cursors.
-- UI upload/progress, viewer, inspector, sidebar, recovery states and an explicit draft-reference action. Private browsing never changes shared focus; only an explicit publish action sets the shared page/node selection and revision.
+- A minimal UI contribution with instance status, document summary, cover preview and explicit refresh in the existing workspace slots.
 
 `design_preview` currently supports `kind: "cover"` only. A selected-frame request returns `unavailable`; the saved document cover is never presented as a frame.
 

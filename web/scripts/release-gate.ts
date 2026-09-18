@@ -537,11 +537,11 @@ export function identityInputFromEvidence(
 		const key = parsePackageArchiveAssertionId(assertion.id);
 		if (
 			key === null ||
-			key.variant !== detail.variant ||
+			key.product !== detail.product ||
 			key.architecture !== detail.architecture
 		) {
 			violations.push(
-				`evidence ${assertion.id}: assertion id does not match inspected ${detail.variant}/${detail.architecture}`,
+				`evidence ${assertion.id}: assertion id does not match inspected ${detail.product}/${detail.architecture}`,
 			);
 			continue;
 		}
@@ -554,7 +554,7 @@ export function identityInputFromEvidence(
 		});
 		binaries.push({
 			name: detail.binary,
-			variant: detail.variant,
+			variant: detail.product,
 			architecture: detail.architecture,
 			sourceCommit: evidence.sourceCommit,
 			releaseId: evidence.releaseId,

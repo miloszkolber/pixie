@@ -241,6 +241,8 @@ test("the Svelte shell keeps one responsive activity surface and every blocked s
 		'data-testid="design-module-view"',
 		'data-testid="canvas-sidebar"',
 		'data-testid="design-sidebar"',
+		"Session status",
+		"Instance status",
 		"canvasManagementStatusUrl",
 		'"/api/design/status"',
 		'data-testid="settings-area"',

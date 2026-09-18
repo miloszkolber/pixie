@@ -20,12 +20,6 @@ let imageUrl = $derived(preview.url ?? preview.artifactUrl ?? null);
 			decoding="async"
 			class="design-preview-image u-max-w-full u-rounded u-border u-border-border-default"
 		/>
-	{:else if preview.kind === "frame"}
-		<p data-testid="design-frame-preview-unavailable" role="status" class="tr-text-metadata u-text-text-muted">Frame preview unavailable. Structure and text remain available.</p>
-	{:else if preview.status === "pending"}
-		<p role="status" class="tr-text-metadata u-text-text-muted">Loading document thumbnail…</p>
-	{:else if preview.status === "error"}
-		<p role="alert" class="tr-text-metadata u-text-feedback-error">{preview.reason ?? "Document thumbnail failed."}</p>
 	{:else}
 		<p role="status" class="tr-text-metadata u-text-text-muted">{preview.reason ?? "Document thumbnail unavailable."}</p>
 	{/if}

@@ -15,7 +15,7 @@ Implemented at source level:
 - Transactional storage under the controller data directory, with staging, atomic rename, tombstone-first removal, restart reconciliation and a global quota. Persistence-uncertain outcomes are typed and reconciled rather than treated as a rollback.
 - The six tools (`canvas_create`, `canvas_write`, `canvas_read`, `canvas_screenshot`, `canvas_list`, `canvas_remove`) plus `pixie://canvas/guide` / `canvas_guidance`.
 - Bounded limits: 512 KiB HTML per write, 64 MiB durable Canvas storage, 2 MiB encoded PNG before MCP base64, 1280x800 at DPR 1 by default, at most 2048 pixels per dimension and 4,194,304 pixels, 512 selector bytes, 4,096 matches and 64 KiB returned text or DOM. Jobs are single-flight keyed by generation, revision, viewport, renderer version and asset set, bounded to one active plus two queued.
-- A UI contribution with revision/status controls, a viewer, a sidebar, tool cards and recovery states.
+- A minimal UI contribution with session status and explicit refresh in the existing workspace slots.
 
 ## Blockers
 

@@ -1,6 +1,6 @@
 # Deployment
 
-This is a configuration and validation reference, not an approved deployment recipe. There is no published release, approved Docker deployment, standalone-distribution proof, credentialed Pi validation, or arm64 live lifecycle evidence, and no remote publication is authorized.
+This is a configuration and validation reference, not an approved deployment recipe. A verified release and controller image are published, but credentialed Pi validation, an approved Docker deployment, standalone-distribution proof, and arm64 live lifecycle evidence remain separate work.
 
 Choose one topology. The split topology runs a separately installed `pixie_cli` host and a `pixie_web` controller; the full topology runs `pixie`. `pixie_web` never contains or starts Bun, Node or Pi. `pixie_cli` and `pixie` bundle the pinned Bun `1.4.0` runtime `runtime/bin/bun`, the Pi SDK and the normal native `pixie` TUI, exclude Pi RPC, and use the internal host; no Node runtime is bundled. They are mutually exclusive owners of the global `pixie` command and one `PI_CODING_AGENT_DIR`. See [assistant](assistant.md) and the [roadmap](../roadmap/roadmap.md).
 
@@ -75,7 +75,7 @@ Run the full-image native TUI only from an interactive terminal:
 docker compose --profile full run --rm --entrypoint /bin/sh pixie -c 'exec /app/pixie'
 ```
 
-This command is documented from the Dockerfile and Compose configuration; Docker execution was not performed for this update. The images are not a sandbox, published images, or releases.
+This command is documented from the Dockerfile and Compose configuration. The images are not a sandbox, and their definition alone is not deployment evidence.
 
 ## MCP and Signet
 
@@ -101,4 +101,4 @@ Application `/health` and `/livez` check liveness; `/readyz` checks state, UI an
 
 Schedules run while Pixie is up. Ask a chat with MCP support to create, list, pause, resume, run or stop a schedule, or use the workspace Schedules list/detail views and the Settings schedules section. Each scheduled run is a separate chat in that project. For example, `schedule_manage` with `action: "create", prompt: "Review open tasks", cron: "0 9 * * 1-5", timezone: "Europe/Warsaw", mutationId: "weekday-review-1"` runs at 09:00 on weekdays. It uses the current project; repeat the mutation ID only for a retry of the same request. Cron has five fields and an IANA timezone (UTC by default). Pause prevents future dispatch; stop cancels the current run; run-now starts one immediately. See [state and restart behavior](architecture.md#state-and-lifecycle).
 
-Back up Pi state, Pixie data and private environment files after active work settles. Do not infer a usable GHCR image from the placeholder or use `latest`: no image publication or remote release is authorized.
+Back up Pi state, Pixie data and private environment files after active work settles. Select an exact validated release tag rather than `latest`; publication does not establish a usable deployment or its operator configuration.

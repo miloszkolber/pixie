@@ -38,11 +38,6 @@ const (
 	MaxStorageBytes int64 = 64 * 1024 * 1024
 	// MaxImageBytes is the compressed image budget before MCP base64 encoding.
 	MaxImageBytes int64 = 2 * 1024 * 1024
-	// Compatibility aliases make the budget names easy to discover from
-	// controller code while retaining the roadmap terminology above.
-	MaxHTMLSize        = MaxHTMLBytes
-	MaxQuotaBytes      = MaxStorageBytes
-	MaxScreenshotBytes = MaxImageBytes
 	// MaxSelectorBytes bounds selectors before parsing.
 	MaxSelectorBytes = 512
 	// MaxMatches is the maximum number of selected results returned by a read.

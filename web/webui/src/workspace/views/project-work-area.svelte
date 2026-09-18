@@ -97,11 +97,9 @@ interface Props {
 	projectAreaId: string;
 }
 type ShellResizerComponent = typeof import("../shell-resizer.svelte").default;
-type CanvasPreviewComponent = typeof import("../../canvas/canvas-preview.svelte").default;
 type DesignPreviewComponent = typeof import("../../design/design-preview.svelte").default;
 let { projectAreaId }: Props = $props();
 let ShellResizer = $state<ShellResizerComponent | null>(null);
-let CanvasPreview = $state<CanvasPreviewComponent | null>(null);
 let DesignPreview = $state<DesignPreviewComponent | null>(null);
 
 type LayoutProbeMode =
@@ -203,11 +201,8 @@ let canvasRefreshPending = $state(false);
 let designRefreshPending = $state(false);
 let canvasRefreshError = $state<string | null>(null);
 let designRefreshError = $state<string | null>(null);
-let canvasPreviewLoadPending = $state(false);
 let designPreviewLoadPending = $state(false);
-let canvasPreviewLoadError = $state(false);
 let designPreviewLoadError = $state(false);
-let canvasPreviewReloadAttempts = $state(0);
 let designPreviewReloadAttempts = $state(0);
 let moduleRefreshOwner = $state<string | null>(null);
 
@@ -234,21 +229,6 @@ $effect(() => {
 	};
 });
 
-function loadCanvasPreview(): void {
-	if (CanvasPreview || canvasPreviewLoadPending || canvasPreviewLoadError) return;
-	canvasPreviewLoadPending = true;
-	void import("../../canvas/canvas-preview.svelte")
-		.then(({ default: component }) => {
-			CanvasPreview = component;
-		})
-		.catch(() => {
-			canvasPreviewLoadError = true;
-		})
-		.finally(() => {
-			canvasPreviewLoadPending = false;
-		});
-}
-
 function loadDesignPreview(): void {
 	if (DesignPreview || designPreviewLoadPending || designPreviewLoadError) return;
 	designPreviewLoadPending = true;
@@ -262,16 +242,6 @@ function loadDesignPreview(): void {
 		.finally(() => {
 			designPreviewLoadPending = false;
 		});
-}
-
-function retryCanvasPreview(): void {
-	if (canvasPreviewReloadAttempts >= UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS) return;
-	canvasPreviewReloadAttempts = Math.min(
-		canvasPreviewReloadAttempts + 1,
-		UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS,
-	);
-	canvasPreviewLoadError = false;
-	loadCanvasPreview();
 }
 
 function retryDesignPreview(): void {
@@ -614,16 +584,8 @@ function moduleStatusDetail(
 }
 
 function unavailableCanvasState(sessionId: string | null): CanvasState {
-	const state = emptyCanvasState(sessionId, canvasProjectId());
-	return {
-		...state,
-		status: "unavailable",
-		preview: {
-			...state.preview,
-			status: "unavailable",
-			reason: moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel),
-		},
-	};
+	const state = emptyCanvasState(sessionId);
+	return { ...state, status: "unavailable" };
 }
 
 function canvasProjectId(): string {
@@ -651,7 +613,7 @@ $effect(() => {
 	canvasReadinessOwner = owner;
 	canvasState =
 		readiness === "ready"
-			? emptyCanvasState(sessionId, canvasProjectId())
+			? emptyCanvasState(sessionId)
 			: unavailableCanvasState(sessionId);
 });
 
@@ -688,7 +650,7 @@ async function refreshCanvasModule(
 		const current =
 			canvasState.scope?.sessionId === sessionId
 				? canvasState
-				: emptyCanvasState(sessionId, canvasProjectId());
+				: emptyCanvasState(sessionId);
 		canvasState = canvasStateFromStatus(current, response);
 	} catch (cause) {
 		if (generation === canvasRequestGeneration) canvasRefreshError = errorText(cause);
@@ -728,7 +690,6 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (activeCanvasTab) loadCanvasPreview();
 	if (activeDesignTab) loadDesignPreview();
 });
 
@@ -996,20 +957,8 @@ function signOut(): void {
 			</div>
 			<p data-testid="canvas-module-status" class="tr-text-ui u-text-text-muted">{moduleStatusDetail(browserStatus?.canvas, CANVAS_CONTRIBUTION.railLabel)}</p>
 			{#if canvasRefreshError}<p role="alert" class="tr-text-metadata u-text-feedback-error">{canvasRefreshError}</p>{/if}
-			{#if CanvasPreview}
-				<CanvasPreview preview={canvasState.scope?.sessionId === tab.sessionId ? canvasState.preview : unavailableCanvasState(tab.sessionId).preview} />
-			{:else if canvasPreviewLoadError}
-				<p role="alert" class="tr-text-metadata u-text-feedback-error">Canvas preview needs the current bundle. Canvas content remains unchanged.</p>
-				<Button
-					size="sm"
-					variant="outline"
-					disabled={canvasPreviewReloadAttempts >= UPGRADE_RECOVERY_MAX_RELOAD_ATTEMPTS}
-					onclick={retryCanvasPreview}
-				>
-					{canvasPreviewReloadAttempts === 0 ? "Try loading once" : "Retry preview"}
-				</Button>
-			{:else}
-				<p role="status" class="tr-text-metadata u-text-text-muted">Loading Canvas preview…</p>
+			{#if canvasState.scope?.sessionId === tab.sessionId && canvasState.document}
+				<p class="tr-text-metadata u-text-text-muted">Version {canvasState.document.version} · generation {canvasState.document.generation}</p>
 			{/if}
 		</div>
 	{:else}
@@ -1433,7 +1382,7 @@ function signOut(): void {
 					{:else if secondaryArea === "module:canvas"}
 						<div role="tabpanel" aria-label="Canvas" data-testid="canvas-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-min-h-0 u-flex-1 u-px-sm u-py-sm">
 							<p class="tr-text-eyebrow u-text-text-muted">{CANVAS_CONTRIBUTION.railLabel}</p>
-							<p class="u-mt-xs tr-text-ui u-text-text-default">Session-scoped revision controls</p>
+							<p class="u-mt-xs tr-text-ui u-text-text-default">Session status</p>
 							{#if activeCanvasTab}
 								<p class="u-mt-xs tr-text-metadata u-text-text-muted">Session {activeCanvasTab.sessionId}</p>
 							{/if}
@@ -1448,7 +1397,7 @@ function signOut(): void {
 					{:else if secondaryArea === "module:design"}
 						<div role="tabpanel" aria-label="Design" data-testid="design-sidebar" class="pixie-panel-scroll mewa-layout-probe__scroll scroll-area u-min-h-0 u-flex-1 u-px-sm u-py-sm">
 							<p class="tr-text-eyebrow u-text-text-muted">{DESIGN_CONTRIBUTION.railLabel}</p>
-							<p class="u-mt-xs tr-text-ui u-text-text-default">Instance-wide document and focus controls</p>
+							<p class="u-mt-xs tr-text-ui u-text-text-default">Instance status</p>
 							<p data-testid="design-sidebar-status" class="u-mt-sm tr-text-metadata u-text-text-muted">{moduleStatusDetail(browserStatus?.design, DESIGN_CONTRIBUTION.railLabel)}</p>
 							{#if designState.document}
 								<p class="u-mt-xs tr-text-metadata u-text-text-muted">{designState.document.name} · {designState.document.pageCount} pages · {designState.document.nodeCount} nodes</p>

@@ -22,9 +22,6 @@ export { decodeProbeDetail };
 export const PACKAGE_PRODUCTS = RELEASE_PRODUCTS;
 export const PACKAGE_ARCHITECTURES = ["amd64", "arm64"] as const;
 export type PackageProduct = (typeof PACKAGE_PRODUCTS)[number];
-/** Compatibility names are accepted only when expanding frozen reduction rows. */
-export type LegacyPackageVariant = "assistant" | "host";
-export type PackageVariant = PackageProduct | LegacyPackageVariant;
 export type PackageArchitecture = (typeof PACKAGE_ARCHITECTURES)[number];
 
 export interface PackageArchiveEvidence {
@@ -353,12 +350,10 @@ function stripComments(source: string): string {
 }
 
 export function expectedArchiveName(
-	variant: PackageVariant,
+	product: PackageProduct,
 	architecture: PackageArchitecture,
 	releaseId: string,
 ): string {
-	const product =
-		variant === "assistant" ? "pixie_assistant" : variant === "host" ? "pixie" : variant;
 	return `${product}-${releaseId}-linux-${architecture}.tar.gz`;
 }
 

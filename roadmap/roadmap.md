@@ -36,7 +36,7 @@ Additive, optional work taken from neighbouring open-source Pi interfaces is pla
 
 ## Open evidence and decisions
 
-1. The amd64 archive build and release pipeline are demonstrated locally. Real runtime evidence is still missing for the native TUI and extension PTYs, credentialed Pi, standalone Pi use, arm64, live systemd and Docker, updates and rollback, and remote publication.
+1. The remote release pipeline has published native archives and a controller image. Real runtime evidence is still missing for the native TUI and extension PTYs, credentialed Pi, standalone Pi use, arm64 lifecycle, live systemd and Docker lifecycle, updates and rollback.
 2. `runtime.capabilities`, controller `pi.capabilities`, tools, steering, and provider configuration are not universal public Pi capabilities. The controller keeps negotiating the generated catalog and failing closed rather than treating catalog names as availability.
 3. Public Pi lacks the run identifier needed to bind steering safely, and the resource-attachment API remains unavailable; both stay explicitly unavailable rather than emulated.
 
@@ -63,7 +63,7 @@ These are implemented at source level. The remaining evidence needs a live host,
 
 ## Next steps
 
-1. Exercise the Pi-bearing archives against real Pi, credentials, and lifecycle transitions on both architectures, including the native TUI and extension loading, before treating the source layout as release evidence.
+1. Exercise the Pi-bearing archives against real Pi, credentials, and lifecycle transitions on both architectures, including the native TUI and extension loading, before treating a published release as runtime evidence.
 2. Close the remaining upstream-dependent SDK coverage priorities; the locally actionable ones are implemented.
 3. Gather live evidence for diagnostics, persistence and observability; the source-level lifecycle and resilience work is complete.
-4. Obtain separate authorization before any remote publication or live deployment.
+4. Obtain separate authorization before any live deployment.

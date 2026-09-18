@@ -392,14 +392,6 @@ export interface PackageArchiveAssertionKey {
 	architecture: EvidencePlatformArchitecture;
 }
 
-/**
- * Compatibility projection for the unmodified release-identity mapper. It is
- * never serialized and only ever contains a current public product name.
- */
-export interface DecodedPackageArchiveAssertionKey extends PackageArchiveAssertionKey {
-	variant: PackageProduct;
-}
-
 export function packageArchiveAssertionId(
 	product: PackageProduct,
 	architecture: EvidencePlatformArchitecture,
@@ -407,9 +399,7 @@ export function packageArchiveAssertionId(
 	return `${PACKAGE_ARCHIVE_ASSERTION_PREFIX}${product}-${architecture}`;
 }
 
-export function parsePackageArchiveAssertionId(
-	id: string,
-): DecodedPackageArchiveAssertionKey | null {
+export function parsePackageArchiveAssertionId(id: string): PackageArchiveAssertionKey | null {
 	if (!id.startsWith(PACKAGE_ARCHIVE_ASSERTION_PREFIX)) return null;
 	const remainder = id.slice(PACKAGE_ARCHIVE_ASSERTION_PREFIX.length);
 	const separator = remainder.lastIndexOf("-");
@@ -424,9 +414,6 @@ export function parsePackageArchiveAssertionId(
 		return null;
 	return {
 		product: product as PackageProduct,
-		// Keep this ABI-only alias until release-gate.ts is migrated with the
-		// identity model. New evidence only exposes `product` in JSON.
-		variant: product as PackageProduct,
 		architecture: architecture as EvidencePlatformArchitecture,
 	};
 }
@@ -462,12 +449,7 @@ export function encodePackageArchiveDetail(detail: PackageArchiveDetail): string
 	});
 }
 
-export interface DecodedPackageArchiveDetail extends PackageArchiveDetail {
-	/** Compatibility projection; see DecodedPackageArchiveAssertionKey. */
-	variant: PackageProduct;
-}
-
-export function decodePackageArchiveDetail(detail: string): DecodedPackageArchiveDetail | null {
+export function decodePackageArchiveDetail(detail: string): PackageArchiveDetail | null {
 	let value: unknown;
 	try {
 		value = JSON.parse(detail);
@@ -499,7 +481,6 @@ export function decodePackageArchiveDetail(detail: string): DecodedPackageArchiv
 	}
 	return {
 		product: value.product as PackageProduct,
-		variant: value.product as PackageProduct,
 		architecture: value.architecture as EvidencePlatformArchitecture,
 		entries: [...value.entries],
 		binary: value.binary,
