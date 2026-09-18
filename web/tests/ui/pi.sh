@@ -105,13 +105,14 @@ browser wait --timeout 60000 --fn 'document.querySelector("[data-testid=settings
 browser set viewport 390 844 >/dev/null
 browser eval 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))' >/dev/null
 settings_tab Pi
-browser wait --timeout 60000 --fn 'document.querySelector("[data-testid=auto-compact-threshold]")?.disabled === false' >/dev/null
-browser fill '[data-testid=auto-compact-threshold]' '42' >/dev/null
+browser wait --timeout 60000 --fn 'document.querySelector("[data-testid=auto-compact-threshold]")?.disabled === true' >/dev/null
+assert_eval "document.querySelector('[data-testid=auto-compact-threshold]')?.disabled === true" 'reserve is read-only without a public setter'
+browser eval "(() => { const el = document.querySelector('[data-testid=pi-thinking-effort]'); if (!(el instanceof HTMLSelectElement)) throw new Error('Thinking control is unavailable'); el.value = 'high'; el.dispatchEvent(new Event('change', { bubbles: true })); return el.value; })()" >/dev/null
 settings_tab Models
 browser wait --timeout 60000 --fn 'document.querySelector("#settings-panel-models")?.hidden === false' >/dev/null
 settings_tab Pi
 browser wait --timeout 60000 --fn 'document.querySelector("#settings-panel-pi")?.hidden === false' >/dev/null
-assert_eval "document.querySelector('[data-testid=auto-compact-threshold]')?.value === '42'" 'settings draft survives tab switch'
+assert_eval "document.querySelector('[data-testid=pi-thinking-effort]')?.value === 'high'" 'settings draft survives tab switch'
 settings_tab Providers
 browser eval "$(cat /app/ui-faults.js)" >/dev/null
 browser wait --timeout 60000 --fn 'document.querySelector("[data-testid=provider-apikey][data-provider=openai]") !== null' >/dev/null
