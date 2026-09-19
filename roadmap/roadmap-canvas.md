@@ -6,7 +6,7 @@ This plan is self-contained. The module is disabled by default and optional: mis
 
 ## Current state
 
-The service lives in `web/internal/canvas` (service, storage, revisions, jobs, HTTP and MCP) with its contribution in `web/webui/src/canvas`. Tests sit in `web/tests/go/canvas`, `web/tests/go/controller/session_canvas_test.go` and `web/tests/webui/canvas`.
+The service lives in `internal/canvas` (service, storage, revisions, jobs, HTTP and MCP) with its contribution in `webui/src/canvas`. Tests sit in `tests/go/canvas`, `tests/go/controller/session_canvas_test.go` and `tests/webui/canvas`.
 
 Implemented at source level:
 
@@ -22,7 +22,7 @@ Implemented at source level:
 Canvas cannot reach Ready in production until these are resolved.
 
 1. **Contained `WorkerLauncher`.** `WorkerLauncher` is an empty interface. The only built-in launcher, `NewDeterministicWorkerLauncher`, is a metadata-only fixture renderer and does not execute the draft or claim browser fidelity. There is no launcher with enforced egress denial, filesystem and memory limits, and process-tree teardown. Without one, screenshots return `unavailable` and Canvas never silently falls back to an uncontained controller or browser process.
-2. **Production `CanvasConfig` wiring.** `web/internal/mcpserver/module_runtime.go` uses `config.CanvasConfig` only when a caller supplies one, and no production caller does. The default config has no launcher, so the readiness gate reports "The Canvas contained worker is not configured." Canvas therefore cannot reach Ready through `pixie_web`.
+2. **Production `CanvasConfig` wiring.** `internal/mcpserver/module_runtime.go` uses `config.CanvasConfig` only when a caller supplies one, and no production caller does. The default config has no launcher, so the readiness gate reports "The Canvas contained worker is not configured." Canvas therefore cannot reach Ready through `pixie_web`.
 3. **Exact-version raster previews.** Previews must be real raster output for the exact requested revision. The fixture launcher produces deterministic placeholder PNGs, so no path proves that a requested revision renders through the contained worker and is served as the authenticated artifact for that version.
 4. **Registered native authority.** The registry can attach a session capability, but no production native-MCP binding registers the authenticated session principal and generation before tools are exposed. A static module bearer plus a model-supplied session id is not sufficient.
 

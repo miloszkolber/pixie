@@ -1,0 +1,26 @@
+[Unit]
+Description=Pixie host (bundled Pi TUI, SDK, and assistant connector)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+EnvironmentFile=%h/.config/pixie/pixie.env
+Environment=PI_CODING_AGENT_DIR=%h/.local/share/pixie/pi
+# systemd expands %h to the user's absolute home path. Do not wrap this in a
+# shell: the pixie launcher validates the configuration argument.
+ExecStart=%h/.local/bin/pixie serve --config %h/.config/pixie/assistant.json
+Restart=on-failure
+RestartSec=2
+RestartForceExitStatus=75
+RestartPreventExitStatus=73
+TimeoutStopSec=30
+KillMode=mixed
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

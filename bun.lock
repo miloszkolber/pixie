@@ -4,41 +4,20 @@
   "workspaces": {
     "": {
       "name": "pixie-workspace",
-      "devDependencies": {
-        "@biomejs/biome": "2.5.0",
-        "typescript": "catalog:",
-      },
-    },
-    "assistant": {
-      "name": "@pixie_ai/pixie-assistant",
-      "version": "0.1.0",
       "dependencies": {
         "@earendil-works/pi-coding-agent": "0.85.1",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "shared": {
-      "name": "@pixie/shared",
-      "version": "0.0.0",
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "web": {
-      "name": "pixie",
-      "devDependencies": {
         "@modelcontextprotocol/sdk": "1.30.0",
       },
+      "devDependencies": {
+        "@biomejs/biome": "2.5.0",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
     },
-    "web/webui": {
+    "webui": {
       "name": "@pixie/web",
       "version": "0.0.0",
       "dependencies": {
-        "@pixie/shared": "workspace:*",
         "@shikijs/langs": "4.2.0",
         "micromark": "catalog:",
         "micromark-extension-gfm": "catalog:",
@@ -236,11 +215,7 @@
 
     "@modelcontextprotocol/sdk": ["@modelcontextprotocol/sdk@1.30.0", "", { "dependencies": { "@hono/node-server": "^1.19.9 || ^2.0.5", "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "content-type": "^1.0.5", "cors": "^2.8.5", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.0", "express": "^5.2.1", "express-rate-limit": "^8.2.1", "hono": "^4.11.4", "jose": "^6.1.3", "json-schema-typed": "^8.0.2", "pkce-challenge": "^5.0.0", "raw-body": "^3.0.0", "zod": "^3.25 || ^4.0", "zod-to-json-schema": "^3.25.1" }, "peerDependencies": { "@cfworker/json-schema": "^4.1.1" }, "optionalPeers": ["@cfworker/json-schema"] }, "sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA=="],
 
-    "@pixie/shared": ["@pixie/shared@workspace:shared"],
-
-    "@pixie/web": ["@pixie/web@workspace:web/webui"],
-
-    "@pixie_ai/pixie-assistant": ["@pixie_ai/pixie-assistant@workspace:assistant"],
+    "@pixie/web": ["@pixie/web@workspace:webui"],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ=="],
 
@@ -643,8 +618,6 @@
     "path-to-regexp": ["path-to-regexp@8.4.2", "", {}, "sha512-qRcuIdP69NPm4qbACK+aDogI5CBDMi1jKe0ry5rSQJz8JVLsC7jV8XpiJjGRLLol3N+R5ihGYcrPLTno6pAdBA=="],
 
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
-
-    "pixie": ["pixie@workspace:web"],
 
     "pkce-challenge": ["pkce-challenge@5.0.1", "", {}, "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="],
 

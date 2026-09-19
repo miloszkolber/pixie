@@ -11,20 +11,18 @@ This is a validate-only checklist. It describes the evidence required for a rele
 
 ## Public archive candidates
 
-Stage exactly six public Linux archive candidates from one source commit:
+Stage exactly four public Linux archive candidates from one source commit:
 
 ```text
 pixie_web-sha-<12>-linux-amd64.tar.gz
 pixie_web-sha-<12>-linux-arm64.tar.gz
-pixie_cli-sha-<12>-linux-amd64.tar.gz
-pixie_cli-sha-<12>-linux-arm64.tar.gz
 pixie-sha-<12>-linux-amd64.tar.gz
 pixie-sha-<12>-linux-arm64.tar.gz
 ```
 
-Each archive records its SHA-256, product, architecture, full source SHA, and literal public entrypoint. `pixie_web` exposes `pixie_web`; `pixie_cli` exposes `pixie_cli` and the bundled native `pixie`; full `pixie` exposes the bundled native `pixie`. The latter two contain their internal bundled JavaScript host `libexec/pixie_assistant.js`; only full `pixie` contains `libexec/pixie_full` and `libexec/pixie_web`. `pixie_assistant` is never a public archive or entrypoint.
+Each archive records its SHA-256, product, architecture, full source SHA, and literal public entrypoint. `pixie_web` exposes `pixie_web`; `pixie` exposes the bundled native `pixie` TUI and the `pixie serve` host. The host archive contains its internal bundled JavaScript host `libexec/pixie_assistant.js`. `pixie_assistant` is never a public archive or entrypoint.
 
-The Pi-bearing archives bundle the pinned Bun `1.4.0` runtime (`runtime/bin/bun`) and Pi `0.85.1`, bundle no Node runtime, retain the normal Pi TUI, exclude Pi RPC, and block Pi self-update. The staged manifest records archive hashes, the complete source SHA, clean-tree result, and checksums. It must not claim SBOM, provenance, image digest, published release, or published image evidence that has not been produced.
+The host archive bundles the pinned Bun `1.4.0` runtime (`runtime/bin/bun`) and Pi `0.85.1`, bundles no Node runtime, retains the normal Pi TUI, excludes Pi RPC, and blocks Pi self-update. The staged manifest records archive hashes, the complete source SHA, clean-tree result, and checksums. It must not claim SBOM, provenance, image digest, published release, or published image evidence that has not been produced.
 
 ## Validation evidence
 

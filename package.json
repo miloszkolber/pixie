@@ -4,10 +4,7 @@
 	"packageManager": "bun@1.4.0",
 	"workspaces": {
 		"packages": [
-			"web",
-			"shared",
-			"web/webui",
-			"assistant"
+			"webui"
 		],
 		"catalog": {
 			"@types/bun": "1.4.0",
@@ -19,8 +16,13 @@
 		}
 	},
 	"type": "module",
+	"dependencies": {
+		"@earendil-works/pi-coding-agent": "0.85.1",
+		"@modelcontextprotocol/sdk": "1.30.0"
+	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.0",
+		"@types/bun": "catalog:",
 		"typescript": "catalog:"
 	},
 	"trustedDependencies": [
@@ -28,33 +30,38 @@
 	],
 	"scripts": {
 		"build": "bun run build:pixie_web",
-		"build:pixie_web": "bun run --cwd web build:pixie_web",
-		"build:pixie_cli": "bun run --cwd web build:pixie_cli",
-		"build:pixie": "bun run --cwd web build:pixie",
-		"build:pixie_assistant": "bun run --cwd assistant build:pixie_assistant",
-		"build:go": "bun run --cwd web build:go",
-		"build:release": "bun x bun@1.4.0 run web/scripts/build-release.ts",
-		"build:release:amd64": "bun x bun@1.4.0 run web/scripts/build-release.ts --architecture amd64",
-		"build:release:arm64": "bun x bun@1.4.0 run web/scripts/build-release.ts --architecture arm64",
-		"build:release:merge": "bun x bun@1.4.0 run web/scripts/build-release.ts --merge",
-		"build:web": "bun run --cwd web build:web",
-		"check:deps": "bun run --cwd web check:deps",
-		"check:coverage": "bun run --cwd web check:coverage",
-		"check:filenames": "bun run --cwd web check:filenames",
-		"check:docs": "bun run --cwd web check:docs",
-		"check:conventions": "bun run --cwd web check:conventions",
-		"check:runtime": "bun run --cwd web check:runtime",
-		"runtime:exec": "bun run --cwd web runtime:exec",
-		"probe": "bun run --cwd web runtime:exec -- bun run --cwd ../assistant spike",
-		"generate:contracts": "bun run --cwd web generate:contracts",
-		"check:contracts": "bun run --cwd web check:contracts",
-		"generate:config-schema": "bun run --cwd web generate:config-schema",
-		"check:config-schema": "bun run --cwd web check:config-schema",
-		"dev:web": "bun run --cwd web dev:web",
-		"format": "bun run --cwd web format",
-		"lint": "bun run --cwd web lint",
-		"mewa:check": "bun run --cwd web mewa:check",
-		"test": "bun run --cwd web test && bun run --cwd web runtime:exec -- bun run --cwd ../assistant test",
-		"typecheck": "bun run --cwd web typecheck"
+		"build:pixie_web": "bun run build:webui && bun run build:go",
+		"build:webui": "bun run --cwd webui build",
+		"build:pixie": "CGO_ENABLED=0 go build -trimpath -o dist/pixie ./cmd/pixie",
+		"build:pixie_assistant": "bun build --target=bun --outfile dist/pixie_assistant.js src/assistant/serve.ts",
+		"build:go": "go build -trimpath -o dist/pixie_web ./cmd",
+		"build:release": "bun x bun@1.4.0 run scripts/build-release.ts",
+		"build:release:amd64": "bun x bun@1.4.0 run scripts/build-release.ts --architecture amd64",
+		"build:release:arm64": "bun x bun@1.4.0 run scripts/build-release.ts --architecture arm64",
+		"build:release:merge": "bun x bun@1.4.0 run scripts/build-release.ts --merge",
+		"check:deps": "bun run scripts/check-catalog.ts && bun run scripts/check-boundaries.ts",
+		"check:coverage": "bun run scripts/check-coverage.ts",
+		"check:filenames": "bun run scripts/check-filenames.ts",
+		"check:docs": "bun run scripts/check-docs.ts",
+		"check:conventions": "bun run scripts/check-conventions.ts",
+		"check:runtime": "bun run scripts/check-runtime.ts",
+		"runtime:exec": "bun run scripts/check-runtime.ts --exec --",
+		"probe": "bun run scripts/check-runtime.ts --exec -- bun run src/assistant/probe.ts",
+		"spike": "bun run src/assistant/probe.ts",
+		"spike:build": "bun build --compile --compile-autoload-package-json --target=bun --outfile pixie-pi-sdk-probe.bun-build src/assistant/probe.ts",
+		"generate:contracts": "bun run scripts/generate-contracts.ts",
+		"check:contracts": "bun run scripts/check-contracts.ts",
+		"generate:config-schema": "bun run scripts/generate-config-schema.ts",
+		"check:config-schema": "bun run scripts/generate-config-schema.ts --check",
+		"dev:webui": "bun run --cwd webui dev",
+		"format": "biome check --write src scripts tests webui/src webui/scripts schema package.json biome.json",
+		"lint": "bun run check:filenames && bun run check:conventions && bun run check:config-schema && biome check src scripts tests webui/src webui/scripts schema package.json biome.json",
+		"mewa:check": "bun run --cwd webui mewa:check",
+		"test": "bun run scripts/check-runtime.ts --exec -- bun run test:inner",
+		"test:inner": "bun test tests/assistant tests/shared tests/build && go test ./...",
+		"typecheck": "bun run typecheck:root && bun run typecheck:shared && bun run typecheck:tests && bun run --cwd webui typecheck",
+		"typecheck:root": "tsc --noEmit -p tsconfig.json",
+		"typecheck:shared": "tsc --noEmit -p tsconfig.shared.json",
+		"typecheck:tests": "tsc --noEmit -p tests/tsconfig.json"
 	}
 }

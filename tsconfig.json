@@ -1,0 +1,23 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"allowImportingTsExtensions": true,
+		"noEmit": true,
+		"noUncheckedIndexedAccess": false,
+		"exactOptionalPropertyTypes": false,
+		"noImplicitOverride": false,
+		"useDefineForClassFields": false,
+		"isolatedModules": false,
+		"verbatimModuleSyntax": false,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"resolveJsonModule": true,
+		"types": ["bun"],
+		"lib": ["ESNext"],
+		"paths": {
+			"@pixie/shared": ["./src/shared/index.ts"],
+			"@pixie/shared/*": ["./src/shared/*"]
+		}
+	},
+	"include": ["src/assistant/**/*.ts"]
+}

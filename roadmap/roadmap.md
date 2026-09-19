@@ -1,28 +1,27 @@
 # Pixie roadmap
 
-This is the canonical implementation plan and forward backlog. Operating behavior belongs in `docs/`. The project is experimental: tests should be simple, effective, and useful, and the frozen release-evidence matrix under `web/scripts` does not gain new rows.
+This is the canonical implementation plan and forward backlog. Operating behavior belongs in `docs/`. The project is experimental: tests should be simple, effective, and useful, and the frozen release-evidence matrix under `scripts` does not gain new rows.
 
 ## Target architecture
 
-Pixie builds three public Linux products from one repository.
+Pixie builds two public Linux products from one repository.
 
 | Product | Role |
 | --- | --- |
-| `pixie_web` | Go controller and web workspace only. It connects to a separately managed loopback `pixie_cli` host and never starts Pi. |
-| `pixie_cli` | Bundled Bun, normal Pi TUI, Pi SDK, and assistant host. `pixie_cli serve --config ABS` starts its host. |
-| `pixie` | Bundled Bun, normal Pi TUI, Pi SDK, assistant host, and controller. Its full-suite service is internal `libexec/pixie_full serve --assistant-config ABS --web-config ABS`. |
+| `pixie_web` | Go controller and web workspace only. It connects to a separately managed loopback `pixie` host and never starts Pi. |
+| `pixie` | Bundled Bun, normal Pi TUI, Pi SDK, and assistant host connector. Bare `pixie` runs the native Pi TUI; `pixie serve --config ABS` starts its host. The TUI runs concurrently with the server against the same agent directory. |
 
-`pixie_assistant` is internal to the Pi-bearing archives and is never a public product, unit, command, or archive. It is a bundled JS host at `libexec/pixie_assistant.js`, run by the bundled `runtime/bin/bun`. Both Pi-bearing products expose `pixie` as the native Pi command and bundle pinned Bun `1.4.0` and Pi `0.85.1`; Node is never bundled, Pi RPC is excluded, and Pi self-update is blocked. Bun `1.3.14` cannot run Pi's bundle and must never be selected.
+`pixie_assistant` is internal to the host archive and is never a public product, unit, command, or archive. It is a bundled JS host at `libexec/pixie_assistant.js`, run by the bundled `runtime/bin/bun`. The host product exposes `pixie` as the native Pi command and bundles pinned Bun `1.4.0` and Pi `0.85.1`; Node is never bundled, Pi RPC is excluded, and Pi self-update is blocked. Bun `1.3.14` cannot run Pi's bundle and must never be selected.
 
-The split `pixie_cli` + `pixie_web` topology and full `pixie` topology are alternatives. They cannot share the global `pixie` command or `PI_CODING_AGENT_DIR`. A supported owner collision exits `73`; use an explicit idle handoff with the managed owner stopped, or separate agent directories. Pixie does not attach to an active TUI.
+`pixie serve` is the only Pi owner that takes the agent-directory lock. The TUI never takes it, so no idle handoff is needed between the TUI and the managed owner. Two servers still collide with exit `73`; stop the managed owner or use a separate agent directory.
 
-Docker mirrors the two alternatives: controller-only `pixie_web` connects to a separately installed host, while full `pixie` includes the bundled Bun runtime, host, and controller and persists Pi state in its dedicated volume. Docker configuration is not proof of an approved deployment, a sandbox, or a published image.
+Docker publishes only `pixie_web`, which connects to a separately installed host. The combined container was removed. Docker configuration is not proof of an approved deployment, a sandbox, or a published image.
 
-Reducing the host to a Pi extension is rejected. An extension lives only inside a Pi process, cannot own a durable multi-session registry, provider/model/settings or MCP mutation, or deletion authority, and would expose the controller secret to every loaded extension. A dedicated owner-locked host process remains required; an in-TUI extension could only ever be an optional additive surface that never owns sessions or the loopback endpoint.
+Reducing the host to a Pi extension is rejected. An extension lives only inside a Pi process, cannot own a durable multi-session registry, provider/model/settings or MCP mutation, or deletion authority, and would expose the controller secret to every loaded extension. A dedicated host process remains required; an in-TUI extension could only ever be an optional additive surface that never owns sessions or the loopback endpoint.
 
 ## Source and ownership
 
-`assistant/` owns direct public-Pi SDK interaction and the archive-internal host. `web/` owns the controller, UI, persistence, workspace modules, MCP publisher, and browser-MCP pointer. `shared/` owns `shared/schema/protocol-catalog.json` and generated Go and TypeScript catalogs. The narrow authenticated loopback host protocol is not a Pi execution fallback.
+`assistant/` owns direct public-Pi SDK interaction and the archive-internal host. `web/` owns the controller, UI, persistence, workspace modules, MCP publisher, and browser-MCP pointer. `shared/` owns `schema/protocol-catalog.json` and generated Go and TypeScript catalogs. The narrow authenticated loopback host protocol is not a Pi execution fallback.
 
 Pi owns execution, transcripts, native credentials, models, settings, tools, extensions, and trust. Pixie must not intercept tools, replace prompts, silently install packages, auto-trust projects, or introduce another model or MCP policy. The bundled native TUI is first-class and does not establish untested web parity.
 
@@ -53,17 +52,17 @@ The primary forward work is closing the gap between the public Pi SDK surface an
 
 ## Lifecycle and reliability
 
-These are implemented at source level. The remaining evidence needs a live host, credentials, or filesystem fault injection.
+Implemented at source level; the remaining evidence needs a live host, credentials, or filesystem fault injection:
 
-1. **Diagnostics and recovery.** Authenticated runtime diagnostics project negotiated capabilities, host health, active-run count, retained deletion uncertainty, schedule health and remediation. `runtime.supportSnapshot` is auth-gated and never collects assistant or system logs. `pixie_web doctor` and internal `pixie_full doctor` print bounded recovery reports with stable codes, and `pixie_assistant doctor --scenario` proves an isolated host boot. Evidence against a live host and real credentials remains external.
-2. **Persistence crash consistency.** Staged migrations validate every managed flat ledger input before writes, preserve authority ledgers during rollback, reject retained backups, and classify partial publication as durability-uncertain. Injected disk-full, permission, rename, fsync and staging-crash outcomes are covered; real filesystem and power-loss evidence remains external.
-3. **Observability.** Controller and supervisor logs redact secrets, URLs and paths at the emission boundary; boot and run identities, a bounded health-transition history, and a bounded redacted child-stderr ring are implemented. The controller support snapshot is auth-gated and excludes another process's stderr by design; the supervisor surfaces that tail through its logs and `doctor`.
-4. **Long-lived operations.** Connections are capped with a reconnect attempt and backoff gate, slow clients are bounded and shed, per-socket replay reservations are released on disconnect, retained state is capped, schedule deadlines use a monotonic clock, and controller scratch is cleaned on shutdown. New schedules have a persisted configurable 24-hour default budget; existing schedules remain unlimited and cancellation uncertainty blocks redispatch.
-5. **Browser-MCP threat model.** The operator-chosen endpoint may be unauthenticated and Pixie never proxies MCP traffic. The threat model and fail-closed enablement guidance are documented in `docs/security.md`; loopback access, DNS rebinding, tool-result injection, egress, sockets and crash cleanup remain deployment responsibilities.
+1. **Diagnostics and recovery.** Authenticated runtime diagnostics, bounded recovery reports, and isolated host-boot proofs. Evidence against a live host and real credentials remains external.
+2. **Persistence crash consistency.** Validated staged migrations, authority-ledger preservation, and durability-uncertain classification. Real filesystem and power-loss evidence remains external.
+3. **Observability.** Secret-redacted logs, boot/run identities, bounded health history, and redacted child-stderr rings. Cross-process stderr remains surfaced through supervisor logs by design.
+4. **Long-lived operations.** Connection caps, backoff gates, bounded slow-client shedding, capped retained state, monotonic schedule clocks, and shutdown scratch cleanup. New schedules carry a persisted 24-hour default budget.
+5. **Browser-MCP threat model.** Documented in `docs/security.md`; loopback access, DNS rebinding, tool-result injection, egress, sockets and crash cleanup remain deployment responsibilities.
 
 ## Next steps
 
-1. Exercise the Pi-bearing archives against real Pi, credentials, and lifecycle transitions on both architectures, including the native TUI and extension loading, before treating a published release as runtime evidence.
+1. Exercise the host archive against real Pi, credentials, and lifecycle transitions on both architectures, including concurrent native TUI and server operation plus extension loading, before treating a published release as runtime evidence.
 2. Close the remaining upstream-dependent SDK coverage priorities; the locally actionable ones are implemented.
 3. Gather live evidence for diagnostics, persistence and observability; the source-level lifecycle and resilience work is complete.
 4. Obtain separate authorization before any live deployment.

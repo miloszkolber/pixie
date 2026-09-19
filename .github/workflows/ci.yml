@@ -1,6 +1,6 @@
 name: CI
 
-# Source, service-isolation and Go workspace gates.
+# Source, service-isolation and Go module gates.
 on:
   workflow_call:
     inputs:
@@ -30,14 +30,13 @@ jobs:
           bun-version-file: package.json
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: web/go.mod
-          cache-dependency-path: web/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
       # AUX-35: refuse to trust source checks unless the pinned Bun runtime, a
       # writable bounded temporary workspace and the Go/CGO toolchains are
       # present. An unsupported runtime or exhausted storage exits 3 and fails
       # this job instead of being reported as a green result.
       - run: bun run check:runtime
-        working-directory: web
       - name: Cache bun install
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -45,25 +44,16 @@ jobs:
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
-        working-directory: web
       - run: bun run check:deps
-        working-directory: web
       - run: bun run check:contracts
-        working-directory: web
       - run: bun audit --audit-level=high
-        working-directory: web
       - run: bun run lint
-        working-directory: web
       - run: bun run typecheck
-        working-directory: web
       # Build first: several tests inspect the embedded web bundle and the
       # controller-only binary, and `go test` requires webui/dist for //go:embed.
       - run: bun run build
-        working-directory: web
       - run: bun scripts/check-composition.ts
-        working-directory: web
       - name: Run tests
-        working-directory: web
         run: |
           set -uo pipefail
           # A Go temp-dir cleanup can race a background writer. Retry once;
@@ -74,24 +64,16 @@ jobs:
           done
           exit 1
       - name: Validate Compose service isolation
-        run: sh web/tests/deployment/compose.test.sh
-      - run: gofmt -d cmd internal tests | tee /tmp/pixie-gofmt.diff && test ! -s /tmp/pixie-gofmt.diff
-        working-directory: web
+        run: sh tests/deployment/compose.test.sh
+      - run: gofmt -d cmd internal piprotocol tests | tee /tmp/pixie-gofmt.diff && test ! -s /tmp/pixie-gofmt.diff
       - run: go test -race -count=1 ./...
         env:
           CGO_ENABLED: "1"
-        working-directory: web
       - run: go vet ./...
         env:
           CGO_ENABLED: "0"
-        working-directory: web
-      - name: Test shared contracts module
-        run: bun test tests && go test -count=1 ./...
-        env:
-          CGO_ENABLED: "0"
-        working-directory: shared
-      - name: Test Bun assistant SDK probe
-        run: bun run --cwd assistant test
+      - name: Test web UI workspace
+        run: bun run --cwd webui test
   ui:
     name: Browser acceptance
     runs-on: ubuntu-latest
@@ -101,7 +83,7 @@ jobs:
         with:
           ref: ${{ inputs.revision || github.sha }}
       - name: Build browser acceptance image
-        run: docker build -f web/Dockerfile --target ui-acceptance -t pixie-ui-acceptance .
+        run: docker build -f Dockerfile --target ui-acceptance -t pixie-ui-acceptance .
       - name: Run browser acceptance
         shell: bash
         run: |
@@ -133,8 +115,8 @@ jobs:
           path: artifacts/ui
           if-no-files-found: warn
           retention-days: 14
-  go-workspace:
-    name: Go workspace filesystem parity (${{ matrix.arch }})
+  go-module:
+    name: Go module filesystem parity (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
@@ -151,11 +133,9 @@ jobs:
           ref: ${{ inputs.revision || github.sha }}
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version-file: web/go.mod
-          cache-dependency-path: web/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
       - name: Synthesize web embed placeholder
         run: mkdir -p webui/dist && touch webui/dist/.gitkeep
-        working-directory: web
-      - name: Verify native workspace filesystem behavior
+      - name: Verify native module filesystem behavior
         run: CGO_ENABLED=0 go test -count=1 ./tests/go/workspace
-        working-directory: web

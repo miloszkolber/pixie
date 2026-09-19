@@ -6,7 +6,7 @@ This plan is self-contained. The module is disabled by default and optional: mis
 
 ## Current state
 
-The service lives in `web/internal/design` (slot lifecycle, preflight, parser interface, upload, normalized index, queries, HTTP and MCP) with its contribution in `web/webui/src/design`. Tests sit in `web/tests/go/design` and `web/tests/webui/design`.
+The service lives in `internal/design` (slot lifecycle, preflight, parser interface, upload, normalized index, queries, HTTP and MCP) with its contribution in `webui/src/design`. Tests sit in `tests/go/design` and `tests/webui/design`.
 
 Implemented at source level:
 
@@ -20,7 +20,7 @@ Implemented at source level:
 
 `design_preview` currently supports `kind: "cover"` only. A selected-frame request returns `unavailable`; the saved document cover is never presented as a frame.
 
-The parser is `DeterministicParser` in `web/internal/design/parser.go`: an offline fixture adapter that accepts a preflighted archive containing `design.json` or `fixture.json` and fails closed on an archive without one. It does not decode Figma and does not claim to implement an upstream parser.
+The parser is `DeterministicParser` in `internal/design/parser.go`: an offline fixture adapter that accepts a preflighted archive containing `design.json` or `fixture.json` and fails closed on an archive without one. It does not decode Figma and does not claim to implement an upstream parser.
 
 ## Blockers
 

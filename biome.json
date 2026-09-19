@@ -12,10 +12,10 @@
 			"!**/.claude",
 			"!**/node_modules",
 			"!**/dist",
-			"!web/webui/.build",
-			"!web/webui/vendor",
-			"!web/webui/src/styles/generated",
-			"!web/scripts/conventions-boundaries.json"
+			"!webui/.build",
+			"!webui/vendor",
+			"!webui/src/styles/generated",
+			"!scripts/conventions-boundaries.json"
 		]
 	},
 	"formatter": {

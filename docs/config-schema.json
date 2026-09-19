@@ -39,7 +39,7 @@
 			}
 		},
 		"assistantConfig": {
-			"$comment": "pixie_cli/pixie_full --assistant-config; every field is required.",
+			"$comment": "pixie serve --config; every field is required.",
 			"type": "object",
 			"additionalProperties": false,
 			"required": [

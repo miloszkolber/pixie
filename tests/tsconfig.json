@@ -1,0 +1,14 @@
+{
+	"extends": "../tsconfig.base.json",
+	"compilerOptions": {
+		"types": ["bun"],
+		"allowImportingTsExtensions": true,
+		"resolveJsonModule": true,
+		"paths": {
+			"@/*": ["../webui/src/*"],
+			"@pixie/shared": ["../src/shared/index.ts"],
+			"@pixie/shared/*": ["../src/shared/*"]
+		}
+	},
+	"include": ["build/**/*.ts", "webui/**/*.ts", "performance/**/*.ts"]
+}

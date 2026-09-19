@@ -2,21 +2,21 @@
 
 This is a configuration and validation reference, not an approved deployment recipe. A verified release and controller image are published, but credentialed Pi validation, an approved Docker deployment, standalone-distribution proof, and arm64 live lifecycle evidence remain separate work.
 
-Choose one topology. The split topology runs a separately installed `pixie_cli` host and a `pixie_web` controller; the full topology runs `pixie`. `pixie_web` never contains or starts Bun, Node or Pi. `pixie_cli` and `pixie` bundle the pinned Bun `1.4.0` runtime `runtime/bin/bun`, the Pi SDK and the normal native `pixie` TUI, exclude Pi RPC, and use the internal host; no Node runtime is bundled. They are mutually exclusive owners of the global `pixie` command and one `PI_CODING_AGENT_DIR`. See [assistant](assistant.md) and the [roadmap](../roadmap/roadmap.md).
+Run a separately installed `pixie` host and a `pixie_web` controller. `pixie_web` never contains or starts Bun, Node or Pi. `pixie` bundles the pinned Bun `1.4.0` runtime `runtime/bin/bun`, the Pi SDK and the normal native `pixie` TUI, excludes Pi RPC, and uses the internal host; no Node runtime is bundled. See [assistant](assistant.md) and the [roadmap](../roadmap/roadmap.md).
 
 ## Host service
 
-Install `pixie_cli` for the split host or `pixie` for the full suite when a separately authorized archive is available. Candidate archives are not a published release or standalone-distribution proof. Install and configure optional extensions through Pi's native mechanisms.
+Install `pixie` for the host when a separately authorized archive is available. Candidate archives are not a published release or standalone-distribution proof. Install and configure optional extensions through Pi's native mechanisms.
 
 Generate separate random values for `PIXIE_PI_SECRET_KEY`, `PIXIE_MCP_TOKEN`, and controller `PIXIE_TOKEN`. Store them in a private environment file with mode `0600`, load it into the host service environment, and use the same values in Compose's `.pixie` file.
 
 ```sh
 PIXIE_PI_SECRET_KEY=<at-least-32-characters> \
 PI_CODING_AGENT_DIR="$HOME/.pi/agent" \
-pixie_cli serve --config "$HOME/.config/pixie/assistant.json"
+pixie serve --config "$HOME/.config/pixie/assistant.json"
 ```
 
-Point `--config` at an absolute private JSON file that selects the literal loopback host, required `port`, and agent directory; `web/systemd/assistant.json` is the example. Set controller `PIXIE_PI_PORT` to the same value as config `port`. `pixie_cli` uses its own archive-local Pi package and rejects external `PIXIE_PI_PACKAGE` selection. Provider setup and optional extensions remain native Pi configuration. Remaining lifecycle, parity, and recovery gaps are tracked in the [roadmap](../roadmap/roadmap.md).
+Point `--config` at an absolute private JSON file that selects the literal loopback host, required `port`, and agent directory; `systemd/assistant.json` is the example. Set controller `PIXIE_PI_PORT` to the same value as config `port`. `pixie` uses its own archive-local Pi package and rejects external `PIXIE_PI_PACKAGE` selection. Provider setup and optional extensions remain native Pi configuration. Remaining lifecycle, parity, and recovery gaps are tracked in the [roadmap](../roadmap/roadmap.md).
 
 ## Protocol negotiation
 
@@ -26,7 +26,7 @@ Point `--config` at an absolute private JSON file that selects the literal loopb
 
 These variables exist for the archive launchers, the supervisor and deletion authority; they are not part of the operator-facing configuration above.
 
-- `PIXIE_BUNDLED_PI_PACKAGE` is the archive-local Pi package path set by the `pixie_cli` and `pixie_full` launchers. An operator-supplied value is removed and replaced.
+- `PIXIE_BUNDLED_PI_PACKAGE` is the archive-local Pi package path set by the `pixie` launcher. An operator-supplied value is removed and replaced.
 - `PIXIE_ASSISTANT_HOST` overrides the internal loopback host endpoint for the supervisor and the assistant service. The controller-only image rejects it and other `PIXIE_ASSISTANT_*` values so a shared environment cannot configure a local Pi.
 - `PIXIE_DELETION_AUTHORITY` selects `auto`, `paired` or `legacy` deletion authority; `paired` requires a pairing key.
 - `PIXIE_PI_STORAGE_KEY` supplies that pairing key for controller-only runs; full-host mode derives it from the selected agent directory.
@@ -41,7 +41,7 @@ Configure local providers through the selected Pi installation. `LLAMA_BASE_URL`
 
 ## Docker
 
-The supplied Compose file defines alternatives for source-level validation. `docker compose --profile web up -d pixie_web` starts the controller-only service, which connects to a separately installed `pixie_cli` host. `docker compose --profile full up -d pixie` starts the bundled full suite and requires the dedicated `pixie-pi-state` volume. The full image uses Debian trixie-slim (glibc) and runs the bundled Bun runtime with the host and controller under `tini`; the controller-only image contains no Bun, Node or Pi. The Compose file declares no fixed container names. Do not run both topologies against the same controller data or Pi agent directory. This does not prove or constitute an approved Docker deployment.
+The supplied Compose file is for source-level validation. `docker compose --profile web up -d pixie_web` starts the controller-only service, which connects to a separately installed `pixie` host. The controller-only image contains no Bun, Node or Pi. The Compose file declares no fixed container names. This does not prove or constitute an approved Docker deployment.
 
 From the repository root:
 
@@ -69,13 +69,7 @@ docker compose --env-file .pixie --profile web up -d pixie_web
 
 The validation controller listens on <http://127.0.0.1:7312>. Containers use host networking; bridged-container loopback cannot reach host Pi. The split host listens on the required config `port` (the example uses `3284`) and `pixie_web` dials `PIXIE_PI_PORT` (default `3284`); the values must match. Controller-only mode rejects shared assistant settings so a shared environment cannot silently configure local Pi. See [security](security.md#remote-access) for authentication, public-origin, and TLS-proxy requirements.
 
-Run the full-image native TUI only from an interactive terminal:
-
-```sh
-docker compose --profile full run --rm --entrypoint /bin/sh pixie -c 'exec /app/pixie'
-```
-
-This command is documented from the Dockerfile and Compose configuration. The images are not a sandbox, and their definition alone is not deployment evidence.
+The images are not a sandbox, and their definition alone is not deployment evidence.
 
 ## MCP and Signet
 
@@ -87,9 +81,9 @@ Optional Signet memory is an operator-owned external service, not a Pixie-manage
 
 ## Without Docker
 
-For local split validation, run `pixie_cli` and `pixie_web` as separate local processes. `pixie_cli` owns Pi sessions and `pixie_web` serves the UI and controller, with `pixie_web` listening on the controller port and reaching the host over loopback. Do not run a second owner for the same sessions.
+For local validation, run `pixie serve` and `pixie_web` as separate local processes. The host owns Pi sessions and `pixie_web` serves the UI and controller, with `pixie_web` listening on the controller port and reaching the host over loopback. Do not run a second server for the same agent directory.
 
-This topology is not yet an approved deployment recipe. Startup must fail closed when the agent directory is missing, and readiness must degrade while a session awaits reload. A conflicting owner exits `73`; stop the managed owner and wait for an idle handoff, or use a different `PI_CODING_AGENT_DIR`. arm64 lifecycle and upgrade/rollback evidence under real systemd is still missing. See the [roadmap](../roadmap/roadmap.md) for the current evidence status.
+This topology is not yet an approved deployment recipe. Startup must fail closed when the agent directory is missing, and readiness must degrade while a session awaits reload. A conflicting server exits `73`; stop the managed owner or use a different `PI_CODING_AGENT_DIR`. arm64 lifecycle and upgrade/rollback evidence under real systemd is still missing. See the [roadmap](../roadmap/roadmap.md) for the current evidence status.
 
 For development inspection only, `bun run build:pixie_web` builds the embedded UI and the controller binary. Do not replace a working service until final archive installation, Pi selection, readiness, failure propagation and lifecycle checks pass.
 

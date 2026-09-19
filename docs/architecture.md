@@ -4,19 +4,18 @@
 
 | Product | Role |
 | --- | --- |
-| `pixie_web` | Controller-only Go web workspace. It connects to a separately managed loopback `pixie_cli` host and never contains or starts Bun, Node or Pi. |
-| `pixie_cli` | Bundled Bun `1.4.0`, regular Pi TUI, Pi SDK, and standalone assistant host. `pixie_cli serve --config ABS` starts the host. |
-| `pixie` | Bundled Bun `1.4.0`, regular Pi TUI, Pi SDK, assistant host, and controller. Its archive-internal full service is `libexec/pixie_full serve --assistant-config ABS --web-config ABS`. |
+| `pixie_web` | Controller-only Go web workspace. It connects to a separately managed loopback `pixie` host and never contains or starts Bun, Node or Pi. |
+| `pixie` | Bundled Bun `1.4.0`, regular Pi TUI, Pi SDK, and assistant host connector. Bare `pixie` runs the native TUI; `pixie serve --config ABS` starts the host. The TUI runs concurrently with the server. |
 
 `pixie_assistant` is the archive-internal JavaScript host `libexec/pixie_assistant.js`, run by the pinned Bun `1.4.0` runtime `runtime/bin/bun`, rather than a compiled executable or a public product, command, unit, or archive. No Node runtime is bundled. The source build does not prove a standalone distribution, a published release, or an approved Docker deployment.
 
 | Process | Location | Owns |
 | --- | --- | --- |
-| `pixie_cli`, `:3284` | Host user | Pi sessions, providers, credentials, models and extensions through the bundled Pi SDK at version `0.85.1` |
+| `pixie serve`, `:3284` | Host user | Pi sessions, providers, credentials, models and extensions through the bundled Pi SDK at version `0.85.1` |
 | `pixie_web`, `:7312` | Application container or local process | Web UI, projects, files, Git, goals, questions, queues, schedules and browser-MCP registration |
 | External browser MCP, operator-chosen | Deployment | Browser runtime and MCP transport; Pi is the client and Pixie stores only the registration setting |
 
-The two Compose products are alternatives. The controller-only `pixie_web` image never starts Pi and reaches a separately managed host over loopback; the full `pixie` image starts its bundled host and controller and persists Pi state in `pixie-pi-state`. They share controller state and the global `pixie` command, so do not run them against the same `PI_CODING_AGENT_DIR`. Docker definitions do not establish a completed deployment. Pixie hosts no browser and never proxies MCP traffic: Pi dials the operator-chosen browser MCP endpoint directly, while Pixie writes the registration into Pi's MCP configuration and reports a bounded probe.
+Docker publishes only the controller-only `pixie_web` image, which never starts Pi and reaches a separately installed host over loopback. Docker definitions do not establish a completed deployment. Pixie hosts no browser and never proxies MCP traffic: Pi dials the operator-chosen browser MCP endpoint directly, while Pixie writes the registration into Pi's MCP configuration and reports a bounded probe.
 
 ## Source
 
@@ -24,15 +23,15 @@ Paths below are relative to the repository root, which holds the shared Bun work
 
 | Directory | Responsibility |
 | --- | --- |
-| `assistant/` | The archive-internal host bundle `libexec/pixie_assistant.js`, built from `assistant/src`: Pi sessions in-process through the bundled Pi SDK, with no RPC child model or bridge sidecar |
-| `web/cmd`, `web/internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection, lifecycle and browser-MCP registration (`mcp_browser.go`) |
-| `web/internal/canvas`, `web/internal/design` | Optional Canvas and Openfig workspace modules |
-| `web/internal/mcpserver` | Module catalog and in-process MCP publication |
-| `web/internal/workspace`, `web/internal/persist` | Bounded project access and durable state |
-| `web/webui`, `shared/` | Svelte 5 interface and the shared wire-contract schema plus generated Go and TypeScript catalogs |
-| `web/tests`, `shared/tests`, `assistant/tests` | Unit, integration and deployment checks, including the Bun host and Pi SDK probe suites |
+| `src/assistant/` | The archive-internal host bundle `libexec/pixie_assistant.js`, built from `src/assistant`: Pi sessions in-process through the bundled Pi SDK, with no RPC child model or bridge sidecar |
+| `cmd/`, `internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection, lifecycle and browser-MCP registration (`mcp_browser.go`) |
+| `internal/canvas`, `internal/design` | Optional Canvas and Openfig workspace modules |
+| `internal/mcpserver` | Module catalog and in-process MCP publication |
+| `internal/workspace`, `internal/persist` | Bounded project access and durable state |
+| `webui/`, `schema/`, `src/shared/` | Svelte 5 interface and the shared wire-contract schema plus generated Go and TypeScript catalogs |
+| `tests/` | Unit, integration and deployment checks, including the Bun host and Pi SDK probe suites |
 
-The root `go.work` links the `shared` and `web` Go modules, each with its own `go.mod` and local `replace` so `GOWORK=off` still works. Bun builds the frontend with verified Mewa UI assets. The `pixie_web` image build includes static UI assets and Git. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
+The root holds one Go module and one Bun package. Bun builds the frontend with verified Mewa UI assets. The `pixie_web` image build includes static UI assets and Git. It runs as UID 1000 and uses a read-only root filesystem only when launched with the documented Compose flags.
 
 ## Configuration ownership
 
@@ -55,8 +54,8 @@ Schedule occurrences are recorded before dispatch. Runs create native sessions i
 
 Schedule mutations and their retry results commit in one atomic store. The latest 512 successful mutation identities survive restart; MCP callers can supply `mutationId` for retries. The runner allows eight concurrent jobs, retries persistence failures with backoff and exposes failures in application health. Cron expressions are cached until the schedule changes.
 
-Workspace navigation uses v2 hash routes (`#/v2/...`) with v1 compatibility. The session catalog offers grouped and flat views ordered recent-first with selected/running pinning and native titles; archive and unarchive are explicitly unavailable until a durable archive marker exists, so the Archive area stays inactive against the real host. Pixie adds no second session index: listing reads the host catalog, and an index is added only after a benchmark under `web/tests/performance/` measures listing as a bottleneck. An empty project id means ungrouped (filesystem admission only, no hidden all-files project); removing a project grouping keeps conversations and session-keyed drafts.
+Workspace navigation uses v2 hash routes (`#/v2/...`) with v1 compatibility. The session catalog offers grouped and flat views ordered recent-first with selected/running pinning and native titles; archive and unarchive are explicitly unavailable until a durable archive marker exists, so the Archive area stays inactive against the real host. Pixie adds no second session index: listing reads the host catalog, and an index is added only after a benchmark under `tests/performance/` measures listing as a bottleneck. An empty project id means ungrouped (filesystem admission only, no hidden all-files project); removing a project grouping keeps conversations and session-keyed drafts.
 
-Git inspection is read-only: staged index entries are compared against the base tree, raw worktree bytes are hashed within a 4 MiB per-file and 64 MiB aggregate budget with conservative reporting, previews note that clean/process and LFS conversion are not applied, and limits surface in per-repository warnings. A per-turn diff primitive produces a read-only diff from a `write`/`edit` tool call with a bounded `git diff HEAD` fallback, exposed through the read-only `git.turnDiff` route; a Git execution failure is reported as an unavailable result rather than a request error (`web/internal/workspace/turn_diff.go`, `web/internal/controller/handler.go`). The assembled HTTP handler reserves `/api/*` and `/mcp/*` for JSON errors and never falls back to the SPA document.
+Git inspection is read-only: staged index entries are compared against the base tree, raw worktree bytes are hashed within a 4 MiB per-file and 64 MiB aggregate budget with conservative reporting, previews note that clean/process and LFS conversion are not applied, and limits surface in per-repository warnings. A per-turn diff primitive produces a read-only diff from a `write`/`edit` tool call with a bounded `git diff HEAD` fallback, exposed through the read-only `git.turnDiff` route; a Git execution failure is reported as an unavailable result rather than a request error (`internal/workspace/turn_diff.go`, `internal/controller/handler.go`). The assembled HTTP handler reserves `/api/*` and `/mcp/*` for JSON errors and never falls back to the SPA document.
 
 The Web UI receives the newest transcript page first. Older pages carry projection identities. Snapshots also carry pending tools and pending extension dialogs, so a reload mid-run, mid-tool, or mid-dialog reconciles against server state. Late message events from older runs never resurrect completed streaming state, and one prompt's several `agent_end` events never settle it early: only prompt settlement does. Inactive projections have count and memory budgets; active work, pending dialogs, registered liveness, and durable queues prevent eviction. Reconnect generations, session ownership and deletion markers reject stale work.
