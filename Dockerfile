@@ -17,7 +17,7 @@ RUN --mount=type=cache,id=bun-install-cache,target=/root/.bun/install/cache,shar
     bun install --frozen-lockfile
 COPY webui/ webui/
 COPY src/shared/ src/shared/
-COPY tsconfig.base.json tsconfig.json ./
+COPY tsconfig.base.json ./
 RUN bun run build:webui \
     && mkdir -p /out/licenses/frontend \
     && (cd /work && find node_modules -type f \( -iname 'license*' -o -iname 'notice*' \) \
