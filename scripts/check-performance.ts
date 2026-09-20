@@ -29,7 +29,6 @@ export const REDUCIBLE_PERFORMANCE_FIELDS = [
 	"scratchInodes",
 	"contentFilledUI",
 ] as const;
-export type ReduciblePerformanceField = (typeof REDUCIBLE_PERFORMANCE_FIELDS)[number];
 
 const MIN_SAMPLES = 5;
 const SOURCE_COMMIT = /^[0-9a-f]{40}$/;

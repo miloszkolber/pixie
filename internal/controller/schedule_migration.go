@@ -10,11 +10,6 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
-// ScheduleMigrationHelperVersion versions the additive inspection and dry-run
-// helpers. Ledger versioning is separate so the existing helper API remains
-// compatible while v2 state is diagnosable.
-const ScheduleMigrationHelperVersion = 1
-
 const (
 	ScheduleMigrationPhasePrepared  = "prepared"
 	ScheduleMigrationPhaseMigrating = "migrating"

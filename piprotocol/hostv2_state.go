@@ -215,43 +215,6 @@ func (s HostV2Settlement) AllowsFollowUp() bool {
 	return s.State == HostV2DeliverySettled
 }
 
-// HostV2Mutation is the stable retry identity: one mutationId plus the
-// payload fingerprint. Retries reuse both with a fresh transport ID.
-type HostV2Mutation struct {
-	MutationID  string `json:"mutationId"`
-	Fingerprint string `json:"fingerprint"`
-}
-
-// Validate checks retry identity fields.
-func (m HostV2Mutation) Validate() error {
-	if m.MutationID == "" || strings.ContainsRune(m.MutationID, 0) || !utf8.ValidString(m.MutationID) {
-		return fmt.Errorf("mutation misses id")
-	}
-	if m.Fingerprint == "" || strings.ContainsRune(m.Fingerprint, 0) || !utf8.ValidString(m.Fingerprint) {
-		return fmt.Errorf("mutation misses payload fingerprint")
-	}
-	return nil
-}
-
-// CheckHostV2MutationConflict enforces idempotent retry: identical identity
-// reconciles the original operation, while different content under one
-// mutationId is a typed resource conflict.
-func CheckHostV2MutationConflict(existing, incoming HostV2Mutation) error {
-	if err := existing.Validate(); err != nil {
-		return err
-	}
-	if err := incoming.Validate(); err != nil {
-		return err
-	}
-	if existing.MutationID != incoming.MutationID {
-		return fmt.Errorf("mutation identity mismatch")
-	}
-	if existing.Fingerprint != incoming.Fingerprint {
-		return NewHostV2ResourceConflict("different content under the same mutation id")
-	}
-	return nil
-}
-
 // HostV2Durability distinguishes known pre-publication failure from an
 // installed commit and a durability/outcome-uncertain result. It mirrors the
 // persist publication contract for host-scoped reconciliation without

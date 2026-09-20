@@ -73,7 +73,7 @@ Fixture commands (run on the live deployment host, then record machine, CPU/RAM,
 
 ```sh
 # Startup: cold start to healthy.
-/usr/bin/time -v docker compose up -d pixie
+/usr/bin/time -v docker compose --profile web up -d pixie_web
 curl -sf http://127.0.0.1:7312/livez; curl -sf http://127.0.0.1:3284/livez
-docker compose logs pixie --since 10m | grep -i -E 'ready|listen'
+docker compose logs pixie_web --since 10m | grep -i -E 'ready|listen'
 ```

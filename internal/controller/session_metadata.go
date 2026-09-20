@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-// SessionMetadataHelperVersion versions these additive UI-03/FC08
-// host/session-keyed catalog helpers. It never changes any persisted JSON
-// schema or existing session transport.
-const SessionMetadataHelperVersion = 1
-
-// SessionCatalogRecentLimit mirrors the web catalog concise recent subset.
-const SessionCatalogRecentLimit = 6
-
 // UntitledSessionTitle is the explicit fallback for missing native titles.
 // No model call is used to generate titles.
 const UntitledSessionTitle = "Untitled chat"

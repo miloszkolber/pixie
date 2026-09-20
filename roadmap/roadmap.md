@@ -21,7 +21,7 @@ Reducing the host to a Pi extension is rejected. An extension lives only inside 
 
 ## Source and ownership
 
-`assistant/` owns direct public-Pi SDK interaction and the archive-internal host. `web/` owns the controller, UI, persistence, workspace modules, MCP publisher, and browser-MCP pointer. `shared/` owns `schema/protocol-catalog.json` and generated Go and TypeScript catalogs. The narrow authenticated loopback host protocol is not a Pi execution fallback.
+`src/assistant/` owns direct public-Pi SDK interaction and the archive-internal host. `cmd/` and `internal/` own the Go controller, persistence, workspace modules, MCP publisher and browser-MCP pointer; `webui/` owns the frontend. `schema/`, `piprotocol/` and `src/shared/` own the protocol schema and generated Go and TypeScript catalogs. `scripts/` owns repository build and gate tooling. The narrow authenticated loopback host protocol is not a Pi execution fallback.
 
 Pi owns execution, transcripts, native credentials, models, settings, tools, extensions, and trust. Pixie must not intercept tools, replace prompts, silently install packages, auto-trust projects, or introduce another model or MCP policy. The bundled native TUI is first-class and does not establish untested web parity.
 
@@ -32,6 +32,8 @@ The controller implements web workspace state, sessions, read-only files and Git
 The SDK coverage inventory lives in [docs/sdk-coverage.md](../docs/sdk-coverage.md). It separates proven public Pi SDK behavior from Pixie policy, records what is web-covered, native-TUI-only, partial, or unavailable, and is the reference for the coverage work below.
 
 Additive, optional work taken from neighbouring open-source Pi interfaces is planned in [roadmap-aux.md](roadmap-aux.md). Those items are subordinate to this plan and never change the product target or trust model.
+
+Web UI composition and appearance work is planned in [roadmap-ui.md](roadmap-ui.md). It aligns the frontend with the Mewa foundation and the approved reference set; it does not change the product target or trust model.
 
 ## Open evidence and decisions
 

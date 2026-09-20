@@ -4,7 +4,7 @@ Pixie is a lightweight web workspace for the user's installed Pi.
 
 ## Read first
 
-Read README.md and the current behavior in docs/architecture.md, docs/pi.md, docs/security.md, docs/deployment.md and docs/development.md relevant to the task. Use [roadmap/roadmap.md](roadmap/roadmap.md) as the central implementation plan, and [roadmap/roadmap-canvas.md](roadmap/roadmap-canvas.md) and [roadmap/roadmap-openfig.md](roadmap/roadmap-openfig.md) for those feature streams. [roadmap/roadmap-aux.md](roadmap/roadmap-aux.md) holds the implementable plan and gap analysis for additive, optional work taken from neighbouring open-source Pi interfaces; it never changes the target or trust model.
+Read README.md and the current behavior in docs/architecture.md, docs/pi.md, docs/security.md, docs/deployment.md and docs/development.md relevant to the task. Use [roadmap/roadmap.md](roadmap/roadmap.md) as the central implementation plan, and [roadmap/roadmap-canvas.md](roadmap/roadmap-canvas.md) and [roadmap/roadmap-openfig.md](roadmap/roadmap-openfig.md) for those feature streams. [roadmap/roadmap-aux.md](roadmap/roadmap-aux.md) holds the implementable plan and gap analysis for additive, optional work taken from neighbouring open-source Pi interfaces; it never changes the target or trust model. [roadmap/roadmap-ui.md](roadmap/roadmap-ui.md) holds the web UI redesign stream plan and the six-slot shell grammar.
 
 The canonical implementation plan lives under roadmap/. Current operating documentation remains under docs/. Do not recreate removed planning or draft files or copy future behavior into current docs before it ships. Keep human prose brief, factual and present-tense; one fact has one owner.
 
@@ -22,7 +22,7 @@ Sharing an installation does not attach to an arbitrary running TUI. Use separat
 
 ## Workspace and modules
 
-Use the six slots in roadmap/roadmap.md: primary rail/sidebar/view, independent secondary view/sidebar/rail. Primary areas are Chats, Archive, Schedules and Settings. Hide/Close/Archive/Delete/Stop are different actions. View lifetime never owns accepted agent execution.
+Use the six slots in [roadmap/roadmap-ui.md](roadmap/roadmap-ui.md): primary rail/sidebar/view, independent secondary view/sidebar/rail. Primary areas are Chats, Archive, Schedules and Settings. Hide/Close/Archive/Delete/Stop are different actions. View lifetime never owns accepted agent execution.
 
 Projects group sessions but native identity/cwd and filesystem admission are separate. Support ungrouped sessions without a hidden all-files project. Files/Git are read-only inspection: no IDE, Monaco, LSP, terminal or automatic worktree manager.
 

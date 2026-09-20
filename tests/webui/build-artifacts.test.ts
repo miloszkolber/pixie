@@ -93,6 +93,9 @@ test("development builds satisfy the artifact contract with gzip companions", as
 	const intermediateRoot = join(root, "intermediate");
 	const manifestPath = join(intermediateRoot, "bundle-manifest.json");
 	try {
+		await mkdir(outputRoot);
+		await writeFile(join(outputRoot, ".gitkeep"), "");
+		await writeFile(join(outputRoot, "stale.js"), "old build");
 		const buildModule = new URL("../../webui/scripts/build.ts", import.meta.url).href;
 		const script = `const { buildWeb } = await import(${JSON.stringify(buildModule)}); await buildWeb(${JSON.stringify({ outputRoot, intermediateRoot, development: true })});`;
 		const build = Bun.spawn([process.execPath, "-e", script], {
@@ -115,6 +118,8 @@ test("development builds satisfy the artifact contract with gzip companions", as
 		};
 		const artifactCount = Object.keys(manifest.outputs).length;
 		expect(checkArtifacts(outputRoot, manifestPath)).toBe(artifactCount);
+		expect((await stat(join(outputRoot, ".gitkeep"))).size).toBe(0);
+		expect(await Bun.file(join(outputRoot, "stale.js")).exists()).toBeFalse();
 		const entry = Object.entries(manifest.outputs).find(
 			([path, output]) => path.endsWith(".js") && output.entryPoint === manifest.entrypoint,
 		)?.[0];
@@ -130,16 +135,15 @@ test("development builds satisfy the artifact contract with gzip companions", as
 }, 20_000);
 
 test("the image build never depends on checkout-volatile web output", async () => {
-	// `bun run build` wipes webui/dist (including the tracked .gitkeep),
-	// so a COPY of anything under dist/ breaks every container build that follows
-	// a local web build. The Go embed only needs the directory to exist.
+	// Container builds create their own embed directory rather than depending
+	// on checkout-local frontend outputs.
 	const dockerfile = await Bun.file(new URL("../../Dockerfile", import.meta.url)).text();
 	expect(dockerfile).toContain("mkdir -p webui/dist");
 	// COPY sources resolve against the build context (the repo root), one level
 	// above this package.
 	const context = new URL("../../", import.meta.url);
 	for (const line of dockerfile.split("\n")) {
-		expect(line.startsWith("COPY web/webui/dist/")).toBeFalse();
+		expect(line.startsWith("COPY webui/dist/")).toBeFalse();
 		// Every context COPY source must exist in the checkout: the committed
 		// assistant migration dropped assistant/scripts/ while the Dockerfile
 		// still copied it, breaking all image builds with a checksum error.

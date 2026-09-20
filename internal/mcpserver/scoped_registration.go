@@ -350,13 +350,6 @@ func (r *NativeMCPRegistry) Len() int {
 	return count
 }
 
-// ScopedRegistration and ScopedRegistrationStore are concise compatibility
-// aliases for callers that do not need to mention the native transport.
-type ScopedRegistration = NativeMCPRegistration
-type ScopedRegistrationRequest = NativeMCPRegistrationRequest
-type ScopedAuthorization = NativeMCPAuthorization
-type ScopedRegistrationStore = NativeMCPRegistry
-
 func validateNativeMCPServerID(serverID string) error {
 	if len(serverID) == 0 || len(serverID) > maxNativeMCPServerIDLength || strings.TrimSpace(serverID) != serverID {
 		return fmt.Errorf("invalid native MCP server id %q", serverID)

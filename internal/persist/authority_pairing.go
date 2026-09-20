@@ -14,10 +14,6 @@ import (
 	"unicode/utf8"
 )
 
-// PairingAuthorityHelperVersion versions these additive API-03 durable
-// pairing helpers. It never changes any other ledger schema.
-const PairingAuthorityHelperVersion = 1
-
 const (
 	// PairingAuthorityFile is the durable pairing authority. It stores only
 	// durable identity (binding, host, verified native storage, verifier)

@@ -7,10 +7,6 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
-// MigrationApplyHelperVersion versions these additive MIG-01 topology and
-// schema-aware rollback helpers. It never changes any ledger schema.
-const MigrationApplyHelperVersion = 1
-
 // MigrationTopology names a supported deployment composition. Docker runs
 // controller-only and never starts local Pi; the combined host embeds
 // engine/controller/UI in one executable. Both share implementation,

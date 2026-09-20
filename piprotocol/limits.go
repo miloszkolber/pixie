@@ -2,8 +2,8 @@
 //
 // Effective units and bounds at this level (all byte counts are serialized
 // UTF-8 bytes unless noted as base64 characters):
-//   - Frame/record: FrameMaxBytes / RecordMaxBytes (32 MiB serialized UTF-8
-//     each). Not an allocation budget; decoded structures are bounded
+//   - Frame: FrameMaxBytes (32 MiB serialized UTF-8).
+//     Not an allocation budget; decoded structures are bounded
 //     separately and Unicode/escaping cannot bypass byte limits because len
 //     counts UTF-8 bytes.
 //   - Prompt text: PromptTextMaxBytes (4 MiB UTF-8) for the leading text
@@ -28,8 +28,7 @@ import (
 )
 
 const (
-	FrameMaxBytes  = 32 * 1024 * 1024
-	RecordMaxBytes = 32 * 1024 * 1024
+	FrameMaxBytes = 32 * 1024 * 1024
 
 	PromptTextMaxBytes = 4 * 1024 * 1024
 

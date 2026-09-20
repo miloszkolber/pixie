@@ -257,3 +257,53 @@ func TestPairingCLIUsesConfigDataDirAndAgentDir(t *testing.T) {
 		t.Fatalf("config agentDir host identity = %q", pairing.HostIdentity)
 	}
 }
+
+func TestPairingCLIUsesAssistantConfig(t *testing.T) {
+	dataDir := t.TempDir()
+	agentDir := t.TempDir()
+	writePairingHostIdentity(t, agentDir, pairingTestIdentity)
+	configPath := filepath.Join(t.TempDir(), "assistant.json")
+	config := fmt.Sprintf(
+		`{"schemaVersion":2,"host":"127.0.0.1","port":3284,"agentDir":%q,"allowSelfRestart":true}`,
+		agentDir,
+	)
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runPairingCLI(t, "pair", "--config", configPath, "--data-dir", dataDir, "--json")
+	if result := decodePairingOutput(t, out); result.Status != persist.PairingStatusPaired {
+		t.Fatalf("status = %q, want paired", result.Status)
+	}
+}
+
+func TestPairingRejectsMalformedConfigBeforeWritingState(t *testing.T) {
+	for _, content := range []string{
+		`{"dataDir":"/ignored","unexpected":true}`,
+		`{"AgentDir":"/ignored"}`,
+		`{"agentDir":"/first","agentDir":"/second"}`,
+		`{"allowSelfRestart":null}`,
+		`{"schemaVersion":"2"}`,
+	} {
+		t.Run(content, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			dataDir := t.TempDir()
+			var output bytes.Buffer
+			err := runPairingCommand("pair", []string{
+				"--config", path, "--data-dir", dataDir,
+				"--host-identity", pairingTestIdentity,
+				"--storage-key", persist.PairingStorageKeyPrefix + strings.Repeat("0", 64),
+			}, &output)
+			if err == nil || output.Len() != 0 {
+				t.Fatalf("pairing accepted malformed config: %v, %q", err, output.String())
+			}
+			entries, err := os.ReadDir(dataDir)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("pairing wrote state on invalid config: %v, %v", entries, err)
+			}
+		})
+	}
+}

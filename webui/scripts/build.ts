@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { BunPlugin } from "bun";
@@ -46,7 +46,12 @@ export async function buildWeb(options: WebBuildOptions = {}): Promise<number> {
 		},
 	};
 
-	await rm(outputRoot, { force: true, recursive: true });
+	// Keep the tracked embed placeholder: building must not dirty the checkout
+	// or temporarily remove the directory required by Go's //go:embed pattern.
+	await mkdir(outputRoot, { recursive: true });
+	for (const name of await readdir(outputRoot)) {
+		if (name !== ".gitkeep") await rm(join(outputRoot, name), { force: true, recursive: true });
+	}
 	await rm(intermediateRoot, { force: true, recursive: true });
 	await mkdir(intermediateRoot, { recursive: true });
 	await writeFile(compiledMewaCss, await flattenMewaCss(sourceMewaCss));

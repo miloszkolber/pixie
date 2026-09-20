@@ -88,10 +88,3 @@ func (a *AggregateByteAdmission) OrdinaryBytes() int {
 	defer a.mu.Unlock()
 	return a.ordinaryBytes
 }
-
-// ControlBytes reports currently retained control bytes.
-func (a *AggregateByteAdmission) ControlBytes() int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.controlBytes
-}

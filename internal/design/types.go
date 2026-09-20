@@ -161,14 +161,9 @@ type Parser interface {
 	Parse(context.Context, []byte) (NormalizedDocument, error)
 }
 
-// OfflineParser is an explicit alias used by integrations that call the
-// parser a worker adapter.
-type OfflineParser = Parser
-
-// Worker and WorkerAdapter are descriptive aliases for contained parser
-// integrations. A missing adapter always fails closed at upload admission.
+// Worker names a contained parser integration. A missing adapter always fails
+// closed at upload admission.
 type Worker = Parser
-type WorkerAdapter = Parser
 
 // ParserFunc adapts a function to Parser.
 type ParserFunc func(context.Context, []byte) (NormalizedDocument, error)
@@ -467,10 +462,6 @@ type NormalizedDocument struct {
 	Warnings      []string `json:"warnings,omitempty"`
 	CoverPNG      []byte   `json:"-"`
 }
-
-// DocumentStatus is a descriptive alias for callers that prefer an explicit
-// result name over the shorter Status type.
-type DocumentStatus = Status
 
 // SetSelection publishes instance-wide shared focus after a revision CAS.
 type SelectionResult struct {

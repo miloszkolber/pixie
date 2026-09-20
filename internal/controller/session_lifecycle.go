@@ -853,10 +853,6 @@ func thinkingLevels(options []any) []string {
 	return values
 }
 
-func (m *SessionManager) ListWithFallback(ctx context.Context, projectID string, archived any) ([]SessionSummary, error) {
-	return m.List(ctx, projectID, archived)
-}
-
 func stringIndex(values []string, wanted string) int {
 	for index, value := range values {
 		if value == wanted {

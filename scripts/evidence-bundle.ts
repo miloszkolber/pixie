@@ -333,13 +333,6 @@ export function buildEvidenceBundle(init: EvidenceBundleInit): EvidenceBundle {
 	});
 }
 
-export function assertionsOfKind(
-	bundle: EvidenceBundle,
-	kind: EvidenceAssertionKind,
-): readonly EvidenceAssertion[] {
-	return bundle.assertions.filter((assertion) => assertion.kind === kind);
-}
-
 export function findAssertion(
 	bundle: EvidenceBundle,
 	kind: EvidenceAssertionKind,

@@ -365,10 +365,10 @@ jobs:
           RELEASE_ID: ${{ needs.identity.outputs.release_id }}
           ARTIFACT_DIR: ${{ runner.temp }}/pixie-release
           EVIDENCE_DIR: ${{ runner.temp }}/pixie-evidence
+          READINESS_URL: ${{ vars.PIXIE_READINESS_BASE_URL }}
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
-          READINESS_URL="${{ vars.PIXIE_READINESS_BASE_URL }}"
           EXTRA_ARGS=()
           if [[ -n "${READINESS_URL:-}" ]]; then
             EXTRA_ARGS+=(--base-url "$READINESS_URL")
@@ -405,6 +405,7 @@ jobs:
           IMAGE_DIR: ${{ runner.temp }}/pixie-image
           EVIDENCE_DIR: ${{ runner.temp }}/pixie-evidence
           ARM64_PROBE_DIR: ${{ runner.temp }}/pixie-probe-evidence-arm64
+          READINESS_URL: ${{ vars.PIXIE_READINESS_BASE_URL }}
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
@@ -415,7 +416,6 @@ jobs:
           COVERAGE_FILE="$EVIDENCE_DIR/coverage.json"
           PERFORMANCE_FILE="$EVIDENCE_DIR/performance.json"
           ARM64_PROBE_FILE="$ARM64_PROBE_DIR/evidence.json"
-          READINESS_URL="${{ vars.PIXIE_READINESS_BASE_URL }}"
           EXTRA_ARGS=()
           # The native arm64 BIN-PROBE facts are merged into this bundle so both
           # architectures' version/doctor rows are backed by a real execution.

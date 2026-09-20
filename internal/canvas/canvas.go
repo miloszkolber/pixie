@@ -225,9 +225,6 @@ type Authority struct {
 	ExpiresAt  time.Time `json:"expiresAt"`
 }
 
-// Attachment is a descriptive alias used by controller integrations.
-type Attachment = Authority
-
 // Config controls storage, authority, worker and response limits. Enabled is
 // intentionally false by default: a missing/disabled optional worker or
 // module never becomes an unrestricted same-process renderer.
@@ -1305,20 +1302,6 @@ func (s *Service) DeleteSession(sessionID string) error {
 		return cleanupErr
 	}
 	return nil
-}
-
-// RevokeAllAuthorities invalidates every Canvas capability and queued/active
-// worker job. It is used by module disable, replacement and shutdown paths.
-func (s *Service) RevokeAllAuthorities() int {
-	if s == nil {
-		return 0
-	}
-	s.mu.Lock()
-	count := len(s.tokens)
-	s.tokens = make(map[string]tokenState)
-	s.mu.Unlock()
-	s.cancelAllJobs()
-	return count
 }
 
 func (s *Service) sessionForAuthority(authority Authority) (*sessionState, error) {

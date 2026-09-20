@@ -350,13 +350,6 @@ export interface AskUserQuestionItem {
 	options: AskUserQuestionOption[];
 	multiSelect?: boolean;
 }
-export interface AskUserQuestionArgs {
-	questions: AskUserQuestionItem[];
-}
-export interface PendingUserQuestion extends AskUserQuestionArgs {
-	id: string;
-	sessionId: string;
-}
 export interface AskUserQuestionAnswer {
 	questionIndex: number;
 	question: string;

@@ -124,6 +124,14 @@ function jobBlock(workflow: string, name: string): string {
 	return match[0];
 }
 
+function stepBlock(job: string, name: string): string {
+	const marker = `- name: ${name}`;
+	const start = job.indexOf(marker);
+	if (start < 0) throw new Error(`missing workflow step ${name}`);
+	const next = job.indexOf("- name:", start + marker.length);
+	return job.slice(start, next < 0 ? job.length : next);
+}
+
 test("static source validation does not run live evidence gates", async () => {
 	const workflow = await readFile(ciWorkflowPath, "utf8");
 
@@ -138,6 +146,25 @@ test("static source validation does not run live evidence gates", async () => {
 	expect(workflow).toContain("bun run test");
 	expect(workflow).not.toContain("Test Go assistant module");
 	expect(workflow).not.toContain("assistant/bridge");
+});
+
+test("release readiness configuration crosses the workflow boundary through env", async () => {
+	const workflow = await readFile(workflowPath, "utf8");
+	const readinessVariable = "$" + "{{ vars.PIXIE_READINESS_BASE_URL }}";
+	const evidence = jobBlock(workflow, "evidence");
+	const readinessSteps = [
+		"Produce coverage and performance evidence inputs",
+		"Collect local evidence bundle from staged artifacts",
+	];
+
+	for (const name of readinessSteps) {
+		const step = stepBlock(evidence, name);
+		const run = step.indexOf("run: |");
+		expect(run).toBeGreaterThan(-1);
+		expect(step.slice(0, run)).toContain(`READINESS_URL: ${readinessVariable}`);
+		expect(step.slice(run)).not.toContain("vars.PIXIE_READINESS_BASE_URL");
+		expect(step.slice(run)).toContain('EXTRA_ARGS+=(--base-url "$READINESS_URL")');
+	}
 });
 
 test("release stages each architecture natively, then merges the exact four-archive set before evidence", async () => {

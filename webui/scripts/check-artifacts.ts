@@ -27,6 +27,13 @@ export function checkArtifacts(
 		const files: string[] = [];
 		for (const entry of readdirSync(root, { withFileTypes: true })) {
 			const path = join(root, entry.name);
+			if (
+				root === outputRoot &&
+				entry.name === ".gitkeep" &&
+				entry.isFile() &&
+				statSync(path).size === 0
+			)
+				continue;
 			if (entry.isDirectory()) files.push(...filesBelow(path));
 			else if (entry.isFile()) files.push(relative(outputRoot, path).replaceAll("\\", "/"));
 		}

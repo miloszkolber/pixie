@@ -123,9 +123,9 @@ func requiredBoolean(object map[string]json.RawMessage, key string) (bool, error
 	if !ok {
 		return false, fmt.Errorf("assistant config %s is required", key)
 	}
-	var value bool
-	if err := json.Unmarshal(raw, &value); err != nil {
+	var value *bool
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
 		return false, fmt.Errorf("assistant config %s must be a boolean", key)
 	}
-	return value, nil
+	return *value, nil
 }

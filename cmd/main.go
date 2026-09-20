@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -60,16 +59,9 @@ func main() {
 		fatal(fmt.Errorf("unsupported serve mode %q", mode))
 	}
 	configFile := configPath(os.Args[1:])
-	if _, err := runtimeConfigFor(configFile, mode); err != nil {
-		fatal(err)
-	}
 	stop, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	if err := runControllerWithConfig(stop, build, configFile); err != nil {
-		if errors.Is(err, errRestartRequested) {
-			slog.Info("restart requested by an authorized operation; exiting for the service manager")
-			os.Exit(restartExitCode)
-		}
 		fatal(err)
 	}
 }

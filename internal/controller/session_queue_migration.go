@@ -10,10 +10,6 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
-// QueueMigrationHelperVersion versions these additive MIG-01 queue
-// inspect/plan helpers. It never changes the pi-session-queues.json schema.
-const QueueMigrationHelperVersion = 1
-
 // Repeatable queue migration phases mirror the project-root journal:
 // prepared inspects and stages, migrating publishes through checkpoints.
 const (

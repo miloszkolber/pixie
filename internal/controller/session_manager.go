@@ -22,14 +22,12 @@ import (
 )
 
 const (
-	maxQueuedMessages          = 20
-	maxQueueRecoveryWorkers    = 4
-	maxManagedResidents        = 16
-	maxManagedLaunching        = 4
-	maxManagedActiveWork       = 8
-	inactiveProjectionMaxCount = 24
-	inactiveProjectionMaxBytes = 8 * 1024 * 1024
-	maxPendingCommandCatalogs  = 32
+	maxQueuedMessages         = 20
+	maxQueueRecoveryWorkers   = 4
+	maxManagedResidents       = 16
+	maxManagedLaunching       = 4
+	maxManagedActiveWork      = 8
+	maxPendingCommandCatalogs = 32
 )
 
 var errAgentIdentityChanged = errors.New("connected Pi agent identity changed")

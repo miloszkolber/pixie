@@ -39,10 +39,6 @@ import {
 } from "./evidence-bundle.ts";
 
 const DOC_PATH = /^(?:\.github\/[^/]+\.md|(?:docs|roadmap)\/|[^/]+\.md$)/i;
-const RELEASE_SOURCE_PATH =
-	/^(?:cmd|internal|piprotocol|schema|scripts|src|systemd|tests|webui)\//i;
-const RELEASE_ROOT_FILE =
-	/^(?:\.dockerignore|\.pixie\.example|Dockerfile|biome\.json|bun\.lockb?|go\.mod|go\.sum|package\.json|tsconfig(?:\.[^.]+)?\.json)$/i;
 const PUBLISH_OPERATION =
 	/\b(?:publish|upload|release|attest|imagetools\s+create|buildx\s+build[^\n]*--push)\b/i;
 const RELEASE_TAG_PUSH = /\bpush\s*:[\s\S]{0,200}\btags\s*:/i;
@@ -373,10 +369,6 @@ function reduceMessages(
 	return { kept, reduced };
 }
 
-export function inspectReleasePolicy(input: ReleasePolicyInput | undefined): ReleasePolicyReport {
-	return inspectPolicy(input);
-}
-
 export function inspectReleaseGate(input: ReleaseGateInput): ReleaseGateReport {
 	const identity = inspectReleaseIdentity(input.identity);
 	const packageInput = input.packages;
@@ -457,8 +449,6 @@ export function inspectReleaseGate(input: ReleaseGateInput): ReleaseGateReport {
 		},
 	};
 }
-
-export const inspectReleasePipeline = inspectReleaseGate;
 
 export interface ReleaseEvidenceMapping {
 	identity: ReleaseIdentityInput;
@@ -805,16 +795,4 @@ if (import.meta.main) {
 		console.error(RELEASE_GATE_USAGE);
 		process.exit(2);
 	}
-}
-
-export function isDocumentationOnlyChange(paths: readonly string[]): boolean {
-	return paths.length > 0 && paths.every((path) => DOC_PATH.test(path));
-}
-
-export function isReleaseRelevantChange(path: string): boolean {
-	return (
-		RELEASE_SOURCE_PATH.test(path) ||
-		RELEASE_ROOT_FILE.test(path) ||
-		/^\.github\/workflows\//i.test(path)
-	);
 }

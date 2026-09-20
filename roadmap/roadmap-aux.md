@@ -27,8 +27,8 @@ Tasks are ordered by dependency and risk. A G2 or G3 task must not block a G1 ta
 | AUX-06 provider usage | `provider_inventory.go`, `pi_events.go`, `webui/src/chat/session/session-stats.ts` | Rate-limit projection from resolved auth | G1 |
 | AUX-07 extension-UI matrix | `docs/sdk-coverage.md` has a native-TUI-only row | Enumerate per-method supported/unsupported | G1 |
 | AUX-08 unknown-event policy | — | Tests only; fold into AUX-12 | G1 |
-| AUX-09 anti-slop lint | Biome recommended preset only (`biome.json:25-30`) | Portable rule subset | G1 |
-| AUX-10 config schema gate | Absent; no schema generator under `web/scripts` | Generator plus `--check` gate | G1 |
+| AUX-09 anti-slop lint | Implemented by `scripts/check-conventions.ts` and Biome | Maintain the reviewed baseline | G1 |
+| AUX-10 config schema gate | Implemented by `scripts/generate-config-schema.ts`; runtime and schema reject unknown controller fields | Maintain generator/runtime parity | G1 |
 | AUX-11 session index | Controller lists through the host | Only if measured; decision | G2 |
 | AUX-12 schema version guard | Absent; parser tolerates shapes only | Header version guard and repair | G1 |
 | AUX-13 CLI coexistence | Absent | Lease plus mtime tail | G1 |
@@ -40,7 +40,7 @@ Tasks are ordered by dependency and risk. A G2 or G3 task must not block a G1 ta
 | AUX-19 drain and quiesce | `runtime_drain_test.go` covers Git pipe drain only | Admission gate for update/rollback | G1 |
 | AUX-20 auth hardening | Core auth exists; no Fetch Metadata, lockout, or rate limit | Optional-mode additions | G1 |
 | AUX-21 file and Git containment | Read-only mounts and read-only Git per `docs/security.md` | Realpath walk-up, per-cwd mutex, per-turn diff | G1 |
-| AUX-22 boundary and pin gates | `check-catalog.ts` exists | Module-boundary and banned-dependency check | G1 |
+| AUX-22 boundary and pin gates | Implemented by `scripts/check-catalog.ts` and `scripts/check-boundaries.ts` | Maintain source ownership and exact pins | G1 |
 | AUX-23 PTY contract | Absent; PTY evidence unproven | Contract plus allowlist | G2 |
 | AUX-24 orchestration | Absent | Extension tools plus contained workers | G2, G4 |
 | AUX-25 host route parity | Catalog marks archive routes absent and `mcp.attach` unavailable, but legacy controller fixtures and browser route rows can still advertise them | Generated ownership/status matrix, real-host fixtures, and metadata-shape parity checks | G1 |
@@ -53,13 +53,13 @@ Tasks are ordered by dependency and risk. A G2 or G3 task must not block a G1 ta
 | AUX-32 native error boundary | Raw Pi/SDK error text can reach browser responses or session projections | Return stable safe errors and retain only redacted causes in diagnostics | G1 |
 | AUX-33 v2 hello strictness | Negotiation accepts an empty v2 advertisement and can under-validate a selected peer version | Require and validate the v2 supported-version advertisement while retaining explicit v1 compatibility | G1 |
 | AUX-34 shared runtime schemas | `@pixie/shared` validates only transport envelopes; method parameters/results remain handler-local and can drift across Go and TypeScript | Generate or centralize method-level runtime validators and cross-boundary drift checks | G1 |
-| AUX-35 pinned verification environment | The workspace requires Bun `1.4.0`, but local checks can run under `1.3.14`; temporary-copy tests can also fail from `ENOSPC` | Refuse unsupported runtimes, isolate temporary workspaces, and classify incomplete evidence without false green results | G1 |
+| AUX-35 pinned verification environment | `scripts/check-runtime.ts` gates the test command on Bun `1.4.0`, toolchains and a writable temporary workspace | Retain explicit environment-blocked results | G1 |
 
 ## M0 — Plan guardrails (completed)
 
 Cheap checks that make the later invariants executable. All six are implemented and run in CI; the detail below is retained only as an index.
 
-- **AUX-22 module-boundary gate** (`scripts/check-boundaries.ts`, `check:deps`): `assistant/` never imports `web/` internals, `web/` never imports `assistant/src`, banned dependencies fail.
+- **AUX-22 module-boundary gate** (`scripts/check-boundaries.ts`, `check:deps`): `src/assistant/` and controller/frontend internals cannot import each other; both may import shared contracts, and banned dependencies fail.
 - **AUX-09 anti-slop rules** (`scripts/check-conventions.ts`, lint): portable subset of `pi-ui` rules enforced mechanically; rule list lives in the script header.
 - **AUX-10 config schema gate** (`scripts/generate-config-schema.ts`, `check:config-schema`, `docs/config-schema.json`): generated JSON Schema for controller and assistant configuration with a stale-check.
 - **AUX-25 host route parity**: generated catalog is the single capability source; contract checks fail on unknown or mis-advertised native routes.

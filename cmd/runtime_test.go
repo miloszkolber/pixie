@@ -59,19 +59,19 @@ func TestRuntimeConfigRejectsUnsupportedMode(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"mode":"controller","host":"127.0.0.1"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtimeConfigFor(path, modeController); err != nil {
+	if _, err := readRuntimeConfig(path); err != nil {
 		t.Fatalf("controller configuration was rejected: %v", err)
 	}
 	fullHostPath := filepath.Join(t.TempDir(), "pixie.json")
 	if err := os.WriteFile(fullHostPath, []byte(`{"mode":"full-host","host":"127.0.0.1"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtimeConfigFor(fullHostPath, modeController); err == nil {
+	if _, err := readRuntimeConfig(fullHostPath); err == nil {
 		t.Fatal("full-host configuration was accepted in controller-only mode")
 	} else if !strings.Contains(err.Error(), "unsupported config mode") {
 		t.Fatalf("full-host config error = %q, want unsupported config mode", err)
 	}
-	if _, err := runtimeConfigFor("relative.json", modeController); err == nil {
+	if _, err := readRuntimeConfig("relative.json"); err == nil {
 		t.Fatal("relative configuration path was accepted")
 	}
 }
@@ -81,7 +81,7 @@ func TestRuntimeConfigExpandsHomePaths(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"mode":"controller","dataDir":"~/.local/share/pixie"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	config, err := runtimeConfigFor(path, modeController)
+	config, err := readRuntimeConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +91,62 @@ func TestRuntimeConfigExpandsHomePaths(t *testing.T) {
 	}
 	if want := filepath.Join(home, ".local", "share", "pixie"); config.DataDir != want {
 		t.Fatalf("dataDir = %q, want %q", config.DataDir, want)
+	}
+}
+
+func TestControllerConfigAcceptsDefaultsAndPortBoundaries(t *testing.T) {
+	for _, content := range []string{`{}`, `{"port":1}`, `{"port":65535,"mode":"controller"}`} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readRuntimeConfig(path); err != nil {
+			t.Fatalf("rejected valid config %s: %v", content, err)
+		}
+	}
+}
+
+func TestControllerConfigRejectsInvalidValuesAcrossCommands(t *testing.T) {
+	cases := map[string]string{
+		"top-level null":       `null`,
+		"top-level array":      `[]`,
+		"unknown field":        `{"mode":"controller","unexpected":true}`,
+		"capitalized field":    `{"Host":"127.0.0.1"}`,
+		"duplicate field":      `{"host":"first","host":"second"}`,
+		"duplicate null field": `{"host":null,"host":"127.0.0.1"}`,
+		"null mode":            `{"mode":null}`,
+		"null data directory":  `{"dataDir":null}`,
+		"trailing JSON value":  `{"mode":"controller"}{}`,
+		"empty mode":           `{"mode":""}`,
+		"host mode":            `{"mode":"full-host"}`,
+		"zero port":            `{"port":0}`,
+		"negative port":        `{"port":-1}`,
+		"oversized port":       `{"port":65536}`,
+		"empty agentDir":       `{"agentDir":""}`,
+		"empty piExecutable":   `{"piExecutable":""}`,
+		"agentDir":             `{"agentDir":"/tmp/pi"}`,
+		"piExecutable":         `{"piExecutable":"/usr/local/bin/pi"}`,
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "pixie.json")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readRuntimeConfig(path); err == nil {
+				t.Fatalf("runtime configuration accepted %s", name)
+			}
+			var doctor bytes.Buffer
+			if err := runUtilityCommand("doctor", path, &doctor); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(doctor.String(), "config.readable=failed") {
+				t.Fatalf("doctor accepted %s: %s", name, doctor.String())
+			}
+			if err := runUtilityCommand("uninstall", path, &bytes.Buffer{}); err == nil {
+				t.Fatalf("uninstall accepted %s", name)
+			}
+		})
 	}
 }
 
@@ -115,15 +171,6 @@ func TestControllerRejectsLocalAssistantSettings(t *testing.T) {
 	}
 	if err := rejectControllerAssistantSettings(func(string) (string, bool) { return "", false }); err != nil {
 		t.Fatalf("controller rejected an empty environment: %v", err)
-	}
-	if err := rejectControllerConfigAssistantSettings(runtimeConfigFile{AgentDir: "/tmp/pi"}); err == nil {
-		t.Fatal("controller accepted an agentDir from configuration")
-	}
-	if err := rejectControllerConfigAssistantSettings(runtimeConfigFile{PiExecutable: "/usr/local/bin/pi"}); err == nil {
-		t.Fatal("controller accepted a piExecutable from configuration")
-	}
-	if err := rejectControllerConfigAssistantSettings(runtimeConfigFile{}); err != nil {
-		t.Fatalf("controller rejected a clean configuration: %v", err)
 	}
 }
 
@@ -184,6 +231,20 @@ func TestRunUtilityCommandIsReadOnlyAndConfigBound(t *testing.T) {
 	}
 	if err := runUtilityCommand("uninstall", filepath.Join(t.TempDir(), "missing.json"), &rejected); err == nil {
 		t.Fatal("uninstall accepted a missing config file")
+	}
+	assistantConfig := filepath.Join(t.TempDir(), "assistant.json")
+	if err := os.WriteFile(assistantConfig, []byte(`{"agentDir":"/tmp/pi"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var assistantDoctor bytes.Buffer
+	if err := runUtilityCommand("doctor", assistantConfig, &assistantDoctor); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(assistantDoctor.String(), "config.readable=failed code=config.unreadable") {
+		t.Fatalf("doctor accepted an assistant configuration: %q", assistantDoctor.String())
+	}
+	if err := runUtilityCommand("uninstall", assistantConfig, &rejected); err == nil {
+		t.Fatal("uninstall accepted an assistant configuration")
 	}
 }
 

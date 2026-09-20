@@ -369,15 +369,6 @@ func (s *Service) Ready() bool {
 	return !s.closed && s.loadErr == nil
 }
 
-func (s *Service) slotSnapshot() (slotState, indexDocument, bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.closed {
-		return slotState{}, indexDocument{}, false, designError("shutting_down", ErrShuttingDown)
-	}
-	return cloneSlot(s.slot), cloneIndex(s.index), s.loaded, s.loadErr
-}
-
 func normalizeWarnings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	result := make([]string, 0, len(values))

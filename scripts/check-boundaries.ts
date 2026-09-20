@@ -26,7 +26,7 @@
  * not add Tailwind dependencies or utilities.
  *
  * Exact-pin drift is already enforced by `check-catalog.ts`, and generated
- * artifact drift in `shared/` by `check-contracts.ts`; this gate does not
+ * protocol artifact drift by `check-contracts.ts`; this gate does not
  * duplicate them. It does add the cross-module half those checks lack: a
  * generated artifact must not be reachable across a forbidden edge, so an
  * assistant import of `src/shared/generated` is allowed while an assistant
@@ -48,7 +48,7 @@ type SourceRoot = (typeof sourceRootNames)[number];
 const rootPrefixes: Readonly<Record<SourceRoot, readonly string[]>> = {
 	assistant: ["src/assistant/", "tests/assistant/"],
 	shared: ["src/shared/", "schema/", "piprotocol/", "tests/shared/"],
-	web: ["cmd/", "internal/", "scripts/", "webui/", "systemd/", "src/webui/", "tests/"],
+	web: ["cmd/", "internal/", "scripts/", "webui/", "systemd/", "tests/"],
 };
 
 const ignoredDirectories = new Set([

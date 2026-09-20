@@ -6,10 +6,6 @@ import (
 	"unicode/utf16"
 )
 
-// ProjectGroupingHelperVersion versions these additive STATE-01 nullable
-// grouping helpers. It never changes any persisted JSON schema.
-const ProjectGroupingHelperVersion = 1
-
 // IsUngroupedProjectID reports whether id means an ungrouped session. Only
 // the empty string is ungrouped; whitespace or any other value is a grouped
 // (or invalid) project reference. There is no hidden all-files project.

@@ -42,6 +42,20 @@ type pairingOptions struct {
 	json         bool
 }
 
+// pairingConfigFile accepts the fields shared by the controller and assistant
+// configuration files. Pairing only consumes dataDir and agentDir; the other
+// fields are admitted so operators can point it at either service file.
+type pairingConfigFile struct {
+	Host             string `json:"host"`
+	Port             int    `json:"port"`
+	DataDir          string `json:"dataDir"`
+	StaticDir        string `json:"staticDir"`
+	Mode             string `json:"mode"`
+	AgentDir         string `json:"agentDir"`
+	SchemaVersion    int    `json:"schemaVersion"`
+	AllowSelfRestart bool   `json:"allowSelfRestart"`
+}
+
 // handlePairingCommand dispatches the operator pairing ceremony when the first
 // argument selects one. It is used by the controller-only entrypoint so the
 // controller build exposes the same commands.
@@ -151,7 +165,7 @@ func parsePairingOptions(command string, args []string) (pairingOptions, error) 
 // always resolved; the identity pair comes from the explicit overrides, with
 // any still-missing value derived from the selected agent directory.
 func resolvePairingInputs(options pairingOptions) (persist.Store, string, string, error) {
-	config, err := decodeRuntimeConfig(options.configPath)
+	config, err := decodePairingConfig(options.configPath)
 	if err != nil {
 		return persist.Store{}, "", "", err
 	}
@@ -189,6 +203,16 @@ func resolvePairingInputs(options pairingOptions) (persist.Store, string, string
 		}
 	}
 	return persist.Store{Dir: dataDir}, hostIdentity, storageKey, nil
+}
+
+func decodePairingConfig(path string) (pairingConfigFile, error) {
+	var config pairingConfigFile
+	if _, err := loadJSONConfig(path, &config); err != nil {
+		return pairingConfigFile{}, err
+	}
+	config.DataDir = expandHomePath(config.DataDir)
+	config.AgentDir = expandHomePath(config.AgentDir)
+	return config, nil
 }
 
 // normalizePairingHostIdentity accepts either the raw RuntimeID or the full

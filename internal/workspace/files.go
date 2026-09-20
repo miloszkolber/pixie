@@ -471,25 +471,6 @@ func readLinkAt(directoryFD int, name string) (string, error) {
 	return string(buffer[:count]), nil
 }
 
-// root must come from a freshly authorized project snapshot. The candidate is
-// resolved with the realpath walk-up, so a symlink that leaves root is denied
-// even when its target is another admitted mount.
-func (f *Files) ResolveInRoot(root, path string) (string, string, error) {
-	admittedRoot, err := f.policy.Directory(root, "Project root")
-	if err != nil {
-		return "", "", err
-	}
-	candidate := filepath.Clean(path)
-	if !filepath.IsAbs(candidate) {
-		candidate = filepath.Join(admittedRoot, candidate)
-	}
-	absolute, err := f.policy.ResolveUnder(admittedRoot, candidate, false, false, "Project file")
-	if err != nil {
-		return "", "", err
-	}
-	return admittedRoot, absolute, nil
-}
-
 type DirectoryRequest struct {
 	Path          *string
 	Page          int

@@ -8,10 +8,6 @@ import (
 	"path/filepath"
 )
 
-// PublishOutcomeHelperVersion versions these additive FIX-13/X04 typed
-// publication helpers. It never changes the persisted JSON schemas.
-const PublishOutcomeHelperVersion = 1
-
 // OutcomeKind distinguishes a known pre-publication failure from an
 // installed commit and a durability/outcome-uncertain result.
 type OutcomeKind string

@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestProcessGroupGracefulHelper is a managed child that handles SIGTERM and
@@ -223,6 +225,61 @@ func TestRunInteractiveWithoutTerminalStillInheritsNormalExecution(t *testing.T)
 	}, make(chan os.Signal, 1))
 	if err != nil || code != 0 {
 		t.Fatalf("Run = code %d, err %v", code, err)
+	}
+}
+
+// Run this fixture as a session leader with a controlling PTY, then launch
+// another process group in the background. Its attempted TUI handoff must fail
+// promptly and reap its child rather than waiting for the shutdown deadline.
+func TestInteractiveHandoffFailureHelper(t *testing.T) {
+	switch os.Getenv("PIXIE_HANDOFF_HELPER") {
+	case "leader":
+		background := exec.Command(os.Args[0], "-test.run=^TestInteractiveHandoffFailureHelper$")
+		background.Env = append(os.Environ(), "PIXIE_HANDOFF_HELPER=background")
+		background.Stdin = os.Stdin
+		background.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if output, err := background.CombinedOutput(); err != nil {
+			t.Fatalf("background launcher: %v\n%s", err, output)
+		}
+	case "background":
+		code, err := Run(Invocation{
+			Path: "/bin/sleep", Args: []string{"30"}, Interactive: true,
+		}, nil)
+		if err == nil || !strings.Contains(err.Error(), "not the terminal foreground") {
+			t.Fatalf("handoff error = %v", err)
+		}
+		if code != -1 {
+			t.Fatalf("child exit code = %d, want reaped signal exit", code)
+		}
+	}
+}
+
+func TestRunReapsChildWhenTerminalHandoffFails(t *testing.T) {
+	master, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(master)
+	if err := unix.IoctlSetPointerInt(master, unix.TIOCSPTLCK, 0); err != nil {
+		t.Fatal(err)
+	}
+	number, err := unix.IoctlGetInt(master, unix.TIOCGPTN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slave, err := os.OpenFile("/dev/pts/"+strconv.Itoa(number), os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer slave.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestInteractiveHandoffFailureHelper$")
+	command.Env = append(os.Environ(), "PIXIE_HANDOFF_HELPER=leader")
+	command.Stdin = slave
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("handoff fixture: %v\n%s", err, output)
 	}
 }
 

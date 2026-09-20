@@ -9,10 +9,6 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
-// DeletionMigrationHelperVersion versions these additive MIG-01 deletion
-// inspect/plan helpers. It never changes the pi-session-deletions.json schema.
-const DeletionMigrationHelperVersion = 1
-
 // Repeatable deletion migration phases mirror the project-root journal:
 // prepared inspects and stages, migrating publishes through checkpoints.
 const (

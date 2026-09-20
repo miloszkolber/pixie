@@ -64,7 +64,6 @@ export const CORE_GATE_IDS = ["Gate 1", "Gate 2", "Gate 3", "Gate 4", "Gate 5"] 
 
 export type FeatureID = (typeof ALL_FEATURE_IDS)[number];
 export type AcceptanceID = (typeof ACCEPTANCE_IDS)[number];
-export type CoverageID = FeatureID | AcceptanceID;
 export type CoverageEvidenceKind = "native" | "bridge" | "ui" | "artifact";
 
 /** One independently produced evidence item. Static source inspection is not

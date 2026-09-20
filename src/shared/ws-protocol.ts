@@ -649,23 +649,6 @@ export type WsMethodName = keyof WsMethodMap;
 export type WsParams<M extends WsMethodName> = WsMethodMap[M]["params"];
 export type WsResult<M extends WsMethodName> = WsMethodMap[M]["result"];
 
-export interface WsRequest<M extends WsMethodName = WsMethodName> {
-	id: string;
-	method: M;
-	params: WsParams<M>;
-	sessionId?: string;
-}
-
-export interface WsAck {
-	ack: string[];
-}
-
-export interface WsResume {
-	resume: string[];
-}
-
-export type WsClientMessage = WsRequest | WsAck | WsResume;
-
 export type WsErrorCode =
 	| "UNKNOWN_COMMIT"
 	| "UNKNOWN_BRANCH"

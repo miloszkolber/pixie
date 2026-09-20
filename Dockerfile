@@ -43,8 +43,8 @@ COPY cmd/ cmd/
 COPY internal/ internal/
 COPY piprotocol/ piprotocol/
 COPY webui/*.go webui/
-# Never COPY webui/dist here: a local frontend build removes the tracked
-# placeholder. The Go binary uses the copied disk bundle in each runtime image.
+# Create the embed placeholder independently of checkout-local web output.
+# The Go binary uses the copied disk bundle in each runtime image.
 RUN mkdir -p webui/dist && touch webui/dist/.gitkeep
 
 FROM go-source AS go-build

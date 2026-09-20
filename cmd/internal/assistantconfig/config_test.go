@@ -33,6 +33,7 @@ func TestLoadRejectsPublicPackageSelectionAndIncompleteV2Config(t *testing.T) {
 		`{"schemaVersion":1,"host":"127.0.0.1","port":3284,"agentDir":"/var/lib/pi","allowSelfRestart":false}`,
 		`{"schemaVersion":2,"host":"127.0.0.1","port":3284,"agentDir":"/var/lib/pi"}`,
 		`{"schemaVersion":2,"host":"127.0.0.1","port":3284,"agentDir":"relative","allowSelfRestart":false}`,
+		`{"schemaVersion":2,"host":"127.0.0.1","port":3284,"agentDir":"/var/lib/pi","allowSelfRestart":null}`,
 	} {
 		_, err := Load(writeConfig(t, contents))
 		if err == nil {

@@ -11,10 +11,6 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
-// PairingCeremonyHelperVersion versions these additive API-03 pairing
-// ceremony guards. They never change any other ledger schema.
-const PairingCeremonyHelperVersion = 1
-
 // DeletionAuthorityMode selects how requested deletion records are authorized
 // for replay during recovery.
 type DeletionAuthorityMode string

@@ -100,16 +100,3 @@ func DecideModuleStart(outcome persist.PublishOutcome) (bool, string) {
 	}
 	return false, "known pre-publication failure; prior committed state preserved"
 }
-
-// SnapshotStartupConfig copies publisher configuration and desired state
-// under a read lock so slow module construction happens without holding the
-// request lock through startup.
-func (r *Registry) SnapshotStartupConfig() (Config, map[string]bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	desired := make(map[string]bool, len(r.enabled))
-	for key, value := range r.enabled {
-		desired[key] = value
-	}
-	return r.config, desired
-}

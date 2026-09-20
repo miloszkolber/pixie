@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -120,10 +119,6 @@ func (s *SessionRecords) Forget(projectID, sessionID string) error {
 	return s.filter(func(record ProjectSessionRecord) bool {
 		return record.ProjectID != projectID || record.SessionID != sessionID
 	})
-}
-
-func (s *SessionRecords) ForgetProject(projectID string) error {
-	return s.filter(func(record ProjectSessionRecord) bool { return record.ProjectID != projectID })
 }
 
 func (s *SessionRecords) filter(keep func(ProjectSessionRecord) bool) error {
@@ -296,39 +291,6 @@ func (o *Objectives) Forget(projectID, sessionID string) error {
 	current := filepath.Join(o.store.Dir, objectiveName(projectID, sessionID))
 	legacy := filepath.Join(o.store.Dir, "extensions", "session-goals", objectiveKey(projectID, sessionID)+".json")
 	return errors.Join(removeStoredGenerations(current), removeStoredGenerations(legacy))
-}
-
-func (o *Objectives) ClearProject(projectID string) error {
-	if err := validateIdentity(projectID, "Project id"); err != nil {
-		return err
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	directory := filepath.Join(o.store.Dir, "extensions", "session-objectives")
-	entries, err := os.ReadDir(directory)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	validName := regexp.MustCompile(`^[a-f0-9]{64}\.json(?:\.bak)?$`)
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() || !validName.MatchString(entry.Name()) {
-			continue
-		}
-		content, _, readErr := persist.ReadFile(filepath.Join(directory, entry.Name()))
-		if readErr != nil {
-			continue
-		}
-		var identity struct {
-			ProjectID string `json:"projectId"`
-		}
-		if json.Unmarshal(content, &identity) == nil && identity.ProjectID == projectID {
-			_ = os.Remove(filepath.Join(directory, entry.Name()))
-		}
-	}
-	return nil
 }
 
 func (o *Objectives) read(projectID, sessionID string) (*storedObjective, error) {

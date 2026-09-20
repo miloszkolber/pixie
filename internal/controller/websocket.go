@@ -379,14 +379,6 @@ func (a *BrowserAdmission) ReleaseControl(size int) {
 	a.aggregate.ReleaseControl(size)
 }
 
-// TryAcquire reserves admission by method kind.
-func (a *BrowserAdmission) TryAcquire(clientKey, method string, size int) (isControl bool, ok bool) {
-	if IsBrowserControlMethod(method) {
-		return true, a.TryAcquireControl(size)
-	}
-	return false, a.TryAcquireOrdinary(clientKey, size)
-}
-
 // Release releases admission by method kind.
 func (a *BrowserAdmission) Release(clientKey, method string, size int) {
 	if IsBrowserControlMethod(method) {

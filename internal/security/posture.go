@@ -61,10 +61,6 @@ const (
 	HostProfileDockerSharedUID HostProfile = "docker-shared-uid"
 )
 
-// Compatibility spelling for callers that describe the Docker topology as a
-// delegated worker rather than a restricted worker service.
-const HostProfileDockerDelegatedWorker = HostProfileDockerRestrictedWorker
-
 // SupportedHostProfiles returns the profiles with an explicit containment
 // contract. It does not probe or assert that either profile is configured.
 func SupportedHostProfiles() []HostProfile {

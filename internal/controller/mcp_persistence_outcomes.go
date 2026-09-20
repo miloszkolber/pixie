@@ -6,10 +6,6 @@ import (
 	"github.com/miloszkolber/pixie/internal/persist"
 )
 
-// MCPersistenceOutcomeHelperVersion versions these additive FIX-13/X04
-// schedule/queue/deletion outcome guards. It never changes any ledger schema.
-const MCPersistenceOutcomeHelperVersion = 1
-
 // LedgerKind names the durable ledger a publication decision guards.
 type LedgerKind string
 

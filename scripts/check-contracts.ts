@@ -93,22 +93,6 @@ export function formatContractCheckReport(report: ContractCheckReport): string {
 	return lines.join("\n");
 }
 
-export function checkContracts(
-	options: { packageDir?: string; committedDir?: string } = {},
-): ContractCheckReport {
-	const packageDir = options.packageDir ?? defaultPackageDir();
-	const committedDir = options.committedDir ?? packageDir;
-	const schemaPath = resolve(packageDir, SCHEMA_RELATIVE_PATH);
-	const artifacts = buildArtifacts(loadProtocolCatalog(schemaPath));
-	const drift = compareArtifacts(artifacts, committedDir);
-	return {
-		ok: drift.length === 0,
-		schemaPath,
-		artifacts: artifacts.map((artifact) => artifact.path),
-		drift,
-	};
-}
-
 /**
  * Regenerates every artifact into a task-owned temporary directory and compares
  * it with the committed copy. Exit status is non-zero when any file drifts.

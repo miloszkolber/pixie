@@ -29,12 +29,6 @@
 					"enum": [
 						"controller"
 					]
-				},
-				"agentDir": {
-					"type": "string"
-				},
-				"piExecutable": {
-					"type": "string"
 				}
 			}
 		},

@@ -89,7 +89,7 @@ This topology is not yet an approved deployment recipe. Startup must fail closed
 
 For development inspection only, `bun run build:pixie_web` builds the embedded UI and the controller binary. Do not replace a working service until final archive installation, Pi selection, readiness, failure propagation and lifecycle checks pass.
 
-Advanced override only: `PIXIE_STATIC_DIR` serves the web UI from a disk directory instead of the embedded bundle (development use). A Go binary built before `bun run build:web` embeds only a placeholder and falls back to `PIXIE_STATIC_DIR`, then to the container asset path.
+Advanced override only: `PIXIE_STATIC_DIR` serves the web UI from a disk directory instead of the embedded bundle (development use). A Go binary built before `bun run build:webui` embeds only a placeholder and falls back to `PIXIE_STATIC_DIR`, then to the container asset path.
 
 ## Operations
 

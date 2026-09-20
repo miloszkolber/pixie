@@ -11,10 +11,6 @@ import (
 	"strings"
 )
 
-// MigrationInventoryVersion versions the additive STATE-01/MIG-01 inventory
-// helpers. It is independent of every ledger schema version it reports.
-const MigrationInventoryVersion = 1
-
 // Handling classifies the required MIG-01 treatment for one inventory row.
 type Handling string
 

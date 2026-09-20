@@ -131,6 +131,12 @@ func Run(invocation Invocation, signals <-chan os.Signal) (int, error) {
 		return 0, err
 	}
 	started := &child{cmd: command, done: make(chan struct{})}
+	// Every post-start failure path drains this child, including terminal
+	// handoff failure. Start the sole reaper before any such path can run.
+	go func() {
+		started.err = command.Wait()
+		close(started.done)
+	}()
 	var foreground *terminalForeground
 	if invocation.Interactive {
 		var handoffErr error
@@ -141,10 +147,6 @@ func Run(invocation Invocation, signals <-chan os.Signal) (int, error) {
 		}
 		defer func() { _ = foreground.restore() }()
 	}
-	go func() {
-		started.err = command.Wait()
-		close(started.done)
-	}()
 	if invocation.Ready != nil {
 		readyCtx, cancelReady := context.WithCancel(context.Background())
 		ready := make(chan error, 1)

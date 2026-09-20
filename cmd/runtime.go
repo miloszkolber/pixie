@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,29 +27,6 @@ type runMode string
 const (
 	modeController runMode = "controller"
 )
-
-type runtimeConfigFile struct {
-	Host         string `json:"host"`
-	Port         int    `json:"port"`
-	DataDir      string `json:"dataDir"`
-	StaticDir    string `json:"staticDir"`
-	Mode         string `json:"mode"`
-	AgentDir     string `json:"agentDir"`
-	PiExecutable string `json:"piExecutable"`
-}
-
-// AgentDir stays for the pairing ceremony identity resolution and so
-// controller mode can reject it explicitly. PiExecutable stays only so
-// controller mode can reject it explicitly; the controller never starts a
-// local Pi. The former full-host allowSelfRestart and admin-bridge options
-// (adminBridge, piPackage, adminBridgeBun, adminBridgeScript) are removed.
-
-// restartExitCode matches RestartForceExitStatus in the packaged systemd
-// units. It is only ever produced by an accepted runtime.restart.
-const restartExitCode = 75
-
-// errRestartRequested is the composition sentinel for an accepted reload.
-var errRestartRequested = errors.New("restart requested")
 
 func parseMode(args []string) (runMode, error) {
 	mode := modeController
@@ -115,50 +91,6 @@ func configPath(args []string) string {
 	return ""
 }
 
-func readRuntimeConfig(path string, mode runMode) (runtimeConfigFile, error) {
-	config, err := decodeRuntimeConfig(path)
-	if err != nil {
-		return runtimeConfigFile{}, err
-	}
-	if config.Mode != "" && config.Mode != string(modeController) {
-		return runtimeConfigFile{}, fmt.Errorf("unsupported config mode %q", config.Mode)
-	}
-	if config.Mode != "" && runMode(config.Mode) != mode {
-		return runtimeConfigFile{}, fmt.Errorf("config mode %q does not match requested %q mode", config.Mode, mode)
-	}
-	return config, nil
-}
-
-// decodeRuntimeConfig reads and decodes a Pixie JSON configuration without
-// binding it to a serve mode. The mode-agnostic utility commands (pairing
-// ceremonies) need the shared dataDir/agentDir resolution without selecting a
-// topology.
-func decodeRuntimeConfig(path string) (runtimeConfigFile, error) {
-	if strings.TrimSpace(path) == "" {
-		return runtimeConfigFile{}, nil
-	}
-	if !filepath.IsAbs(path) {
-		return runtimeConfigFile{}, errors.New("--config must be an absolute path")
-	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return runtimeConfigFile{}, fmt.Errorf("read config: %w", err)
-	}
-	var config runtimeConfigFile
-	if err := json.Unmarshal(content, &config); err != nil {
-		return runtimeConfigFile{}, fmt.Errorf("decode config: %w", err)
-	}
-	config.DataDir = expandHomePath(config.DataDir)
-	config.StaticDir = expandHomePath(config.StaticDir)
-	config.AgentDir = expandHomePath(config.AgentDir)
-	config.PiExecutable = expandHomePath(config.PiExecutable)
-	return config, nil
-}
-
-func runtimeConfigFor(path string, mode runMode) (runtimeConfigFile, error) {
-	return readRuntimeConfig(path, mode)
-}
-
 func runUtilityCommand(command, path string, stdout io.Writer) error {
 	switch command {
 	case "doctor":
@@ -166,7 +98,7 @@ func runUtilityCommand(command, path string, stdout io.Writer) error {
 	case "uninstall":
 		// Uninstall remains configuration-bound: a malformed selection is
 		// rejected rather than silently ignored. It is still non-destructive.
-		if err := validateConfigObject(path); err != nil {
+		if _, err := readRuntimeConfig(path); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintf(stdout, "%s uninstall: stop and remove the selected user unit and binary\n", runtimeCLIName)
@@ -174,24 +106,6 @@ func runUtilityCommand(command, path string, stdout io.Writer) error {
 	default:
 		return fmt.Errorf("unknown utility command %q", command)
 	}
-}
-
-func validateConfigObject(path string) error {
-	if strings.TrimSpace(path) == "" {
-		return nil
-	}
-	if !filepath.IsAbs(path) {
-		return errors.New("--config must be an absolute path")
-	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read config: %w", err)
-	}
-	var value map[string]any
-	if err := json.Unmarshal(content, &value); err != nil || value == nil {
-		return errors.New("config must be a JSON object")
-	}
-	return nil
 }
 
 // runDoctor is a read-only controller preflight. It prints only bounded check
@@ -222,7 +136,8 @@ func controllerRecoveryFacts(path string, lookup func(string) (string, bool)) (d
 		if !filepath.IsAbs(path) {
 			return facts, errors.New("--config must be an absolute path")
 		}
-		readable = validateConfigObject(path) == nil
+		_, err := readRuntimeConfig(path)
+		readable = err == nil
 	}
 	facts.ConfigReadable = &readable
 
@@ -279,11 +194,8 @@ func runControllerWithConfig(ctx context.Context, build diagnostics.BuildInfo, c
 	if err := rejectControllerAssistantSettings(os.LookupEnv); err != nil {
 		return err
 	}
-	fileConfig, err := runtimeConfigFor(configPath, modeController)
+	fileConfig, err := readRuntimeConfig(configPath)
 	if err != nil {
-		return err
-	}
-	if err := rejectControllerConfigAssistantSettings(fileConfig); err != nil {
 		return err
 	}
 	// Container defaults apply when unset, so plain `go build` binaries keep
@@ -391,16 +303,6 @@ func rejectControllerAssistantSettings(lookup func(string) (string, bool)) error
 		if value, ok := lookup(key); ok && strings.TrimSpace(value) != "" {
 			return fmt.Errorf("controller-only mode rejects local assistant setting %s", key)
 		}
-	}
-	return nil
-}
-
-func rejectControllerConfigAssistantSettings(config runtimeConfigFile) error {
-	if strings.TrimSpace(config.AgentDir) != "" {
-		return fmt.Errorf("controller-only mode rejects local assistant setting agentDir")
-	}
-	if strings.TrimSpace(config.PiExecutable) != "" {
-		return fmt.Errorf("controller-only mode rejects local assistant setting piExecutable")
 	}
 	return nil
 }

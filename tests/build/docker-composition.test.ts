@@ -27,7 +27,9 @@ function composition(dockerfile: string): CompositionInput {
 	};
 	const packageCommandSources = {
 		"cmd/main.go":
-			'package main\nconst modeController = "controller"\nfunc parseMode() { mode := modeController; if mode != modeController { panic(mode) } }\nfunc rejectControllerAssistantSettings() {}\nfunc rejectControllerConfigAssistantSettings() {}\n',
+			'package main\nconst modeController = "controller"\nfunc parseMode() { mode := modeController; if mode != modeController { panic(mode) } }\nfunc rejectControllerAssistantSettings() {}\n',
+		"cmd/config.go":
+			'package main\ntype runtimeConfigFile struct {\n Host string `json:"host"`\n}\nfunc decodeJSONConfig() { return errors.New("unknown field") }\n',
 		"cmd/runtime.go":
 			"package main\nfunc serveController() { context.WithTimeout(context.Background(), time.Second); runtime.Shutdown(ctx) }\n",
 	};

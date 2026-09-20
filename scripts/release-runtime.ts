@@ -37,22 +37,6 @@ const BUN_RELEASES: Record<RuntimeArchitecture, BunRelease> = {
 	},
 };
 
-/**
- * Recorded musl release digests. The release archives stage the glibc build
- * because every shipped Linux product image targets glibc; a musl target needs
- * an explicit product decision before these are staged instead.
- */
-export const BUN_MUSL_RELEASES: Record<RuntimeArchitecture, { archive: string; sha256: string }> = {
-	amd64: {
-		archive: "bun-linux-x64-musl.zip",
-		sha256: "83b5f12fd258dd8d4fdcaea65ede954366aa717dab399e20093ecab280d54e7a",
-	},
-	arm64: {
-		archive: "bun-linux-aarch64-musl.zip",
-		sha256: "576300ce33ff16ffcd455bf178c2f095f9df845c6cc3d0284ba1c96ca0e80473",
-	},
-};
-
 const BUN_LICENSE_RELEASE = {
 	url: `https://raw.githubusercontent.com/oven-sh/bun/bun-v${BUNDLED_BUN_VERSION}/LICENSE.md`,
 	sha256: "b9caf52728691b4057e371232c221a132883198be2f3d2ddf92c90404c984b1a",

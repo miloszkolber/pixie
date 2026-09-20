@@ -632,23 +632,27 @@ function inspectControllerComposition(
 		input.packageCommandSources,
 		(path) => path.endsWith("/main.go") || path.endsWith("/runtime.go"),
 	);
+	const config = sourceText(input.packageCommandSources, (path) => path === "cmd/config.go");
+	const configFields = /type runtimeConfigFile struct \{([\s\S]*?)\n\}/.exec(config)?.[1];
 	const webuiSources = sourceText(
 		input.packageWebuiSources,
 		(path) => path.endsWith("/webui.go") || path === "webui.go",
 	);
 	const uiFiles = input.embeddedUiFiles ?? [];
 	const facts: ControllerCompositionFacts = {
-		// web/cmd is controller-only: it defaults to controller mode and
+		// cmd is controller-only: it defaults to controller mode and
 		// rejects every other serve mode.
 		controllerDefault:
 			/mode\s*:?=\s*modeController/.test(command) &&
 			/mode\s*!=\s*modeController/.test(command) &&
 			/func\s+parseMode/.test(command),
 		// The controller never selects a local Pi: agentDir/piExecutable
-		// settings are rejected explicitly instead of starting anything.
+		// settings are absent from its strict configuration surface.
 		rejectsLocalAssistant:
 			/rejectControllerAssistantSettings/.test(command) &&
-			/rejectControllerConfigAssistantSettings/.test(command),
+			configFields !== undefined &&
+			!/json:"(?:agentDir|piExecutable)"/.test(configFields) &&
+			/unknown field/.test(config),
 		uiEmbed:
 			/go:embed\s+all:dist/.test(webuiSources) &&
 			uiFiles.some((path) => /(?:^|\/)dist\/index\.html$/.test(path)),
