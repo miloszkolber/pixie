@@ -70,14 +70,6 @@ func (DeterministicWorkerLauncher) Render(ctx context.Context, job RenderJob) (R
 	return RenderResult{PNG: encoded.Bytes(), MIME: "image/png", Width: job.Width, Height: job.Height}, nil
 }
 
-// unavailableLauncher is used only to keep diagnostics explicit when a
-// caller intentionally configures a nil/unsupported launcher.
-type unavailableLauncher struct{}
-
-func (unavailableLauncher) Render(context.Context, RenderJob) (RenderResult, error) {
-	return RenderResult{}, category("unavailable", ErrUnavailable)
-}
-
 func launcherRender(ctx context.Context, launcher WorkerLauncher, job RenderJob) (RenderResult, error) {
 	if launcher == nil || isNilLauncher(launcher) {
 		return RenderResult{}, category("unavailable", ErrUnavailable)

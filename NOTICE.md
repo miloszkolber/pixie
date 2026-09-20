@@ -17,5 +17,5 @@ compliance must be reviewed for each release format.
 
 The frontend includes pinned release packages from Mewa UI under the MIT License, self-hosted Geist
 fonts under the SIL Open Font License 1.1, and selected Lucide icons under the ISC License. Their
-license texts and the verified release lock are stored under `web/webui/vendor/` and copied
+license texts and the verified release lock are stored under `webui/vendor/` and copied
 into application distributions.

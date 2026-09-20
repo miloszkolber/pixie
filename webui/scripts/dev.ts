@@ -7,7 +7,7 @@ import { checkArtifacts } from "./check-artifacts";
 
 const webRoot = resolve(import.meta.dir, "..");
 const projectRoot = resolve(webRoot, "..");
-const contractsRoot = resolve(projectRoot, "..", "shared", "src");
+const contractsRoot = resolve(projectRoot, "src", "shared");
 const defaultPort = 24269;
 
 export function parseDevPort(value = process.env.PIXIE_UI_DEV_PORT): number {

@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -28,6 +30,10 @@ type Invocation struct {
 	Args        []string
 	Environment []string
 	Directory   string
+	// Interactive gives the child process group the controlling terminal while
+	// it runs. This is required for a TUI child: a new background process group
+	// is otherwise stopped by the terminal on its first read (SIGTTIN).
+	Interactive bool
 	// Stderr receives the child's standard error. A nil Stderr inherits
 	// os.Stderr so the native Pi command boundary is unchanged. A launcher may
 	// supply a line-buffering sink when it needs per-line handling.
@@ -53,9 +59,62 @@ type child struct {
 	err  error
 }
 
+type terminalForeground struct {
+	fd   int
+	pgid int
+}
+
+func (foreground *terminalForeground) restore() error {
+	if foreground == nil {
+		return nil
+	}
+	if err := unix.IoctlSetPointerInt(foreground.fd, unix.TIOCSPGRP, foreground.pgid); err != nil {
+		if errors.Is(err, unix.ENOTTY) || errors.Is(err, unix.ESRCH) {
+			return nil
+		}
+		return fmt.Errorf("restore terminal foreground process group: %w", err)
+	}
+	return nil
+}
+
+// giveTerminalToChild transfers the controlling terminal only when stdin is a
+// terminal already owned by this launcher. Non-interactive services and pipes
+// remain unchanged. The returned state restores the launcher's process group.
+func giveTerminalToChild(pgid int) (*terminalForeground, error) {
+	fd := int(os.Stdin.Fd())
+	current, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
+	if err != nil {
+		if errors.Is(err, unix.ENOTTY) || errors.Is(err, unix.EBADF) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read terminal foreground process group: %w", err)
+	}
+	launcher := unix.Getpgrp()
+	if current != launcher {
+		return nil, errors.New("launcher is not the terminal foreground process group")
+	}
+	if err := unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, pgid); err != nil {
+		if errors.Is(err, unix.ESRCH) {
+			// A short-lived child may have exited before the handoff. Its normal
+			// wait path will report that result and the terminal stays unchanged.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("give terminal foreground to child process group: %w", err)
+	}
+	// If the child attempted a read before the handoff it may already be
+	// stopped by SIGTTIN. Resuming the group is harmless for a running child.
+	if err := unix.Kill(-pgid, unix.SIGCONT); err != nil && !errors.Is(err, unix.ESRCH) {
+		_ = (&terminalForeground{fd: fd, pgid: launcher}).restore()
+		return nil, fmt.Errorf("resume child process group: %w", err)
+	}
+	return &terminalForeground{fd: fd, pgid: launcher}, nil
+}
+
 // Run inherits standard streams, cwd and (when Environment is nil) all native
-// Pi environment values. A received SIGINT/SIGTERM is forwarded to the owned
-// group, then the child is boundedly reaped before Run returns its exit code.
+// Pi environment values. An interactive child also receives the terminal
+// foreground while it runs. A received SIGINT/SIGTERM is forwarded to the
+// owned group, then the child is boundedly reaped before Run returns its exit
+// code.
 func Run(invocation Invocation, signals <-chan os.Signal) (int, error) {
 	command := exec.Command(invocation.Path, invocation.Args...)
 	command.Env = invocation.Environment
@@ -72,6 +131,16 @@ func Run(invocation Invocation, signals <-chan os.Signal) (int, error) {
 		return 0, err
 	}
 	started := &child{cmd: command, done: make(chan struct{})}
+	var foreground *terminalForeground
+	if invocation.Interactive {
+		var handoffErr error
+		foreground, handoffErr = giveTerminalToChild(command.Process.Pid)
+		if handoffErr != nil {
+			_ = drain(started, syscall.SIGTERM)
+			return exitCode(command), handoffErr
+		}
+		defer func() { _ = foreground.restore() }()
+	}
 	go func() {
 		started.err = command.Wait()
 		close(started.done)

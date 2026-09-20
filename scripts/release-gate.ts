@@ -39,8 +39,10 @@ import {
 } from "./evidence-bundle.ts";
 
 const DOC_PATH = /^(?:\.github\/[^/]+\.md|(?:docs|roadmap)\/|[^/]+\.md$)/i;
-const RELEASE_SOURCE_PATH = /^(?:assistant|web|shared|patches)\//i;
-const RELEASE_ROOT_FILE = /^(?:package\.json|bun\.lockb?|biome\.jsonc?|Dockerfile)$/i;
+const RELEASE_SOURCE_PATH =
+	/^(?:cmd|internal|piprotocol|schema|scripts|src|systemd|tests|webui)\//i;
+const RELEASE_ROOT_FILE =
+	/^(?:\.dockerignore|\.pixie\.example|Dockerfile|biome\.json|bun\.lockb?|go\.mod|go\.sum|package\.json|tsconfig(?:\.[^.]+)?\.json)$/i;
 const PUBLISH_OPERATION =
 	/\b(?:publish|upload|release|attest|imagetools\s+create|buildx\s+build[^\n]*--push)\b/i;
 const RELEASE_TAG_PUSH = /\bpush\s*:[\s\S]{0,200}\btags\s*:/i;
@@ -321,8 +323,7 @@ function classifyReleaseRow(message: string): string | null {
 	if (/\bimage index\b/i.test(message)) return "registry.image-index";
 	if (/linux\/arm64\b/.test(message)) return "registry.platform-digest/arm64";
 	if (/linux\/amd64\b/.test(message)) return "registry.platform-digest/amd64";
-	if (/complete (?:four-archive|three-product\/six-archive) image set/.test(message))
-		return "manifest.complete-set";
+	if (/complete two-product\/four-archive image set/.test(message)) return "manifest.complete-set";
 	if (/^latest\b/i.test(message)) return "latest.promotion";
 	return null;
 }
@@ -710,7 +711,7 @@ export const RELEASE_GATE_USAGE = [
 	"manifest identity. A missing, malformed or non-passing assertion fails closed.",
 	"",
 	"--reductions (or PIXIE_REDUCTIONS_MANIFEST, defaulting to the committed",
-	"web/reductions.json) exempts exactly the operator-approved",
+	"reductions.json) exempts exactly the operator-approved",
 	"publication rows. A reduced input is reported as reduced, never as passed;",
 	"static policy, source reachability, archive/binary identity and checksum",
 	"consistency stay mandatory. Set PIXIE_AUTOMATIC_MAIN_AUTHORIZED and",

@@ -2,8 +2,8 @@ package webui
 
 import "embed"
 
-// Dist holds the built web interface from web/webui/dist. Release builds
-// embed the real output of `bun run build:web`; plain `go build` before the
+// Dist holds the built web interface from webui/dist. Release builds
+// embed the real output of `bun run build:webui`; plain `go build` before the
 // first web build embeds only the tracked placeholder, and the server falls
 // back to disk assets in that case.
 //

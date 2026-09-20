@@ -8,17 +8,10 @@ import {
 
 const controllerDockerfile = `
 FROM golang:1.27 AS go-source
-RUN go mod edit -droprequire=github.com/miloszkolber/pixie/assistant -dropreplace=github.com/miloszkolber/pixie/assistant
 RUN go build -tags=controller -o /out/pixie_web ./cmd
-RUN go build -o /out/pixie ./cmd/pixie
-COPY web/scripts/release-runtime.ts web/scripts/release-runtime.ts
-RUN bun build --target=bun --outfile /out/pixie_assistant.js assistant/src/serve.ts
-RUN bun -e 'stageBundledPiRuntime(); verifyBundledPiRuntime();'
-RUN test -x /out/runtime/bin/bun
-RUN test -f /out/runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js
 FROM runtime AS pixie_web
 COPY --from=go-source /out/pixie_web /app/pixie_web
-COPY --from=web-build /work/web/webui/dist /app/web
+COPY --from=web-build /work/webui/dist /app/web
 USER 1000:1000
 HEALTHCHECK CMD ["/app/pixie_web", "healthcheck"]
 ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie_web", "serve", "--mode", "controller"]
@@ -26,20 +19,20 @@ ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie_web", "serve", "--mode", "c
 
 function composition(dockerfile: string): CompositionInput {
 	const assistantSources = {
-		"assistant/src/serve.ts":
+		"src/assistant/serve.ts":
 			'import { startBunHostFromVerifiedPi } from "./host.ts";\nimport { verifyPiPackage } from "./probe.ts";\n',
-		"assistant/src/host.ts":
+		"src/assistant/host.ts":
 			"export async function startBunHostFromVerifiedPi() { return Bun.serve({}); }\n",
-		"assistant/src/probe.ts": "export async function verifyPiPackage() {}\n",
+		"src/assistant/probe.ts": "export async function verifyPiPackage() {}\n",
 	};
 	const packageCommandSources = {
-		"web/cmd/main.go":
+		"cmd/main.go":
 			'package main\nconst modeController = "controller"\nfunc parseMode() { mode := modeController; if mode != modeController { panic(mode) } }\nfunc rejectControllerAssistantSettings() {}\nfunc rejectControllerConfigAssistantSettings() {}\n',
-		"web/cmd/runtime.go":
+		"cmd/runtime.go":
 			"package main\nfunc serveController() { context.WithTimeout(context.Background(), time.Second); runtime.Shutdown(ctx) }\n",
 	};
 	const packageWebuiSources = {
-		"web/webui/webui.go": "package webui\n//go:embed all:dist\n",
+		"webui/webui.go": "package webui\n//go:embed all:dist\n",
 	};
 	return {
 		assistantSources,
@@ -49,7 +42,7 @@ function composition(dockerfile: string): CompositionInput {
 			...packageCommandSources,
 		},
 		packageWebuiSources,
-		embeddedUiFiles: ["web/webui/dist/index.html"],
+		embeddedUiFiles: ["webui/dist/index.html"],
 		packageGoModText: "module example.test/pixie\n",
 		dockerfileText: dockerfile,
 	};
@@ -76,7 +69,7 @@ test("Docker composition rejects Pi in pixie_web and a non-reaping controller co
 	const report = inspectComposition(
 		composition(`
 FROM runtime AS pixie_web
-COPY assistant/src/ /app/assistant
+COPY src/assistant/ /app/assistant
 COPY --from=pi-build /out/runtime /app/runtime
 RUN go build ./cmd
 ENTRYPOINT ["/app/pixie_web", "serve", "--mode", "full-host", "pi serve"]
@@ -173,33 +166,33 @@ test("deployment composition rejects unguarded images, fixed names, root service
             - ${"${PIXIE_DATA_PATH}"}:/var/lib/pixie/data
 `,
 		systemdUnitSources: {
-			"web/systemd/pixie.service": `[Service]
+			"systemd/pixie.service": `[Service]
 EnvironmentFile=%h/.config/pixie/pixie.env
 Environment=PI_CODING_AGENT_DIR=%h/.local/share/pixie/pi
 ExecStart=/bin/sh -c '%h/.local/bin/pixie serve --config ~/assistant.json'
 Restart=on-failure
 RestartForceExitStatus=75
 `,
-			"web/systemd/pixie_cli.service": `[Service]
+			"systemd/pixie_cli.service": `[Service]
 	EnvironmentFile=%h/.config/pixie/pixie.env
 	Environment=PI_CODING_AGENT_DIR=%h/.local/share/pixie/pi
 	ExecStart=%h/.local/bin/pixie_cli serve --config %h/.config/pixie/assistant.json
 	Restart=always
 	RestartForceExitStatus=75
 `,
-			"web/systemd/pixie_assistant.service": `[Service]
+			"systemd/pixie_assistant.service": `[Service]
 ExecStart=%h/.local/bin/pixie_assistant serve --config %h/.config/pixie/assistant.json
 `,
 		},
 		systemdConfigSources: {
-			"web/systemd/assistant.json": JSON.stringify({
+			"systemd/assistant.json": JSON.stringify({
 				schemaVersion: 1,
 				host: "127.0.0.1",
 				port: 3284,
 				agentDir: "~/.pi/agent",
 				piPackage: "/outside/pi",
 			}),
-			"web/systemd/pixie.json": JSON.stringify({
+			"systemd/pixie.json": JSON.stringify({
 				host: "127.0.0.1",
 				port: 7312,
 				dataDir: "relative/data",

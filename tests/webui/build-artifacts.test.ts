@@ -130,7 +130,7 @@ test("development builds satisfy the artifact contract with gzip companions", as
 }, 20_000);
 
 test("the image build never depends on checkout-volatile web output", async () => {
-	// `bun run build` wipes web/webui/dist (including the tracked .gitkeep),
+	// `bun run build` wipes webui/dist (including the tracked .gitkeep),
 	// so a COPY of anything under dist/ breaks every container build that follows
 	// a local web build. The Go embed only needs the directory to exist.
 	const dockerfile = await Bun.file(new URL("../../Dockerfile", import.meta.url)).text();

@@ -51,8 +51,6 @@ const (
 	// DefaultViewportWidth and DefaultViewportHeight are the contract defaults.
 	DefaultViewportWidth  = 1280
 	DefaultViewportHeight = 800
-	// MaxWorkerJobs is the global active plus queued job bound.
-	MaxWorkerJobs = 3 // one active, two queued
 	// MaxMetaBytes is the bounded metadata/mutation-ledger ceiling.
 	MaxMetaBytes int64 = 16 * 1024 * 1024
 
@@ -1320,19 +1318,6 @@ func (s *Service) RevokeAllAuthorities() int {
 	s.tokens = make(map[string]tokenState)
 	s.mu.Unlock()
 	s.cancelAllJobs()
-	return count
-}
-
-func (s *Service) revokeDocumentAuthorities(sessionDigest string, generation uint64) int {
-	s.mu.Lock()
-	count := 0
-	for key, entry := range s.tokens {
-		if constantEqual(entry.digest, sessionDigest) && entry.documentGeneration == generation {
-			delete(s.tokens, key)
-			count++
-		}
-	}
-	s.mu.Unlock()
 	return count
 }
 

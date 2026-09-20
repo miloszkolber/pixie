@@ -191,7 +191,7 @@ function checkGoToolchain(path: string): EnvironmentCheck {
 			check: "go-toolchain",
 			status: "blocked",
 			detail: result.detail,
-			hint: "Install the Go toolchain pinned by web/go.mod before running controller or shared checks.",
+			hint: "Install the Go toolchain pinned by go.mod before running controller or shared checks.",
 		};
 	}
 	return { check: "go-toolchain", status: "ok", detail: result.detail };

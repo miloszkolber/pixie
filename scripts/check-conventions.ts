@@ -36,7 +36,7 @@
  * Run `bun scripts/check-conventions.ts --print-baseline` to emit the current
  * ceilings for review; the default invocation only reads the committed file.
  * The check is deterministic and bounded to production sources under
- * `assistant/src`, `shared/src`, `web/webui/src` and `web/scripts`.
+ * `src/assistant`, `src/shared`, `webui/src` and `scripts`.
  */
 
 import type { Dirent } from "node:fs";

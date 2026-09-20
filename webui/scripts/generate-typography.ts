@@ -1,13 +1,6 @@
 #!/usr/bin/env bun
 import { writeOrCheck } from "./generated-files";
-import {
-	GENERATED_FONTS_PATH,
-	GENERATED_PATH,
-	loadTypography,
-	renderCss,
-	renderFontsCss,
-	validate,
-} from "./typography";
+import { GENERATED_PATH, loadTypography, renderCss, validate } from "./typography";
 
 const typography = loadTypography();
 
@@ -22,8 +15,5 @@ writeOrCheck({
 	label: "typography",
 	version: typography.metadata.version,
 	check: process.argv.includes("--check"),
-	outputs: [
-		{ path: GENERATED_PATH, content: renderCss(typography) },
-		{ path: GENERATED_FONTS_PATH, content: renderFontsCss(typography) },
-	],
+	outputs: [{ path: GENERATED_PATH, content: renderCss(typography) }],
 });

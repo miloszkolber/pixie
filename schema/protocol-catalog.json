@@ -1,5 +1,5 @@
 {
-	"$comment": "Single source of truth for the Pi/Pixie protocol operation names, host implementation statuses, browser/controller ownership routes, thinking levels, prompt content block types and versioned admin error codes. TypeScript and Go artifacts are generated from this file by web/scripts/generate-contracts.ts; web/scripts/check-contracts.ts fails CI when a committed generated file drifts.",
+	"$comment": "Single source of truth for the Pi/Pixie protocol operation names, host implementation statuses, browser/controller ownership routes, thinking levels, prompt content block types and versioned admin error codes. TypeScript and Go artifacts are generated from this file by scripts/generate-contracts.ts; scripts/check-contracts.ts fails CI when a committed generated file drifts.",
 	"schemaVersion": 2,
 	"operations": {
 		"host": [

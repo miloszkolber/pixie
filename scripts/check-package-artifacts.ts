@@ -101,7 +101,7 @@ const ARCHIVE_PATTERN = /^(pixie_web|pixie)-sha-[0-9a-f]{12}-linux-(amd64|arm64)
 
 /**
  * Shared shape of the `packageArtifacts` and `releaseGate` sections in
- * `web/reductions.json`. Each section carries its own approval
+ * `reductions.json`. Each section carries its own approval
  * block so the two reductions can be reviewed independently, and each reduction
  * group states that a reduction removes a requirement rather than proving it.
  */
@@ -733,7 +733,7 @@ export const PACKAGE_ARTIFACTS_USAGE = [
 	"assertion fails closed.",
 	"",
 	"--reductions (or PIXIE_REDUCTIONS_MANIFEST, defaulting to the committed",
-	"web/reductions.json) exempts exactly the operator-approved",
+	"reductions.json) exempts exactly the operator-approved",
 	"rows. A reduced row is reported as reduced, never as passing; every row not",
 	"listed still fails closed.",
 ].join("\n");

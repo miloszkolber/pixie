@@ -48,9 +48,9 @@ uninstall
 			archive(product, "amd64"),
 			archive(product, "arm64"),
 		]),
-		commandSources: { "web/cmd/main.go": command },
-		webuiSources: { "web/webui/webui.go": "//go:embed all:dist" },
-		embeddedUiFiles: ["web/webui/dist/index.html"],
+		commandSources: { "cmd/main.go": command },
+		webuiSources: { "webui/webui.go": "//go:embed all:dist" },
+		embeddedUiFiles: ["webui/dist/index.html"],
 		binaries: RELEASE_PRODUCTS.flatMap((product) => [
 			{ product, architecture: "amd64" as const, path: product },
 			{ product, architecture: "arm64" as const, path: product },

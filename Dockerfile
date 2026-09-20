@@ -59,7 +59,6 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     mkdir -p /out/licenses/pixie/go; \
     cp /usr/local/go/LICENSE /out/licenses/pixie/go/LICENSE; \
     go build -trimpath -tags=controller -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie_web ./cmd; \
-    go build -trimpath -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie ./cmd/pixie; \
     go list -tags=controller -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd \
         > /tmp/modules.unsorted; \
     sort -u /tmp/modules.unsorted > /tmp/modules; \
@@ -70,31 +69,6 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
         find "$directory" -maxdepth 1 -type f \( -iname 'license*' -o -iname 'notice*' \) \
             -exec cp '{}' "/out/licenses/pixie/$module/" \;; \
     done < /tmp/modules
-
-# Build the full runtime on the target architecture. The same release-runtime
-# helper used by archives downloads and verifies pinned Bun 1.4.0, copies the
-# installed Pi closure and verifies that the retained TUI bundle/chunks remain
-# complete while Pi RPC and package-manager entrypoints are absent. The Debian
-# base image is glibc, so the release helper stages the glibc Bun build.
-FROM --platform=$TARGETPLATFORM ${BUN_IMAGE} AS pi-build
-WORKDIR /work
-COPY package.json bun.lock bunfig.toml ./
-COPY webui/package.json webui/package.json
-RUN --mount=type=cache,id=pi-bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
-    bun install --frozen-lockfile
-COPY src/assistant/ src/assistant/
-COPY src/shared/ src/shared/
-COPY scripts/release-runtime.ts scripts/release-runtime.ts
-RUN --mount=type=cache,id=pi-bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
-    set -eu; \
-    mkdir -p /out; \
-    bun build --target=bun --outfile /out/pixie_assistant.js src/assistant/serve.ts; \
-    bun -e 'const runtime = await import("./scripts/release-runtime.ts"); const architecture = process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : (() => { throw new Error(`unsupported runtime architecture ${process.arch}`); })(); await runtime.stageBundledPiRuntime({ repositoryRoot: process.cwd(), directory: "/out/runtime", architecture }); await runtime.verifyBundledPiRuntime("/out/runtime", architecture); await Bun.write("/out/THIRD_PARTY_NOTICES.md", await runtime.bundledRuntimeNotices("/out/runtime", architecture));'; \
-    test -f /out/pixie_assistant.js; \
-    test -x /out/runtime/bin/bun; \
-    test -f /out/runtime/bun/LICENSE.md; \
-    test -f /out/runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js; \
-    test -f /out/THIRD_PARTY_NOTICES.md
 
 FROM go-source AS ui-test-build
 COPY tests/ui/fixture/ tests/ui/fixture/

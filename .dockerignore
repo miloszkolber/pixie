@@ -12,5 +12,4 @@
 !piprotocol/
 !webui/
 !src/shared/
-!scripts/release-runtime.ts
 !tests/ui/

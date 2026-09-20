@@ -1,5 +1,5 @@
 {
-	"$comment": "Committed reductions for the legacy live-evidence matrix and the staged-artifact gates. The evidence producer (web/scripts/produce-evidence-inputs.ts) merges the coverage/gates/performance groups into the inputs it emits, and check-package-artifacts/release-gate load the packageArtifacts/releaseGate groups directly (default path or --reductions/PIXIE_REDUCTIONS_MANIFEST); nothing here is inferred at runtime. A reduction removes a live-matrix or publication requirement, it is not evidence that the retained behavior passes, and it is never reported as a pass.",
+	"$comment": "Committed reductions for the legacy live-evidence matrix and the staged-artifact gates. The evidence producer (scripts/produce-evidence-inputs.ts) merges the coverage/gates/performance groups into the inputs it emits, and check-package-artifacts/release-gate load the packageArtifacts/releaseGate groups directly (default path or --reductions/PIXIE_REDUCTIONS_MANIFEST); nothing here is inferred at runtime. A reduction removes a live-matrix or publication requirement, it is not evidence that the retained behavior passes, and it is never reported as a pass.",
 	"schemaVersion": 1,
 	"approval": {
 		"approved": true,

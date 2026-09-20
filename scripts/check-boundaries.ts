@@ -29,8 +29,8 @@
  * artifact drift in `shared/` by `check-contracts.ts`; this gate does not
  * duplicate them. It does add the cross-module half those checks lack: a
  * generated artifact must not be reachable across a forbidden edge, so an
- * assistant import of `shared/src/generated` is allowed while an assistant
- * import of any `web/` internal is not.
+ * assistant import of `src/shared/generated` is allowed while an assistant
+ * import of controller internals is not.
  *
  * Deterministic and bounded: it never reads `node_modules`, `dist` or
  * `.build`, and exits non-zero when any violation is reported.

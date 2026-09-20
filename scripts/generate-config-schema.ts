@@ -6,10 +6,10 @@
  * Emits `docs/config-schema.json`, a documentation and drift-detection schema
  * for the two private JSON configuration surfaces:
  *
- *   - controller: `runtimeConfigFile` in `web/cmd/runtime.go`
- *   - assistant:  `ASSISTANT_CONFIG_FIELDS` in `assistant/src/serve.ts`,
+ *   - controller: `runtimeConfigFile` in `cmd/runtime.go`
+ *   - assistant:  `ASSISTANT_CONFIG_FIELDS` in `src/assistant/serve.ts`,
  *     cross-checked against `allowedFields` in
- *     `web/cmd/internal/assistantconfig/config.go`
+ *     `cmd/internal/assistantconfig/config.go`
  *
  * The field sets are read from source, so adding or removing a field without
  * regenerating fails `check:config-schema` with a drift report. The two
@@ -84,7 +84,7 @@ function read(path: string): string {
 /** Parses `type runtimeConfigFile struct { ... }` into JSON-named fields. */
 export function parseControllerFields(source: string): ControllerField[] {
 	const struct = /type runtimeConfigFile struct \{([\s\S]*?)\n\}/.exec(source);
-	if (struct?.[1] === undefined) fail("runtimeConfigFile struct not found in web/cmd/runtime.go");
+	if (struct?.[1] === undefined) fail("runtimeConfigFile struct not found in cmd/runtime.go");
 	const field = /^\s*(\w+)\s+([A-Za-z0-9_[\].]+)\s+`json:"([^"]+)"`/gm;
 	const fields: ControllerField[] = [];
 	for (const match of struct[1].matchAll(field)) {

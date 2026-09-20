@@ -1,9 +1,9 @@
 /**
- * Compiled pixie_assistant executable (Bun host CLI).
+ * Archive-internal pixie_assistant host bundle (Bun host CLI).
  *
  * Experimental: serve/doctor/uninstall only. There is no Pi RPC child model
  * and no administration bridge sidecar; Pi runs in-process through the
- * operator's verified installation.
+ * archive's verified Pi package.
  */
 
 import { randomBytes } from "node:crypto";
@@ -14,11 +14,11 @@ import { type BunHost, startBunHostFromVerifiedPi } from "./host.ts";
 import { createHostLogger, redactHostLogText } from "./log.ts";
 import { PI_CODING_AGENT_PACKAGE, type VerifiedPiPackage, verifyPiPackage } from "./probe.ts";
 
-// Keep in sync with assistant/package.json version.
+// Fallback used when the release builder has not injected an archive identity.
 const ASSISTANT_VERSION = "0.1.0";
 // Release identity baked in by `bun run build:release` via `--define`
 // PIXIE_ASSISTANT_VERSION/PIXIE_ASSISTANT_REVISION. A plain
-// `bun run src/serve.ts` leaves them undefined and reports the dev fallback,
+// `bun run src/assistant/serve.ts` leaves them undefined and reports the dev fallback,
 // which never claims a commit-based release identity.
 declare const PIXIE_ASSISTANT_VERSION: string | undefined;
 declare const PIXIE_ASSISTANT_REVISION: string | undefined;

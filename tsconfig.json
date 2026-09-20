@@ -15,8 +15,7 @@
 		"types": ["bun"],
 		"lib": ["ESNext"],
 		"paths": {
-			"@pixie/shared": ["./src/shared/index.ts"],
-			"@pixie/shared/*": ["./src/shared/*"]
+			"@pixie/shared": ["./src/shared/index.ts"]
 		}
 	},
 	"include": ["src/assistant/**/*.ts"]

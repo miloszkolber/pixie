@@ -45,7 +45,7 @@
  * `styles/typography.json` is the single source; `generated/typography.css` publishes it as the
  * `--tr-*` custom properties, the `<body>` base and the semantic classes. The three consumers that
  * cannot use a class read the `--tr-*` tokens directly, so there is exactly
- * one name for each value. Self-hosted variable faces are imported by `styles/generated/fonts.css`.
+ * one name for each value. Font faces are owned by the pinned Mewa foundation.
  *
  * Palette-specific values are intentionally absent too. `styles/palette.css` owns the fixed system
  * light/dark palette and writes its CSS custom properties before Svelte mounts.

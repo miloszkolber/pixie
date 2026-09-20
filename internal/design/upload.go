@@ -74,10 +74,6 @@ func operationFingerprint(name, sourceHash string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Service) normalizeDocument(document NormalizedDocument) (NormalizedDocument, error) {
-	return s.normalizeDocumentContext(context.Background(), document)
-}
-
 func (s *Service) normalizeDocumentContext(ctx context.Context, document NormalizedDocument) (NormalizedDocument, error) {
 	if ctx == nil {
 		ctx = context.Background()

@@ -480,7 +480,7 @@ function inspectManifest(
 		violations.push("release-manifest.json: clean source tree must be recorded");
 	if (!manifest.completeSet)
 		violations.push(
-			"release-manifest.json: complete three-product/six-archive image set is not recorded",
+			"release-manifest.json: complete two-product/four-archive image set is not recorded",
 		);
 	const archiveHashes = manifest.archiveHashes ?? {};
 	for (const archive of requiredArchives)

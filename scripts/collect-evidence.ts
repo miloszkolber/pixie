@@ -93,7 +93,7 @@ export interface CollectEvidenceOptions {
 	generatedAt: string;
 	/** Raw coverage evidence input; absent produces a blocked COVERAGE-01 row. */
 	coveragePath?: string;
-	/** Raw four-target performance evidence input; absent produces a blocked PERF-01 row. */
+	/** Raw two-target performance evidence input; absent produces a blocked PERF-01 row. */
 	performancePath?: string;
 	/** Packaged binaries to execute. Absent produces a blocked BIN-PROBE-UNAVAILABLE row. */
 	binaryPaths?: readonly string[];
@@ -927,7 +927,7 @@ async function inspectCoverageEvidence(path: string | undefined): Promise<Eviden
 }
 
 /**
- * Re-run the performance gate over a real four-target performance input and
+ * Re-run the performance gate over a real two-target performance input and
  * embed the exact input in a passing assertion. Absent input is blocked;
  * unreadable, malformed or incomplete input is failed.
  */

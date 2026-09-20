@@ -5,8 +5,6 @@ export const STYLES_DIR = join(import.meta.dir, "..", "src", "styles");
 export const SOURCE_PATH = join(STYLES_DIR, "typography.json");
 export const SCHEMA_PATH = join(STYLES_DIR, "typography.schema.json");
 export const GENERATED_PATH = join(STYLES_DIR, "generated", "typography.css");
-export const GENERATED_FONTS_PATH = join(STYLES_DIR, "generated", "fonts.css");
-const PACKAGE_JSON = join(import.meta.dir, "..", "package.json");
 
 export interface StyleRef {
 	$ref: string;
@@ -15,7 +13,6 @@ export interface StyleRef {
 export interface FontFamily {
 	stack: string[];
 	kind: "proportional" | "monospace";
-	selfHosted?: string[];
 }
 
 export interface Style {
@@ -82,36 +79,6 @@ export function resolveFamily(t: Typography, id: string): FontFamily {
 		);
 	return target;
 }
-
-export const packageRoot = (entry: string) => entry.split("/").slice(0, 2).join("/");
-
-let dependencyCache: Set<string> | undefined;
-function declaredDependencies(): Set<string> {
-	dependencyCache ??= new Set(
-		Object.keys(
-			(JSON.parse(readFileSync(PACKAGE_JSON, "utf8")) as { dependencies?: Record<string, string> })
-				.dependencies ?? {},
-		),
-	);
-	return dependencyCache;
-}
-
-export function renderFontsCss(t: Typography): string {
-	const imports = Object.values(t.fontFamilies ?? {})
-		.filter((f): f is FontFamily => !isRef(f))
-		.flatMap((f) => f.selfHosted ?? []);
-	return `${FONTS_HEADER(t.metadata.version)}${imports.length ? `${imports.map((i) => `@import "${i}";`).join("\n")}\n` : ""}`;
-}
-
-const FONTS_HEADER = (version: string) => `/*
- * GENERATED — do not edit. Source: \`src/styles/typography.json\` (v${version}), the \`selfHosted\`
- * entries of each font family. Regenerate with \`bun run typography:generate\`.
- *
- * Font files are supplied by the pinned Mewa UI release and imported by the application entrypoint.
- * Keeping this generated file lets typography validation continue to reject undeclared font packages
- * while the production artifact remains self-hosted and usable offline.
- */
-`;
 
 const kebab = (id: string) => id.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 
@@ -223,21 +190,6 @@ export function validate(t: Typography): string[] {
 		}
 		if (!Array.isArray(f.stack) || f.stack.length === 0) fail(`fontFamilies.${id}: empty stack`);
 		if (f.kind !== "proportional" && f.kind !== "monospace") fail(`fontFamilies.${id}: bad kind`);
-		for (const entry of f.selfHosted ?? []) {
-			if (!declaredDependencies().has(packageRoot(entry))) {
-				fail(`fontFamilies.${id}.selfHosted: ${entry} is not a dependency of webui`);
-			}
-		}
-	}
-	const claimed = new Set(
-		Object.values(t.fontFamilies ?? {})
-			.filter((f): f is FontFamily => !isRef(f))
-			.flatMap((f) => (f.selfHosted ?? []).map(packageRoot)),
-	);
-	for (const dep of declaredDependencies()) {
-		if (/fontsource/.test(dep) && !claimed.has(dep)) {
-			fail(`${dep} is installed but no fontFamily declares it in selfHosted`);
-		}
 	}
 	if (errors.length > 0) return errors;
 	for (const id of Object.keys(t.fontFamilies ?? {}))

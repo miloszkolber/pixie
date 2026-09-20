@@ -46,7 +46,7 @@ export function splitMarkdownBlocks(source: string): { blocks: string[]; tail: s
 		if (line.trim() !== "" || fence !== null) continue;
 		const block = lines.slice(start, index).join("\n");
 		start = index + 1;
-		if (block.trim().length > 0) blocks.push(block + "\n");
+		if (block.trim().length > 0) blocks.push(`${block}\n`);
 	}
 	const tail = lines.slice(start).join("\n");
 	const frozen = blocks.slice();

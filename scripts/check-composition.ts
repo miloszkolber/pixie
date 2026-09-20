@@ -62,7 +62,7 @@ export interface DockerCompositionFacts {
 	effectiveInit: boolean;
 	noAssistantRuntime: boolean;
 	noCombinedImage: boolean;
-	/** The host archive stages a verified pinned Bun instead of Node. */
+	/** The release archive stages a verified pinned Bun instead of Node. */
 	pinnedBunRuntime: boolean;
 	/** No Node runtime payload or staging helper survives in the container topology. */
 	noNodeRuntime: boolean;
@@ -310,14 +310,6 @@ function checkDockerfile(
 			"Dockerfile: combined pixie image stage was removed; pixie_web is the only published container",
 		);
 	}
-	const dockerfileStagesPinnedBun =
-		/test\s+-x\s+\/out\/runtime\/bin\/bun\b/.test(dockerfile) &&
-		/\/out\/runtime\/node_modules\/@earendil-works\/pi-coding-agent\/dist\/bun\/cli\.js/.test(
-			dockerfile,
-		) &&
-		/\bbun\s+build\s+--target=bun\b/.test(dockerfile) &&
-		/\bstageBundledPiRuntime\b/.test(dockerfile) &&
-		/\bverifyBundledPiRuntime\b/.test(dockerfile);
 	const releasePinsVerifiedBun =
 		releaseRuntimeText === undefined
 			? true
@@ -330,10 +322,10 @@ function checkDockerfile(
 				) &&
 				/archive:\s*"bun-linux-aarch64\.zip"/.test(releaseRuntimeText) &&
 				/4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e/.test(releaseRuntimeText);
-	missing.pinnedBunRuntime = dockerfileStagesPinnedBun && releasePinsVerifiedBun;
+	missing.pinnedBunRuntime = releasePinsVerifiedBun;
 	if (!missing.pinnedBunRuntime) {
 		violations.push(
-			"Dockerfile: host archive must stage and verify pinned Bun 1.4.0 at runtime/bin/bun",
+			"release runtime: host archive must stage and verify pinned Bun 1.4.0 at runtime/bin/bun",
 		);
 	}
 	const nodeRuntimeMarkers = [
@@ -515,7 +507,6 @@ function inspectDeploymentComposition(
 	const combinedUnit = sourceByBasename(input.systemdUnitSources, "pixie.service");
 	const cliUnit = sourceByBasename(input.systemdUnitSources, "pixie_cli.service");
 	const combinedCommand = execStart(combinedUnit);
-	const cliCommand = execStart(cliUnit);
 	const combinedMatch = combinedCommand?.match(
 		/^%h\/\.local\/bin\/pixie\s+serve\s+--config\s+(\S+)$/,
 	);

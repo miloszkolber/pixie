@@ -103,7 +103,7 @@ func main() {
 		}
 		return
 	}
-	code, err := runTUI(os.Args[1:], os.Environ())
+	code, err := runTUI(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pixie: %s\n", err)
 		os.Exit(ownerlock.ExitCode(err))
@@ -138,7 +138,7 @@ func parseServeArguments(values []string) (serveArguments, error) {
 // TUI can run concurrently with `pixie serve` against the same agent
 // directory. It preserves the upstream Pi CLI boundary (including HOME and
 // every native Pi environment variable).
-func runTUI(args, environment []string) (int, error) {
+func runTUI(args []string) (int, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return 0, errors.New("could not resolve the pixie executable")
@@ -153,7 +153,6 @@ func runTUI(args, environment []string) (int, error) {
 	if isPiSelfUpdate(args) {
 		return 0, errors.New("Pi self-update is disabled in Pixie archives; update the Pixie archive through its installer or package manager, then restart Pixie")
 	}
-	_ = environment
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
@@ -230,13 +229,14 @@ func runServe(parsed serveArguments, inherited []string) (int, error) {
 	return code, nil
 }
 
-// piInvocation has no environment or cwd overrides, preserving the upstream
-// Pi CLI boundary (including HOME and every native Pi environment variable).
+// piInvocation preserves the upstream Pi CLI boundary (including the caller's
+// cwd, HOME, and every native Pi environment variable). Interactive terminal
+// ownership is handled by processgroup so Pi can read from the TTY.
 func piInvocation(paths archivePaths, args []string) processgroup.Invocation {
 	commandArgs := make([]string, 0, len(args)+1)
 	commandArgs = append(commandArgs, paths.cli)
 	commandArgs = append(commandArgs, args...)
-	return processgroup.Invocation{Path: paths.bun, Args: commandArgs}
+	return processgroup.Invocation{Path: paths.bun, Args: commandArgs, Interactive: true}
 }
 
 func environmentLookup(values []string) func(string) (string, bool) {

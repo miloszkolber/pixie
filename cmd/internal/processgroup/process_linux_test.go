@@ -214,6 +214,18 @@ func TestRunRoutesChildStderrToProvidedWriter(t *testing.T) {
 	}
 }
 
+func TestRunInteractiveWithoutTerminalStillInheritsNormalExecution(t *testing.T) {
+	t.Setenv("PI_PIXIE_TEST", "preserved")
+	code, err := Run(Invocation{
+		Path:        "/bin/sh",
+		Args:        []string{"-c", "test -n \"$PWD\" && test \"$PI_PIXIE_TEST\" = preserved"},
+		Interactive: true,
+	}, make(chan os.Signal, 1))
+	if err != nil || code != 0 {
+		t.Fatalf("Run = code %d, err %v", code, err)
+	}
+}
+
 // A child that handles SIGTERM must be allowed to exit on its own; the group
 // is only escalated to SIGKILL after the grace window. A -1 exit code would
 // mean SIGKILL, so a clean code proves graceful stop ran first.

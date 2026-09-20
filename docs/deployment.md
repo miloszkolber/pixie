@@ -18,6 +18,8 @@ pixie serve --config "$HOME/.config/pixie/assistant.json"
 
 Point `--config` at an absolute private JSON file that selects the literal loopback host, required `port`, and agent directory; `systemd/assistant.json` is the example. Set controller `PIXIE_PI_PORT` to the same value as config `port`. `pixie` uses its own archive-local Pi package and rejects external `PIXIE_PI_PACKAGE` selection. Provider setup and optional extensions remain native Pi configuration. Remaining lifecycle, parity, and recovery gaps are tracked in the [roadmap](../roadmap/roadmap.md).
 
+Bare `pixie` inherits the caller's working directory and exported environment, including Bun or npm cache locations. A systemd service does not source `.bashrc`; put any cache overrides needed by the managed host in its `pixie.env` environment file instead.
+
 ## Protocol negotiation
 
 `PIXIE_PI_PROTOCOL` opts into host protocol version 2 negotiation. Unset or `v1` keeps the default legacy handshake byte-for-byte. `auto` offers protocol versions `[2,1]` and accepts a v1 host; `v2` requires the negotiated version to be 2 and rejects a v1 selection. The controller and the assistant host read the same variable, the value is case-insensitive, and an invalid value fails startup instead of silently selecting a version. A peer that cannot agree on a version is rejected rather than downgraded. This is a source-level operator surface; live and credentialed version-2 behavior is not verified here.

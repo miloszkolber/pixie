@@ -1,5 +1,8 @@
 node_modules/
 dist/
+!webui/dist/
+webui/dist/*
+!webui/dist/.gitkeep
 .build/
 .turbo/
 .tmp-work/

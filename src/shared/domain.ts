@@ -231,23 +231,6 @@ export interface McpAdapterStatus {
 	} | null;
 }
 
-/** A controller-owned, bounded browser panel. The browser service token is never exposed here. */
-export interface BrowserPanel {
-	id: string;
-}
-
-export type BrowserPanelAction =
-	| { type: "open"; url: string }
-	| { type: "back" | "forward" | "reload" | "snapshot" | "screenshot" }
-	| { type: "click"; ref: string }
-	| { type: "fill"; ref: string; text: string }
-	| { type: "viewport"; width: number; height: number };
-
-export interface BrowserPanelResult {
-	output: string;
-	screenshotUrl?: string;
-}
-
 /** Accepts only navigable http(s) URLs without embedded credentials. */
 export function safeBrowserURL(value: string): string | null {
 	if (

@@ -78,7 +78,7 @@ func TestPiInvocationForwardsNativeArgumentsWithoutChangingEnvironmentOrCWD(t *t
 	if want := []string{paths.cli, "--model", "native model", "prompt"}; !reflect.DeepEqual(invocation.Args, want) {
 		t.Fatalf("arguments = %#v, want %#v", invocation.Args, want)
 	}
-	if invocation.Environment != nil || invocation.Directory != "" {
+	if invocation.Environment != nil || invocation.Directory != "" || !invocation.Interactive {
 		t.Fatalf("Pi invocation changed inherited environment or cwd: %#v", invocation)
 	}
 }

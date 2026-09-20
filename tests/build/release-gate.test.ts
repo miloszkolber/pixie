@@ -138,7 +138,7 @@ function validCandidate(): ReleaseGateInput {
 			webuiSources: { "webui.go": "//go:embed all:dist" },
 			embeddedUiFiles: ["dist/index.html"],
 			facadeSources: {
-				"assistant/src/serve.ts": "startBunHostFromVerifiedPi(await verifyPiPackage(piPackage))",
+				"src/assistant/serve.ts": "startBunHostFromVerifiedPi(await verifyPiPackage(piPackage))",
 			},
 			binaries: products.flatMap((product) =>
 				(["amd64", "arm64"] as const).map((architecture) => ({

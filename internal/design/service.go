@@ -65,11 +65,6 @@ type indexDocument struct {
 	Warnings      []string `json:"warnings,omitempty"`
 }
 
-type loadedSlot struct {
-	meta  slotState
-	index indexDocument
-}
-
 // Service owns the instance-wide Design slot, immutable source/index payloads,
 // normalized queries and optional parser worker admission.
 type Service struct {

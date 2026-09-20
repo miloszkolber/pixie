@@ -353,10 +353,6 @@ func cleanStaging(path string) error {
 	return nil
 }
 
-func (s *Service) documentDir(documentID string) string {
-	return filepath.Join(s.root, "documents", documentID)
-}
-
 func (s *Service) checkedDocumentDir(documentID string) (string, error) {
 	if !validOpaqueID(documentID) {
 		return "", designError("invalid_request", ErrInvalidRequest)
@@ -455,45 +451,6 @@ func (s *Service) removeDocumentPayload(documentID string) error {
 		first = removeErr
 	}
 	return first
-}
-
-func (s *Service) loadIndexIfNeeded() error {
-	s.mu.RLock()
-	loaded, state, id := s.loaded, s.slot.State, s.slot.DocumentID
-	s.mu.RUnlock()
-	if state != "active" {
-		return nil
-	}
-	if loaded {
-		return nil
-	}
-	if !validOpaqueID(id) {
-		return designError("corrupt", ErrCorrupt)
-	}
-	file, err := s.store.OpenIndex(id)
-	if err != nil {
-		return err
-	}
-	data, err := io.ReadAll(io.LimitReader(file, MaxIndexArtifactBytes+1))
-	_ = file.Close()
-	if err != nil {
-		return err
-	}
-	var index indexDocument
-	if err := json.Unmarshal(data, &index); err != nil {
-		return err
-	}
-	s.mu.RLock()
-	generation := s.slot.Generation
-	s.mu.RUnlock()
-	if err := validateIndex(index, id, generation, s.config); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	s.index = index
-	s.loaded = true
-	s.mu.Unlock()
-	return nil
 }
 
 func (s *Service) persistSlot(next slotState) error {

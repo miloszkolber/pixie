@@ -36,7 +36,7 @@ import { parseTarGz, type TarEntry } from "./collect-evidence.ts";
  * actually ran against the staged binaries are recorded as `actual`/`live`;
  * everything else stays absent and the gate fails closed. Legacy rows that the
  * current architecture cannot honestly produce are skipped only through the
- * committed, operator-approved manifest in `web/reductions.json`.
+ * committed, operator-approved manifest in `reductions.json`.
  */
 
 const SOURCE_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
@@ -96,7 +96,7 @@ export interface ProduceEvidenceOptions {
 	binaryPaths?: readonly string[];
 	/** Readiness origin for the running host. Absent keeps readiness blocked. */
 	baseUrl?: string;
-	/** Defaults to `web/reductions.json`. */
+	/** Defaults to `reductions.json`. */
 	reductionManifestPath?: string;
 	/** Fresh-process startup samples per variant; at least 5. */
 	minSamples?: number;
@@ -545,8 +545,8 @@ function assertSafeMemberPaths(archive: string, entries: readonly TarEntry[]): v
 /**
  * Verify the complete merged release before creating any probe input. The
  * architecture-specific runner only executes its native product entrypoints,
- * but its evidence is meaningful only when all six staged archives use the
- * same current three-product contract.
+ * but its evidence is meaningful only when all four staged archives use the
+ * same current two-product contract.
  */
 async function validateStagedArchives(
 	artifactsDir: string,

@@ -22,7 +22,7 @@ func (m *SessionManager) Fork(ctx context.Context, projectID, sessionID, cwd str
 
 // Branch implements "edit from here": an in-file sibling of entryID in the same
 // native session file. The host serves this as session.fork plus an optional
-// entryId (assistant/src/host.ts branchSession), so the request forwards the
+// entryId (src/assistant/host.ts branchSession), so the request forwards the
 // entry and never falls back to a new-file fork. The native session header keeps
 // the true parent link; the controller deliberately adds no custom branch
 // schema and records no fabricated parent link, so forks and in-file branches
