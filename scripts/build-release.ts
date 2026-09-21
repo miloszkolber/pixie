@@ -282,7 +282,7 @@ async function buildAssistantBundle(
 	const command = [
 		"bun",
 		"x",
-		"bun@1.4.0",
+		"bun@1.4.2",
 		"build",
 		"--target=bun",
 		...Object.entries(defines).flatMap(([name, value]) => [
@@ -807,7 +807,7 @@ async function main(): Promise<void> {
 	try {
 		await mkdir(join(workRoot, "tmp"), { recursive: true });
 		await run(
-			["bun", "x", "bun@1.4.0", "run", "build:webui"],
+			["bun", "x", "bun@1.4.2", "run", "build:webui"],
 			repositoryRoot,
 			bunEnvironment(workRoot),
 		);

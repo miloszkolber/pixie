@@ -15,7 +15,7 @@ func TestResolveArchivePathsUsesBundledBunPiRuntimeLayout(t *testing.T) {
 	writeRuntimeExecutable(t, filepath.Join(root, "runtime", "bin", "bun"), hostELFMachine(t))
 	writeFile(t, filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bun", "cli.js"), 0o644, "cli")
 	writeFile(t, filepath.Join(root, "libexec", "pixie_assistant.js"), 0o644, "assistant")
-	writeFile(t, filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent", "package.json"), 0o644, `{"name":"@earendil-works/pi-coding-agent","version":"0.85.1"}`)
+	writeFile(t, filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent", "package.json"), 0o644, `{"name":"@earendil-works/pi-coding-agent","version":"0.86.1"}`)
 	paths, err := resolveArchivePaths(filepath.Join(root, "pixie"))
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func TestResolveArchivePathsUsesBundledBunPiRuntimeLayout(t *testing.T) {
 	if paths.cli != filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bun", "cli.js") {
 		t.Fatalf("cli path = %q", paths.cli)
 	}
-	if version, err := bundledPiVersion(paths.piPackage); err != nil || version != "0.85.1" {
+	if version, err := bundledPiVersion(paths.piPackage); err != nil || version != "0.86.1" {
 		t.Fatalf("bundledPiVersion = %q, %v", version, err)
 	}
 	if err := os.Remove(paths.cli); err != nil {
@@ -47,7 +47,7 @@ func TestResolveArchivePathsRejectsMissingAndWrongArchitectureBun(t *testing.T) 
 	writeRuntimeExecutable(t, bun, hostELFMachine(t))
 	writeFile(t, filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bun", "cli.js"), 0o644, "cli")
 	writeFile(t, filepath.Join(root, "libexec", "pixie_assistant.js"), 0o644, "assistant")
-	writeFile(t, filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent", "package.json"), 0o644, `{"name":"@earendil-works/pi-coding-agent","version":"0.85.1"}`)
+	writeFile(t, filepath.Join(root, "runtime", "node_modules", "@earendil-works", "pi-coding-agent", "package.json"), 0o644, `{"name":"@earendil-works/pi-coding-agent","version":"0.86.1"}`)
 
 	if err := os.Remove(bun); err != nil {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func TestResolveArchivePathsRejectsMissingAndWrongArchitectureBun(t *testing.T) 
 	}
 }
 
-func TestPiInvocationForwardsNativeArgumentsWithoutChangingEnvironmentOrCWD(t *testing.T) {
+func TestPiInvocationForwardsNativeArgumentsAndDisablesPiVersionChecks(t *testing.T) {
 	paths := archivePaths{
 		bun: "/archive/runtime/bin/bun",
 		cli: "/archive/runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js",
@@ -78,7 +78,10 @@ func TestPiInvocationForwardsNativeArgumentsWithoutChangingEnvironmentOrCWD(t *t
 	if want := []string{paths.cli, "--model", "native model", "prompt"}; !reflect.DeepEqual(invocation.Args, want) {
 		t.Fatalf("arguments = %#v, want %#v", invocation.Args, want)
 	}
-	if invocation.Environment != nil || invocation.Directory != "" || !invocation.Interactive {
+	if environmentMap(invocation.Environment)["PI_SKIP_VERSION_CHECK"] != "1" {
+		t.Fatalf("Pi invocation did not disable version checks: %#v", invocation.Environment)
+	}
+	if environmentMap(invocation.Environment)["HOME"] != os.Getenv("HOME") || invocation.Directory != "" || !invocation.Interactive {
 		t.Fatalf("Pi invocation changed inherited environment or cwd: %#v", invocation)
 	}
 }
@@ -134,7 +137,7 @@ func TestVersionLinesReportPixieReleaseAndPiVersion(t *testing.T) {
 	if got := versionLine(); got != "pixie sha-abc123 (revision deadbeef)" {
 		t.Fatalf("version line = %q", got)
 	}
-	if piPackageVersion != "0.85.1" {
+	if piPackageVersion != "0.86.1" {
 		t.Fatalf("bundled Pi version = %q", piPackageVersion)
 	}
 }

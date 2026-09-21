@@ -53,7 +53,7 @@ Tasks are ordered by dependency and risk. A G2 or G3 task must not block a G1 ta
 | AUX-32 native error boundary | Raw Pi/SDK error text can reach browser responses or session projections | Return stable safe errors and retain only redacted causes in diagnostics | G1 |
 | AUX-33 v2 hello strictness | Negotiation accepts an empty v2 advertisement and can under-validate a selected peer version | Require and validate the v2 supported-version advertisement while retaining explicit v1 compatibility | G1 |
 | AUX-34 shared runtime schemas | `@pixie/shared` validates only transport envelopes; method parameters/results remain handler-local and can drift across Go and TypeScript | Generate or centralize method-level runtime validators and cross-boundary drift checks | G1 |
-| AUX-35 pinned verification environment | `scripts/check-runtime.ts` gates the test command on Bun `1.4.0`, toolchains and a writable temporary workspace | Retain explicit environment-blocked results | G1 |
+| AUX-35 pinned verification environment | `scripts/check-runtime.ts` gates the test command on Bun `1.4.2`, toolchains and a writable temporary workspace | Retain explicit environment-blocked results | G1 |
 
 ## M0 — Plan guardrails (completed)
 
@@ -64,7 +64,7 @@ Cheap checks that make the later invariants executable. All six are implemented 
 - **AUX-10 config schema gate** (`scripts/generate-config-schema.ts`, `check:config-schema`, `docs/config-schema.json`): generated JSON Schema for controller and assistant configuration with a stale-check.
 - **AUX-25 host route parity**: generated catalog is the single capability source; contract checks fail on unknown or mis-advertised native routes.
 - **AUX-34 shared runtime schemas**: Go and TypeScript adapters share executable method-level contract checks with additive-version handling.
-- **AUX-35 pinned verification environment**: Bun `1.4.0` gate, bounded temporary workspaces, environment-blocked evidence classified without false greens.
+- **AUX-35 pinned verification environment**: Bun `1.4.2` gate, bounded temporary workspaces, environment-blocked evidence classified without false greens.
 
 ## M1 — Session fidelity and CLI coexistence
 

@@ -2,7 +2,7 @@
 
 This is a configuration and validation reference, not an approved deployment recipe. A verified release and controller image are published, but credentialed Pi validation, an approved Docker deployment, standalone-distribution proof, and arm64 live lifecycle evidence remain separate work.
 
-Run a separately installed `pixie` host and a `pixie_web` controller. `pixie_web` never contains or starts Bun, Node or Pi. `pixie` bundles the pinned Bun `1.4.0` runtime `runtime/bin/bun`, the Pi SDK and the normal native `pixie` TUI, excludes Pi RPC, and uses the internal host; no Node runtime is bundled. See [assistant](assistant.md) and the [roadmap](../roadmap/roadmap.md).
+Run a separately installed `pixie` host and a `pixie_web` controller. `pixie_web` never contains or starts Bun, Node or Pi. `pixie` bundles the pinned Bun `1.4.2` runtime `runtime/bin/bun`, the Pi SDK and the normal native `pixie` TUI, excludes Pi RPC, and uses the internal host; no Node runtime is bundled. See [assistant](assistant.md) and the [roadmap](../roadmap/roadmap.md).
 
 ## Host service
 

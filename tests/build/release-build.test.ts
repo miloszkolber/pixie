@@ -80,7 +80,7 @@ function sha256(contents: Uint8Array): string {
 
 function fixtureRuntime(architecture: "amd64" | "arm64"): Map<string, Buffer> {
 	const piManifest = Buffer.from(
-		JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "0.85.1", license: "MIT" }),
+		JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "0.86.1", license: "MIT" }),
 	);
 	const files = new Map<string, Buffer>([
 		["runtime/bin/bun", fakeElf(architecture)],
@@ -99,22 +99,22 @@ function fixtureRuntime(architecture: "amd64" | "arm64"): Map<string, Buffer> {
 		architecture === "amd64"
 			? {
 					archive: "bun-linux-x64.zip",
-					sha256: "2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452",
+					sha256: "36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913",
 				}
 			: {
 					archive: "bun-linux-aarch64.zip",
-					sha256: "4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e",
+					sha256: "54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7",
 				};
 	const manifest = Buffer.from(
 		JSON.stringify({
 			schemaVersion: 2,
 			platform: { os: "linux", architecture },
-			bun: { version: "1.4.0", ...bun },
-			rootPackage: { name: "@earendil-works/pi-coding-agent", version: "0.85.1" },
+			bun: { version: "1.4.2", ...bun },
+			rootPackage: { name: "@earendil-works/pi-coding-agent", version: "0.86.1" },
 			packages: [
 				{
 					name: "@earendil-works/pi-coding-agent",
-					version: "0.85.1",
+					version: "0.86.1",
 					license: "MIT",
 					path: "node_modules/@earendil-works/pi-coding-agent",
 				},

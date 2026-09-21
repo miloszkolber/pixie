@@ -31,7 +31,7 @@ import (
 
 const (
 	piPackageName    = "@earendil-works/pi-coding-agent"
-	piPackageVersion = "0.85.1"
+	piPackageVersion = "0.86.1"
 )
 
 const bundledPiPackageEnvironment = "PIXIE_BUNDLED_PI_PACKAGE"
@@ -137,7 +137,8 @@ func parseServeArguments(values []string) (serveArguments, error) {
 // runTUI delegates to upstream Pi without taking the Pixie owner lock, so the
 // TUI can run concurrently with `pixie serve` against the same agent
 // directory. It preserves the upstream Pi CLI boundary (including HOME and
-// every native Pi environment variable).
+// every native Pi environment variable) while disabling Pi's self-update
+// check; the Pixie archive is updated by the repository release workflow.
 func runTUI(args []string) (int, error) {
 	executable, err := os.Executable()
 	if err != nil {
@@ -236,7 +237,12 @@ func piInvocation(paths archivePaths, args []string) processgroup.Invocation {
 	commandArgs := make([]string, 0, len(args)+1)
 	commandArgs = append(commandArgs, paths.cli)
 	commandArgs = append(commandArgs, args...)
-	return processgroup.Invocation{Path: paths.bun, Args: commandArgs, Interactive: true}
+	return processgroup.Invocation{
+		Path:        paths.bun,
+		Args:        commandArgs,
+		Environment: withEnvironmentValue(os.Environ(), "PI_SKIP_VERSION_CHECK", "1"),
+		Interactive: true,
+	}
 }
 
 func environmentLookup(values []string) func(string) (string, bool) {
@@ -392,6 +398,12 @@ func withRunIdentity(environment []string, identity diagnostics.RunIdentity) []s
 	return environmentSlice(values)
 }
 
+func withEnvironmentValue(environment []string, key, value string) []string {
+	values := environmentMap(environment)
+	values[key] = value
+	return environmentSlice(values)
+}
+
 func resolveArchivePaths(executable string) (archivePaths, error) {
 	if !filepath.IsAbs(executable) {
 		return archivePaths{}, errors.New("pixie executable path must be absolute")
@@ -516,7 +528,7 @@ func bundledPiVersion(piPackage string) (string, error) {
 	return manifest.Version, nil
 }
 
-// isPiSelfUpdate mirrors Pi 0.85.1's update-target rules only far enough to
+// isPiSelfUpdate mirrors Pi 0.86.1's update-target rules only far enough to
 // reject requests that would replace Pi itself. Extension and model updates are
 // native Pi operations and remain untouched.
 func isPiSelfUpdate(args []string) bool {

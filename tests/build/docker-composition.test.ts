@@ -216,23 +216,23 @@ ExecStart=%h/.local/bin/pixie_assistant serve --config %h/.config/pixie/assistan
 	expect(output).toMatch(/absolute dataDir.*assistant settings are not allowed/);
 });
 
-test("checked-in release runtime is pinned to the glibc Bun 1.4.0 archives", async () => {
+test("checked-in release runtime is pinned to the glibc Bun 1.4.2 archives", async () => {
 	const input = await collectCompositionInput();
 	expect(input.releaseRuntimeText).toBeDefined();
-	expect(input.releaseRuntimeText).toContain('BUNDLED_BUN_VERSION = "1.4.0"');
+	expect(input.releaseRuntimeText).toContain('BUNDLED_BUN_VERSION = "1.4.2"');
 	expect(input.releaseRuntimeText).toContain("bun-linux-x64.zip");
 	expect(input.releaseRuntimeText).toContain(
-		"2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452",
+		"36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913",
 	);
 	expect(input.releaseRuntimeText).toContain("bun-linux-aarch64.zip");
 	expect(input.releaseRuntimeText).toContain(
-		"4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e",
+		"54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7",
 	);
 
 	const drifted = inspectComposition({
 		...input,
-		releaseRuntimeText: (input.releaseRuntimeText ?? "").replace("1.4.0", "1.3.14"),
+		releaseRuntimeText: (input.releaseRuntimeText ?? "").replace("1.4.2", "1.3.14"),
 	});
 	expect(drifted.facts.docker.pinnedBunRuntime).toBe(false);
-	expect(drifted.violations.join("\n")).toMatch(/stage and verify pinned Bun 1\.4\.0/);
+	expect(drifted.violations.join("\n")).toMatch(/stage and verify pinned Bun 1\.4\.2/);
 });

@@ -312,7 +312,7 @@ func TestPiClientV2AdapterRoundTripAndEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("v2 profile: %v", err)
 	}
-	if profile.Version != "0.85.1" || profile.BootID != "fixture-boot" || !profile.Pi || !profile.Compatible {
+	if profile.Version != "0.86.1" || profile.BootID != "fixture-boot" || !profile.Pi || !profile.Compatible {
 		t.Fatalf("unexpected v2 profile: %#v", profile)
 	}
 	result, err := client.CallPi(ctx, "pi.providers.list", map[string]any{"providerIds": []string{}})
@@ -439,7 +439,7 @@ func TestPiClientV2RejectsSelectionWithoutAdvertisement(t *testing.T) {
 				"protocolVersion": 2,
 				"runtimeId":       "malformed-v2",
 				"bootId":          "malformed-boot",
-				"nativeVersion":   "0.85.1",
+				"nativeVersion":   "0.86.1",
 				"capabilities":    map[string]any{"sessions": 1},
 				"operationSet":    map[string]bool{"session.list": true},
 			}
@@ -494,7 +494,7 @@ func TestPiClientUsesOperationSetWithoutProviderAdministrationGate(t *testing.T)
 						"protocolVersion": 1,
 						"runtimeId":       "operation-set-fixture",
 						"bootId":          "operation-set-boot",
-						"version":         "0.85.1",
+						"version":         "0.86.1",
 						"capabilities":    map[string]any{"sessions": 1},
 						"operationSet":    map[string]bool{"session.delete": true},
 					},

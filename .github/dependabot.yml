@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: daily
+      time: "04:37"
+      timezone: UTC
+    open-pull-requests-limit: 1
+    allow:
+      - dependency-name: "@earendil-works/pi-coding-agent"
+    commit-message:
+      prefix: "deps"
+      include: scope

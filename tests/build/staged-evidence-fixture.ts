@@ -118,7 +118,7 @@ export async function stageArtifacts(
 				content: executable.has(name)
 					? `binary-${product}-${architecture}-${name}`
 					: name.endsWith("package.json")
-						? '{"name":"@earendil-works/pi-coding-agent","version":"0.85.1"}\n'
+						? '{"name":"@earendil-works/pi-coding-agent","version":"0.86.1"}\n'
 						: `${name}\n`,
 				mode: executable.has(name) ? 0o755 : 0o644,
 			}));

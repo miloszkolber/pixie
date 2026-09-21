@@ -30,7 +30,7 @@ func (a *PiAdmin) handleAgents(ctx context.Context, method string, request map[s
 		}
 	}
 	if method == "pi.capabilities" {
-		// runtime.hello is the negotiated host capability surface. Pi 0.85.1
+		// runtime.hello is the negotiated host capability surface. Pi 0.86.1
 		// exposes no runtime.capabilities operation, so never add an unsupported
 		// host request merely to decide whether source management is available.
 		_, profile, err := a.client.Profile(ctx)

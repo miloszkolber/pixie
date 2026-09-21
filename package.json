@@ -1,13 +1,13 @@
 {
 	"name": "pixie-workspace",
 	"private": true,
-	"packageManager": "bun@1.4.0",
+	"packageManager": "bun@1.4.2",
 	"workspaces": {
 		"packages": [
 			"webui"
 		],
 		"catalog": {
-			"@types/bun": "1.4.0",
+			"@types/bun": "1.4.2",
 			"micromark": "4.0.2",
 			"micromark-extension-gfm": "3.0.0",
 			"svelte": "5.57.0",
@@ -17,7 +17,7 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@earendil-works/pi-coding-agent": "0.85.1"
+		"@earendil-works/pi-coding-agent": "0.86.1"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.0",
@@ -34,10 +34,10 @@
 		"build:pixie": "CGO_ENABLED=0 go build -trimpath -o dist/pixie ./cmd/pixie",
 		"build:pixie_assistant": "bun build --target=bun --outfile dist/pixie_assistant.js src/assistant/serve.ts",
 		"build:go": "go build -trimpath -o dist/pixie_web ./cmd/pixie-web",
-		"build:release": "bun x bun@1.4.0 run scripts/build-release.ts",
-		"build:release:amd64": "bun x bun@1.4.0 run scripts/build-release.ts --architecture amd64",
-		"build:release:arm64": "bun x bun@1.4.0 run scripts/build-release.ts --architecture arm64",
-		"build:release:merge": "bun x bun@1.4.0 run scripts/build-release.ts --merge",
+		"build:release": "bun x bun@1.4.2 run scripts/build-release.ts",
+		"build:release:amd64": "bun x bun@1.4.2 run scripts/build-release.ts --architecture amd64",
+		"build:release:arm64": "bun x bun@1.4.2 run scripts/build-release.ts --architecture arm64",
+		"build:release:merge": "bun x bun@1.4.2 run scripts/build-release.ts --merge",
 		"check:deps": "bun run scripts/check-catalog.ts && bun run scripts/check-boundaries.ts",
 		"check:coverage": "bun run scripts/check-coverage.ts",
 		"check:filenames": "bun run scripts/check-filenames.ts",

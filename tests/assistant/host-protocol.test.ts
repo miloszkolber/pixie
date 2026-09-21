@@ -34,7 +34,7 @@ import {
 registerHostCleanup();
 
 describe("Pi public root SDK adapter", () => {
-	test("accepts only 0.85.1 and derives its native session directory without a public helper", () => {
+	test("accepts only 0.86.1 and derives its native session directory without a public helper", () => {
 		const agentDir = tempAgentDir();
 		const root = new Proxy(publicPiRootApi(), {
 			get(target, property, receiver) {
@@ -65,7 +65,7 @@ describe("Pi public root SDK adapter", () => {
 					opened = true;
 				}),
 			),
-		).toThrow("requires version 0.85.1");
+		).toThrow("requires version 0.86.1");
 		expect(opened).toBe(false);
 	});
 
@@ -106,7 +106,7 @@ describe("Bun host v1", () => {
 		const ws = await socket(host);
 		const hello = await request(ws, 1, "runtime.hello", { protocolVersion: 1 });
 		expect(hello.result?.protocolVersion).toBe(1);
-		expect(hello.result?.version).toBe("0.85.1");
+		expect(hello.result?.version).toBe("0.86.1");
 		expect(hello.result?.capabilities).toEqual({ sessions: 1, agents: 1, images: 1 });
 		for (const name of [
 			"session.list",

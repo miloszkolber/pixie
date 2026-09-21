@@ -196,7 +196,7 @@ browser screenshot /artifacts/narrow-settings.png >/dev/null
 browser eval "(() => { const tab = document.querySelector('[role=tab][aria-controls=settings-panel-system]'); if (!(tab instanceof HTMLElement)) throw new Error('System settings tab is unavailable'); tab.click(); return true; })()" >/dev/null
 browser wait --timeout 60000 --fn "document.querySelector('[data-testid=system-card-application]') !== null" >/dev/null
 browser wait --timeout 60000 --text "ui-acceptance" >/dev/null
-browser wait --timeout 60000 --text "0.85.1" >/dev/null
+browser wait --timeout 60000 --text "0.86.1" >/dev/null
 echo "UI acceptance: system geometry"
 assert_eval "document.documentElement.scrollWidth === document.documentElement.clientWidth"
 browser screenshot /artifacts/narrow-system.png >/dev/null

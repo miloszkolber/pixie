@@ -516,7 +516,7 @@ function hasSessionManagerShape(value: unknown): value is PiSdkApi["SessionManag
 	);
 }
 
-function compatibleSessionDir0_85_1(cwd: string, agentDir: string): string {
+function compatibleSessionDir0_86_1(cwd: string, agentDir: string): string {
 	const resolvedCwd = resolve(cwd);
 	const resolvedAgentDir = resolve(agentDir);
 	const safePath = `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
@@ -528,7 +528,7 @@ function compatibleSessionDir0_85_1(cwd: string, agentDir: string): string {
 /**
  * Adapt only the verified public Pi root API required by the session host.
  *
- * Pi 0.85.1 exposes SessionManager but not getDefaultSessionDir from its
+ * Pi 0.86.1 exposes SessionManager but not getDefaultSessionDir from its
  * public root. The local derivation deliberately matches that release's
  * implementation and is unavailable for every other version.
  */
@@ -536,9 +536,9 @@ export function createPiSdkApi(
 	verifiedPi: VerifiedPiPackage,
 	publicApi: PiPublicRootApi,
 ): PiSdkApi {
-	if (verifiedPi.packageVersion !== "0.85.1")
+	if (verifiedPi.packageVersion !== "0.86.1")
 		throw new HostError(
-			`Pi public session compatibility requires version 0.85.1, got ${JSON.stringify(verifiedPi.packageVersion)}`,
+			`Pi public session compatibility requires version 0.86.1, got ${JSON.stringify(verifiedPi.packageVersion)}`,
 		);
 	if (!isRecord(publicApi)) throw new HostError("loaded Pi public API is not a module record");
 	const createAgentSession = publicApi.createAgentSession;
@@ -547,7 +547,7 @@ export function createPiSdkApi(
 		throw new HostError("loaded Pi public API does not expose the required session API");
 	return {
 		createAgentSession: createAgentSession as PiSdkApi["createAgentSession"],
-		getDefaultSessionDir: compatibleSessionDir0_85_1,
+		getDefaultSessionDir: compatibleSessionDir0_86_1,
 		SessionManager: sessionManager,
 		publicApi,
 		ModelRuntime: publicApi.ModelRuntime,
@@ -3363,7 +3363,7 @@ export function createBunHost(options: BunHostOptions): BunHost {
 			}
 			case "session.steer": {
 				// AUX-03 spike: the generation guard plus the prompt preflight
-				// acceptance can reject a steering request, but Pi 0.85.1 exposes
+				// acceptance can reject a steering request, but Pi 0.86.1 exposes
 				// no public active-run identity and no steering receipt, so the
 				// request cannot be proven to target the run the client observed.
 				// Record the evaluated reason and keep the negotiated route

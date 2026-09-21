@@ -133,12 +133,12 @@ async function closeSocket(ws: WebSocket, timeoutMs = 5000): Promise<void> {
 describe("real Pi Bun host smoke (no credentials, no network)", () => {
 	// biome-ignore format: Keep the existing bounded test callback layout stable while extending its real-SDK coverage.
 	test(
-		"proves concurrent session lifecycle, source, and admin reads against the installed Pi 0.85.1 SDK",
+		"proves concurrent session lifecycle, source, and admin reads against the installed Pi 0.86.1 SDK",
 		async () => {
 			// Real package identity first: nothing below runs against a fake SDK.
 			const verified = await verifyPiPackage(REAL_PI_PACKAGE_PATH);
 			expect(verified.packageName).toBe("@earendil-works/pi-coding-agent");
-			expect(verified.packageVersion).toBe("0.85.1");
+			expect(verified.packageVersion).toBe("0.86.1");
 
 			// TMPDIR=/home/data when run as instructed, so mkdtemp stays under /home/data.
 			// Both directories are fresh temp roots; all host writes (sessions, agents,
@@ -170,7 +170,7 @@ describe("real Pi Bun host smoke (no credentials, no network)", () => {
 
 				const hello = await request(1, "runtime.hello", { protocolVersion: 1 });
 				expect(hello.error).toBeUndefined();
-				expect(hello.result?.version).toBe("0.85.1");
+				expect(hello.result?.version).toBe("0.86.1");
 				expect(hello.result?.capabilities).toEqual({ sessions: 1, agents: 1, images: 1 });
 				const runtimeId = hello.result?.runtimeId;
 				expect(typeof runtimeId).toBe("string");

@@ -127,7 +127,7 @@ test("tool inventory requests require the negotiated complete-inventory capabili
 test("vanilla Pi exposes core settings and hides unavailable extension surfaces", () => {
 	const profile: AgentProfile = {
 		name: "Pi",
-		version: "0.85.1",
+		version: "0.86.1",
 		compatible: true,
 		missingRequired: [],
 		pi: true,

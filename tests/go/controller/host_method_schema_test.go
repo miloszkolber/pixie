@@ -49,7 +49,7 @@ func TestHostMethodSchemaFailsAtControllerBoundary(t *testing.T) {
 					"protocolVersion": 1,
 					"runtimeId":       "schema-fixture",
 					"bootId":          "schema-boot",
-					"version":         "0.85.1",
+					"version":         "0.86.1",
 					"capabilities":    map[string]any{"sessions": 1},
 					"operationSet":    map[string]bool{"session.list": true, "session.prompt": true, "session.create": true, "session.load": true, "session.cancel": true},
 				}

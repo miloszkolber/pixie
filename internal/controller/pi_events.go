@@ -240,7 +240,7 @@ func projectPiEvent(ctx context.Context, sink PiEvents, raw json.RawMessage) err
 		piwire.UiStatusEvent, piwire.UiWidgetEvent, piwire.UiTitleEvent, piwire.UiWorkingEvent:
 		return projectUiEvent(event, emit, extension)
 	case nativeUiRequestEvent:
-		// Pi 0.85.1 RPC emits raw extension_ui_request frames rather than the
+		// Pi 0.86.1 RPC emits raw extension_ui_request frames rather than the
 		// legacy host's pixie:ui:* events. Map the method-specific fields onto
 		// the same projection so the browser contract is unchanged.
 		return projectNativeUiEvent(event, emit, extension)

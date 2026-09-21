@@ -239,26 +239,26 @@ export const HOST_OPERATION_REASONS: Partial<Record<HostOperation, string>> = {
 	"session.delete":
 		"Session deletion is controller-owned recoverable state; the host does not dispatch a Pi delete route.",
 	"session.steer":
-		"Pi 0.85.1 exposes no public run identifier to bind a steering request to the active run.",
+		"Pi 0.86.1 exposes no public run identifier to bind a steering request to the active run.",
 	"session.archive": "Archive is controller-owned state, not a Pi session operation.",
 	"runtime.releaseToTui": "There is no public TUI handoff from the in-process host.",
 	"session.prompt.image":
 		"Images are supported through session.prompt content blocks; there is no separate image route.",
-	"session.prompt.resource": "Pi 0.85.1 exposes no public text-resource attachment API.",
+	"session.prompt.resource": "Pi 0.86.1 exposes no public text-resource attachment API.",
 	"pi.session.info":
-		"Pi 0.85.1 exposes no public nonresident session metadata beyond SessionManager.list.",
+		"Pi 0.86.1 exposes no public nonresident session metadata beyond SessionManager.list.",
 	"pi.session.rename":
 		"Resident sessions rename through session.rename; there is no separate nonresident route.",
 	"pi.session.archive": "Archive is controller-owned state.",
 	"pi.session.unarchive": "Archive is controller-owned state.",
 	"pi.session.steer":
-		"Pi 0.85.1 exposes no public run identifier to bind steering to the active run.",
-	"pi.tools.list": "Pi 0.85.1 exposes no public bounded, secret-free tool inventory API.",
-	"pi.tools.call": "Pi 0.85.1 exposes no public tool invocation API for the host.",
+		"Pi 0.86.1 exposes no public run identifier to bind steering to the active run.",
+	"pi.tools.list": "Pi 0.86.1 exposes no public bounded, secret-free tool inventory API.",
+	"pi.tools.call": "Pi 0.86.1 exposes no public tool invocation API for the host.",
 	"runtime.capabilities":
 		"runtime.hello already returns negotiated capability groups and the exhaustive operation set.",
 	"pi.reload": "Host reload is runtime.restart; there is no separate Pi reload route.",
-	"pi.subagent.execute": "Pi 0.85.1 exposes no public subagent execution API.",
+	"pi.subagent.execute": "Pi 0.86.1 exposes no public subagent execution API.",
 	"pi.todo.plan": "Plan state is controller-owned; no public Pi plan API exists.",
 	"pixie.goals.questions": "Goal questions are a controller-owned surface.",
 	"mcp.attach":
@@ -936,12 +936,12 @@ export const CONTROLLER_METHOD_STATUS: Record<ControllerMethod, HostOperationSta
 
 export const CONTROLLER_METHOD_REASONS: Partial<Record<ControllerMethod, string>> = {
 	"session.steer":
-		"Pi 0.85.1 exposes no public run identifier to bind a steering request to the active run.",
+		"Pi 0.86.1 exposes no public run identifier to bind a steering request to the active run.",
 	"session.archive":
 		"Archive is controller-owned state; this controller fails closed until a durable archive marker exists.",
 	"session.unarchive":
 		"Archive is controller-owned state; this controller fails closed until a durable archive marker exists.",
-	"session.toolList": "Pi 0.85.1 exposes no public bounded, secret-free tool inventory API.",
+	"session.toolList": "Pi 0.86.1 exposes no public bounded, secret-free tool inventory API.",
 };
 
 export const METHOD_FIELD_TYPES = ["string", "number", "boolean", "object", "array"] as const;

@@ -11,7 +11,7 @@ Pixie builds two public Linux products from one repository.
 | `pixie_web` | Go controller and web workspace only. It connects to a separately managed loopback `pixie` host and never starts Pi. |
 | `pixie` | Bundled Bun, normal Pi TUI, Pi SDK, and assistant host connector. Bare `pixie` runs the native Pi TUI; `pixie serve --config ABS` starts its host. The TUI runs concurrently with the server against the same agent directory. |
 
-`pixie_assistant` is internal to the host archive and is never a public product, unit, command, or archive. It is a bundled JS host at `libexec/pixie_assistant.js`, run by the bundled `runtime/bin/bun`. The host product exposes `pixie` as the native Pi command and bundles pinned Bun `1.4.0` and Pi `0.85.1`; Node is never bundled, Pi RPC is excluded, and Pi self-update is blocked. Bun `1.3.14` cannot run Pi's bundle and must never be selected.
+`pixie_assistant` is internal to the host archive and is never a public product, unit, command, or archive. It is a bundled JS host at `libexec/pixie_assistant.js`, run by the bundled `runtime/bin/bun`. The host product exposes `pixie` as the native Pi command and bundles pinned Bun `1.4.2` and Pi `0.86.1`; Node is never bundled, Pi RPC is excluded, and Pi self-update is blocked. Bun `1.3.14` cannot run Pi's bundle and must never be selected.
 
 `pixie serve` is the only Pi owner that takes the agent-directory lock. The TUI never takes it, so no idle handoff is needed between the TUI and the managed owner. Two servers still collide with exit `73`; stop the managed owner or use a separate agent directory.
 

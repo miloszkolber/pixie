@@ -1,8 +1,8 @@
 # Pi integration
 
-`pixie_assistant` is the archive-internal host bundle `libexec/pixie_assistant.js`, run by the pinned Bun `1.4.0` runtime `runtime/bin/bun`, used by the `pixie` host product. It runs Pi sessions in-process through the bundled `@earendil-works/pi-coding-agent` SDK at version `0.85.1`. There is no `pi --mode rpc` child model, bridge sidecar, external Pi discovery, or public `pixie_assistant` command. Pi owns provider credentials, models, settings, native JSONL sessions, tools, extensions, and trust under the selected agent directory, normally `~/.pi/agent`.
+`pixie_assistant` is the archive-internal host bundle `libexec/pixie_assistant.js`, run by the pinned Bun `1.4.2` runtime `runtime/bin/bun`, used by the `pixie` host product. It runs Pi sessions in-process through the bundled `@earendil-works/pi-coding-agent` SDK at version `0.86.1`. There is no `pi --mode rpc` child model, bridge sidecar, external Pi discovery, or public `pixie_assistant` command. Pi owns provider credentials, models, settings, native JSONL sessions, tools, extensions, and trust under the selected agent directory, normally `~/.pi/agent`.
 
-`pixie` bundles Bun `1.4.0`, the Pi SDK and host; no Node runtime is bundled. Bare `pixie` is the regular native Pi command and TUI, excludes Pi RPC, and blocks Pi self-update. The root `pixie` command opens Pi's native TUI through `runtime/bin/bun runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js`. `pixie_web` remains controller-only, never contains or starts Pi, and uses the host's authenticated loopback protocol rather than a Pi execution fallback.
+`pixie` bundles Bun `1.4.2`, the Pi SDK and host; no Node runtime is bundled. Bare `pixie` is the regular native Pi command and TUI, excludes Pi RPC, and blocks Pi self-update. The root `pixie` command opens Pi's native TUI through `runtime/bin/bun runtime/node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js`. `pixie_web` remains controller-only, never contains or starts Pi, and uses the host's authenticated loopback protocol rather than a Pi execution fallback.
 
 ## Feature ownership
 
@@ -11,7 +11,7 @@ The table records ownership, not universal API availability. The host returns a 
 | Feature | Implementation |
 | --- | --- |
 | Chat, streaming, cancellation, images, compaction, forks | Native Pi execution, projected by Pixie when the negotiated operation and selected public API support it |
-| Steering | Not exposed by the current host: Pi `0.85.1` has no public run identifier that safely binds a steering request. Both `session.steer` and `pi.session.steer` are catalogued `unavailable` with that reason and fail closed |
+| Steering | Not exposed by the current host: Pi `0.86.1` has no public run identifier that safely binds a steering request. Both `session.steer` and `pi.session.steer` are catalogued `unavailable` with that reason and fail closed |
 | Run settlement, retry, compaction and lifecycle annotations | Native Pi events; the host separates acceptance from settlement and returns the terminal reason, pending real-provider event-order evidence |
 | Extension dialogs (`select`, `confirm`, `input`, `editor`) | Generic host UI bridge, projected by Pixie; pending dialogs replay on reload |
 | Extension status, widget, title, working-message hints | Generic host projections, fanned out by Pixie; terminal-only interfaces stay unavailable |

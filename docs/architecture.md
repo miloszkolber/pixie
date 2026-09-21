@@ -5,13 +5,13 @@
 | Product | Role |
 | --- | --- |
 | `pixie_web` | Controller-only Go web workspace. It connects to a separately managed loopback `pixie` host and never contains or starts Bun, Node or Pi. |
-| `pixie` | Bundled Bun `1.4.0`, regular Pi TUI, Pi SDK, and assistant host connector. Bare `pixie` runs the native TUI; `pixie serve --config ABS` starts the host. The TUI runs concurrently with the server. |
+| `pixie` | Bundled Bun `1.4.2`, regular Pi TUI, Pi SDK, and assistant host connector. Bare `pixie` runs the native TUI; `pixie serve --config ABS` starts the host. The TUI runs concurrently with the server. |
 
-`pixie_assistant` is the archive-internal JavaScript host `libexec/pixie_assistant.js`, run by the pinned Bun `1.4.0` runtime `runtime/bin/bun`, rather than a compiled executable or a public product, command, unit, or archive. No Node runtime is bundled. The source build does not prove a standalone distribution, a published release, or an approved Docker deployment.
+`pixie_assistant` is the archive-internal JavaScript host `libexec/pixie_assistant.js`, run by the pinned Bun `1.4.2` runtime `runtime/bin/bun`, rather than a compiled executable or a public product, command, unit, or archive. No Node runtime is bundled. The source build does not prove a standalone distribution, a published release, or an approved Docker deployment.
 
 | Process | Location | Owns |
 | --- | --- | --- |
-| `pixie serve`, `:3284` | Host user | Pi sessions, providers, credentials, models and extensions through the bundled Pi SDK at version `0.85.1` |
+| `pixie serve`, `:3284` | Host user | Pi sessions, providers, credentials, models and extensions through the bundled Pi SDK at version `0.86.1` |
 | `pixie_web`, `:7312` | Application container or local process | Web UI, projects, files, Git, goals, questions, queues, schedules and browser-MCP registration |
 | External browser MCP, operator-chosen | Deployment | Browser runtime and MCP transport; Pi is the client and Pixie stores only the registration setting |
 

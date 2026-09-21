@@ -4,7 +4,7 @@
  * AUX-35 — Pinned verification environment gate and command wrapper.
  *
  * Source checks are only meaningful under the runtime the repository pins. The
- * workspace requires Bun `1.4.0` (root `package.json` `packageManager`); Pi's
+ * workspace requires Bun `1.4.2` (root `package.json` `packageManager`); Pi's
  * bundle cannot run under `1.3.14`. This gate classifies the current process
  * before evidence is trusted:
  *

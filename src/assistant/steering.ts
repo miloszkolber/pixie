@@ -1,7 +1,7 @@
 /**
  * AUX-03 steering prototype.
  *
- * Pi 0.85.1's public `AgentSession.steer` queues input for whatever run is
+ * Pi 0.86.1's public `AgentSession.steer` queues input for whatever run is
  * streaming, but it exposes no public active-run identity and no steering
  * receipt. This registry models the strongest binding the host can build from
  * its own AUX-05 allocation generation plus the prompt `preflightResult`

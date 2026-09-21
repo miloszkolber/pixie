@@ -40,7 +40,7 @@ function buildRevision(): string {
 function versionString(): string {
 	return `pixie_assistant ${buildVersion()} (revision ${buildRevision()})`;
 }
-const REQUIRED_PI_VERSION = "0.85.1";
+const REQUIRED_PI_VERSION = "0.86.1";
 const DEFAULT_HOST = "127.0.0.1";
 const MIN_SECRET_LENGTH = 32;
 const DRAIN_TIMEOUT_MS = 25_000;

@@ -51,7 +51,7 @@ test("checked-in runtime composition keeps the controller image and Pi-bearing a
 	expect(host).toContain("Pi self-update is disabled");
 	expect(host).toContain("pixie serve --config ABS");
 	expect(host).toContain("PIXIE_PI_SECRET_KEY must be inherited");
-	expect(releaseRuntime).toContain('BUNDLED_BUN_VERSION = "1.4.0"');
+	expect(releaseRuntime).toContain('BUNDLED_BUN_VERSION = "1.4.2"');
 	expect(releaseRuntime).not.toContain("BUNDLED_NODE_VERSION");
 	expect(releaseRuntime).toContain("stageBundledPiRuntime");
 	expect(releaseRuntime).toContain("runtime staging must not include a Pi RPC surface");

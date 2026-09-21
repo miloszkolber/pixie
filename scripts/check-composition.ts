@@ -313,19 +313,19 @@ function checkDockerfile(
 	const releasePinsVerifiedBun =
 		releaseRuntimeText === undefined
 			? true
-			: /BUNDLED_BUN_VERSION\s*=\s*"1\.4\.0"/.test(releaseRuntimeText) &&
+			: /BUNDLED_BUN_VERSION\s*=\s*"1\.4\.2"/.test(releaseRuntimeText) &&
 				/\bstageBundledBunRuntime\b/.test(releaseRuntimeText) &&
 				/\bstageVerifiedBunArchive\b/.test(releaseRuntimeText) &&
 				/archive:\s*"bun-linux-x64\.zip"/.test(releaseRuntimeText) &&
-				/2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452/.test(
+				/36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913/.test(
 					releaseRuntimeText,
 				) &&
 				/archive:\s*"bun-linux-aarch64\.zip"/.test(releaseRuntimeText) &&
-				/4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e/.test(releaseRuntimeText);
+				/54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7/.test(releaseRuntimeText);
 	missing.pinnedBunRuntime = releasePinsVerifiedBun;
 	if (!missing.pinnedBunRuntime) {
 		violations.push(
-			"release runtime: host archive must stage and verify pinned Bun 1.4.0 at runtime/bin/bun",
+			"release runtime: host archive must stage and verify pinned Bun 1.4.2 at runtime/bin/bun",
 		);
 	}
 	const nodeRuntimeMarkers = [

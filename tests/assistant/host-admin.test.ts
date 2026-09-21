@@ -365,7 +365,7 @@ describe("Bun host admin parity", () => {
 			agentDir: tempAgentDir(),
 			verifiedPi: {
 				packageName: "@earendil-works/pi-coding-agent",
-				packageVersion: "0.85.1",
+				packageVersion: "0.86.1",
 				packageDir: "/pi",
 				entryPath: "/pi/index.js",
 				manifestDigest: "a".repeat(64),

@@ -39,7 +39,7 @@
 			{
 				"name": "session.steer",
 				"status": "unavailable",
-				"reason": "Pi 0.85.1 exposes no public run identifier to bind a steering request to the active run."
+				"reason": "Pi 0.86.1 exposes no public run identifier to bind a steering request to the active run."
 			},
 			{
 				"name": "session.rename",
@@ -71,7 +71,7 @@
 			{
 				"name": "session.prompt.resource",
 				"status": "unavailable",
-				"reason": "Pi 0.85.1 exposes no public text-resource attachment API."
+				"reason": "Pi 0.86.1 exposes no public text-resource attachment API."
 			},
 			{
 				"name": "session.uiResponse",
@@ -84,7 +84,7 @@
 			{
 				"name": "pi.session.info",
 				"status": "unavailable",
-				"reason": "Pi 0.85.1 exposes no public nonresident session metadata beyond SessionManager.list."
+				"reason": "Pi 0.86.1 exposes no public nonresident session metadata beyond SessionManager.list."
 			},
 			{
 				"name": "pi.session.rename",
@@ -104,17 +104,17 @@
 			{
 				"name": "pi.session.steer",
 				"status": "unavailable",
-				"reason": "Pi 0.85.1 exposes no public run identifier to bind steering to the active run."
+				"reason": "Pi 0.86.1 exposes no public run identifier to bind steering to the active run."
 			},
 			{
 				"name": "pi.tools.list",
 				"status": "unavailable",
-				"reason": "Pi 0.85.1 exposes no public bounded, secret-free tool inventory API."
+				"reason": "Pi 0.86.1 exposes no public bounded, secret-free tool inventory API."
 			},
 			{
 				"name": "pi.tools.call",
 				"status": "unavailable",
-				"reason": "Pi 0.85.1 exposes no public tool invocation API for the host."
+				"reason": "Pi 0.86.1 exposes no public tool invocation API for the host."
 			},
 			{
 				"name": "runtime.capabilities",
@@ -229,7 +229,7 @@
 			{
 				"name": "pi.subagent.execute",
 				"status": "unavailable",
-				"reason": "Pi 0.85.1 exposes no public subagent execution API."
+				"reason": "Pi 0.86.1 exposes no public subagent execution API."
 			},
 			{
 				"name": "pi.todo.plan",

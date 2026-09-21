@@ -117,7 +117,7 @@ test("runtime staging copies the installed exact closure, bundled Bun, and Pi TU
 	const temporary = await mkdtemp(join(repositoryRoot, ".tmp-work", "release-runtime-"));
 	try {
 		await writePackage(temporary, "@earendil-works/pi-coding-agent", {
-			version: "0.85.1",
+			version: "0.86.1",
 			dependencies: { "required-dependency": "1.0.0" },
 			optionalDependencies: { "native-optional": "1.0.0" },
 			bin: { pi: "dist/bundle/cli.js" },
@@ -149,7 +149,7 @@ test("runtime staging copies the installed exact closure, bundled Bun, and Pi TU
 		expect(runtime.manifest.bun.sha256).toMatch(/^[0-9a-f]{64}$/);
 		expect(runtime.manifest.rootPackage).toEqual({
 			name: "@earendil-works/pi-coding-agent",
-			version: "0.85.1",
+			version: "0.86.1",
 		});
 		expect(runtime.manifest.packages.map((entry) => entry.name)).toEqual(
 			expect.arrayContaining([
@@ -192,7 +192,7 @@ test("runtime staging copies the installed exact closure, bundled Bun, and Pi TU
 
 		const notices = await bundledRuntimeNotices(runtime.directory, nativeRuntimeArchitecture());
 		expect(notices).toContain(`## Bun ${BUNDLED_BUN_VERSION}`);
-		expect(notices).toContain("## Pi 0.85.1 (MIT)");
+		expect(notices).toContain("## Pi 0.86.1 (MIT)");
 		expect(notices).not.toMatch(/Node\.js|Bundled npm/);
 
 		await writeFile(
@@ -212,7 +212,7 @@ test("runtime verification refuses a Node manifest in place of the pinned Bun ru
 	const temporary = await mkdtemp(join(repositoryRoot, ".tmp-work", "release-runtime-node-"));
 	try {
 		await writePackage(temporary, "@earendil-works/pi-coding-agent", {
-			version: "0.85.1",
+			version: "0.86.1",
 			exports: { ".": { import: "./index.js" } },
 		});
 		const piDirectory = join(temporary, "node_modules", "@earendil-works", "pi-coding-agent");
@@ -292,7 +292,7 @@ test("runtime staging fails closed when a copied dependency omits license metada
 	const temporary = await mkdtemp(join(repositoryRoot, ".tmp-work", "release-runtime-license-"));
 	try {
 		await writePackage(temporary, "@earendil-works/pi-coding-agent", {
-			version: "0.85.1",
+			version: "0.86.1",
 			dependencies: { "unlicensed-dependency": "1.0.0" },
 		});
 		const unlicensed = join(temporary, "node_modules", "unlicensed-dependency");
@@ -320,7 +320,7 @@ test("runtime staging refuses a cross-architecture optional dependency before co
 	await mkdir(join(repositoryRoot, ".tmp-work"), { recursive: true });
 	const temporary = await mkdtemp(join(repositoryRoot, ".tmp-work", "release-runtime-cross-"));
 	try {
-		await writePackage(temporary, "@earendil-works/pi-coding-agent", { version: "0.85.1" });
+		await writePackage(temporary, "@earendil-works/pi-coding-agent", { version: "0.86.1" });
 		const target = join(temporary, "runtime");
 		await expect(
 			stageBundledPiRuntime({ repositoryRoot: temporary, directory: target, architecture: other }),

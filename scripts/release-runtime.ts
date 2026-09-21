@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:p
 import { crc32, inflateRawSync } from "node:zlib";
 import type { DeterministicTarEntry } from "./deterministic-tar.ts";
 
-export const BUNDLED_BUN_VERSION = "1.4.0";
+export const BUNDLED_BUN_VERSION = "1.4.2";
 /**
  * The official Bun release zip carries only the `bun` executable. Its license
  * ships in the Bun repository at the same release tag, so the pinned license
@@ -12,7 +12,7 @@ export const BUNDLED_BUN_VERSION = "1.4.0";
  */
 export const BUNDLED_BUN_LICENSE_PATH = "bun/LICENSE.md";
 export const BUNDLED_PI_PACKAGE = "@earendil-works/pi-coding-agent";
-export const BUNDLED_PI_VERSION = "0.85.1";
+export const BUNDLED_PI_VERSION = "0.86.1";
 export const RUNTIME_MANIFEST_NAME = "manifest.json";
 
 export const RUNTIME_ARCHITECTURES = ["amd64", "arm64"] as const;
@@ -27,12 +27,12 @@ interface BunRelease {
 const BUN_RELEASES: Record<RuntimeArchitecture, BunRelease> = {
 	amd64: {
 		archive: "bun-linux-x64.zip",
-		sha256: "2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452",
+		sha256: "36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913",
 		directory: "bun-linux-x64",
 	},
 	arm64: {
 		archive: "bun-linux-aarch64.zip",
-		sha256: "4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e",
+		sha256: "54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7",
 		directory: "bun-linux-aarch64",
 	},
 };

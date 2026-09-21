@@ -277,16 +277,16 @@ describe("assistant v2 archive configuration", () => {
 		expect(new TextDecoder().decode(result.stderr)).toContain("--pi-package is not accepted");
 	});
 
-	test("requires the archive-private package to be exactly Pi 0.85.1", () => {
+	test("requires the archive-private package to be exactly Pi 0.86.1", () => {
 		const verified = {
 			packageName: "@earendil-works/pi-coding-agent" as const,
-			packageVersion: "0.85.1",
+			packageVersion: "0.86.1",
 			packageDir: "/archive/runtime/node_modules/@earendil-works/pi-coding-agent",
 			entryPath: "/archive/runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js",
 			manifestDigest: "a".repeat(64),
 			entryDigest: "b".repeat(64),
 		};
 		expect(piVersionError(verified)).toBeUndefined();
-		expect(piVersionError({ ...verified, packageVersion: "0.85.2" })).toContain("@0.85.1");
+		expect(piVersionError({ ...verified, packageVersion: "0.85.2" })).toContain("@0.86.1");
 	});
 });

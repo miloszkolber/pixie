@@ -154,7 +154,7 @@ func generatedOperationSet() map[string]bool {
 func bunHostInitializeResponse() map[string]any {
 	operations := generatedOperationSet()
 	operations["runtime.restart"] = false
-	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.85.1", "capabilities": map[string]any{"sessions": 1, "agents": 1, "images": 1}, "operationSet": operations}
+	return map[string]any{"protocolVersion": 1, "runtimeId": "fixture-runtime", "bootId": "fixture-boot", "version": "0.86.1", "capabilities": map[string]any{"sessions": 1, "agents": 1, "images": 1}, "operationSet": operations}
 }
 
 // piInitializeV2Response is the negotiation-aware hello result. It keeps the
@@ -167,7 +167,7 @@ func piInitializeV2Response() map[string]any {
 	response["protocolVersion"] = 2
 	response["supportedProtocolVersions"] = []int{2, 1}
 	response["hostIdentity"] = "v2-runtime"
-	response["nativeVersion"] = "0.85.1"
+	response["nativeVersion"] = "0.86.1"
 	return response
 }
 

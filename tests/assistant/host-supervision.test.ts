@@ -191,7 +191,7 @@ describe("Bun host supervision hardening (AUX-18)", () => {
 		});
 		expect((await waitForId(raw.socket, 1)).result).toMatchObject({
 			ready: true,
-			version: "0.85.1",
+			version: "0.86.1",
 		});
 		expect(raw.fetch("/readyz")?.status).toBe(200);
 	});

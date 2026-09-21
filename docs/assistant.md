@@ -1,6 +1,6 @@
 # Assistant host
 
-`pixie_assistant` is the archive-internal host bundle `libexec/pixie_assistant.js`, built from `src/assistant/serve.ts` and run by the pinned Bun `1.4.0` runtime `runtime/bin/bun`. It is not a compiled executable or a public product, command, systemd unit, or archive entrypoint. No Node runtime is bundled.
+`pixie_assistant` is the archive-internal host bundle `libexec/pixie_assistant.js`, built from `src/assistant/serve.ts` and run by the pinned Bun `1.4.2` runtime `runtime/bin/bun`. It is not a compiled executable or a public product, command, systemd unit, or archive entrypoint. No Node runtime is bundled.
 
 The host runs Pi sessions in-process through the archive's bundled `@earendil-works/pi-coding-agent` SDK. It exposes a private authenticated loopback protocol to the controller and does not start `pi --mode rpc`, discover an external Pi executable, or use an administration bridge sidecar.
 

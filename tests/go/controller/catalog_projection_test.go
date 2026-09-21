@@ -40,7 +40,7 @@ func TestControllerDropsNegotiatedOperationsOutsideCatalog(t *testing.T) {
 				"protocolVersion": 1,
 				"runtimeId":       "catalog-fixture",
 				"bootId":          "catalog-boot",
-				"version":         "0.85.1",
+				"version":         "0.86.1",
 				"capabilities":    map[string]any{"sessions": 1},
 				"operationSet": map[string]bool{
 					"session.list":   true,
@@ -125,7 +125,7 @@ func TestSessionListMetadataContract(t *testing.T) {
 				"protocolVersion": 1,
 				"runtimeId":       "session-list-fixture",
 				"bootId":          "session-list-boot",
-				"version":         "0.85.1",
+				"version":         "0.86.1",
 				"capabilities":    map[string]any{"sessions": 1},
 				"operationSet":    map[string]bool{"session.list": true, "session.create": true, "session.load": true, "session.prompt": true, "session.cancel": true},
 			}

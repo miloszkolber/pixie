@@ -98,7 +98,7 @@ func TestHostV2HelloResultCarriesIdentityWithoutCredentials(t *testing.T) {
 		BootID:           "boot-456",
 		SourceCommit:     "0123456789abcdef0123456789abcdef01234567",
 		ReleaseID:        "sha-0123456789ab",
-		NativeVersion:    "0.85.1",
+		NativeVersion:    "0.86.1",
 		NativeExecutable: "/usr/bin/pi",
 		Capabilities:     map[string]int{"sessions": 1, "providers": 1},
 	}

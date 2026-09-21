@@ -794,7 +794,7 @@ func (m *SessionManager) List(ctx context.Context, projectID string, archived an
 }
 
 // listRecordedRemoteSessions reconciles only the controller's durable records.
-// Pi 0.85.1 can list a session directory for an admitted cwd, but has no public
+// Pi 0.86.1 can list a session directory for an admitted cwd, but has no public
 // per-session information API. Query each distinct recorded cwd rather than
 // falling back to an unsupported global record lookup.
 func (m *SessionManager) listRecordedRemoteSessions(ctx context.Context, records []ProjectSessionRecord) (map[string]remoteSession, error) {

@@ -180,7 +180,7 @@ export function tempAgentDir(): string {
 	return directory;
 }
 
-export function verifiedPi(packageVersion = "0.85.1") {
+export function verifiedPi(packageVersion = "0.86.1") {
 	return {
 		packageName: "@earendil-works/pi-coding-agent" as const,
 		packageVersion,
@@ -249,7 +249,7 @@ export function hostWith(
 			agentDir,
 			verifiedPi: {
 				packageName: "@earendil-works/pi-coding-agent",
-				packageVersion: "0.85.1",
+				packageVersion: "0.86.1",
 				packageDir: "/pi",
 				entryPath: "/pi/index.js",
 				manifestDigest: "a".repeat(64),

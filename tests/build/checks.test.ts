@@ -124,7 +124,7 @@ test("runtime classifier blocks an unsupported Bun and a blocked temporary works
 
 		const unsupported = classify([], {
 			actualBun: "0.0.1",
-			expectedBun: "1.4.0",
+			expectedBun: "1.4.2",
 			workspaceRoot: dir,
 			path,
 			cgoEnabled: "0",
@@ -141,8 +141,8 @@ test("runtime classifier blocks an unsupported Bun and a blocked temporary works
 		const notADirectory = join(dir, "not-a-directory");
 		await writeFile(notADirectory, "file\n");
 		const blocked = classify([], {
-			actualBun: "1.4.0",
-			expectedBun: "1.4.0",
+			actualBun: "1.4.2",
+			expectedBun: "1.4.2",
 			workspaceRoot: join(notADirectory, "tmp"),
 			path,
 			cgoEnabled: "0",
@@ -156,8 +156,8 @@ test("runtime classifier blocks an unsupported Bun and a blocked temporary works
 		// A pinned runtime with a writable workspace and no required CGO is the
 		// supported classification; the gate maps it to a zero exit.
 		const supported = classify([], {
-			actualBun: "1.4.0",
-			expectedBun: "1.4.0",
+			actualBun: "1.4.2",
+			expectedBun: "1.4.2",
 			workspaceRoot: dir,
 			path,
 			cgoEnabled: "0",

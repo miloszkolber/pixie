@@ -22,7 +22,7 @@ pixie-sha-<12>-linux-arm64.tar.gz
 
 Each archive records its SHA-256, product, architecture, full source SHA, and literal public entrypoint. `pixie_web` exposes `pixie_web`; `pixie` exposes the bundled native `pixie` TUI and the `pixie serve` host. The host archive contains its internal bundled JavaScript host `libexec/pixie_assistant.js`. `pixie_assistant` is never a public archive or entrypoint.
 
-The host archive bundles the pinned Bun `1.4.0` runtime (`runtime/bin/bun`) and Pi `0.85.1`, bundles no Node runtime, retains the normal Pi TUI, excludes Pi RPC, and blocks Pi self-update. The staged manifest records archive hashes, the complete source SHA, clean-tree result, and checksums. It must not claim SBOM, provenance, image digest, published release, or published image evidence that has not been produced.
+The host archive bundles the pinned Bun `1.4.2` runtime (`runtime/bin/bun`) and Pi `0.86.1`, bundles no Node runtime, retains the normal Pi TUI, excludes Pi RPC, and blocks Pi self-update. The staged manifest records archive hashes, the complete source SHA, clean-tree result, and checksums. It must not claim SBOM, provenance, image digest, published release, or published image evidence that has not been produced.
 
 ## Validation evidence
 
