@@ -12,6 +12,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/persist"
+	"github.com/miloszkolber/pixie/tests/internal/designfixture"
 )
 
 func TestLifecycleDesiredRemainsTrueWhenStartupFails(t *testing.T) {
@@ -22,7 +23,7 @@ func TestLifecycleDesiredRemainsTrueWhenStartupFails(t *testing.T) {
 	}
 	ready, err := mcpserver.NewRegistry(mcpserver.Config{
 		Host: "127.0.0.1", Port: 17881, DataDir: dataDir,
-		DesignConfig: &design.Config{DataDir: dataDir, Parser: design.NewDeterministicParser()},
+		DesignConfig: &design.Config{DataDir: dataDir, Parser: designfixture.NewParser()},
 	}, diagnostics.NormalizeBuild("test", "test"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +48,7 @@ func TestLifecycleDesiredRemainsTrueWhenStartupFails(t *testing.T) {
 	// leaves no usable Design service.
 	failed, err := mcpserver.NewRegistry(mcpserver.Config{
 		Host: "127.0.0.1", Port: 17882, DataDir: failedDataDir,
-		DesignConfig: &design.Config{DataDir: failedDataDir, Parser: design.NewDeterministicParser(), ParseTimeout: -time.Second},
+		DesignConfig: &design.Config{DataDir: failedDataDir, Parser: designfixture.NewParser(), ParseTimeout: -time.Second},
 	}, diagnostics.NormalizeBuild("test", "test"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("startup failure must degrade the module, not the publisher: %v", err)

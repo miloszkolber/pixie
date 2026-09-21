@@ -146,7 +146,7 @@ describe("Bun host session parity dispatch", () => {
 	test("configures thinking and model, then serves stats/messages/commands/queues", async () => {
 		const session = new FakeSession("parity");
 		session.modelRuntime = {
-			getModels: (provider: string) =>
+			getModels: (provider?: string) =>
 				provider === "test" ? [{ id: "m1", provider: "test" }] : [],
 			getModel: (provider: string, model: string) =>
 				provider === "test" && model === "m1" ? { id: "m1", provider: "test" } : undefined,

@@ -47,7 +47,7 @@ type SourceRoot = (typeof sourceRootNames)[number];
 /** Directory prefixes owned by each logical root (with trailing slash). */
 const rootPrefixes: Readonly<Record<SourceRoot, readonly string[]>> = {
 	assistant: ["src/assistant/", "tests/assistant/"],
-	shared: ["src/shared/", "schema/", "piprotocol/", "tests/shared/"],
+	shared: ["src/shared/", "schema/", "piprotocol/", "tests/shared/", "tests/go/piprotocol/"],
 	web: ["cmd/", "internal/", "scripts/", "webui/", "systemd/", "tests/"],
 };
 

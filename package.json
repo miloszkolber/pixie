@@ -33,7 +33,7 @@
 		"build:webui": "bun run --cwd webui build",
 		"build:pixie": "CGO_ENABLED=0 go build -trimpath -o dist/pixie ./cmd/pixie",
 		"build:pixie_assistant": "bun build --target=bun --outfile dist/pixie_assistant.js src/assistant/serve.ts",
-		"build:go": "go build -trimpath -o dist/pixie_web ./cmd",
+		"build:go": "go build -trimpath -o dist/pixie_web ./cmd/pixie-web",
 		"build:release": "bun x bun@1.4.0 run scripts/build-release.ts",
 		"build:release:amd64": "bun x bun@1.4.0 run scripts/build-release.ts --architecture amd64",
 		"build:release:arm64": "bun x bun@1.4.0 run scripts/build-release.ts --architecture arm64",
@@ -58,9 +58,8 @@
 		"mewa:check": "bun run --cwd webui mewa:check",
 		"test": "bun run scripts/check-runtime.ts --exec -- bun run test:inner",
 		"test:inner": "bun test tests/assistant tests/shared tests/build && go test ./...",
-		"typecheck": "bun run typecheck:root && bun run typecheck:shared && bun run typecheck:tools && bun run typecheck:tests && bun run --cwd webui typecheck",
-		"typecheck:root": "tsc --noEmit -p tsconfig.json",
-		"typecheck:shared": "tsc --noEmit -p tsconfig.shared.json",
+		"typecheck": "bun run typecheck:source && bun run typecheck:tools && bun run typecheck:tests && bun run --cwd webui typecheck",
+		"typecheck:source": "tsc --noEmit -p tsconfig.json",
 		"typecheck:tools": "tsc --noEmit -p tsconfig.tools.json",
 		"typecheck:tests": "tsc --noEmit -p tests/tsconfig.json"
 	}

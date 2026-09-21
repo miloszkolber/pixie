@@ -14,7 +14,7 @@ WORKDIR /work
 COPY package.json bun.lock bunfig.toml ./
 COPY webui/package.json webui/package.json
 RUN --mount=type=cache,id=bun-install-cache,target=/root/.bun/install/cache,sharing=locked \
-    bun install --frozen-lockfile
+    bun install --filter @pixie/web --frozen-lockfile
 COPY webui/ webui/
 COPY src/shared/ src/shared/
 COPY tsconfig.base.json ./
@@ -58,8 +58,8 @@ RUN --mount=type=cache,id=go-module-cache,target=/go/pkg/mod,sharing=locked \
     set -eu; \
     mkdir -p /out/licenses/pixie/go; \
     cp /usr/local/go/LICENSE /out/licenses/pixie/go/LICENSE; \
-    go build -trimpath -tags=controller -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie_web ./cmd; \
-    go list -tags=controller -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd \
+    go build -trimpath -ldflags="-s -w -X main.version=$VERSION -X main.revision=$REVISION" -o /out/pixie_web ./cmd/pixie-web; \
+    go list -deps -f '{{with .Module}}{{if .Version}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd/pixie-web \
         > /tmp/modules.unsorted; \
     sort -u /tmp/modules.unsorted > /tmp/modules; \
     cut -d ' ' -f1 /tmp/modules > /out/licenses/pixie/modules.txt; \

@@ -1,4 +1,4 @@
-package cmd_test
+package diagnostics_test
 
 import (
 	"os"
@@ -54,5 +54,3 @@ func TestOperatorRecoveryContractAcrossCmdPackages(t *testing.T) {
 		}
 	}
 }
-
-func boolAddr(value bool) *bool { return &value }

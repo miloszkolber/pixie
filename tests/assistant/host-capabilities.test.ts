@@ -144,9 +144,7 @@ describe("Bun host operationSet truthfulness", () => {
 		const created = rawFrames(raw.socket).at(-1)?.result?.sessionId;
 		expect(typeof created).toBe("string");
 		await raw.send({ id: 3, method: "session.list", params: {} });
-		const sessions = rawFrames(raw.socket).at(-1)?.result?.sessions as
-			| { sessionId?: unknown; cwd?: unknown }[]
-			| undefined;
+		const sessions = rawFrames(raw.socket).at(-1)?.result?.sessions;
 		expect(Array.isArray(sessions)).toBe(true);
 		const resident = sessions?.find((entry) => entry.sessionId === created);
 		expect(resident).toBeDefined();
@@ -167,7 +165,7 @@ describe("generated ownership/status parity", () => {
 			const owner = CONTROLLER_METHOD_OWNERS[method];
 			const hostStatus = HOST_OPERATION_STATUS[route as keyof typeof HOST_OPERATION_STATUS];
 			if (hostStatus === undefined) {
-				const [namespace, id] = route.split(":", 2);
+				const [namespace = "", id] = route.split(":", 2);
 				const known =
 					(namespace === "controller" && controllerRoutes.has(id ?? "")) ||
 					(namespace === "workspace" && workspaceRoutes.has(id ?? ""));
@@ -220,7 +218,7 @@ describe("Bun host dispatch coverage", () => {
 	}
 
 	function hostCaseOperations(hostSource: string): Set<string> {
-		return new Set([...hostSource.matchAll(/case\s+"([^"]+)"/g)].map((match) => match[1]));
+		return new Set([...hostSource.matchAll(/case\s+"([^"]+)"/g)].map((match) => match[1] ?? ""));
 	}
 
 	// A dispatch is positive unless the text up to the next dispatch asserts a

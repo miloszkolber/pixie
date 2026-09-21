@@ -16,6 +16,7 @@ import {
 	encodeProbeReport,
 	loadVerifiedPiPublicApi,
 	MAX_PROBE_REPORT_BYTES,
+	type PiSdkProbeReport,
 	probePiSdk,
 	REQUIRED_PUBLIC_SYMBOLS,
 	resolvePiPackagePath,
@@ -571,7 +572,7 @@ throw new Error(${JSON.stringify(`${escapeSequence}${importMarker}`)});`,
 				stderr: "pipe",
 			});
 			expect(run.exitCode, outputText(run.stderr)).toBe(0);
-			const expectedReport = {
+			const expectedReport: PiSdkProbeReport = {
 				packageName: PACKAGE_NAME,
 				packageVersion: "9.8.7",
 				publicSymbols: REQUIRED_PUBLIC_SYMBOLS,
@@ -635,7 +636,7 @@ throw new Error(${JSON.stringify(`${escapeSequence}${importMarker}`)});`,
 				join(root, "untrusted-guardian-success-marker"),
 				join(root, "untrusted-guardian-result-marker"),
 				join(root, "untrusted-guardian-teardown-marker"),
-			];
+			] as const;
 			const untrustedGuardian = Bun.spawnSync({
 				cmd: [
 					COMPILED_PROBE_PATH,

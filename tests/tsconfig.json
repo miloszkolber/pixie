@@ -9,5 +9,5 @@
 			"@pixie/shared": ["../src/shared/index.ts"]
 		}
 	},
-	"include": ["build/**/*.ts", "webui/**/*.ts", "performance/**/*.ts"]
+	"include": ["**/*.ts"]
 }

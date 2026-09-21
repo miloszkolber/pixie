@@ -15,6 +15,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/design"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
+	"github.com/miloszkolber/pixie/tests/internal/designfixture"
 )
 
 const registryTestToken = "mcp-registry-test-token-0123456789abcdef0123456789"
@@ -28,7 +29,7 @@ func testRegistry(t *testing.T, mutate func(*mcpserver.Config)) *mcpserver.Regis
 	config := mcpserver.Config{
 		Host: "127.0.0.1", Port: 17871, DataDir: dataDir,
 		CanvasConfig: &canvasConfig,
-		DesignConfig: &design.Config{DataDir: dataDir, Parser: design.NewDeterministicParser()},
+		DesignConfig: &design.Config{DataDir: dataDir, Parser: designfixture.NewParser()},
 	}
 	if mutate != nil {
 		mutate(&config)

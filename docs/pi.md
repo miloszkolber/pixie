@@ -144,7 +144,7 @@ Host diagnostics redact secret-shaped and path-shaped values at their emission b
 
 The controller exposes a bounded, secret-free health history. It records at most 32 transitions across allowlisted components (`agent`, `application`, `schedule`) and stable state tokens only, and the support-export boundary re-sanitizes and bounds the same shape (`internal/controller/runtime.go:38-122`, `internal/diagnostics/transitions.go:8-10`).
 
-`pixie_web doctor [--config ABS]` prints a read-only recovery report: a `summary=` value plus one line per check with a stable ID, status, code and fixed remediation text. The report carries no path, endpoint, credential or raw error (`internal/diagnostics/recovery.go`, `cmd/runtime.go`, `cmd/config.go`).
+`pixie_web doctor [--config ABS]` prints a read-only recovery report: a `summary=` value plus one line per check with a stable ID, status, code and fixed remediation text. The report carries no path, endpoint, credential or raw error (`internal/diagnostics/recovery.go`, `cmd/pixie-web/runtime.go`, `cmd/pixie-web/config.go`).
 
 The support snapshot stays behind controller authentication and includes only bounded, already-sanitized fields: run identity, health transitions, runtime facts and controller request outcomes. It never collects the assistant or system logs wholesale, and it does not contain the supervisor-scoped child-stderr tail (`internal/diagnostics/support_snapshot.go:71-95`, `internal/controller/runtime.go:347-350`).
 

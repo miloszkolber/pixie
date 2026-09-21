@@ -3,12 +3,6 @@
 	"compilerOptions": {
 		"allowImportingTsExtensions": true,
 		"noEmit": true,
-		"noUncheckedIndexedAccess": false,
-		"exactOptionalPropertyTypes": false,
-		"noImplicitOverride": false,
-		"useDefineForClassFields": false,
-		"isolatedModules": false,
-		"verbatimModuleSyntax": false,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"resolveJsonModule": true,
@@ -18,5 +12,5 @@
 			"@pixie/shared": ["./src/shared/index.ts"]
 		}
 	},
-	"include": ["src/assistant/**/*.ts"]
+	"include": ["src/**/*.ts"]
 }

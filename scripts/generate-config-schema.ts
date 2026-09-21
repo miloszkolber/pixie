@@ -6,7 +6,7 @@
  * Emits `docs/config-schema.json`, a documentation and drift-detection schema
  * for the two private JSON configuration surfaces:
  *
- *   - controller: `runtimeConfigFile` in `cmd/config.go`
+ *   - controller: `runtimeConfigFile` in `cmd/pixie-web/config.go`
  *   - assistant:  `ASSISTANT_CONFIG_FIELDS` in `src/assistant/serve.ts`,
  *     cross-checked against `allowedFields` in
  *     `cmd/internal/assistantconfig/config.go`
@@ -29,7 +29,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const repositoryRoot = resolve(import.meta.dir, "..");
-const controllerSource = resolve(repositoryRoot, "cmd/config.go");
+const controllerSource = resolve(repositoryRoot, "cmd/pixie-web/config.go");
 const assistantTsSource = resolve(repositoryRoot, "src/assistant/serve.ts");
 const assistantGoSource = resolve(repositoryRoot, "cmd/internal/assistantconfig/config.go");
 const artifactPath = resolve(repositoryRoot, "docs/config-schema.json");
@@ -84,7 +84,8 @@ function read(path: string): string {
 /** Parses `type runtimeConfigFile struct { ... }` into JSON-named fields. */
 export function parseControllerFields(source: string): ControllerField[] {
 	const struct = /type runtimeConfigFile struct \{([\s\S]*?)\n\}/.exec(source);
-	if (struct?.[1] === undefined) fail("runtimeConfigFile struct not found in cmd/config.go");
+	if (struct?.[1] === undefined)
+		fail("runtimeConfigFile struct not found in cmd/pixie-web/config.go");
 	const field = /^\s*(\w+)\s+([A-Za-z0-9_[\].]+)\s+`json:"([^"]+)"`/gm;
 	const fields: ControllerField[] = [];
 	for (const match of struct[1].matchAll(field)) {

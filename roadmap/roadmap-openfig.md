@@ -20,7 +20,7 @@ Implemented at source level:
 
 `design_preview` currently supports `kind: "cover"` only. A selected-frame request returns `unavailable`; the saved document cover is never presented as a frame.
 
-The parser is `DeterministicParser` in `internal/design/parser.go`: an offline fixture adapter that accepts a preflighted archive containing `design.json` or `fixture.json` and fails closed on an archive without one. It does not decode Figma and does not claim to implement an upstream parser.
+Integration tests use `tests/internal/designfixture/parser.go`, an offline fixture adapter that accepts a preflighted archive containing `design.json` or `fixture.json` and fails closed on an archive without one. Production exposes the parser interface without a built-in fixture implementation; Figma decoding still requires the contained upstream parser.
 
 ## Blockers
 

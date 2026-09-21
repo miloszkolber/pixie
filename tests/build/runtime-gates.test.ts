@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const packageRoot = resolve(import.meta.dir, "../..");
-const repositoryRoot = resolve(packageRoot, "..");
 
 function text(value: Uint8Array): string {
 	return new TextDecoder().decode(value);
@@ -29,12 +29,12 @@ function output(result: ReturnType<typeof run>): string {
 
 test("checked-in runtime composition keeps the controller image and Pi-bearing archives distinct", async () => {
 	const dockerfile = await readFile(join(packageRoot, "Dockerfile"), "utf8");
-	const runtime = await readFile(join(packageRoot, "cmd/runtime.go"), "utf8");
-	const main = await readFile(join(packageRoot, "cmd/main.go"), "utf8");
+	const runtime = await readFile(join(packageRoot, "cmd/pixie-web/runtime.go"), "utf8");
+	const main = await readFile(join(packageRoot, "cmd/pixie-web/main.go"), "utf8");
 	const host = await readFile(join(packageRoot, "cmd/pixie/main.go"), "utf8");
 	const releaseRuntime = await readFile(join(packageRoot, "scripts/release-runtime.ts"), "utf8");
 
-	expect(dockerfile).toContain("go build -trimpath -tags=controller");
+	expect(dockerfile).toContain("-o /out/pixie_web ./cmd/pixie-web");
 	expect(dockerfile).not.toContain("pixie/assistant");
 	expect(dockerfile).toContain(
 		'ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/pixie_web", "serve", "--mode", "controller"]',
@@ -59,7 +59,7 @@ test("checked-in runtime composition keeps the controller image and Pi-bearing a
 });
 
 test("controller executable fixtures exercise mode boundaries without live Pi claims", async () => {
-	const temporary = await mkdtemp(join(repositoryRoot, ".pixie-runtime-gates-"));
+	const temporary = await mkdtemp(join(tmpdir(), "pixie-runtime-gates-"));
 	try {
 		const controllerBinary = join(temporary, "pixie");
 		const buildEnvironment = {
@@ -69,7 +69,7 @@ test("controller executable fixtures exercise mode boundaries without live Pi cl
 			TMPDIR: temporary,
 		};
 		const controllerBuild = run(
-			["go", "build", "-trimpath", "-tags=controller", "-o", controllerBinary, "./cmd"],
+			["go", "build", "-trimpath", "-o", controllerBinary, "./cmd/pixie-web"],
 			buildEnvironment,
 		);
 		expect(controllerBuild.exitCode).toBe(0);

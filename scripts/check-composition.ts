@@ -253,11 +253,11 @@ function checkDockerfile(
 	}
 	const hasBuildRecipe = strictChecks;
 	if (hasBuildRecipe) {
-		missing.controllerOnlyBuild = /\bgo\s+build\b[^\n]*-tags(?:=|\s+)controller\b/i.test(
+		missing.controllerOnlyBuild = /\bgo\s+build\b[^\n]*\.\/cmd\/pixie-web(?:\s|;|$)/m.test(
 			dockerfile,
 		);
 		if (!missing.controllerOnlyBuild) {
-			violations.push("Dockerfile: controller image build must use the controller build tag");
+			violations.push("Dockerfile: controller image build must use the cmd/pixie-web entrypoint");
 		}
 	} else {
 		// Minimal fixtures used by the original BUILD-01 seam do not contain
@@ -630,9 +630,12 @@ function inspectControllerComposition(
 	}
 	const command = sourceText(
 		input.packageCommandSources,
-		(path) => path.endsWith("/main.go") || path.endsWith("/runtime.go"),
+		(path) => path === "cmd/pixie-web/main.go" || path === "cmd/pixie-web/runtime.go",
 	);
-	const config = sourceText(input.packageCommandSources, (path) => path === "cmd/config.go");
+	const config = sourceText(
+		input.packageCommandSources,
+		(path) => path === "cmd/pixie-web/config.go",
+	);
 	const configFields = /type runtimeConfigFile struct \{([\s\S]*?)\n\}/.exec(config)?.[1];
 	const webuiSources = sourceText(
 		input.packageWebuiSources,

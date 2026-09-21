@@ -14,14 +14,14 @@ ENTRYPOINT ["/app/pixie_web", "serve", "--mode", "controller"]
 
 function passingComposition(): CompositionInput {
 	const assistantSources = {
-		"assistant/src/serve.ts":
+		"src/assistant/serve.ts":
 			'import { startBunHostFromVerifiedPi } from "./host.ts";\nimport { verifyPiPackage } from "./probe.ts";\n',
-		"assistant/src/host.ts":
+		"src/assistant/host.ts":
 			"export async function startBunHostFromVerifiedPi() { return Bun.serve({}); }\n",
-		"assistant/src/probe.ts": "export async function verifyPiPackage() {}\n",
+		"src/assistant/probe.ts": "export async function verifyPiPackage() {}\n",
 	};
 	const packageCommandSources = {
-		"web/cmd/main.go": "package main\n\nfunc main() {}\n",
+		"cmd/pixie-web/main.go": "package main\n\nfunc main() {}\n",
 	};
 	return {
 		assistantSources,
@@ -56,7 +56,8 @@ test("composition rejects reintroduced Go sources, the bridge, and assistant mod
 		},
 		assistantGoModText: "module example.test/assistant\n\ngo 1.27\n",
 		packageCommandSources: {
-			"web/cmd/main.go": 'package main\n\nimport "github.com/miloszkolber/pixie/assistant/host"\n',
+			"cmd/pixie-web/main.go":
+				'package main\n\nimport "github.com/miloszkolber/pixie/assistant/host"\n',
 		},
 		productionSources: {
 			...input.productionSources,

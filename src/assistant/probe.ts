@@ -918,7 +918,7 @@ export function resolvePiPackagePath(
 ): string {
 	let explicitPath: string | undefined;
 	for (let index = 0; index < argv.length; index += 1) {
-		const argument = argv[index];
+		const argument = argv[index] ?? "";
 		let candidate: string | undefined;
 		if (argument === "--pi-package") {
 			candidate = argv[index + 1];

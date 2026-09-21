@@ -17,7 +17,7 @@ registerHostCleanup();
 // AUX-32: the session SDK failure embeds a credential, an absolute path, an
 // endpoint URL and the host bearer. None may cross the browser boundary.
 class FailingPromptSession extends FakeSession {
-	async prompt(
+	override async prompt(
 		_text: string,
 		_options: { preflightResult: (accepted: boolean) => void },
 	): Promise<void> {

@@ -258,12 +258,12 @@ interface ResidentSession {
 	readonly generation: number;
 	readonly dialogs: Map<string, Dialog>;
 	path?: string;
-	stopReason?: string;
+	stopReason?: string | undefined;
 	// AUX-13 lease bookkeeping. `leaseDepth` counts concurrent mutating
 	// operations so the first acquire publishes the file and the last release
 	// removes it; the host event loop makes the check-then-write atomic.
 	leaseDepth?: number;
-	leasePath?: string;
+	leasePath?: string | undefined;
 	// AUX-13 mtime tail: the last observed session-file mtime.
 	fileMtime?: number;
 	// AUX-12 parsed header/record degradation, reported in the snapshot.
@@ -272,9 +272,9 @@ interface ResidentSession {
 
 interface Dialog {
 	readonly primitive: "select" | "confirm" | "input" | "editor";
-	readonly options?: readonly string[];
+	readonly options?: readonly string[] | undefined;
 	readonly resolve: (value: string | boolean | undefined) => void;
-	readonly abort?: AbortSignal;
+	readonly abort?: AbortSignal | undefined;
 	readonly onAbort?: () => void;
 }
 
@@ -305,9 +305,9 @@ interface PendingLogin {
 	readonly providerId: string;
 	readonly abort: AbortController;
 	frame: Record<string, unknown>;
-	resolve?: (value: string) => void;
-	reject?: (error: Error) => void;
-	begin?: () => void;
+	resolve?: ((value: string) => void) | undefined;
+	reject?: ((error: Error) => void) | undefined;
+	begin?: (() => void) | undefined;
 	readonly timer: ReturnType<typeof setTimeout>;
 }
 

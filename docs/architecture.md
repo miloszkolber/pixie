@@ -24,7 +24,8 @@ Paths below are relative to the repository root, which holds the shared Bun work
 | Directory | Responsibility |
 | --- | --- |
 | `src/assistant/` | The archive-internal host bundle `libexec/pixie_assistant.js`, built from `src/assistant`: Pi sessions in-process through the bundled Pi SDK, with no RPC child model or bridge sidecar |
-| `cmd/`, `internal/controller` | Application HTTP/WebSocket/MCP, native Pi projection, lifecycle and browser-MCP registration (`mcp_browser.go`) |
+| `cmd/pixie/`, `cmd/internal/` | Native TUI/host launcher and launcher-only helpers |
+| `cmd/pixie-web/`, `internal/controller` | Controller entrypoint, HTTP/WebSocket/MCP, native Pi projection, lifecycle and browser-MCP registration (`mcp_browser.go`) |
 | `internal/canvas`, `internal/design` | Optional Canvas and Openfig workspace modules |
 | `internal/mcpserver` | Module catalog and in-process MCP publication |
 | `internal/workspace`, `internal/persist` | Bounded project access and durable state |

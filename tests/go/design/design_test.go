@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/miloszkolber/pixie/internal/design"
+	"github.com/miloszkolber/pixie/tests/internal/designfixture"
 )
 
 func TestStructureUploadQueryPNGAndHTTPArtifact(t *testing.T) {
@@ -78,7 +79,7 @@ func TestCASRemovalTombstoneAndRestartGeneration(t *testing.T) {
 	root := t.TempDir()
 	fixture := fixtureArchive(t)
 	config := design.DefaultConfig(root)
-	config.Parser = design.NewDeterministicParser()
+	config.Parser = designfixture.NewParser()
 	service, err := design.New(config)
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +133,7 @@ func TestRestartRetainsCommittedActiveIndexWithoutWorker(t *testing.T) {
 	root := t.TempDir()
 	fixture := fixtureArchive(t)
 	config := design.DefaultConfig(root)
-	config.Parser = design.NewDeterministicParser()
+	config.Parser = designfixture.NewParser()
 	first, err := design.New(config)
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +257,7 @@ func TestDisableCancelsInFlightParserWithoutPublishing(t *testing.T) {
 
 func newService(t *testing.T) (*design.Service, []byte) {
 	t.Helper()
-	service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: design.NewDeterministicParser()})
+	service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: designfixture.NewParser()})
 	if err != nil {
 		t.Fatal(err)
 	}

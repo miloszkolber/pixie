@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -154,123 +153,6 @@ func isRequiredArchiveEntry(name string) bool {
 	return base == "canvas.fig" || base == "design.json" || base == "fixture.json" || base == "document.json" || base == "canvas.json" || strings.HasSuffix(base, ".fig")
 }
 
-// extractFixtureJSON finds the deterministic parser payload from a validated
-// archive. The archive's canvas.fig may be opaque binary; fixture.json is the
-// explicit offline fixture format used by this package's parser.
-func extractFixtureJSON(ctx context.Context, source []byte) ([]byte, []byte, error) {
-	reader, err := zip.NewReader(bytes.NewReader(source), int64(len(source)))
-	if err != nil {
-		return nil, nil, err
-	}
-	var design []byte
-	var cover []byte
-	for _, file := range reader.File {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, err
-		}
-		name, directory, pathErr := validateArchivePath(file.Name)
-		if pathErr != nil || directory {
-			continue
-		}
-		base := strings.ToLower(path.Base(name))
-		if base != "design.json" && base != "fixture.json" && base != "document.json" && base != "canvas.json" {
-			if base == "thumbnail.png" || base == "cover.png" {
-				entry, readErr := readZipEntry(ctx, file, MaxPreviewBytes)
-				if readErr == nil {
-					cover = entry
-				}
-			}
-			continue
-		}
-		entry, readErr := readZipEntry(ctx, file, MaxUploadBytes)
-		if readErr != nil {
-			return nil, nil, readErr
-		}
-		if design != nil {
-			return nil, nil, designError("invalid_request", fmt.Errorf("multiple deterministic design JSON entries: %w", ErrInvalidRequest))
-		}
-		design = entry
-	}
-	return design, cover, nil
-}
-
-func readZipEntry(ctx context.Context, file *zip.File, max int64) ([]byte, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	stream, err := file.Open()
-	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, err
-		}
-		return nil, designError("invalid_request", ErrInvalidRequest)
-	}
-	defer stream.Close()
-	data, err := io.ReadAll(io.LimitReader(contextReader{ctx: ctx, reader: stream}, max+1))
-	if err != nil {
-		return nil, designError("invalid_request", ErrInvalidRequest)
-	}
-	if int64(len(data)) > max {
-		return nil, designError("limit_exceeded", ErrLimit)
-	}
-	return data, nil
-}
-
-func parseFixtureJSON(ctx context.Context, source []byte) (NormalizedDocument, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return NormalizedDocument{}, err
-	}
-	trimmed := bytes.TrimSpace(source)
-	if len(trimmed) > 0 && trimmed[0] == '{' {
-		var value struct {
-			Name          string   `json:"name"`
-			ParserVersion string   `json:"parserVersion"`
-			Pages         []Page   `json:"pages"`
-			Nodes         []Node   `json:"nodes"`
-			Warnings      []string `json:"warnings"`
-		}
-		if err := decodeFixture(trimmed, &value); err != nil {
-			return NormalizedDocument{}, designError("invalid_request", fmt.Errorf("decode fixture design JSON: %w", ErrInvalidRequest))
-		}
-		if value.ParserVersion == "" {
-			value.ParserVersion = "fixture-parser-v1"
-		}
-		return NormalizedDocument{Name: value.Name, ParserVersion: value.ParserVersion, Pages: value.Pages, Nodes: value.Nodes, Warnings: value.Warnings}, nil
-	}
-	design, cover, err := extractFixtureJSON(ctx, source)
-	if err != nil {
-		return NormalizedDocument{}, err
-	}
-	if len(design) == 0 {
-		// The fixture adapter only understands an explicit design/fixture JSON
-		// document. An opaque or unrecognized archive must fail closed: inventing
-		// a one-page projection would mask an unsupported source as if it had been
-		// decoded. A real .fig needs the licensed upstream parser, which this
-		// adapter deliberately does not implement.
-		return NormalizedDocument{}, designError("invalid_request", fmt.Errorf("fixture archive is missing design.json: %w", ErrInvalidRequest))
-	}
-	var value struct {
-		Name          string   `json:"name"`
-		ParserVersion string   `json:"parserVersion"`
-		Pages         []Page   `json:"pages"`
-		Nodes         []Node   `json:"nodes"`
-		Warnings      []string `json:"warnings"`
-	}
-	if err := decodeFixture(design, &value); err != nil {
-		return NormalizedDocument{}, designError("invalid_request", fmt.Errorf("decode fixture design JSON: %w", ErrInvalidRequest))
-	}
-	if value.ParserVersion == "" {
-		value.ParserVersion = "fixture-parser-v1"
-	}
-	return NormalizedDocument{Name: value.Name, ParserVersion: value.ParserVersion, Pages: value.Pages, Nodes: value.Nodes, Warnings: value.Warnings, CoverPNG: cover}, nil
-}
-
 type contextReader struct {
 	ctx    context.Context
 	reader io.Reader
@@ -281,20 +163,4 @@ func (r contextReader) Read(buffer []byte) (int, error) {
 		return 0, err
 	}
 	return r.reader.Read(buffer)
-}
-
-func decodeFixture(data []byte, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("fixture contains trailing JSON")
-		}
-		return err
-	}
-	return nil
 }

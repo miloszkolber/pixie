@@ -15,6 +15,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/design"
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
+	"github.com/miloszkolber/pixie/tests/internal/designfixture"
 )
 
 func configuredModuleRegistry(t *testing.T) *mcpserver.Registry {
@@ -31,7 +32,7 @@ func configuredModuleRegistry(t *testing.T) *mcpserver.Registry {
 			config.WorkerLauncher = canvas.NewDeterministicWorkerLauncher()
 			return &config
 		}(),
-		DesignConfig: &design.Config{DataDir: dataDir, Parser: design.NewDeterministicParser()},
+		DesignConfig: &design.Config{DataDir: dataDir, Parser: designfixture.NewParser()},
 	}, diagnostics.NormalizeBuild("test", "test"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)

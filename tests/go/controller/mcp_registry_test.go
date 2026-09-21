@@ -20,6 +20,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/diagnostics"
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/persist"
+	"github.com/miloszkolber/pixie/tests/internal/designfixture"
 )
 
 func newTestInProcessRegistry(t *testing.T) *mcpserver.Registry {
@@ -31,7 +32,7 @@ func newTestInProcessRegistry(t *testing.T) *mcpserver.Registry {
 	}
 	registry, err := mcpserver.NewRegistry(mcpserver.Config{
 		Host: "127.0.0.1", Port: 17873, DataDir: dataDir,
-		DesignConfig: &design.Config{DataDir: dataDir, Parser: design.NewDeterministicParser()},
+		DesignConfig: &design.Config{DataDir: dataDir, Parser: designfixture.NewParser()},
 	}, diagnostics.NormalizeBuild("test", "test"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)

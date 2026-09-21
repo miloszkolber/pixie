@@ -8,7 +8,7 @@ import {
 
 const controllerDockerfile = `
 FROM golang:1.27 AS go-source
-RUN go build -tags=controller -o /out/pixie_web ./cmd
+RUN go build -o /out/pixie_web ./cmd/pixie-web
 FROM runtime AS pixie_web
 COPY --from=go-source /out/pixie_web /app/pixie_web
 COPY --from=web-build /work/webui/dist /app/web
@@ -26,11 +26,11 @@ function composition(dockerfile: string): CompositionInput {
 		"src/assistant/probe.ts": "export async function verifyPiPackage() {}\n",
 	};
 	const packageCommandSources = {
-		"cmd/main.go":
+		"cmd/pixie-web/main.go":
 			'package main\nconst modeController = "controller"\nfunc parseMode() { mode := modeController; if mode != modeController { panic(mode) } }\nfunc rejectControllerAssistantSettings() {}\n',
-		"cmd/config.go":
+		"cmd/pixie-web/config.go":
 			'package main\ntype runtimeConfigFile struct {\n Host string `json:"host"`\n}\nfunc decodeJSONConfig() { return errors.New("unknown field") }\n',
-		"cmd/runtime.go":
+		"cmd/pixie-web/runtime.go":
 			"package main\nfunc serveController() { context.WithTimeout(context.Background(), time.Second); runtime.Shutdown(ctx) }\n",
 	};
 	const packageWebuiSources = {
@@ -73,7 +73,7 @@ test("Docker composition rejects Pi in pixie_web and a non-reaping controller co
 FROM runtime AS pixie_web
 COPY src/assistant/ /app/assistant
 COPY --from=pi-build /out/runtime /app/runtime
-RUN go build ./cmd
+RUN go build ./cmd/pixie
 ENTRYPOINT ["/app/pixie_web", "serve", "--mode", "full-host", "pi serve"]
 `),
 	);
@@ -81,7 +81,7 @@ ENTRYPOINT ["/app/pixie_web", "serve", "--mode", "full-host", "pi serve"]
 	expect(report.ok).toBe(false);
 	const output = report.violations.join("\n");
 	expect(output).toMatch(/must not copy assistant/);
-	expect(output).toMatch(/controller build tag/);
+	expect(output).toContain("cmd/pixie-web entrypoint");
 	expect(output).toMatch(/--mode controller/);
 	expect(output).toMatch(/tini/);
 	expect(output).toMatch(/must contain no Bun, Node, Pi package, assistant, or Pi launcher/);
@@ -109,7 +109,7 @@ test("checked-in Docker and controller composition report static facts without l
 	const output = formatCompositionReport(report);
 
 	expect(report.ok).toBe(true);
-	expect(input.dockerfileText).toContain("-o /out/pixie_web ./cmd");
+	expect(input.dockerfileText).toContain("-o /out/pixie_web ./cmd/pixie-web");
 	expect(input.dockerfileText).toContain("FROM controller-runtime AS pixie_web");
 	expect(input.dockerfileText).not.toContain("FROM controller-runtime AS pixie\n");
 	expect(input.dockerfileText).toContain("/app/pixie_web");

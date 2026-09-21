@@ -48,7 +48,7 @@ uninstall
 			archive(product, "amd64"),
 			archive(product, "arm64"),
 		]),
-		commandSources: { "cmd/main.go": command },
+		commandSources: { "cmd/pixie-web/main.go": command },
 		webuiSources: { "webui/webui.go": "//go:embed all:dist" },
 		embeddedUiFiles: ["webui/dist/index.html"],
 		binaries: RELEASE_PRODUCTS.flatMap((product) => [

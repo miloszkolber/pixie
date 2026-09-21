@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/miloszkolber/pixie/internal/design"
+	"github.com/miloszkolber/pixie/tests/internal/designfixture"
 )
 
 // TestX09LargeIndexDedicatedPath stages a representative 16-64 MiB normalized
@@ -24,7 +25,7 @@ import (
 // not asserted as frame rendering (FIG-06 stays open).
 func TestX09LargeIndexDedicatedPath(t *testing.T) {
 	root := t.TempDir()
-	service, err := design.New(design.Config{DataDir: root, Enabled: true, Parser: design.NewDeterministicParser()})
+	service, err := design.New(design.Config{DataDir: root, Enabled: true, Parser: designfixture.NewParser()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +253,7 @@ func TestCursorPaginationTamperBinding(t *testing.T) {
 func TestCursorCrossDocumentGeneration(t *testing.T) {
 	root := t.TempDir()
 	config := design.DefaultConfig(root)
-	config.Parser = design.NewDeterministicParser()
+	config.Parser = designfixture.NewParser()
 	service, err := design.New(config)
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +301,7 @@ func TestCursorCrossDocumentGeneration(t *testing.T) {
 // TestQueryTrimming256KiB proves oversized structure/text results trim to the
 // 256 KiB query bound instead of leaking a full index or failing the document.
 func TestQueryTrimming256KiB(t *testing.T) {
-	service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: design.NewDeterministicParser()})
+	service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: designfixture.NewParser()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +362,7 @@ func TestQueryTrimming256KiB(t *testing.T) {
 // TestHugeTextImageHandling covers per-node text bounds and cover-image
 // validation without building a renderer (FIG-06 stays open).
 func TestHugeTextImageHandling(t *testing.T) {
-	service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: design.NewDeterministicParser()})
+	service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: designfixture.NewParser()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +483,7 @@ func TestParserMissingReadiness(t *testing.T) {
 func TestRemovalWhileDisabledWithoutParser(t *testing.T) {
 	root := t.TempDir()
 	firstConfig := design.DefaultConfig(root)
-	firstConfig.Parser = design.NewDeterministicParser()
+	firstConfig.Parser = designfixture.NewParser()
 	first, err := design.New(firstConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -559,7 +560,7 @@ func TestDisabledManagementBehavior(t *testing.T) {
 		}
 	})
 	t.Run("disable retains source and revokes reads", func(t *testing.T) {
-		service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: design.NewDeterministicParser()})
+		service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: designfixture.NewParser()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -616,7 +617,7 @@ func TestDisabledManagementBehavior(t *testing.T) {
 
 func newCursorService(t *testing.T, count int) (*design.Service, []byte) {
 	t.Helper()
-	service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: design.NewDeterministicParser()})
+	service, err := design.New(design.Config{DataDir: t.TempDir(), Enabled: true, Parser: designfixture.NewParser()})
 	if err != nil {
 		t.Fatal(err)
 	}

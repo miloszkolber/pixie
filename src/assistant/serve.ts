@@ -515,7 +515,7 @@ async function doctorScenarioRequest<T>(
 		controller.abort();
 	}, DOCTOR_SCENARIO_TIMEOUT_MS);
 	try {
-		const response = await fetch(url, { headers, signal: controller.signal });
+		const response = await fetch(url, { headers: headers ?? {}, signal: controller.signal });
 		try {
 			return await inspect(response);
 		} finally {

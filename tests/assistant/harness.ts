@@ -16,6 +16,8 @@ export type HostResult = {
 	readonly operationSet?: Record<string, boolean>;
 	readonly protocolVersion?: number;
 	readonly runtimeId?: string;
+	readonly sessionId?: string;
+	readonly sessions?: readonly { sessionId: string; cwd: string }[];
 	readonly supportedProtocolVersions?: readonly number[];
 	readonly version?: string;
 };
@@ -65,17 +67,17 @@ export class FakeSession implements PiSession {
 	disposed = false;
 	readonly calls: string[] = [];
 	sessionName?: string;
-	compactInstructions?: string;
+	compactInstructions: string | undefined;
 	steered: Array<{ text: string; images: unknown[] }> = [];
 	followed: Array<{ text: string; images: unknown[] }> = [];
 	model?: unknown;
 	thinkingLevel?: unknown;
 	thinkingLevels: unknown[] = ["off"];
 	sessionFile?: string;
-	modelRuntime?: PiSession["modelRuntime"];
-	extensionRunner?: PiSession["extensionRunner"];
-	promptTemplates?: PiSession["promptTemplates"];
-	resourceLoader?: PiSession["resourceLoader"];
+	modelRuntime?: NonNullable<PiSession["modelRuntime"]>;
+	extensionRunner?: NonNullable<PiSession["extensionRunner"]>;
+	promptTemplates?: NonNullable<PiSession["promptTemplates"]>;
+	resourceLoader?: NonNullable<PiSession["resourceLoader"]>;
 	// AUX-14: the SDK's fork selector maps a text-bearing user message to its
 	// native session-entry id. Tests set it to prove the host projects entryId.
 	userMessagesForForking: Array<{ entryId: string; text: string }> = [];
@@ -208,10 +210,10 @@ export function hostWith(
 	options: {
 		readonly agentDir?: string;
 		readonly serverFactory?: BunServerFactory;
-		readonly sessionFactory?: Parameters<typeof startBunHost>[0]["sessionFactory"];
+		readonly sessionFactory?: NonNullable<Parameters<typeof startBunHost>[0]["sessionFactory"]>;
 		readonly sdk?: Record<string, unknown>;
 		readonly protocol?: string;
-		readonly logger?: Parameters<typeof startBunHost>[0]["logger"];
+		readonly logger?: NonNullable<Parameters<typeof startBunHost>[0]["logger"]>;
 		readonly allowSelfRestart?: boolean;
 		readonly onRestart?: () => void;
 		readonly requestTimeoutMs?: number;
@@ -240,6 +242,7 @@ export function hostWith(
 	let host: ReturnType<typeof startBunHost>;
 	try {
 		host = startBunHost({
+			...options,
 			host: "127.0.0.1",
 			port: 0,
 			secret,
@@ -253,12 +256,6 @@ export function hostWith(
 				entryDigest: "b".repeat(64),
 			},
 			sdk: sdk as Parameters<typeof startBunHost>[0]["sdk"],
-			serverFactory: options.serverFactory,
-			sessionFactory: options.sessionFactory,
-			logger: options.logger,
-			allowSelfRestart: options.allowSelfRestart,
-			onRestart: options.onRestart,
-			requestTimeoutMs: options.requestTimeoutMs,
 		});
 	} finally {
 		if (previousProtocol === undefined) delete process.env.PIXIE_PI_PROTOCOL;
@@ -305,7 +302,7 @@ export async function request(
 
 export class RawSocket implements BunWebSocket {
 	readonly sent: string[] = [];
-	readonly closes: Array<{ code?: number; reason?: string }> = [];
+	readonly closes: Array<{ code: number | undefined; reason: string | undefined }> = [];
 
 	send(data: string): number {
 		this.sent.push(data);
@@ -325,7 +322,7 @@ export interface RawHost {
 
 export function rawHost(
 	session = new FakeSession("native-1"),
-	options: Omit<Parameters<typeof hostWith>[1], "serverFactory"> = {},
+	options: Omit<NonNullable<Parameters<typeof hostWith>[1]>, "serverFactory"> = {},
 ): ReturnType<typeof hostWith> & RawHost {
 	let served: Parameters<BunServerFactory["serve"]>[0] | undefined;
 	let upgraded: { data: { connection: unknown } } | undefined;

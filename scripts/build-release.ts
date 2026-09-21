@@ -318,7 +318,7 @@ async function buildArchitecture(
 	);
 	for (const [output, packagePath, stamped] of [
 		[launcher, "./cmd/pixie", true],
-		[web, "./cmd", true],
+		[web, "./cmd/pixie-web", true],
 	] as const) {
 		await run(
 			[

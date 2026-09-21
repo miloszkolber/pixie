@@ -1,4 +1,4 @@
-package shared_test
+package controller_test
 
 import (
 	"context"

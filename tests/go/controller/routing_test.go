@@ -23,6 +23,7 @@ import (
 	"github.com/miloszkolber/pixie/internal/mcpserver"
 	"github.com/miloszkolber/pixie/internal/persist"
 	"github.com/miloszkolber/pixie/internal/workspace"
+	"github.com/miloszkolber/pixie/tests/internal/designfixture"
 )
 
 func assertReservedJSONNotSPA(t *testing.T, response *httptest.ResponseRecorder, target string) {
@@ -459,7 +460,7 @@ func TestAssembledDesignManagementAuthorityMatrix(t *testing.T) {
 	}
 	registry, err := mcpserver.NewRegistry(mcpserver.Config{
 		Host: "127.0.0.1", Port: 17880, DataDir: dataDir,
-		DesignConfig: &design.Config{DataDir: dataDir, Parser: design.NewDeterministicParser()},
+		DesignConfig: &design.Config{DataDir: dataDir, Parser: designfixture.NewParser()},
 	}, diagnostics.NormalizeBuild("test", "test"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)

@@ -75,8 +75,8 @@ test("documentation checker validates local links, anchors, source paths and com
 		...input,
 		files: {
 			...input.files,
-			"docs/architecture.md": `${input.files["docs/architecture.md"]}\n\`cmd/main.go\`\n`,
-			"cmd/main.go": "package main\n",
+			"docs/architecture.md": `${input.files["docs/architecture.md"]}\n\`cmd/pixie-web/main.go\`\n`,
+			"cmd/pixie-web/main.go": "package main\n",
 		},
 	});
 
